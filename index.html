@@ -184,22 +184,16 @@
         }
 
         function SocialDashboard({ user, userProfile, showAlert }) {
-            const [friends, setFriends] = useState(userProfile.friends || []);
+            const friends = userProfile.friends || [];
             const [searchEmail, setSearchEmail] = useState('');
             const [activeChat, setActiveChat] = useState(null);
             const [messages, setMessages] = useState([]);
             const [newMessage, setNewMessage] = useState('');
             const messagesEndRef = useRef(null);
 
-            useEffect(() => {
-                const unsub = db.collection('users').doc(user.uid).onSnapshot(doc => {
-                    if(doc.exists && doc.data().friends) setFriends(doc.data().friends);
-                });
-                return () => unsub();
-            }, [user.uid]);
-
             const getChatId = (uid1, uid2) => [uid1, uid2].sort().join('_');
 
+            // 進入聊天室即消除紅點通知
             useEffect(() => {
                 if (activeChat && userProfile && userProfile.unreadChats && userProfile.unreadChats[activeChat.uid]) {
                     db.collection('users').doc(user.uid).update({
@@ -208,13 +202,26 @@
                 }
             }, [activeChat, userProfile, user.uid]);
 
+            // 讀取與設定訊息監聽
             useEffect(() => {
                 if(!activeChat) return;
                 const chatId = getChatId(user.uid, activeChat.uid);
                 const unsub = db.collection('chats').doc(chatId).collection('messages')
                     .orderBy('timestamp', 'asc')
                     .onSnapshot(snapshot => {
-                        setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                        const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setMessages(msgs);
+                        
+                        // 收到對方未讀的訊息時，標記為已讀
+                        const unreadDocs = snapshot.docs.filter(doc => doc.data().senderId !== user.uid && !doc.data().read);
+                        if (unreadDocs.length > 0) {
+                            const batch = db.batch();
+                            unreadDocs.forEach(doc => {
+                                batch.update(doc.ref, { read: true });
+                            });
+                            batch.commit().catch(e => console.error("更新已讀狀態失敗", e));
+                        }
+
                         setTimeout(() => {
                             if (messagesEndRef.current) {
                                 messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -262,7 +269,8 @@
                     senderId: user.uid,
                     senderName: userProfile.displayName,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    type: 'text'
+                    type: 'text',
+                    read: false
                 }).then(() => {
                     setNewMessage('');
                     db.collection('users').doc(activeChat.uid).set({
@@ -287,7 +295,8 @@
                     senderName: userProfile.displayName,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                     type: 'game_rps',
-                    rpsFace: result.face
+                    rpsFace: result.face,
+                    read: false
                 }).then(() => {
                     db.collection('users').doc(activeChat.uid).set({
                         unreadChats: { [user.uid]: true }
@@ -368,8 +377,9 @@
                                 <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50 custom-scrollbar">
                                     {messages.map(msg => {
                                         const isMe = msg.senderId === user.uid;
+                                        const timeStr = msg.timestamp ? msg.timestamp.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) : '';
                                         return (
-                                            <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                            <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} mb-4`}>
                                                 <div className={`max-w-[70%] p-3 text-sm no-round ${isMe ? 'bg-black text-white' : 'bg-white border border-gray-200 text-black shadow-sm'}`}>
                                                     {(() => {
                                                         if (msg.type === 'game_rps') {
@@ -399,9 +409,13 @@
                                                                 </div>
                                                             );
                                                         } else {
-                                                            return <p>{msg.text || '未知訊息'}</p>;
+                                                            return <p style={{ whiteSpace: 'pre-wrap' }}>{msg.text || '未知訊息'}</p>;
                                                         }
                                                     })()}
+                                                </div>
+                                                <div className="text-[10px] text-gray-400 mt-1 flex items-center space-x-2 px-1">
+                                                    <span>{timeStr}</span>
+                                                    {isMe && <span>{msg.read ? '已讀' : '未讀'}</span>}
                                                 </div>
                                             </div>
                                         )
@@ -454,6 +468,7 @@
                     senderName: userProfile.displayName,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                     type: 'quiz_share',
+                    read: false,
                     quizData: {
                         ownerId: user.uid,
                         quizId: showShareModal.id,
@@ -550,7 +565,10 @@
             const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
             const [results, setResults] = useState(initialRecord.results || null);
             const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
-            const [questionText, setQuestionText] = useState(initialRecord.questionText || ''); // 新增試題文字狀態
+            const [questionText, setQuestionText] = useState(initialRecord.questionText || ''); 
+            
+            // 新增：判斷初始狀態要顯示哪種輸入框 (預設網址，若有純文字內容則切換到文字)
+            const [inputType, setInputType] = useState((initialRecord.questionText && !initialRecord.questionFileUrl) ? 'text' : 'url');
             
             const isShared = initialRecord.isShared === true;
             
@@ -659,11 +677,17 @@
                 setUserAnswers(initialAnswers);
                 setStarred(initialStarred);
 
+                // 儲存時，根據選擇的類型清理另一個內容
+                const finalFileUrl = inputType === 'url' ? questionFileUrl.trim() : '';
+                const finalQuestionText = inputType === 'text' ? questionText : '';
+                setQuestionFileUrl(finalFileUrl);
+                setQuestionText(finalQuestionText);
+
                 db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                     testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
                     correctAnswersInput: '',
-                    questionFileUrl: questionFileUrl.trim(),
-                    questionText: questionText,
+                    questionFileUrl: finalFileUrl,
+                    questionText: finalQuestionText,
                     hasTimer: hasTimer,
                     timeLimit: hasTimer ? Number(timeLimit) : null,
                     timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
@@ -744,7 +768,6 @@
                 );
             };
 
-            // 新增：手動同步試題文字給好友的功能
             const handleSyncQuestionText = async () => {
                 if (isShared) return;
                 try {
@@ -851,6 +874,7 @@
                     senderName: userProfile.displayName,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                     type: 'score_share',
+                    read: false,
                     scoreData: {
                         testName: testName,
                         score: results.score,
@@ -878,11 +902,23 @@
                         <label className="block text-xs font-bold text-gray-500 mb-1">題數 (1-100)</label>
                         <input type="number" placeholder="50" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
                         
-                        <label className="block text-xs font-bold text-gray-500 mb-1">試卷公開網址 (選填)</label>
-                        <input type="text" placeholder="請貼上 Google Drive 連結" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} onFocus={handleFocusScroll} />
-                        
-                        <label className="block text-xs font-bold text-gray-500 mb-1">試卷純文字 (選填)</label>
-                        <textarea placeholder="請貼上試題純文字..." className="w-full h-24 mb-6 p-2 border border-gray-300 no-round outline-none focus:border-black text-sm custom-scrollbar" value={questionText} onChange={e => setQuestionText(e.target.value)} onFocus={handleFocusScroll} />
+                        <label className="block text-xs font-bold text-gray-500 mb-2">試題來源 (單選)</label>
+                        <div className="flex space-x-4 mb-4">
+                            <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black">
+                                <input type="radio" checked={inputType === 'url'} onChange={() => setInputType('url')} className="w-4 h-4 accent-black" />
+                                <span>公開網址</span>
+                            </label>
+                            <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black">
+                                <input type="radio" checked={inputType === 'text'} onChange={() => setInputType('text')} className="w-4 h-4 accent-black" />
+                                <span>純文字</span>
+                            </label>
+                        </div>
+
+                        {inputType === 'url' ? (
+                            <input type="text" placeholder="請貼上 Google Drive 等連結" className="w-full mb-6 p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} onFocus={handleFocusScroll} />
+                        ) : (
+                            <textarea placeholder="請貼上試題純文字..." className="w-full h-32 mb-6 p-2 border border-gray-300 no-round outline-none focus:border-black text-sm custom-scrollbar" value={questionText} onChange={e => setQuestionText(e.target.value)} onFocus={handleFocusScroll} />
+                        )}
                         
                         <div className="mb-6 border border-gray-200 p-4 bg-gray-50 no-round">
                             <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm">
@@ -930,19 +966,19 @@
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
-                            {(questionFileUrl || questionText || !isShared) && previewOpen && (
+                            {(questionFileUrl || questionText) && previewOpen && (
                                 <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
                                     {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
                                 </button>
                             )}
 
-                            {!isShared && (
+                            {!isShared && !questionText && (
                                 <button onClick={handleUpdateFileUrl} className={`${questionFileUrl ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'} px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
                                     {questionFileUrl ? '🔗 修改/移除網址' : '📎 貼上試卷網址'}
                                 </button>
                             )}
 
-                            {(questionFileUrl || questionText || !isShared) && (
+                            {(questionFileUrl || questionText) && (
                                 <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
                                     {previewOpen ? '👀 關閉預覽' : '👀 開啟預覽'}
                                 </button>
@@ -961,7 +997,7 @@
                             <div className="absolute inset-0 z-50" style={{ cursor: layoutMode === 'horizontal' ? 'col-resize' : 'row-resize' }}></div>
                         )}
 
-                        {(questionFileUrl || questionText || !isShared) && previewOpen && (
+                        {(questionFileUrl || questionText) && previewOpen && (
                             <div 
                                 className="bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0"
                                 style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
@@ -969,7 +1005,7 @@
                                 <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
                                     <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
                                     <div className="flex space-x-3 items-center">
-                                        {!isShared && (
+                                        {!isShared && questionText && (
                                             <button onClick={handleSyncQuestionText} className="text-xs bg-white text-blue-600 border border-blue-200 px-2 py-1 no-round font-bold hover:bg-blue-50 transition-colors" title="將文字同步給已下載的好友">
                                                 🔄 同步文字
                                             </button>
@@ -981,12 +1017,12 @@
                                 </div>
                                 <div className="flex-grow w-full relative bg-gray-200 flex flex-col overflow-hidden">
                                     {questionFileUrl && (
-                                        <div className={`w-full relative shrink-0 ${(questionText || !isShared) ? 'h-1/2 border-b-2 border-gray-300' : 'h-full'}`}>
+                                        <div className={`w-full relative shrink-0 h-full`}>
                                             <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0" allow="autoplay" allowFullScreen></iframe>
                                         </div>
                                     )}
-                                    {(questionText || !isShared) && (
-                                        <div className={`w-full relative bg-white flex flex-col flex-grow ${questionFileUrl ? 'h-1/2' : 'h-full'}`}>
+                                    {questionText && (
+                                        <div className={`w-full relative bg-white flex flex-col flex-grow h-full`}>
                                             <textarea 
                                                 className={`absolute inset-0 w-full h-full p-4 resize-none outline-none custom-scrollbar text-sm leading-relaxed ${isShared ? 'bg-gray-50 text-gray-700' : 'bg-white text-black focus:ring-2 focus:ring-inset focus:ring-black'}`}
                                                 style={{ whiteSpace: 'pre-wrap' }}
@@ -1002,7 +1038,7 @@
                             </div>
                         )}
 
-                        {(questionFileUrl || questionText || !isShared) && previewOpen && (
+                        {(questionFileUrl || questionText) && previewOpen && (
                             <div 
                                 onMouseDown={handleDragStart}
                                 onTouchStart={handleDragStart}
@@ -1084,19 +1120,19 @@
                                 <button onClick={() => setStep('grading')} className="text-sm font-bold bg-blue-50 text-blue-600 px-4 py-1.5 no-round border border-blue-200 hover:bg-blue-100 whitespace-nowrap transition-colors">✏️ 修改解答</button>
                             )}
 
-                            {!isShared && (
+                            {!isShared && !questionText && (
                                 <button onClick={handleUpdateFileUrl} className={`${questionFileUrl ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'} px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
                                     {questionFileUrl ? '🔗 修改/移除網址' : '📎 貼上試卷網址'}
                                 </button>
                             )}
 
-                            {(questionFileUrl || questionText || !isShared) && previewOpen && (
+                            {(questionFileUrl || questionText) && previewOpen && (
                                 <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
                                     {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
                                 </button>
                             )}
 
-                            {(questionFileUrl || questionText || !isShared) && (
+                            {(questionFileUrl || questionText) && (
                                 <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
                                     {previewOpen ? '👀 暫時關閉預覽' : '👀 開啟預覽'}
                                 </button>
@@ -1116,7 +1152,7 @@
                             <div className="absolute inset-0 z-50" style={{ cursor: layoutMode === 'horizontal' ? 'col-resize' : 'row-resize' }}></div>
                         )}
 
-                        {(questionFileUrl || questionText || !isShared) && previewOpen && (
+                        {(questionFileUrl || questionText) && previewOpen && (
                             <div 
                                 className="bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0"
                                 style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
@@ -1124,7 +1160,7 @@
                                 <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
                                     <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
                                     <div className="flex space-x-3 items-center">
-                                        {!isShared && (
+                                        {!isShared && questionText && (
                                             <button onClick={handleSyncQuestionText} className="text-xs bg-white text-blue-600 border border-blue-200 px-2 py-1 no-round font-bold hover:bg-blue-50 transition-colors" title="將文字同步給已下載的好友">
                                                 🔄 同步文字
                                             </button>
@@ -1136,12 +1172,12 @@
                                 </div>
                                 <div className="flex-grow w-full relative bg-gray-200 flex flex-col overflow-hidden">
                                     {questionFileUrl && (
-                                        <div className={`w-full relative shrink-0 ${(questionText || !isShared) ? 'h-1/2 border-b-2 border-gray-300' : 'h-full'}`}>
+                                        <div className={`w-full relative shrink-0 h-full`}>
                                             <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0" allow="autoplay" allowFullScreen></iframe>
                                         </div>
                                     )}
-                                    {(questionText || !isShared) && (
-                                        <div className={`w-full relative bg-white flex flex-col flex-grow ${questionFileUrl ? 'h-1/2' : 'h-full'}`}>
+                                    {questionText && (
+                                        <div className={`w-full relative bg-white flex flex-col flex-grow h-full`}>
                                             <textarea 
                                                 className={`absolute inset-0 w-full h-full p-4 resize-none outline-none custom-scrollbar text-sm leading-relaxed ${isShared ? 'bg-gray-50 text-gray-700' : 'bg-white text-black focus:ring-2 focus:ring-inset focus:ring-black'}`}
                                                 style={{ whiteSpace: 'pre-wrap' }}
@@ -1157,7 +1193,7 @@
                             </div>
                         )}
 
-                        {(questionFileUrl || questionText || !isShared) && previewOpen && (
+                        {(questionFileUrl || questionText) && previewOpen && (
                             <div 
                                 onMouseDown={handleDragStart}
                                 onTouchStart={handleDragStart}
@@ -1244,11 +1280,13 @@
             const showPrompt = (message, defaultValue, onConfirm) => setDialog({ type: 'prompt', message, defaultValue, onConfirm });
             const closeDialog = () => setDialog(null);
 
+            // 修改此處：透過 onSnapshot 綁定監聽，確保資料能即時更新全局紅點狀態
             useEffect(() => {
-                const unsubscribe = auth.onAuthStateChanged(usr => {
+                let unsubProfile = null;
+                const unsubscribeAuth = auth.onAuthStateChanged(usr => {
                     setUser(usr);
                     if (usr) {
-                        db.collection('users').doc(usr.uid).get().then(doc => {
+                        unsubProfile = db.collection('users').doc(usr.uid).onSnapshot(doc => {
                             if (doc.exists) {
                                 setUserProfile(doc.data());
                             } else {
@@ -1256,18 +1294,22 @@
                                 db.collection('users').doc(usr.uid).set(newProfile)
                                   .then(() => setUserProfile(newProfile));
                             }
-                        }).catch(err => {
+                            setLoadingUser(false);
+                        }, err => {
                             console.error("無法讀取資料庫", err);
                             showAlert("系統錯誤：無法讀取資料庫！\n請確定已開放 Firestore 讀寫權限。\n錯誤：" + err.message);
-                        }).finally(() => {
                             setLoadingUser(false);
                         });
                     } else {
                         setUserProfile(null);
                         setLoadingUser(false);
+                        if (unsubProfile) unsubProfile();
                     }
                 });
-                return () => unsubscribe();
+                return () => {
+                    unsubscribeAuth();
+                    if (unsubProfile) unsubProfile();
+                };
             }, []);
 
             const handleLogout = () => auth.signOut();
