@@ -45,7 +45,6 @@
 
         const { useState, useEffect, useRef } = React;
 
-        // --- 登入與註冊 ---
         function AuthScreen() {
             const [isSignUp, setIsSignUp] = useState(false);
             const [email, setEmail] = useState('');
@@ -61,7 +60,8 @@
                 
                 request.then((cred) => {
                     if (isSignUp) {
-                        return db.collection('users').doc(cred.user.uid).set({ email: email, friends: [] });
+                        return db.collection('users').doc(cred.user.uid).set({ email: email, friends: [] })
+                          .catch(err => alert("註冊成功，但建立資料庫檔案失敗 (請檢查 Firestore 權限): " + err.message));
                     }
                 })
                 .catch(err => alert('認證失敗：' + err.message))
@@ -84,14 +84,13 @@
             );
         }
 
-        // --- 設定暱稱 ---
         function ProfileSetup({ user, onComplete }) {
             const [name, setName] = useState('');
             const saveProfile = () => {
                 if(!name.trim()) return alert('請輸入暱稱');
                 db.collection('users').doc(user.uid).set({ displayName: name.trim() }, { merge: true })
                   .then(() => onComplete(name.trim()))
-                  .catch(e => alert('設定失敗：' + e.message));
+                  .catch(e => alert('設定失敗 (請檢查 Firestore 權限)：' + e.message));
             };
             return (
                 <div className="flex h-screen items-center justify-center p-4 bg-gray-50">
@@ -104,7 +103,6 @@
             );
         }
 
-        // --- 社交大廳 ---
         function SocialDashboard({ user, userProfile }) {
             const [friends, setFriends] = useState(userProfile.friends || []);
             const [searchEmail, setSearchEmail] = useState('');
@@ -263,7 +261,6 @@
             );
         }
 
-        // --- 測驗列表儀表板 ---
         function Dashboard({ user, userProfile, onStartNew, onContinueQuiz }) {
             const [records, setRecords] = useState([]);
             const [loading, setLoading] = useState(true);
@@ -275,13 +272,15 @@
                     .onSnapshot(snapshot => {
                         setRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                         setLoading(false);
+                    }, err => {
+                        console.error(err);
+                        setLoading(false);
                     });
                 return () => unsubscribe();
             }, [user]);
 
             const handleDelete = (id) => {
                 if(!confirm("確定要刪除這筆紀錄嗎？資料將無法恢復！")) return;
-                // 因為沒有真實檔案上傳，所以只要刪除資料庫紀錄即可
                 db.collection('users').doc(user.uid).collection('quizzes').doc(id).delete()
                 .catch(error => alert('刪除失敗：' + error.message));
             }
@@ -372,7 +371,6 @@
             );
         }
 
-        // --- 測驗系統 ---
         function QuizApp({ currentUser, activeQuizRecord, onBackToDashboard }) {
             const [quizId, setQuizId] = useState(activeQuizRecord?.id || null);
             const [step, setStep] = useState(activeQuizRecord?.results ? 'results' : (quizId ? 'answering' : 'setup'));
@@ -384,7 +382,6 @@
             const [results, setResults] = useState(activeQuizRecord?.results || null);
             const [questionFileUrl, setQuestionFileUrl] = useState(activeQuizRecord?.questionFileUrl || '');
 
-            // 判斷目前登入者是否為管理員
             const isAdmin = currentUser.email === ADMIN_EMAIL;
 
             useEffect(() => {
@@ -413,10 +410,9 @@
                 }).then(docRef => {
                     setQuizId(docRef.id);
                     setStep('answering');
-                }).catch(e => alert('建立紀錄失敗：' + e.message));
+                }).catch(e => alert('建立紀錄失敗 (請檢查 Firestore 權限)：' + e.message));
             };
 
-            // ★ 新增：輸入網址的邏輯
             const handleAddFileUrl = () => {
                 const url = prompt("請貼上試卷的公開網址 (例如 Google Drive 連結 或 Imgur 圖床網址)：\n注意：請確保該網址的權限已設為「知道連結的人皆可查看」", questionFileUrl || "");
                 if (url !== null && url.trim() !== "") {
@@ -480,8 +476,6 @@
                             <p className="text-xs text-gray-500 mt-1">進度: <span className="font-bold text-black">{userAnswers.filter(a=>a).length}</span> / {numQuestions}</p>
                         </div>
                         <div className="flex items-center space-x-2 flex-shrink-0">
-                            
-                            {/* ★ 改版後的網址連結區塊 ★ */}
                             {questionFileUrl ? (
                                 <div className="flex items-center space-x-1">
                                     <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="bg-gray-100 text-black px-4 py-2 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200">📎 檢視試卷</a>
@@ -494,7 +488,6 @@
                                     📎 貼上試卷網址
                                 </button>
                             ) : null}
-
                             <button onClick={handleResetProgress} className="bg-gray-100 text-gray-500 px-4 py-2 no-round font-bold hover:bg-gray-200 hover:text-red-600 text-sm hidden md:block">放棄作答</button>
                             <button onClick={() => setStep('grading')} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800">對答案</button>
                         </div>
@@ -560,7 +553,6 @@
             );
         }
 
-        // --- 主程式架構 ---
         function Main() {
             const [user, setUser] = useState(null);
             const [userProfile, setUserProfile] = useState(null);
@@ -568,12 +560,17 @@
             const [activeTab, setActiveTab] = useState('dashboard');
             const [activeQuizRecord, setActiveQuizRecord] = useState(null);
 
+            // ★ 加入了強制捕捉錯誤 (.catch)，避免權限被鎖住時畫面卡死
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(usr => {
                     setUser(usr);
                     if (usr) {
                         db.collection('users').doc(usr.uid).get().then(doc => {
                             if (doc.exists) setUserProfile(doc.data());
+                        }).catch(err => {
+                            console.error("無法讀取資料庫", err);
+                            alert("系統錯誤：無法讀取您的資料！\n請確定已前往 Firebase 開放 Firestore 的讀寫權限。\n詳細錯誤：" + err.message);
+                        }).finally(() => {
                             setLoadingUser(false);
                         });
                     } else {
