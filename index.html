@@ -17,29 +17,21 @@
     <style>
         .no-round { border-radius: 2px !important; }
         .break-avoid { break-inside: avoid; }
-        
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-        
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
         input, textarea, button { font-size: 16px !important; }
-        
         .locked-btn { cursor: not-allowed; opacity: 0.5; filter: grayscale(100%); }
-
-        /* Minecraft 仿真 UI 樣式 */
         .pixelated { image-rendering: pixelated; }
-        
         .mc-bg {
             background-color: #7d7d7d;
             background-image: url('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png');
             background-size: 64px;
             image-rendering: pixelated;
         }
-        
         .mc-ui {
             background-color: #c6c6c6;
             border: 4px solid;
@@ -49,14 +41,12 @@
             border-right-color: #555555;
             font-family: 'Courier New', Courier, monospace;
         }
-
         .mc-panel-dark {
             background-color: rgba(0, 0, 0, 0.65);
             border: 2px solid #111;
             box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.15);
             padding: 16px;
         }
-        
         .mc-btn {
             background-color: #c6c6c6;
             border: 4px solid;
@@ -68,7 +58,6 @@
             font-weight: bold;
             cursor: pointer;
         }
-        
         .mc-btn:active {
             border-top-color: #555555;
             border-left-color: #555555;
@@ -94,13 +83,18 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
+        // 啟動離線快取，解決讀取緩慢問題
+        try {
+            db.enablePersistence({ synchronizeTabs: true });
+        } catch (err) {
+            console.warn("無法啟動離線快取：", err);
+        }
+
         const { useState, useEffect, useRef } = React;
 
         const handleFocusScroll = (e) => {
             const target = e.target;
-            setTimeout(() => {
-                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 300);
+            setTimeout(() => { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 300);
         };
 
         const getEmbedUrl = (url) => {
@@ -122,21 +116,14 @@
 
         function McImg({ src, fallback, className }) {
             const [hasError, setHasError] = useState(false);
-            if (hasError) {
-                return <span className={`${className} inline-flex items-center justify-center`} style={{ fontSize: '1.2em', lineHeight: 1 }}>{fallback}</span>;
-            }
+            if (hasError) return <span className={`${className} inline-flex items-center justify-center`} style={{ fontSize: '1.2em' }}>{fallback}</span>;
             return <img src={src} className={className} onError={() => setHasError(true)} alt={fallback} />;
         }
 
         function DialogOverlay({ dialog, onClose }) {
             const [inputValue, setInputValue] = useState('');
-            
-            useEffect(() => {
-                if (dialog && dialog.type === 'prompt') setInputValue(dialog.defaultValue || '');
-            }, [dialog]);
-
+            useEffect(() => { if (dialog && dialog.type === 'prompt') setInputValue(dialog.defaultValue || ''); }, [dialog]);
             if (!dialog) return null;
-
             const handleConfirm = () => {
                 if (dialog.onConfirm) {
                     if (dialog.type === 'prompt') dialog.onConfirm(inputValue);
@@ -144,34 +131,21 @@
                 }
                 onClose();
             };
-
             return (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
-                    <div className="bg-white p-6 w-full max-w-sm no-round shadow-2xl transform transition-all">
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[100] p-4">
+                    <div className="bg-white p-6 w-full max-w-sm no-round shadow-2xl transform transition-all border-t-4 border-black">
                         <h3 className="font-bold text-lg mb-3 flex items-center">
                             {dialog.type === 'alert' ? 'ℹ️ 系統提示' : '🤔 請確認'}
                         </h3>
                         <p className="mb-5 text-gray-600 text-sm whitespace-pre-wrap leading-relaxed">{dialog.message}</p>
-                        
                         {dialog.type === 'prompt' && (
-                            <input 
-                                type="text" 
-                                className="w-full mb-5 p-3 border border-gray-300 no-round outline-none focus:border-black text-sm" 
-                                value={inputValue} 
-                                onChange={e => setInputValue(e.target.value)} 
-                                autoFocus 
-                            />
+                            <input type="text" className="w-full mb-5 p-3 border border-gray-300 no-round outline-none focus:border-black text-sm" value={inputValue} onChange={e => setInputValue(e.target.value)} autoFocus />
                         )}
-                        
                         <div className="flex justify-end space-x-3 mt-2 border-t border-gray-100 pt-4">
                             {(dialog.type === 'confirm' || dialog.type === 'prompt') && (
-                                <button onClick={onClose} className="bg-gray-100 text-gray-600 px-5 py-2 no-round font-bold text-sm hover:bg-gray-200 transition-colors">
-                                    取消
-                                </button>
+                                <button onClick={onClose} className="bg-gray-100 text-gray-600 px-5 py-2 no-round font-bold text-sm hover:bg-gray-200">取消</button>
                             )}
-                            <button onClick={handleConfirm} className="bg-black text-white px-5 py-2 no-round font-bold text-sm hover:bg-gray-800 transition-colors">
-                                確定
-                            </button>
+                            <button onClick={handleConfirm} className="bg-black text-white px-5 py-2 no-round font-bold text-sm hover:bg-gray-800">確定</button>
                         </div>
                     </div>
                 </div>
@@ -181,12 +155,12 @@
         function TutorialOverlay({ onComplete }) {
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[70] p-4">
-                    <div className="bg-white p-8 w-full max-w-lg no-round shadow-2xl relative border-t-4 border-black animate-fade-in-up">
+                    <div className="bg-white p-8 w-full max-w-lg no-round shadow-2xl relative border-t-4 border-black">
                         <h2 className="text-2xl font-black mb-6 text-center tracking-wider">🎉 歡迎加入 JJay 線上測驗</h2>
                         <div className="space-y-6 text-gray-700 mb-8">
                             <div>
                                 <p className="font-bold border-l-4 border-black pl-3 text-lg">📖 我的題庫</p>
-                                <p className="pl-4 mt-1 text-sm text-gray-500 leading-relaxed">首創雙螢幕排版，貼上雲端題本或純文字，左邊看題、右邊畫卡，並支援資料夾歸檔你的專屬題庫。</p>
+                                <p className="pl-4 mt-1 text-sm text-gray-500 leading-relaxed">首創雙螢幕排版，貼上雲端題本或純文字，左邊看題、右邊畫卡，並支援資料夾與測驗代碼功能。</p>
                             </div>
                             <div>
                                 <p className="font-bold border-l-4 border-blue-500 pl-3 text-lg">💬 社群交流</p>
@@ -214,21 +188,25 @@
             const handleAuth = (e) => {
                 e.preventDefault();
                 setLoading(true);
+                const safeEmail = email.trim().toLowerCase(); // 強制轉小寫，解決好友搜不到的 Bug
                 const request = isSignUp 
-                    ? auth.createUserWithEmailAndPassword(email, password)
-                    : auth.signInWithEmailAndPassword(email, password);
+                    ? auth.createUserWithEmailAndPassword(safeEmail, password)
+                    : auth.signInWithEmailAndPassword(safeEmail, password);
                 
                 request.then((cred) => {
                     if (isSignUp) {
                         const initMcData = { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
                         return db.collection('users').doc(cred.user.uid).set({ 
-                            email: email.toLowerCase(), 
+                            email: safeEmail, 
                             friends: [], 
                             unreadChats: {}, 
                             folders: ['未分類'], 
                             mcData: initMcData,
                             hasSeenTutorial: false 
                         }).catch(err => showAlert("註冊成功，但建立資料庫檔案失敗: " + err.message));
+                    } else {
+                        // 登入時也同步確保資料庫信箱是小寫，修正舊用戶 Bug
+                        db.collection('users').doc(cred.user.uid).set({ email: safeEmail }, { merge: true });
                     }
                 })
                 .catch(err => showAlert('認證失敗：' + err.message))
@@ -278,7 +256,6 @@
             
             const bgmRef = useRef(null);
             
-            // 邏輯長寬 (固定值，不受螢幕解析度影響)
             const LOG_W = 800;
             const LOG_H = 350;
             
@@ -303,13 +280,12 @@
                 husk: new Image()
             });
 
-            // 初始化時設定高解析度 Canvas
             useEffect(() => {
                 images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
                 images.current.stone.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png";
                 images.current.diamond.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png";
                 images.current.zombie.src = "https://minotar.net/helm/Zombie/64.png";
-                images.current.husk.src = "https://minotar.net/helm/Husk/64.png"; // 沙漠殭屍
+                images.current.husk.src = "https://minotar.net/helm/Husk/64.png";
                 
                 bgmRef.current = new Audio("https://raw.githubusercontent.com/libgdx/libgdx-demo-superjumper/master/android/assets/data/music.mp3");
                 bgmRef.current.loop = true;
@@ -319,7 +295,6 @@
                 if (cvs) {
                     const ctx = cvs.getContext('2d');
                     const dpr = window.devicePixelRatio || 1;
-                    // 將實際像素乘上螢幕密度，解決手機失真
                     cvs.width = LOG_W * dpr;
                     cvs.height = LOG_H * dpr;
                     ctx.scale(dpr, dpr);
@@ -363,13 +338,6 @@
                 if (p.jumps < 2) {
                     p.dy = -11.5; 
                     p.jumps++;
-                    
-                    // 當玩家跳躍時，畫面中所有的沙漠殭屍 (husk) 也會跟著跳！
-                    gameRef.current.obstacles.forEach(obs => {
-                        if (obs.type === 'husk' && obs.y >= gameRef.current.groundY - obs.h - 10) {
-                            obs.dy = -11.5; 
-                        }
-                    });
                 }
             };
 
@@ -378,9 +346,9 @@
                 if (!cvs) return;
                 const state = gameRef.current;
                 
-                // === 鎖定 60 FPS 機制 ===
+                // 鎖定 60 FPS
                 if (!currentTime) currentTime = performance.now();
-                const fpsInterval = 1000 / 60; // 16.67ms
+                const fpsInterval = 1000 / 60;
                 const elapsed = currentTime - state.lastFrameTime;
 
                 if (elapsed < fpsInterval) {
@@ -388,12 +356,11 @@
                     return;
                 }
                 state.lastFrameTime = currentTime - (elapsed % fpsInterval);
-                // =========================
 
                 const ctx = cvs.getContext('2d');
                 let prevBottom = state.player.y + state.player.h; 
                 
-                state.player.dy += 0.7; // 玩家重力
+                state.player.dy += 0.7; 
                 state.player.y += state.player.dy;
 
                 let inPit = false;
@@ -421,19 +388,18 @@
                             state.player.dy = 0;
                             state.player.jumps = 0;
                         } else {
-                            // 前一幀在地面下，代表撞到坑洞側邊的牆壁
                             dead = true;
                         }
                     }
                 }
 
-                // 掉出畫面死亡
+                // 掉出畫面
                 if (state.player.y > LOG_H) {
                     endGame();
                     return;
                 }
 
-                // 更新物件位置與判定碰撞
+                // 物件位移與碰撞
                 for (let i = 0; i < state.obstacles.length; i++) {
                     let obs = state.obstacles[i];
                     
@@ -442,22 +408,28 @@
                         continue;
                     }
 
-                    if (obs.type === 'zombie' || obs.type === 'husk') {
-                        obs.x -= (state.speed + 1.2); // 怪物走得比地板快一點
+                    if (obs.type === 'zombie') {
+                        obs.x -= (state.speed + 1.2); 
+                    } else if (obs.type === 'husk') {
+                        obs.x -= (state.speed + 1.2); 
                         
-                        // 沙漠殭屍自己的獨立重力系統
-                        if (obs.type === 'husk') {
-                            obs.dy += 0.7;
-                            obs.y += obs.dy;
-                            if (obs.y + obs.h >= state.groundY) {
-                                obs.y = state.groundY - obs.h;
-                                obs.dy = 0;
-                            }
+                        // Husk AI: 玩家在地面的時候，主動跳躍閃避玩家！
+                        let dist = obs.x - (state.player.x + state.player.w);
+                        if (dist > 0 && dist < 120 && state.player.y >= state.groundY - 10 && obs.y >= state.groundY - obs.h - 5) {
+                            obs.dy = -13; // 飛越玩家
+                        }
+
+                        obs.dy += 0.7;
+                        obs.y += obs.dy;
+                        if (obs.y + obs.h >= state.groundY) {
+                            obs.y = state.groundY - obs.h;
+                            obs.dy = 0;
                         }
                     } else {
                         obs.x -= state.speed;
                     }
 
+                    // AABB 碰撞
                     if (
                         state.player.x + 8 < obs.x + obs.w - 8 &&
                         state.player.x + state.player.w - 8 > obs.x + 8 &&
@@ -479,7 +451,7 @@
                     }
                 }
 
-                // 鑽石碰撞
+                // 吃鑽石
                 state.diamonds.forEach(d => {
                     d.x -= state.speed;
                     if (!d.collected &&
@@ -505,8 +477,14 @@
                     state.speed += 0.2;
                 }
 
-                // 隨機生成地形與障礙
+                // 產生地形
+                // 根據超大坑洞計算安全的間隔
                 let spawnInterval = Math.max(40, 100 - state.speed * 4);
+                const lastObs = state.obstacles[state.obstacles.length - 1];
+                if (lastObs && lastObs.type === 'pit') {
+                    spawnInterval = Math.max(spawnInterval, Math.floor((lastObs.w / state.speed) + 20));
+                }
+
                 if (state.frames - state.lastSpawnFrame > spawnInterval) {
                     if (Math.random() < 0.55) { 
                         state.lastSpawnFrame = state.frames;
@@ -514,21 +492,23 @@
                         if (rand < 0.3) {
                             state.obstacles.push({ type: 'stone', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
                         } else if (rand < 0.6) {
-                            state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 150 + 140, h: 100 });
+                            // 坑洞變得極寬
+                            state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 150 + 150, h: 100 });
                         } else if (rand < 0.8) {
                             state.obstacles.push({ type: 'zombie', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
                         } else {
-                            state.obstacles.push({ type: 'husk', x: LOG_W, y: state.groundY - 40, w: 40, h: 40, dy: 0 }); // 沙漠殭屍
+                            state.obstacles.push({ type: 'husk', x: LOG_W, y: state.groundY - 40, w: 40, h: 40, dy: 0 }); 
                         }
                     }
                 }
                 
-                if (state.frames % Math.floor(Math.random() * 400 + 300) === 0) {
+                // 鑽石極度稀有化
+                if (state.frames % Math.floor(Math.random() * 300 + 400) === 0) {
                     let dY = state.groundY - 50 - Math.random() * 100;
                     state.diamonds.push({ x: LOG_W, y: dY, w: 24, h: 24, collected: false });
                 }
 
-                // --- 渲染畫面 ---
+                // 渲染
                 ctx.clearRect(0, 0, LOG_W, LOG_H);
                 
                 ctx.fillStyle = '#5A5A5A';
@@ -599,7 +579,6 @@
                             onMouseDown={(e) => { e.preventDefault(); if(gameState==='playing') jump(); }}
                             onTouchStart={(e) => { e.preventDefault(); if(gameState==='playing') jump(); }}
                         >
-                            {/* 加入 w-full 跟 h-full 以及 style 確保 RWD 時正常縮放 */}
                             <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} className="pixelated block"></canvas>
                             
                             {gameState === 'start' && (
@@ -624,7 +603,7 @@
                         <p className="text-center text-gray-400 text-sm mt-3 font-bold tracking-widest leading-relaxed">
                             點擊/觸控以跳躍 (可二段跳) <br/> 
                             <span className="text-xs text-gray-500">
-                                避開坑洞與綠殭屍。沙漠殭屍(黃)會模仿你跳躍，請利用二段跳或踩石頭越過他！撞牆必死！
+                                你可以踩在石頭上！沙漠殭屍(黃色)靠近時會主動飛過你頭頂，站在地上不動即可閃避。
                             </span>
                         </p>
                     </div>
@@ -900,7 +879,7 @@
             }, [activeChat, user.uid, messageLimit]);
 
             const handleAddFriend = () => {
-                const cleanEmail = searchEmail.trim().toLowerCase();
+                const cleanEmail = searchEmail.trim().toLowerCase(); // 統一小寫處理
                 if(!cleanEmail) return;
                 if(cleanEmail === user.email.toLowerCase()) return showAlert('不能加自己為好友！');
                 
@@ -1075,7 +1054,10 @@
                                                                     <p className={`mb-2 font-bold ${isMe ? 'text-yellow-300' : 'text-yellow-600'}`}>🏆 戰績炫耀</p>
                                                                     <p className="mb-1 text-sm font-bold truncate">{msg.scoreData?.testName}</p>
                                                                     <h3 className={`text-3xl font-black mb-1 ${isMe ? 'text-white' : 'text-red-600'}`}>{msg.scoreData?.score} 分</h3>
-                                                                    <p className={`text-xs ${isMe ? 'text-gray-300' : 'text-gray-500'}`}>答對 {msg.scoreData?.correctCount} / {msg.scoreData?.total} 題</p>
+                                                                    <p className={`text-xs mb-3 ${isMe ? 'text-gray-300' : 'text-gray-500'}`}>答對 {msg.scoreData?.correctCount} / {msg.scoreData?.total} 題</p>
+                                                                    {!isMe && msg.quizData && (
+                                                                        <button onClick={() => downloadSharedQuiz(msg.quizData)} className="bg-white text-black px-4 py-1.5 no-round font-bold text-xs border border-gray-200 hover:bg-gray-100 w-full transition-colors">下載這份試卷</button>
+                                                                    )}
                                                                 </div>
                                                             );
                                                         } else if (msg.type === 'quiz_share') {
@@ -1122,7 +1104,6 @@
             const [showShareModal, setShowShareModal] = useState(null);
             const [showMoveModal, setShowMoveModal] = useState(null);
 
-            // 強制讓 userFolders 一定包含未分類，解決舊資料或不同步的問題
             const userFolders = Array.from(new Set(['未分類', ...(userProfile.folders || [])]));
             const [currentFolder, setCurrentFolder] = useState('未分類');
             
@@ -1131,10 +1112,10 @@
             useEffect(() => {
                 let isMounted = true;
                 
-                // 防呆機制：如果 4 秒後還是 loading，就強制解除 loading 狀態避免卡死
+                // 防呆：超過 3 秒如果還沒讀取成功，就強制解除 Loading，讓使用者可以操作
                 let fallbackTimer = setTimeout(() => {
                     if (isMounted) setLoading(false);
-                }, 4000);
+                }, 3000);
 
                 const unsubscribe = db.collection('users').doc(user.uid).collection('quizzes')
                     .orderBy('createdAt', 'desc')
@@ -1186,6 +1167,48 @@
                     setShowMoveModal(null);
                 })
                 .catch(e => showAlert('移動失敗：' + e.message));
+            };
+
+            const handleImportCode = () => {
+                showPrompt("請輸入好友分享的測驗代碼：", "", (code) => {
+                    if(!code || !code.trim()) return;
+                    try {
+                        const decoded = atob(code.trim());
+                        const [ownerId, qId] = decoded.split('_');
+                        if(!ownerId || !qId) throw new Error("無效代碼");
+                        
+                        db.collection('users').doc(ownerId).collection('quizzes').doc(qId).get()
+                        .then(doc => {
+                            if(!doc.exists) throw new Error('找不到該試卷，可能已失效或被擁有者刪除！');
+                            const data = doc.data();
+                            const emptyAnswers = Array(Number(data.numQuestions)).fill('');
+                            const emptyStarred = Array(Number(data.numQuestions)).fill(false);
+                            return db.collection('users').doc(user.uid).collection('quizzes').add({
+                                testName: data.testName + ' (來自代碼)',
+                                numQuestions: data.numQuestions,
+                                questionFileUrl: data.questionFileUrl || '',
+                                questionText: data.questionText || '',
+                                correctAnswersInput: data.correctAnswersInput || '', 
+                                userAnswers: emptyAnswers,
+                                starred: emptyStarred,
+                                hasTimer: data.hasTimer || false,
+                                timeLimit: data.timeLimit || null,
+                                timeRemaining: data.hasTimer ? (data.timeLimit * 60) : null,
+                                isShared: true, 
+                                folder: '未分類', 
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            }).then(newDocRef => {
+                                return db.collection('users').doc(ownerId).collection('quizzes').doc(qId).update({
+                                    sharedTo: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid, quizId: newDocRef.id })
+                                });
+                            });
+                        })
+                        .then(() => showAlert('✅ 已成功匯入！\n試卷已加入「未分類」資料夾中，請準備好後點擊進入測驗。'))
+                        .catch(e => showAlert('匯入失敗：' + e.message));
+                    } catch(e) {
+                        showAlert('❌ 無效的代碼格式！請確認複製的內容是否完整。');
+                    }
+                });
             };
 
             const shareToFriend = (friend) => {
@@ -1257,6 +1280,9 @@
                         <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm font-bold bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 no-round whitespace-nowrap transition-colors">
                             + 新增資料夾
                         </button>
+                        <button onClick={handleImportCode} className="px-3 py-1.5 text-sm font-bold bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 no-round whitespace-nowrap transition-colors">
+                            📥 輸入代碼
+                        </button>
                     </div>
 
                     <div className="flex items-center space-x-4 mb-6 shrink-0 bg-gray-50 border border-gray-200 px-3 py-2 no-round">
@@ -1276,7 +1302,7 @@
                     </div>
 
                     {loading ? (
-                        <div className="text-center text-gray-500 py-10 font-bold animate-pulse">讀取雲端資料中...</div>
+                        <div className="text-center text-gray-500 py-10 font-bold animate-pulse">讀取本地快取與雲端資料中...</div>
                     ) : displayedRecords.length === 0 ? (
                         <div className="bg-white text-center text-gray-500 py-16 border border-gray-200 no-round shadow-sm">此資料夾尚無符合篩選條件的測驗紀錄。</div>
                     ) : (
@@ -1685,25 +1711,35 @@
                  });
             };
 
+            // 炫耀功能：結合分享試卷資料
             const shareScoreToFriend = (friend) => {
                 const chatId = [currentUser.uid, friend.uid].sort().join('_');
                 db.collection('chats').doc(chatId).collection('messages').add({
                     senderId: currentUser.uid,
                     senderName: userProfile.displayName,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    type: 'score_share',
+                    type: 'score_share', // 沿用 score_share 以利相容
                     read: false,
                     scoreData: {
                         testName: testName,
                         score: results.score,
                         correctCount: results.correctCount,
                         total: results.total
+                    },
+                    // 將試卷資料也一併放入
+                    quizData: {
+                        ownerId: currentUser.uid,
+                        quizId: quizId,
+                        testName: testName,
+                        questionFileUrl: questionFileUrl || '',
+                        questionText: questionText || '',
+                        correctAnswersInput: correctAnswersInput || ''
                     }
                 }).then(() => {
                     db.collection('users').doc(friend.uid).set({
                         unreadChats: { [currentUser.uid]: true }
                     }, { merge: true });
-                    showAlert('✅ 已成功向 ' + friend.name + ' 炫耀戰績！');
+                    showAlert('✅ 已成功向 ' + friend.name + ' 炫耀戰績，對方可以直接下載試卷！');
                     setShowShareScoreModal(false);
                 }).catch(e => showAlert('炫耀失敗：' + e.message));
             };
@@ -1941,8 +1977,16 @@
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
+                            {/* 新增測驗代碼按鈕 */}
                             {!isShared && (
-                                <button onClick={() => setStep('grading')} className="text-sm font-bold bg-blue-50 text-blue-600 px-4 py-1.5 no-round border border-blue-200 hover:bg-blue-100 whitespace-nowrap transition-colors">✏️ 修改解答</button>
+                                <button onClick={() => {
+                                    const code = btoa(`${currentUser.uid}_${quizId}`);
+                                    navigator.clipboard.writeText(code).then(() => showAlert(`✅ 測驗代碼已複製！\n\n您的代碼：\n${code}\n\n將此代碼傳給朋友，他們可在題庫點擊「📥 輸入代碼」直接下載。`));
+                                }} className="text-sm font-bold bg-blue-50 text-blue-600 px-4 py-1.5 no-round border border-blue-200 hover:bg-blue-100 whitespace-nowrap transition-colors">🔑 複製代碼</button>
+                            )}
+
+                            {!isShared && (
+                                <button onClick={() => setStep('grading')} className="text-sm font-bold bg-gray-100 text-gray-700 px-4 py-1.5 no-round border border-gray-200 hover:bg-gray-200 whitespace-nowrap transition-colors">✏️ 修改解答</button>
                             )}
 
                             {!isShared && !questionText && (
@@ -1963,7 +2007,7 @@
                                 </button>
                             )}
                             
-                            <button onClick={() => setShowShareScoreModal(true)} className="text-sm font-bold bg-yellow-50 text-yellow-600 px-4 py-1.5 no-round border border-yellow-200 hover:bg-yellow-100 whitespace-nowrap transition-colors">📢 炫耀戰績</button>
+                            <button onClick={() => setShowShareScoreModal(true)} className="text-sm font-bold bg-yellow-50 text-yellow-600 px-4 py-1.5 no-round border border-yellow-200 hover:bg-yellow-100 whitespace-nowrap transition-colors">📢 炫耀並分享</button>
                             <button onClick={handleRetake} className="text-sm font-bold bg-orange-50 text-orange-600 px-4 py-1.5 no-round border border-orange-200 hover:bg-orange-100 whitespace-nowrap transition-colors">再做一次</button>
                             <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-1.5 no-round hover:bg-gray-800 whitespace-nowrap transition-colors">返回列表</button>
                         </div>
@@ -2075,7 +2119,7 @@
                     {showShareScoreModal && (
                         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
                             <div className="bg-white p-6 w-full max-w-sm no-round shadow-xl">
-                                <h3 className="font-bold text-lg mb-4">🏆 選擇要炫耀的好友</h3>
+                                <h3 className="font-bold text-lg mb-4">🏆 選擇要炫耀並分享的好友</h3>
                                 <div className="max-h-60 overflow-y-auto mb-4 border border-gray-200 custom-scrollbar">
                                     {(userProfile.friends || []).length === 0 ? <p className="p-4 text-sm text-gray-400">目前還沒有好友喔</p> : null}
                                     {(userProfile.friends || []).map(f => (
