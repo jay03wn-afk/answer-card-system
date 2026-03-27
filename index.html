@@ -260,6 +260,28 @@
                 });
             };
 
+            // ★ 新增：擲骰子功能
+            const rollDice = () => {
+                if(!activeChat) return;
+                const result = Math.floor(Math.random() * 6) + 1;
+                const faces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+                const chatId = getChatId(user.uid, activeChat.uid);
+                
+                db.collection('chats').doc(chatId).collection('messages').add({
+                    text: `擲出了 ${result} 點！`,
+                    senderId: user.uid,
+                    senderName: userProfile.displayName,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    type: 'game_dice',
+                    diceResult: result,
+                    diceFace: faces[result - 1]
+                }).then(() => {
+                    db.collection('users').doc(activeChat.uid).set({
+                        unreadChats: { [user.uid]: true }
+                    }, { merge: true });
+                });
+            };
+
             const downloadSharedQuiz = (quizData) => {
                 db.collection('users').doc(quizData.ownerId).collection('quizzes').doc(quizData.quizId).get()
                 .then(doc => {
@@ -302,7 +324,7 @@
                                         <div className="font-bold text-sm truncate">{f.name}</div>
                                         <div className="text-xs text-gray-400 truncate">{f.email}</div>
                                     </div>
-                                    {userProfile && userProfile.unreadChats && userProfile.unreadChats[f.uid] && (
+                                    {userProfile?.unreadChats?.[f.uid] && (
                                         <div className="w-2.5 h-2.5 bg-red-500 rounded-full shrink-0"></div>
                                     )}
                                 </div>
@@ -325,6 +347,18 @@
                                                 <div className={`max-w-[70%] p-3 text-sm no-round ${isMe ? 'bg-black text-white' : 'bg-white border border-gray-200 text-black shadow-sm'}`}>
                                                     {msg.type === 'text' ? (
                                                         <p>{msg.text}</p>
+                                                    ) : msg.type === 'game_dice' ? (
+                                                        <div className="text-center py-2 px-4">
+                                                            <span className="text-5xl leading-none">{msg.diceFace}</span>
+                                                            <p className="mt-2 font-bold">{msg.text}</p>
+                                                        </div>
+                                                    ) : msg.type === 'score_share' ? (
+                                                        <div className="text-center px-2 py-1">
+                                                            <p className={`mb-2 font-bold ${isMe ? 'text-yellow-300' : 'text-yellow-600'}`}>🏆 戰績炫耀</p>
+                                                            <p className="mb-1 text-sm font-bold truncate">{msg.scoreData.testName}</p>
+                                                            <h3 className={`text-3xl font-black mb-1 ${isMe ? 'text-white' : 'text-red-600'}`}>{msg.scoreData.score} 分</h3>
+                                                            <p className={`text-xs ${isMe ? 'text-gray-300' : 'text-gray-500'}`}>答對 {msg.scoreData.correctCount} / {msg.scoreData.total} 題</p>
+                                                        </div>
                                                     ) : (
                                                         <div className="text-center">
                                                             <p className="mb-2 font-bold text-orange-400">📝 分享了一份試卷</p>
@@ -340,9 +374,10 @@
                                     })}
                                     <div ref={messagesEndRef} />
                                 </div>
-                                <form onSubmit={sendMessage} className="p-3 border-t border-gray-200 flex space-x-2 bg-white shrink-0">
+                                <form onSubmit={sendMessage} className="p-3 border-t border-gray-200 flex space-x-2 bg-white shrink-0 items-center">
+                                    <button type="button" onClick={rollDice} className="bg-gray-100 text-xl px-4 py-2 no-round border border-gray-300 hover:bg-gray-200 transition-colors" title="擲骰子比運氣">🎲</button>
                                     <input type="text" placeholder="輸入訊息..." className="flex-grow p-2 border border-gray-300 no-round outline-none" value={newMessage} onChange={e=>setNewMessage(e.target.value)} onFocus={handleFocusScroll} />
-                                    <button type="submit" className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800 transition-colors">傳送</button>
+                                    <button type="submit" className="bg-black text-white px-5 py-2 no-round font-bold hover:bg-gray-800 transition-colors">傳送</button>
                                 </form>
                             </>
                         ) : (
@@ -468,7 +503,7 @@
             );
         }
 
-        function QuizApp({ currentUser, activeQuizRecord, onBackToDashboard, showAlert, showConfirm, showPrompt }) {
+        function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard, showAlert, showConfirm, showPrompt }) {
             const initialRecord = activeQuizRecord || {};
             
             const [quizId, setQuizId] = useState(initialRecord.id || null);
@@ -480,9 +515,8 @@
             const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
             const [results, setResults] = useState(initialRecord.results || null);
             const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
-            const isShared = initialRecord.isShared === true;
             
-            // ★ 可調整雙視窗排版的 State (版面配置、拖曳狀態)
+            const isShared = initialRecord.isShared === true;
             const [layoutMode, setLayoutMode] = useState('horizontal'); 
             const [splitRatio, setSplitRatio] = useState(50);
             const [isDragging, setIsDragging] = useState(false);
@@ -490,6 +524,7 @@
             const splitContainerRef = useRef(null);
 
             const [showOnlyWrong, setShowOnlyWrong] = useState(false);
+            const [showShareScoreModal, setShowShareScoreModal] = useState(false);
 
             useEffect(() => {
                 if (currentUser && quizId && (step === 'answering' || step === 'setup' || step === 'results')) {
@@ -504,7 +539,6 @@
                 }
             }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, currentUser, quizId, step]);
 
-            // ★ 拖曳改變畫面大小的處理邏輯
             const handleDragStart = (e) => setIsDragging(true);
 
             useEffect(() => {
@@ -524,7 +558,7 @@
                         newRatio = (offsetY / containerRect.height) * 100;
                     }
                     
-                    newRatio = Math.max(20, Math.min(newRatio, 80)); // 限制比例在 20% ~ 80% 之間
+                    newRatio = Math.max(20, Math.min(newRatio, 80));
                     setSplitRatio(newRatio);
                 };
 
@@ -637,6 +671,29 @@
                  });
             };
 
+            // ★ 新增：分享戰績函式
+            const shareScoreToFriend = (friend) => {
+                const chatId = [currentUser.uid, friend.uid].sort().join('_');
+                db.collection('chats').doc(chatId).collection('messages').add({
+                    senderId: currentUser.uid,
+                    senderName: userProfile.displayName,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    type: 'score_share',
+                    scoreData: {
+                        testName: testName,
+                        score: results.score,
+                        correctCount: results.correctCount,
+                        total: results.total
+                    }
+                }).then(() => {
+                    db.collection('users').doc(friend.uid).set({
+                        unreadChats: { [currentUser.uid]: true }
+                    }, { merge: true });
+                    showAlert('✅ 已成功向 ' + friend.name + ' 炫耀戰績！');
+                    setShowShareScoreModal(false);
+                }).catch(e => showAlert('炫耀失敗：' + e.message));
+            };
+
             if (step === 'setup') return (
                 <div className="flex flex-col items-center justify-center p-4 h-[100dvh] overflow-y-auto relative">
                     <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">← 返回列表</button>
@@ -651,8 +708,6 @@
 
             if (step === 'answering') return (
                 <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 w-full overflow-hidden">
-                    
-                    {/* 頂部操作列 */}
                     <div className="bg-white p-3 sm:p-4 shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10">
                         <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
                             <button onClick={onBackToDashboard} className="mr-3 text-gray-500 hover:text-black font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">← 返回</button>
@@ -663,7 +718,6 @@
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
-                            {/* ★ 新增：排版切換按鈕 */}
                             {questionFileUrl && previewOpen && (
                                 <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
                                     {layoutMode === 'horizontal' ? '🔄 切換為上下排列' : '🔄 切換為左右排列'}
@@ -689,12 +743,10 @@
                         </div>
                     </div>
                     
-                    {/* ★ 主要分割區域 (可拖曳縮放) */}
                     <div 
                         ref={splitContainerRef}
-                        className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full`}
+                        className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full mt-2 sm:mt-4`}
                     >
-                        {/* 拖曳時的隱形保護罩，防止滑鼠陷入 iframe */}
                         {isDragging && (
                             <div className="absolute inset-0 z-50" style={{ cursor: layoutMode === 'horizontal' ? 'col-resize' : 'row-resize' }}></div>
                         )}
@@ -714,7 +766,6 @@
                             </div>
                         )}
 
-                        {/* ★ 拖曳拉桿 (Resizer) */}
                         {questionFileUrl && previewOpen && (
                             <div 
                                 onMouseDown={handleDragStart}
@@ -730,7 +781,6 @@
                                 <span className="font-bold text-xs text-gray-600">✏️ 答案卡</span>
                             </div>
                             <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white">
-                                {/* ★ 導入流體網格 (Auto-fill Grid) 防擠壓排版 */}
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px 16px' }}>
                                     {userAnswers.map((ans, i) => (
                                         <div key={i} className="break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 hover:bg-gray-50 pr-2">
@@ -765,10 +815,11 @@
             );
 
             if (step === 'results') return (
-                <div className="max-w-4xl mx-auto p-4 pt-6 h-[100dvh] overflow-y-auto custom-scrollbar pb-10">
-                    <div className="bg-white p-4 border border-gray-200 shadow-sm flex justify-between items-center mb-6 no-round shrink-0">
+                <div className="max-w-4xl mx-auto p-4 pt-6 h-[100dvh] overflow-y-auto custom-scrollbar pb-10 relative">
+                    <div className="bg-white p-4 border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 no-round shrink-0 gap-3">
                         <h2 className="font-bold text-gray-800 truncate pr-4">{testName || '未命名'}</h2>
-                        <div className="flex space-x-2">
+                        <div className="flex flex-wrap gap-2">
+                            <button onClick={() => setShowShareScoreModal(true)} className="text-sm font-bold bg-yellow-50 text-yellow-600 px-4 py-2 no-round border border-yellow-200 hover:bg-yellow-100 whitespace-nowrap transition-colors">📢 炫耀戰績</button>
                             <button onClick={handleRetake} className="text-sm font-bold bg-orange-50 text-orange-600 px-4 py-2 no-round border border-orange-200 hover:bg-orange-100 whitespace-nowrap transition-colors">再做一次</button>
                             <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-2 no-round hover:bg-gray-800 whitespace-nowrap transition-colors">返回列表</button>
                         </div>
@@ -795,6 +846,24 @@
                             ))}
                         </div>
                     </div>
+
+                    {/* ★ 炫耀戰績的對話框 */}
+                    {showShareScoreModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white p-6 w-full max-w-sm no-round shadow-xl">
+                                <h3 className="font-bold text-lg mb-4">🏆 選擇要炫耀的好友</h3>
+                                <div className="max-h-60 overflow-y-auto mb-4 border border-gray-200 custom-scrollbar">
+                                    {(userProfile.friends || []).length === 0 ? <p className="p-4 text-sm text-gray-400">目前還沒有好友喔</p> : null}
+                                    {(userProfile.friends || []).map(f => (
+                                        <button key={f.uid} onClick={() => shareScoreToFriend(f)} className="w-full text-left p-3 hover:bg-yellow-50 border-b border-gray-100 font-bold text-sm transition-colors">
+                                            {f.name} <span className="text-gray-400 font-normal ml-2">{f.email}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                                <button onClick={() => setShowShareScoreModal(false)} className="w-full bg-gray-100 text-black p-2 font-bold no-round hover:bg-gray-200 transition-colors">取消</button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -886,7 +955,7 @@
                             {activeTab === 'social' && <SocialDashboard user={user} userProfile={userProfile} showAlert={showAlert} />}
                         </div>
                     ) : (
-                        <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />
+                        <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} userProfile={userProfile} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />
                     )}
                 </div>
             );
