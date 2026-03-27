@@ -476,7 +476,7 @@
                     }
                 }
                 
-                if (state.frames % Math.floor(Math.random() * 40 + 30) === 0) {
+                if (state.frames % Math.floor(Math.random() * 200 + 400) === 0) {
                     let dY = state.groundY - 50 - Math.random() * 100;
                     state.diamonds.push({ x: cvs.width, y: dY, w: 24, h: 24, collected: false });
                 }
