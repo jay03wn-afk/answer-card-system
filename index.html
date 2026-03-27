@@ -477,7 +477,7 @@
                 }
                 
                 // 隨機生成鑽石
-                if (state.frames % Math.floor(Math.random() * 40 + 30) === 0) {
+                if (state.frames % Math.floor(Math.random() * 100 + 200) === 0) {
                     // 有可能生成在較高的地方，鼓勵玩家踩石頭二段跳
                     let dY = state.groundY - 50 - Math.random() * 100;
                     state.diamonds.push({ x: cvs.width, y: dY, w: 24, h: 24, collected: false });
