@@ -10,16 +10,13 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         return () => unsubscribe();
     }, [user]);
 
-    // 新增功能：匯入相同代碼不重複建立副本
+    // 匯入相同代碼不重複建立副本
     const handleImportCode = () => {
         showPrompt("請輸入 6 碼測驗代碼：", "", async (code) => {
             const cleanCode = code?.trim().toUpperCase(); if(!cleanCode) return;
             try {
-                // 檢查是否已經匯入過相同 shortCode 的考卷
                 const existing = records.find(r => r.shortCode === cleanCode);
-                if (existing) {
-                    return showAlert("你已經匯入過這份試卷囉！已存在於題庫中。");
-                }
+                if (existing) return showAlert("你已經匯入過這份試卷囉！已存在於題庫中。");
 
                 const codeDoc = await db.collection('shareCodes').doc(cleanCode).get();
                 if(!codeDoc.exists) throw new Error("無效代碼");
@@ -54,7 +51,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 {displayedRecords.map(rec => (
                     <div key={rec.id} className="bg-white dark:bg-gray-800 border p-6 flex flex-col justify-between">
                         <div>
-                            {/* 呼叫全域的官方試卷標記渲染函式 */}
+                            {/* 渲染官方試卷標記 */}
                             <h2 className="font-bold text-lg mb-2 dark:text-white">{renderTestName(rec.testName || '未命名')} {rec.isShared && <span className="text-xs bg-orange-100 text-orange-800 px-1 ml-1">分享</span>}</h2>
                             <p className="text-sm text-gray-600 mb-4">題數：{rec.numQuestions}</p>
                         </div>
@@ -66,13 +63,12 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     );
 }
 
-// 結合 QuizApp 測驗邏輯
 function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard, showAlert, showConfirm }) {
     const [step, setStep] = useState(activeQuizRecord.results ? 'results' : (activeQuizRecord.id ? 'answering' : 'setup'));
     const [userAnswers, setUserAnswers] = useState(activeQuizRecord.userAnswers || []);
-    const [pdfZoom, setPdfZoom] = useState(1); // 新增功能：PDF 縮放狀態
+    const [pdfZoom, setPdfZoom] = useState(1); // PDF 縮放狀態
     
-    // 新增功能：同一份試卷「再做一次」，保留歷程不新增檔案
+    // 再做一次：不新增檔案，保留成績紀錄
     const handleRetake = () => {
         showConfirm("確定要再做一次嗎？\n先前的分數將保留在您的歷史紀錄中，系統將為您清空目前答案，不產生新檔案。", () => {
             const initialAnswers = Array(Number(activeQuizRecord.numQuestions)).fill('');
@@ -102,7 +98,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             <div className="flex flex-row flex-grow overflow-hidden relative">
                 {activeQuizRecord.questionFileUrl && (
                     <div className="w-1/2 flex flex-col border bg-white dark:bg-gray-800 mr-2">
-                        {/* 新增功能：PDF 縮放控制列 */}
+                        {/* PDF 縮放控制列 */}
                         <div className="bg-gray-200 p-2 flex space-x-2 items-center shrink-0">
                             <span className="text-xs font-bold">縮放預覽：</span>
                             <button onClick={() => setPdfZoom(z => Math.max(0.5, z - 0.2))} className="bg-white px-2 border font-bold">-</button>
