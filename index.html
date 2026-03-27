@@ -179,6 +179,33 @@
             );
         }
 
+        function TutorialOverlay({ onComplete }) {
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[70] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-lg no-round shadow-2xl relative border-t-4 border-black dark:border-gray-500 animate-fade-in-up">
+                        <h2 className="text-2xl font-black mb-6 text-center tracking-wider dark:text-white">🎉 歡迎加入 JJay 線上測驗</h2>
+                        <div className="space-y-6 text-gray-700 dark:text-gray-300 mb-8">
+                            <div>
+                                <p className="font-bold border-l-4 border-black dark:border-gray-400 pl-3 text-lg dark:text-gray-100">📖 我的題庫</p>
+                                <p className="pl-4 mt-1 text-sm leading-relaxed">首創雙螢幕排版，貼上雲端題本或純文字，左邊看題、右邊畫卡，並支援資料夾與測驗代碼功能。</p>
+                            </div>
+                            <div>
+                                <p className="font-bold border-l-4 border-blue-500 pl-3 text-lg dark:text-gray-100">💬 社群交流</p>
+                                <p className="pl-4 mt-1 text-sm leading-relaxed">不再是一個人讀書！新增好友即時對話，還能一鍵打包你的測驗卷分享給好友作答、互相炫耀成績。支援圖片閱後即焚！</p>
+                            </div>
+                            <div>
+                                <p className="font-bold border-l-4 border-orange-500 pl-3 text-lg dark:text-gray-100">⛏️ 史蒂夫養成</p>
+                                <p className="pl-4 mt-1 text-sm leading-relaxed">讀書也要有儀式感。賺取鑽石佈置你的 Minecraft 家園，還能玩滑板小遊戲與好友競爭等級！</p>
+                            </div>
+                        </div>
+                        <button onClick={onComplete} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors">
+                            🚀 開始體驗
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
         function AuthScreen({ showAlert }) {
             const [isSignUp, setIsSignUp] = useState(false);
             const [email, setEmail] = useState('');
@@ -1429,7 +1456,6 @@
                                                 <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:underline transition-colors">刪除</button>
                                                 <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 font-bold transition-colors">📁 移動</button>
                                                 <button onClick={() => {
-                                                    // 點擊分享直接生成代碼並顯示模態框
                                                     if (!rec.shortCode) handleGenerateCode(rec);
                                                     else setShowShareModal(rec);
                                                 }} className="text-xs text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-bold transition-colors">📤 分享</button>
@@ -2010,7 +2036,7 @@
                                             </button>
                                         )}
                                         {questionFileUrl && (
-                                            <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold underline">新分頁開啟</a>
+                                            <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold underline">在新分頁開啟全螢幕</a>
                                         )}
                                     </div>
                                 </div>
