@@ -514,7 +514,7 @@
                         if (rand < 0.3) {
                             state.obstacles.push({ type: 'stone', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
                         } else if (rand < 0.6) {
-                            state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 70 + 60, h: 100 });
+                            state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 150 + 140, h: 100 });
                         } else if (rand < 0.8) {
                             state.obstacles.push({ type: 'zombie', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
                         } else {
@@ -523,7 +523,7 @@
                     }
                 }
                 
-                if (state.frames % Math.floor(Math.random() * 40 + 30) === 0) {
+                if (state.frames % Math.floor(Math.random() * 400 + 300) === 0) {
                     let dY = state.groundY - 50 - Math.random() * 100;
                     state.diamonds.push({ x: LOG_W, y: dY, w: 24, h: 24, collected: false });
                 }
