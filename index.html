@@ -18,8 +18,8 @@
         .no-round { border-radius: 2px !important; }
         .columns-custom { column-gap: 1.5rem; }
         @media (min-width: 640px) { .columns-custom { column-count: 2; } }
-        .split-view-columns { column-count: 1; column-gap: 1rem; }
-        @media (min-width: 1280px) { .split-view-columns { column-count: 2; } }
+        @media (min-width: 1024px) { .columns-custom { column-count: 3; } }
+        @media (min-width: 1280px) { .columns-custom { column-count: 4; } }
         
         .break-avoid { break-inside: avoid; }
         
@@ -471,7 +471,6 @@
                 }).catch(e => alert('建立紀錄失敗：' + e.message));
             };
 
-            // ★ 新增：重測一次的功能函式
             const handleRetake = () => {
                 if(confirm("即將為您建立一份相同的空白試卷，先前的成績仍會保留在題庫中。\n確定要再做一次嗎？")) {
                     const initialAnswers = Array(Number(numQuestions)).fill('');
@@ -497,7 +496,7 @@
             };
 
             const handleAddFileUrl = () => {
-                const url = prompt("請貼上試卷的公開網址 (例如 Google Drive 連結 或 Imgur 圖床網址)：\n注意：請確保該網址的權限已設為「知道連結的人皆可查看」", questionFileUrl || "");
+                const url = prompt("請貼上試卷的公開網址 (例如 Google Drive 連結)：\n注意：請確保該網址的權限已設為「知道連結的人皆可查看」", questionFileUrl || "");
                 if (url !== null && url.trim() !== "") {
                     setQuestionFileUrl(url.trim());
                 }
@@ -552,6 +551,7 @@
             );
 
             if (step === 'answering') return (
+                // ★ 改版：不管有沒有網址，這裡都使用 flex-col (上下排列)
                 <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 max-w-[1600px] mx-auto gap-2 sm:gap-4 overflow-hidden">
                     
                     <div className="bg-white p-3 sm:p-4 shadow-sm border border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center no-round gap-3 sm:gap-0 shrink-0 z-10">
@@ -576,9 +576,10 @@
                         </div>
                     </div>
                     
-                    <div className="flex-grow flex flex-col md:flex-row gap-2 sm:gap-4 overflow-hidden relative">
+                    {/* ★ 確保為 flex-col 上下分割 */}
+                    <div className="flex-grow flex flex-col gap-2 sm:gap-4 overflow-hidden relative">
                         {questionFileUrl && (
-                            <div className="w-full md:w-3/5 lg:w-2/3 h-[45dvh] md:h-full bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0 md:shrink">
+                            <div className="w-full flex-1 bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0 min-h-[30dvh]">
                                 <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
                                     <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
                                     <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 font-bold underline">在新分頁開啟全螢幕</a>
@@ -589,12 +590,13 @@
                             </div>
                         )}
 
-                        <div className={`w-full ${questionFileUrl ? 'md:w-2/5 lg:w-1/3' : 'max-w-5xl mx-auto'} h-full flex flex-col bg-white border border-gray-200 shadow-sm no-round shrink-0 md:shrink`}>
+                        <div className={`w-full max-w-6xl mx-auto flex flex-col bg-white border border-gray-200 shadow-sm no-round shrink-0 ${questionFileUrl ? 'flex-1 min-h-[30dvh]' : 'h-full'}`}>
                             <div className="bg-gray-50 border-b border-gray-200 px-4 py-2 shrink-0 flex justify-between items-center">
                                 <span className="font-bold text-xs text-gray-600">✏️ 答案卡</span>
                             </div>
                             <div className="flex-grow overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-white">
-                                <div className={`${questionFileUrl ? 'split-view-columns' : 'columns-custom'} space-y-2`}>
+                                {/* ★ 既然是上下全寬，就可以大膽使用多欄位 columns-custom */}
+                                <div className="columns-custom space-y-2">
                                     {userAnswers.map((ans, i) => (
                                         <div key={i} className="break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 hover:bg-gray-50 pr-2">
                                             <div className="flex items-center space-x-2 shrink-0 w-14">
@@ -631,7 +633,6 @@
                 <div className="max-w-4xl mx-auto p-4 pt-6 h-[100dvh] overflow-y-auto custom-scrollbar pb-10">
                     <div className="bg-white p-4 border border-gray-200 shadow-sm flex justify-between items-center mb-6 no-round shrink-0">
                         <h2 className="font-bold text-gray-800 truncate pr-4">{testName || '未命名'}</h2>
-                        {/* ★ 這裡新增了再做一次的按鈕 ★ */}
                         <div className="flex space-x-2">
                             <button onClick={handleRetake} className="text-sm font-bold bg-orange-50 text-orange-600 px-4 py-2 no-round border border-orange-200 hover:bg-orange-100 whitespace-nowrap transition-colors">再做一次</button>
                             <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-2 no-round hover:bg-gray-800 whitespace-nowrap">返回列表</button>
