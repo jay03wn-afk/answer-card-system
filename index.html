@@ -27,6 +27,9 @@
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
         input, textarea, button { font-size: 16px !important; }
+        
+        /* 鎖定狀態動畫與樣式 */
+        .locked-btn { cursor: not-allowed; opacity: 0.5; filter: grayscale(100%); }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans h-[100dvh] overflow-hidden">
@@ -62,6 +65,14 @@
                 if (match && match[1]) return `https://drive.google.com/file/d/${match[1]}/preview`;
                 return url;
             } catch(e) { return url; }
+        };
+
+        // 格式化秒數為 MM:SS
+        const formatTime = (seconds) => {
+            if (seconds == null || seconds < 0) return '00:00';
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
         };
 
         function DialogOverlay({ dialog, onClose }) {
@@ -285,26 +296,38 @@
             };
 
             const downloadSharedQuiz = (quizData) => {
+                let originalData;
                 db.collection('users').doc(quizData.ownerId).collection('quizzes').doc(quizData.quizId).get()
                 .then(doc => {
-                    if(!doc.exists) return showAlert('該試卷已失效或被擁有者刪除！');
-                    const data = doc.data();
-                    const emptyAnswers = Array(Number(data.numQuestions)).fill('');
-                    const emptyStarred = Array(Number(data.numQuestions)).fill(false);
+                    if(!doc.exists) throw new Error('該試卷已失效或被擁有者刪除！');
+                    originalData = doc.data();
+                    const emptyAnswers = Array(Number(originalData.numQuestions)).fill('');
+                    const emptyStarred = Array(Number(originalData.numQuestions)).fill(false);
                     
                     return db.collection('users').doc(user.uid).collection('quizzes').add({
-                        testName: data.testName + ' (來自好友)',
-                        numQuestions: data.numQuestions,
-                        questionFileUrl: data.questionFileUrl || '',
-                        correctAnswersInput: data.correctAnswersInput || '', 
+                        testName: originalData.testName + ' (來自好友)',
+                        numQuestions: originalData.numQuestions,
+                        questionFileUrl: originalData.questionFileUrl || '',
+                        correctAnswersInput: originalData.correctAnswersInput || '', 
                         userAnswers: emptyAnswers,
                         starred: emptyStarred,
-                        isShared: true,
+                        hasTimer: originalData.hasTimer || false,
+                        timeLimit: originalData.timeLimit || null,
+                        timeRemaining: originalData.hasTimer ? (originalData.timeLimit * 60) : null,
+                        isShared: true, 
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
                 })
+                .then(newDocRef => {
+                    return db.collection('users').doc(quizData.ownerId).collection('quizzes').doc(quizData.quizId).update({
+                        sharedTo: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid, quizId: newDocRef.id })
+                    });
+                })
                 .then(() => showAlert('✅ 已成功存入！\n請回到「我的題庫」查看並開始作答。'))
-                .catch(e => showAlert('下載失敗：'+e.message));
+                .catch(e => {
+                    if (e.message === '該試卷已失效或被擁有者刪除！') showAlert(e.message);
+                    else showAlert('下載失敗：'+e.message);
+                });
             };
 
             return (
@@ -347,7 +370,6 @@
                                         return (
                                             <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                                                 <div className={`max-w-[70%] p-3 text-sm no-round ${isMe ? 'bg-black text-white' : 'bg-white border border-gray-200 text-black shadow-sm'}`}>
-                                                    {/* ★ 絕對安全模式：防護舊訊息引發白屏 */}
                                                     {(() => {
                                                         if (msg.type === 'game_rps') {
                                                             return (
@@ -376,7 +398,6 @@
                                                                 </div>
                                                             );
                                                         } else {
-                                                            // 預設為一般文字訊息
                                                             return <p>{msg.text || '未知訊息'}</p>;
                                                         }
                                                     })()}
@@ -529,6 +550,16 @@
             const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
             
             const isShared = initialRecord.isShared === true;
+            
+            // ★ 計時器相關 State
+            const [hasTimer, setHasTimer] = useState(initialRecord.hasTimer || false);
+            const [timeLimit, setTimeLimit] = useState(initialRecord.timeLimit || 60);
+            // 使用 ref 來儲存剩餘秒數，避免頻繁渲染干擾輸入
+            const timeRemainingRef = useRef(initialRecord.timeRemaining ?? (initialRecord.timeLimit ? initialRecord.timeLimit * 60 : null));
+            const [displayTime, setDisplayTime] = useState(timeRemainingRef.current);
+            const [isTimeUp, setIsTimeUp] = useState(hasTimer && timeRemainingRef.current <= 0);
+            const [syncTrigger, setSyncTrigger] = useState(0); // 用於定時觸發存檔
+
             const [layoutMode, setLayoutMode] = useState('horizontal'); 
             const [splitRatio, setSplitRatio] = useState(50);
             const [isDragging, setIsDragging] = useState(false);
@@ -539,21 +570,47 @@
             const [showOnlyStarred, setShowOnlyStarred] = useState(false);
             const [showShareScoreModal, setShowShareScoreModal] = useState(false);
 
-            // ★ 算出哪些題號有打星號
             const starredIndices = starred.map((s, i) => s ? i + 1 : null).filter(Boolean);
 
+            // ★ 計時器倒數邏輯
+            useEffect(() => {
+                let timerId;
+                if (step === 'answering' && hasTimer && !isTimeUp) {
+                    timerId = setInterval(() => {
+                        if (timeRemainingRef.current > 0) {
+                            timeRemainingRef.current -= 1;
+                            setDisplayTime(timeRemainingRef.current);
+                            
+                            // 每 15 秒觸發一次雲端存檔
+                            if (timeRemainingRef.current % 15 === 0) setSyncTrigger(s => s + 1);
+
+                            if (timeRemainingRef.current <= 0) {
+                                setIsTimeUp(true);
+                                setSyncTrigger(s => s + 1);
+                                showAlert("⏱ 時間到！\n\n您的作答時間已結束，答案卡已鎖定無法再做更改。\n請點擊上方「交卷對答案」。");
+                            }
+                        }
+                    }, 1000);
+                }
+                return () => { if(timerId) clearInterval(timerId); };
+            }, [step, hasTimer, isTimeUp]);
+
+            // 自動存檔邏輯 (加入了計時器資訊)
             useEffect(() => {
                 if (currentUser && quizId && (step === 'answering' || step === 'setup' || step === 'results')) {
                     if (userAnswers.length === 0 && numQuestions > 0 && step === 'answering') return;
                     
                     const stateToSave = { 
                         testName, numQuestions, userAnswers, starred, correctAnswersInput, results, 
-                        questionFileUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        questionFileUrl, hasTimer, timeLimit,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
+                    if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
+
                     db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
                       .catch(e => console.error("自動儲存失敗", e));
                 }
-            }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, currentUser, quizId, step]);
+            }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, currentUser, quizId, step, syncTrigger]);
 
             const handleDragStart = (e) => setIsDragging(true);
 
@@ -597,6 +654,7 @@
 
             const handleStartTest = () => {
                 if (numQuestions < 1 || numQuestions > 100) return showAlert('題數限制為 1-100 題！');
+                if (hasTimer && (timeLimit < 1 || timeLimit > 999)) return showAlert('計時時間請設定在 1 到 999 分鐘之間。');
                 
                 const initialAnswers = Array(Number(numQuestions)).fill('');
                 const initialStarred = Array(Number(numQuestions)).fill(false);
@@ -606,9 +664,17 @@
                 db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                     testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
                     correctAnswersInput: '',
+                    hasTimer: hasTimer,
+                    timeLimit: hasTimer ? Number(timeLimit) : null,
+                    timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 }).then(docRef => {
                     setQuizId(docRef.id);
+                    if (hasTimer) {
+                        timeRemainingRef.current = Number(timeLimit) * 60;
+                        setDisplayTime(timeRemainingRef.current);
+                        setIsTimeUp(false);
+                    }
                     setStep('answering');
                 }).catch(e => showAlert('建立紀錄失敗：' + e.message));
             };
@@ -626,6 +692,9 @@
                         userAnswers: initialAnswers,
                         starred: initialStarred,
                         isShared: isShared,
+                        hasTimer: hasTimer,
+                        timeLimit: timeLimit,
+                        timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     }).then(docRef => {
                         setQuizId(docRef.id);
@@ -633,37 +702,64 @@
                         setUserAnswers(initialAnswers);
                         setStarred(initialStarred);
                         setResults(null);
+                        
+                        if (hasTimer) {
+                            timeRemainingRef.current = Number(timeLimit) * 60;
+                            setDisplayTime(timeRemainingRef.current);
+                            setIsTimeUp(false);
+                        }
+
                         setStep('answering');
                     }).catch(e => showAlert('建立重測紀錄失敗：' + e.message));
                 });
             };
 
-            const handleAddFileUrl = () => {
+            // ★ 修改：統一的編輯/新增網址功能，並連動更新好友
+            const handleUpdateFileUrl = () => {
                 showPrompt(
-                    "請貼上試卷的公開網址 (例如 Google Drive 連結)：\n注意：請確保該網址的權限已設為「知道連結的人皆可查看」", 
+                    "請貼上新的試卷網址 (留空則為移除網址)：\n注意：更新後將同步給所有已下載的好友！", 
                     questionFileUrl || "", 
-                    (url) => {
-                        if (url !== null && url.trim() !== "") {
-                            setQuestionFileUrl(url.trim());
-                            setPreviewOpen(true);
+                    async (url) => {
+                        const newUrl = url ? url.trim() : "";
+                        setQuestionFileUrl(newUrl);
+                        if (newUrl !== "") setPreviewOpen(true);
+
+                        if (!isShared && quizId) {
+                            try {
+                                const myDoc = await db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
+                                const latestSharedTo = myDoc.data()?.sharedTo || [];
+                                
+                                if (latestSharedTo.length > 0) {
+                                    const promises = latestSharedTo.map(target => {
+                                        return db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId).update({ questionFileUrl: newUrl });
+                                    });
+                                    await Promise.all(promises);
+                                    showAlert('✅ 試卷網址已更新，並同步給所有好友！');
+                                }
+                            } catch(e) {
+                                console.error("同步網址失敗", e);
+                            }
                         }
                     }
                 );
             };
 
             const handleAnswerSelect = (idx, opt) => {
+                if(isTimeUp) return; // 鎖定防護
                 const newAns = [...userAnswers];
                 newAns[idx] = newAns[idx] === opt ? '' : opt;
                 setUserAnswers(newAns);
             };
 
             const toggleStar = (idx) => {
+                if(isTimeUp) return; // 鎖定防護
                 const newStar = [...starred];
                 newStar[idx] = !newStar[idx];
                 setStarred(newStar);
             };
 
-            const handleGrade = () => {
+            // ★ 修改：批改時同步更新所有好友的解答
+            const handleGrade = async () => {
                 const cleanKey = correctAnswersInput.replace(/[^a-zA-Z]/g, '').toUpperCase();
                 if (!cleanKey) return showAlert('請輸入標準答案後再批改！');
                 
@@ -675,8 +771,48 @@
                     return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: starred[idx] };
                 });
 
-                setResults({ score: Math.round((correctCount/numQuestions)*100), correctCount, total: numQuestions, data });
+                const newResults = { score: Math.round((correctCount/numQuestions)*100), correctCount, total: numQuestions, data };
+                setResults(newResults);
                 setStep('results');
+
+                try {
+                    await db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
+                        correctAnswersInput: cleanKey,
+                        results: newResults
+                    });
+
+                    if (!isShared) {
+                        const myDoc = await db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
+                        const latestSharedTo = myDoc.data()?.sharedTo || [];
+                        
+                        if (latestSharedTo.length > 0) {
+                            const promises = latestSharedTo.map(async (target) => {
+                                const targetRef = db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
+                                const doc = await targetRef.get();
+                                if (doc.exists) {
+                                    const targetData = doc.data();
+                                    if (targetData.results && targetData.userAnswers) {
+                                        let tCorrectCount = 0;
+                                        const tData = targetData.userAnswers.map((ans, idx) => {
+                                            const key = cleanKey[idx] || '-';
+                                            const isCorrect = ans === key && ans !== '';
+                                            if (isCorrect) tCorrectCount++;
+                                            return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
+                                        });
+                                        const tResults = { score: Math.round((tCorrectCount/targetData.numQuestions)*100), correctCount: tCorrectCount, total: targetData.numQuestions, data: tData };
+                                        return targetRef.update({ correctAnswersInput: cleanKey, results: tResults });
+                                    } else {
+                                        return targetRef.update({ correctAnswersInput: cleanKey });
+                                    }
+                                }
+                            });
+                            await Promise.all(promises);
+                            showAlert('✅ 已完成批改！\n下載過這份試卷的好友，他們的標準答案與成績也已經自動同步更新囉！');
+                        }
+                    }
+                } catch(e) {
+                    console.error("同步更新失敗", e);
+                }
             };
 
             const handleResetProgress = () => {
@@ -712,10 +848,30 @@
             if (step === 'setup') return (
                 <div className="flex flex-col items-center justify-center p-4 h-[100dvh] overflow-y-auto relative">
                     <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">← 返回列表</button>
-                    <div className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200">
+                    <div className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200 mt-10">
                         <h1 className="text-xl font-bold mb-6 border-b pb-2 tracking-tight">新增測驗</h1>
-                        <input type="text" placeholder="例如: 藥理學與藥物化學期中考" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
-                        <input type="number" placeholder="題數 (1-100)" className="w-full mb-6 p-2 border border-gray-300 no-round outline-none focus:border-black" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
+                        
+                        <label className="block text-xs font-bold text-gray-500 mb-1">測驗名稱</label>
+                        <input type="text" placeholder="例如: 藥理學期中考" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
+                        
+                        <label className="block text-xs font-bold text-gray-500 mb-1">題數 (1-100)</label>
+                        <input type="number" placeholder="50" className="w-full mb-6 p-2 border border-gray-300 no-round outline-none focus:border-black" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
+                        
+                        {/* ★ 新增：計時器設定區塊 */}
+                        <div className="mb-6 border border-gray-200 p-4 bg-gray-50 no-round">
+                            <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm">
+                                <input type="checkbox" checked={hasTimer} onChange={e => setHasTimer(e.target.checked)} className="w-4 h-4" />
+                                <span>⏱ 開啟測驗倒數計時</span>
+                            </label>
+                            {hasTimer && (
+                                <div className="flex items-center space-x-2 mt-3 pt-3 border-t border-gray-200">
+                                    <span className="text-sm text-gray-600">測驗時間：</span>
+                                    <input type="number" min="1" max="999" className="w-16 p-1.5 border border-gray-300 no-round outline-none focus:border-black text-center text-sm" value={timeLimit} onChange={e => setTimeLimit(e.target.value)} onFocus={handleFocusScroll} />
+                                    <span className="text-sm text-gray-600">分鐘</span>
+                                </div>
+                            )}
+                        </div>
+
                         <button onClick={handleStartTest} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 transition-colors">開始作答</button>
                     </div>
                 </div>
@@ -727,10 +883,17 @@
                         <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
                             <button onClick={onBackToDashboard} className="mr-3 text-gray-500 hover:text-black font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">← 返回</button>
                             <div className="overflow-hidden flex-grow flex flex-col justify-center">
-                                <h2 className="font-bold truncate text-base">{testName || '作答中'}</h2>
+                                <div className="flex items-center space-x-2">
+                                    <h2 className="font-bold truncate text-base">{testName || '作答中'}</h2>
+                                    {/* ★ 新增：計時器顯示 */}
+                                    {hasTimer && (
+                                        <span className={`font-mono font-bold px-1.5 py-0.5 no-round border ${isTimeUp ? 'bg-red-50 text-red-600 border-red-200 animate-pulse' : 'bg-gray-100 text-gray-700 border-gray-300'} text-xs shrink-0`}>
+                                            {isTimeUp ? '時間到' : `⏱ ${formatTime(displayTime)}`}
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap items-center gap-2">
                                     <span>進度: <span className="font-bold text-black">{userAnswers.filter(a=>a).length}</span> / {numQuestions}</span>
-                                    {/* ★ 即時顯示已打星號的精確題號 */}
                                     {starredIndices.length > 0 && (
                                         <span className="text-orange-500 font-bold flex items-center bg-orange-50 px-1.5 py-0.5 rounded max-w-[150px] sm:max-w-xs overflow-hidden">
                                             <span className="mr-1 shrink-0">★</span> 
@@ -744,24 +907,23 @@
                         <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
                             {questionFileUrl && previewOpen && (
                                 <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
-                                    {layoutMode === 'horizontal' ? '🔄 切換為上下排列' : '🔄 切換為左右排列'}
+                                    {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
                                 </button>
                             )}
 
-                            {questionFileUrl ? (
-                                <div className="flex items-center space-x-1">
-                                    <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
-                                        {previewOpen ? '👀 暫時關閉預覽' : '👀 開啟預覽'}
-                                    </button>
-                                    {!isShared && (
-                                        <button onClick={() => showConfirm("確定要永久移除這個試卷網址嗎？", () => setQuestionFileUrl(''))} className="bg-red-50 text-red-600 px-3 py-1.5 no-round font-bold border border-red-200 text-xs hover:bg-red-100 transition-colors" title="移除網址">✖ 移除連結</button>
-                                    )}
-                                </div>
-                            ) : (
-                                <button onClick={handleAddFileUrl} className="bg-orange-50 text-orange-800 border border-orange-200 px-4 py-1.5 no-round font-bold text-xs hover:bg-orange-100 transition-colors">
-                                    📎 貼上試卷網址
+                            {/* ★ 修改：統一為更新網址按鈕 */}
+                            {!isShared && (
+                                <button onClick={handleUpdateFileUrl} className={`${questionFileUrl ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'} px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
+                                    {questionFileUrl ? '🔗 修改/移除網址' : '📎 貼上試卷網址'}
                                 </button>
                             )}
+
+                            {questionFileUrl && (
+                                <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
+                                    {previewOpen ? '👀 關閉預覽' : '👀 開啟預覽'}
+                                </button>
+                            )}
+                            
                             <button onClick={handleResetProgress} className="bg-gray-50 text-red-400 px-4 py-1.5 no-round font-bold hover:bg-red-50 hover:text-red-600 border border-transparent hover:border-red-100 text-xs hidden md:block transition-colors">刪除</button>
                             <button onClick={() => setStep('grading')} className="bg-black text-white px-6 py-1.5 no-round font-bold hover:bg-gray-800 text-sm shadow-sm transition-colors">交卷對答案</button>
                         </div>
@@ -802,7 +964,7 @@
 
                         <div className={`flex-grow flex flex-col bg-white border border-gray-200 shadow-sm no-round overflow-hidden`}>
                             <div className="bg-gray-50 border-b border-gray-200 px-4 py-2 shrink-0 flex justify-between items-center">
-                                <span className="font-bold text-xs text-gray-600">✏️ 答案卡</span>
+                                <span className="font-bold text-xs text-gray-600">✏️ 答案卡 {isTimeUp && <span className="text-red-500 ml-2">(已鎖定)</span>}</span>
                             </div>
                             <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white">
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px 16px' }}>
@@ -810,11 +972,23 @@
                                         <div key={i} className="break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 hover:bg-gray-50 pr-2">
                                             <div className="flex items-center space-x-2 shrink-0 w-14">
                                                 <span className="font-mono text-sm font-bold text-gray-400">{i+1}.</span>
-                                                <button onClick={() => toggleStar(i)} className={`text-sm focus:outline-none ${starred[i] ? 'text-orange-500' : 'text-gray-200 hover:text-gray-300'}`}>★</button>
+                                                {/* ★ 加入鎖定判斷 */}
+                                                <button 
+                                                    disabled={isTimeUp}
+                                                    onClick={() => toggleStar(i)} 
+                                                    className={`text-sm focus:outline-none ${starred[i] ? 'text-orange-500' : 'text-gray-200'} ${isTimeUp ? 'cursor-not-allowed opacity-50' : 'hover:text-gray-300'}`}
+                                                >★</button>
                                             </div>
                                             <div className="flex space-x-1 shrink-0">
                                                 {['A','B','C','D'].map(o => (
-                                                    <button key={o} onClick={() => handleAnswerSelect(i, o)} className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all ${ans === o ? 'bg-black border-black text-white scale-105 shadow-sm' : 'bg-white border-gray-300 text-gray-400 hover:border-gray-500'}`}>{o}</button>
+                                                    <button 
+                                                        key={o} 
+                                                        disabled={isTimeUp}
+                                                        onClick={() => handleAnswerSelect(i, o)} 
+                                                        className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all 
+                                                            ${ans === o ? 'bg-black border-black text-white scale-105 shadow-sm' : 'bg-white border-gray-300 text-gray-400'}
+                                                            ${isTimeUp ? 'locked-btn' : 'hover:border-gray-500'}`}
+                                                    >{o}</button>
                                                 ))}
                                             </div>
                                         </div>
@@ -829,7 +1003,7 @@
 
             if (step === 'grading') return (
                 <div className="flex flex-col min-h-[100dvh] items-center justify-center p-4 relative py-10 overflow-y-auto">
-                    <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">← 繼續作答</button>
+                    <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">← 返回作答</button>
                     <div className="bg-white p-8 shadow-md w-full max-w-lg no-round border border-gray-200 mt-10">
                         <h2 className="font-bold mb-4 text-lg">
                             {isShared ? '標準答案 (好友提供)' : '輸入標準答案'}
@@ -850,66 +1024,116 @@
             );
 
             if (step === 'results') return (
-                <div className="max-w-4xl mx-auto p-4 pt-6 h-[100dvh] overflow-y-auto custom-scrollbar pb-10 relative">
-                    <div className="bg-white p-4 border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 no-round shrink-0 gap-3">
-                        <h2 className="font-bold text-gray-800 truncate pr-4">{testName || '未命名'}</h2>
-                        <div className="flex flex-wrap gap-2">
-                            <button onClick={() => setShowShareScoreModal(true)} className="text-sm font-bold bg-yellow-50 text-yellow-600 px-4 py-2 no-round border border-yellow-200 hover:bg-yellow-100 whitespace-nowrap transition-colors">📢 炫耀戰績</button>
-                            <button onClick={handleRetake} className="text-sm font-bold bg-orange-50 text-orange-600 px-4 py-2 no-round border border-orange-200 hover:bg-orange-100 whitespace-nowrap transition-colors">再做一次</button>
-                            <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-2 no-round hover:bg-gray-800 whitespace-nowrap transition-colors">返回列表</button>
+                <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 w-full overflow-hidden">
+                    <div className="bg-white p-3 sm:p-4 shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10">
+                        <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
+                            <h2 className="font-bold truncate text-base pr-4">{testName || '未命名'} - 測驗結果</h2>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
+                            {!isShared && (
+                                <button onClick={() => setStep('grading')} className="text-sm font-bold bg-blue-50 text-blue-600 px-4 py-1.5 no-round border border-blue-200 hover:bg-blue-100 whitespace-nowrap transition-colors">✏️ 修改解答</button>
+                            )}
+
+                            {!isShared && (
+                                <button onClick={handleUpdateFileUrl} className={`${questionFileUrl ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'} px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
+                                    {questionFileUrl ? '🔗 修改/移除網址' : '📎 貼上試卷網址'}
+                                </button>
+                            )}
+
+                            {questionFileUrl && previewOpen && (
+                                <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
+                                    {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
+                                </button>
+                            )}
+
+                            {questionFileUrl && (
+                                <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
+                                    {previewOpen ? '👀 關閉預覽' : '👀 開啟預覽'}
+                                </button>
+                            )}
+                            
+                            <button onClick={() => setShowShareScoreModal(true)} className="text-sm font-bold bg-yellow-50 text-yellow-600 px-4 py-1.5 no-round border border-yellow-200 hover:bg-yellow-100 whitespace-nowrap transition-colors">📢 炫耀戰績</button>
+                            <button onClick={handleRetake} className="text-sm font-bold bg-orange-50 text-orange-600 px-4 py-1.5 no-round border border-orange-200 hover:bg-orange-100 whitespace-nowrap transition-colors">再做一次</button>
+                            <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-1.5 no-round hover:bg-gray-800 whitespace-nowrap transition-colors">返回列表</button>
                         </div>
                     </div>
-                    <div className="bg-white p-10 shadow-md border-t-8 border-black text-center mb-6 no-round relative overflow-hidden shrink-0">
-                        <h2 className={`text-6xl font-black mb-4 ${results.score >= 60 ? 'text-green-600' : 'text-red-600'}`}>{results.score}</h2>
-                        <p className="text-gray-500 font-bold tracking-widest">答對 {results.correctCount} / {results.total} 題</p>
-                    </div>
-                    <div className="bg-white p-6 border border-gray-200 no-round shadow-sm shrink-0">
-                        <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-3">
-                            <h3 className="font-bold text-lg">答案解析</h3>
-                            <div className="flex space-x-2">
-                                <button 
-                                    onClick={() => { setShowOnlyStarred(!showOnlyStarred); setShowOnlyWrong(false); }} 
-                                    className={`text-sm font-bold px-3 py-1 no-round border transition-colors ${showOnlyStarred ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-gray-100 text-gray-500 border-gray-200 hover:text-black'}`}
-                                >
-                                    {showOnlyStarred ? '顯示全部' : '⭐ 只看星號'}
-                                </button>
-                                <button 
-                                    onClick={() => { setShowOnlyWrong(!showOnlyWrong); setShowOnlyStarred(false); }} 
-                                    className={`text-sm font-bold px-3 py-1 no-round border transition-colors ${showOnlyWrong ? 'bg-red-100 text-red-700 border-red-200' : 'bg-gray-100 text-gray-500 border-gray-200 hover:text-black'}`}
-                                >
-                                    {showOnlyWrong ? '顯示全部' : '只看錯題'}
-                                </button>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                            {results.data.filter(q => {
-                                if (showOnlyWrong) return !q.isCorrect;
-                                if (showOnlyStarred) return q.isStarred;
-                                return true;
-                            }).map(q => (
-                                <div key={q.number} className={`p-3 border no-round flex justify-between items-center ${q.isCorrect ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-200'} ${q.isStarred ? 'ring-2 ring-orange-300' : ''}`}>
-                                    <span className={`font-black text-sm flex items-center ${q.isCorrect ? 'text-green-800' : 'text-red-800'}`}>
-                                        {q.number}.
-                                        {q.isStarred && <span className="text-orange-500 ml-1.5 text-xs">★</span>}
-                                    </span>
-                                    <div className="text-sm font-bold">
-                                        <span className={q.isCorrect ? 'text-gray-700' : 'text-red-600 line-through'}>{q.userAns}</span>
-                                        <span className="mx-2 text-gray-300">→</span>
-                                        <span className="text-green-700">{q.correctAns}</span>
-                                    </div>
+                    
+                    <div 
+                        ref={splitContainerRef}
+                        className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full mt-2 sm:mt-4`}
+                    >
+                        {isDragging && (
+                            <div className="absolute inset-0 z-50" style={{ cursor: layoutMode === 'horizontal' ? 'col-resize' : 'row-resize' }}></div>
+                        )}
+
+                        {questionFileUrl && previewOpen && (
+                            <div 
+                                className="bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0"
+                                style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
+                            >
+                                <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
+                                    <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
+                                    <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 font-bold underline">在新分頁開啟全螢幕</a>
                                 </div>
-                            ))}
-                        </div>
-                        
-                        {results.data.filter(q => {
-                            if (showOnlyWrong) return !q.isCorrect;
-                            if (showOnlyStarred) return q.isStarred;
-                            return true;
-                        }).length === 0 && (
-                            <div className="text-center text-gray-400 py-10 font-bold">
-                                {showOnlyStarred ? '沒有打星號的題目喔！' : '太棒了，沒有錯題！'}
+                                <div className="flex-grow w-full relative bg-gray-200">
+                                    <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0" allow="autoplay" allowFullScreen></iframe>
+                                </div>
                             </div>
                         )}
+
+                        {questionFileUrl && previewOpen && (
+                            <div 
+                                onMouseDown={handleDragStart}
+                                onTouchStart={handleDragStart}
+                                className={`${layoutMode === 'horizontal' ? 'w-4 h-full cursor-col-resize flex-col' : 'h-4 w-full cursor-row-resize flex-row'} bg-gray-100 hover:bg-blue-200 flex items-center justify-center shrink-0 z-40 transition-colors active:bg-blue-300`}
+                            >
+                                <div className={`${layoutMode === 'horizontal' ? 'w-1 h-8' : 'h-1 w-8'} bg-gray-400 rounded-full`}></div>
+                            </div>
+                        )}
+
+                        <div className={`flex-grow flex flex-col bg-white border border-gray-200 shadow-sm no-round overflow-hidden`}>
+                            <div className="flex-grow overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-gray-50">
+                                <div className="bg-white p-6 shadow-sm border-t-4 border-black text-center mb-6 no-round">
+                                    <h2 className={`text-5xl sm:text-6xl font-black mb-4 ${results.score >= 60 ? 'text-green-600' : 'text-red-600'}`}>{results.score}</h2>
+                                    <p className="text-gray-500 font-bold tracking-widest">答對 {results.correctCount} / {results.total} 題</p>
+                                </div>
+                                
+                                <div className="bg-white p-4 sm:p-6 border border-gray-200 no-round shadow-sm">
+                                    <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-3">
+                                        <h3 className="font-bold text-lg">答案解析</h3>
+                                        <div className="flex space-x-2">
+                                            <button onClick={() => { setShowOnlyStarred(!showOnlyStarred); setShowOnlyWrong(false); }} className={`text-sm font-bold px-3 py-1 no-round border transition-colors ${showOnlyStarred ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-gray-100 text-gray-500 border-gray-200 hover:text-black'}`}>
+                                                {showOnlyStarred ? '顯示全部' : '⭐ 只看星號'}
+                                            </button>
+                                            <button onClick={() => { setShowOnlyWrong(!showOnlyWrong); setShowOnlyStarred(false); }} className={`text-sm font-bold px-3 py-1 no-round border transition-colors ${showOnlyWrong ? 'bg-red-100 text-red-700 border-red-200' : 'bg-gray-100 text-gray-500 border-gray-200 hover:text-black'}`}>
+                                                {showOnlyWrong ? '顯示全部' : '只看錯題'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px 12px' }}>
+                                        {results.data.filter(q => {
+                                            if (showOnlyWrong) return !q.isCorrect;
+                                            if (showOnlyStarred) return q.isStarred;
+                                            return true;
+                                        }).map(q => (
+                                            <div key={q.number} className={`p-2 sm:p-3 border no-round flex justify-between items-center ${q.isCorrect ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-200'} ${q.isStarred ? 'ring-2 ring-orange-300' : ''}`}>
+                                                <span className={`font-black text-sm flex items-center ${q.isCorrect ? 'text-green-800' : 'text-red-800'}`}>
+                                                    {q.number}.
+                                                    {q.isStarred && <span className="text-orange-500 ml-1.5 text-xs">★</span>}
+                                                </span>
+                                                <div className="text-sm font-bold flex items-center">
+                                                    <span className={q.isCorrect ? 'text-gray-700' : 'text-red-600 line-through'}>{q.userAns}</span>
+                                                    <span className="mx-2 text-gray-300">→</span>
+                                                    <span className="text-green-700">{q.correctAns}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
 
                     {showShareScoreModal && (
