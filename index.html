@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>JJay線上測驗 - 社群版</title>
     
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -22,6 +22,9 @@
         @media (min-width: 1280px) { .columns-custom { column-count: 4; } }
         .break-avoid { break-inside: avoid; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
+        
+        /* 避免 iOS Safari 點擊輸入框時自動放大畫面 */
+        input, textarea, button { font-size: 16px !important; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans">
@@ -41,6 +44,13 @@
         const db = firebase.firestore();
 
         const { useState, useEffect, useRef } = React;
+
+        const handleFocusScroll = (e) => {
+            const target = e.target;
+            setTimeout(() => {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+        };
 
         function AuthScreen() {
             const [isSignUp, setIsSignUp] = useState(false);
@@ -66,14 +76,14 @@
             };
 
             return (
-                <div className="flex h-screen items-center justify-center p-4">
+                <div className="flex min-h-[100dvh] items-center justify-center p-4">
                     <form onSubmit={handleAuth} className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200">
                         <div className="w-16 h-16 bg-black text-white rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-300">
                             <span className="text-3xl font-black">📝</span>
                         </div>
                         <h1 className="text-xl font-bold mb-6 tracking-tight text-center">JJay線上測驗</h1>
-                        <input type="email" placeholder="電子郵件" className="w-full mb-3 p-3 border border-gray-300 no-round outline-none focus:border-black" value={email} onChange={e => setEmail(e.target.value)} required />
-                        <input type="password" placeholder="密碼" className="w-full mb-6 p-3 border border-gray-300 no-round outline-none focus:border-black" value={password} onChange={e => setPassword(e.target.value)} required />
+                        <input type="email" placeholder="電子郵件" className="w-full mb-3 p-3 border border-gray-300 no-round outline-none focus:border-black" value={email} onChange={e => setEmail(e.target.value)} onFocus={handleFocusScroll} required />
+                        <input type="password" placeholder="密碼" className="w-full mb-6 p-3 border border-gray-300 no-round outline-none focus:border-black" value={password} onChange={e => setPassword(e.target.value)} onFocus={handleFocusScroll} required />
                         <button type="submit" className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 transition-colors" disabled={loading}>{loading ? '處理中...' : (isSignUp ? '註冊' : '登入')}</button>
                         <button type="button" onClick={() => setIsSignUp(!isSignUp)} className="w-full mt-4 text-sm text-gray-500 hover:text-black">{isSignUp ? '已有帳號？前往登入' : '沒有帳號？前往註冊'}</button>
                     </form>
@@ -90,10 +100,10 @@
                   .catch(e => alert('設定失敗：' + e.message));
             };
             return (
-                <div className="flex h-screen items-center justify-center p-4 bg-gray-50">
+                <div className="flex min-h-[100dvh] items-center justify-center p-4 bg-gray-50">
                     <div className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200 text-center">
                         <h2 className="text-xl font-bold mb-4">歡迎加入！請設定你的社群暱稱</h2>
-                        <input type="text" placeholder="例如：藥神、JJay..." className="w-full mb-6 p-3 border border-gray-300 no-round outline-none focus:border-black text-center" value={name} onChange={e => setName(e.target.value)} />
+                        <input type="text" placeholder="例如：藥神、JJay..." className="w-full mb-6 p-3 border border-gray-300 no-round outline-none focus:border-black text-center" value={name} onChange={e => setName(e.target.value)} onFocus={handleFocusScroll} />
                         <button onClick={saveProfile} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800">完成設定</button>
                     </div>
                 </div>
@@ -183,10 +193,12 @@
                     const emptyAnswers = Array(Number(data.numQuestions)).fill('');
                     const emptyStarred = Array(Number(data.numQuestions)).fill(false);
                     
+                    // ★ 這裡加入了 correctAnswersInput，預設帶入原作者提供的答案
                     return db.collection('users').doc(user.uid).collection('quizzes').add({
                         testName: data.testName + ' (來自好友)',
                         numQuestions: data.numQuestions,
                         questionFileUrl: data.questionFileUrl || '',
+                        correctAnswersInput: data.correctAnswersInput || '', 
                         userAnswers: emptyAnswers,
                         starred: emptyStarred,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -197,12 +209,12 @@
             };
 
             return (
-                <div className="max-w-6xl mx-auto p-4 pt-0 grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100vh-100px)]">
+                <div className="max-w-6xl mx-auto p-4 pt-0 grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100dvh-100px)]">
                     <div className="bg-white border border-gray-200 shadow-sm no-round flex flex-col h-full overflow-hidden">
                         <div className="p-4 border-b border-gray-100 bg-gray-50">
                             <h2 className="font-bold mb-3">加入好友</h2>
                             <div className="flex space-x-2">
-                                <input type="email" placeholder="輸入好友信箱..." className="flex-grow p-2 text-sm border border-gray-300 no-round outline-none" value={searchEmail} onChange={e=>setSearchEmail(e.target.value)} />
+                                <input type="email" placeholder="輸入好友信箱..." className="flex-grow p-2 text-sm border border-gray-300 no-round outline-none" value={searchEmail} onChange={e=>setSearchEmail(e.target.value)} onFocus={handleFocusScroll} />
                                 <button onClick={handleAddFriend} className="bg-black text-white px-3 py-2 no-round text-sm font-bold">加入</button>
                             </div>
                         </div>
@@ -220,10 +232,10 @@
                         </div>
                     </div>
 
-                    <div className="md:col-span-2 bg-white border border-gray-200 shadow-sm no-round flex flex-col h-full">
+                    <div className="md:col-span-2 bg-white border border-gray-200 shadow-sm no-round flex flex-col h-full overflow-hidden">
                         {activeChat ? (
                             <>
-                                <div className="p-4 border-b border-gray-200 font-bold flex items-center space-x-2">
+                                <div className="p-4 border-b border-gray-200 font-bold flex items-center space-x-2 shrink-0">
                                     <span className="text-xl">💬</span>
                                     <span>與 {activeChat.name} 的聊天室</span>
                                 </div>
@@ -250,8 +262,8 @@
                                     })}
                                     <div ref={messagesEndRef} />
                                 </div>
-                                <form onSubmit={sendMessage} className="p-3 border-t border-gray-200 flex space-x-2 bg-white">
-                                    <input type="text" placeholder="輸入訊息..." className="flex-grow p-2 border border-gray-300 no-round outline-none" value={newMessage} onChange={e=>setNewMessage(e.target.value)} />
+                                <form onSubmit={sendMessage} className="p-3 border-t border-gray-200 flex space-x-2 bg-white shrink-0">
+                                    <input type="text" placeholder="輸入訊息..." className="flex-grow p-2 border border-gray-300 no-round outline-none" value={newMessage} onChange={e=>setNewMessage(e.target.value)} onFocus={handleFocusScroll} />
                                     <button type="submit" className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800">傳送</button>
                                 </form>
                             </>
@@ -411,6 +423,7 @@
 
                 db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                     testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
+                    correctAnswersInput: '',
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 }).then(docRef => {
                     setQuizId(docRef.id);
@@ -462,12 +475,12 @@
             };
 
             if (step === 'setup') return (
-                <div className="flex flex-col items-center justify-center p-4 min-h-screen relative">
+                <div className="flex flex-col items-center justify-center p-4 min-h-[100dvh] relative">
                     <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold">← 返回列表</button>
                     <div className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200">
                         <h1 className="text-xl font-bold mb-6 border-b pb-2 tracking-tight">新增測驗</h1>
-                        <input type="text" placeholder="例如: 藥理學與藥物化學期中考" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black" value={testName} onChange={e => setTestName(e.target.value)} />
-                        <input type="number" placeholder="題數 (1-100)" className="w-full mb-6 p-2 border border-gray-300 no-round outline-none focus:border-black" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} />
+                        <input type="text" placeholder="例如: 藥理學與藥物化學期中考" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
+                        <input type="number" placeholder="題數 (1-100)" className="w-full mb-6 p-2 border border-gray-300 no-round outline-none focus:border-black" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
                         <button onClick={handleStartTest} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 transition-colors">開始作答</button>
                     </div>
                 </div>
@@ -476,8 +489,6 @@
             if (step === 'answering') return (
                 <div className="max-w-5xl mx-auto p-4 pt-6">
                     <div className="bg-white p-4 shadow-sm border border-gray-200 sticky top-4 z-10 flex flex-col md:flex-row justify-between items-start md:items-center mb-6 no-round gap-4 md:gap-0">
-                        
-                        {/* ★ 左側：新增的返回按鈕與標題區塊 ★ */}
                         <div className="flex items-center flex-grow mr-2 w-full md:w-auto">
                             <button onClick={onBackToDashboard} className="mr-4 text-gray-500 hover:text-black font-bold text-sm whitespace-nowrap px-2 py-1 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">← 返回</button>
                             <div className="overflow-hidden">
@@ -486,7 +497,6 @@
                             </div>
                         </div>
 
-                        {/* 右側：功能按鈕區塊 */}
                         <div className="flex items-center space-x-2 flex-shrink-0 w-full md:w-auto justify-end">
                             {questionFileUrl ? (
                                 <div className="flex items-center space-x-1">
@@ -499,7 +509,6 @@
                                 </button>
                             )}
                             
-                            {/* ★ 把放棄作答改名為刪除紀錄，避免與返回功能混淆 ★ */}
                             <button onClick={handleResetProgress} className="bg-gray-50 text-red-400 px-4 py-2 no-round font-bold hover:bg-red-50 hover:text-red-600 border border-transparent hover:border-red-100 text-sm hidden sm:block transition-colors">刪除紀錄</button>
                             <button onClick={() => setStep('grading')} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800 shadow-sm">對答案</button>
                         </div>
@@ -524,11 +533,11 @@
             );
 
             if (step === 'grading') return (
-                <div className="flex flex-col h-screen items-center justify-center p-4 relative">
+                <div className="flex flex-col min-h-[100dvh] items-center justify-center p-4 relative py-10">
                     <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold">← 繼續作答</button>
                     <div className="bg-white p-8 shadow-md w-full max-w-lg no-round border border-gray-200">
                         <h2 className="font-bold mb-4 text-lg">輸入標準答案</h2>
-                        <textarea className="w-full h-40 p-3 border border-gray-300 no-round font-mono mb-4 focus:border-black outline-none tracking-widest text-lg uppercase" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
+                        <textarea className="w-full h-40 p-3 border border-gray-300 no-round font-mono mb-4 focus:border-black outline-none tracking-widest text-lg uppercase" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)} onFocus={handleFocusScroll}></textarea>
                         <button onClick={handleGrade} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 text-lg">開始批改</button>
                     </div>
                 </div>
