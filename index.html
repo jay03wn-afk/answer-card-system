@@ -194,7 +194,7 @@
                             </div>
                             <div>
                                 <p className="font-bold border-l-4 border-orange-500 pl-3 text-lg">⛏️ 史蒂夫養成</p>
-                                <p className="pl-4 mt-1 text-sm text-gray-500 leading-relaxed">讀書也要有儀式感。只要首次批改好友分享的測驗就能賺取鑽石，佈置你的 Minecraft 家園並與好友競爭等級！</p>
+                                <p className="pl-4 mt-1 text-sm text-gray-500 leading-relaxed">讀書也要有儀式感。賺取鑽石佈置你的 Minecraft 家園，還能玩滑板小遊戲與好友競爭等級！</p>
                             </div>
                         </div>
                         <button onClick={onComplete} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 text-lg transition-colors">
@@ -270,10 +270,285 @@
             );
         }
 
+        // --- 滑板二段跳小遊戲組件 ---
+        function SkateboardGame({ onGameOver, onQuit }) {
+            const canvasRef = useRef(null);
+            const [gameState, setGameState] = useState('start'); 
+            const [score, setScore] = useState(0);
+            
+            const gameRef = useRef({
+                reqId: null,
+                player: { x: 50, y: 0, w: 40, h: 40, dy: 0, jumps: 0 },
+                obstacles: [],
+                diamonds: [],
+                speed: 5,
+                score: 0,
+                frames: 0,
+                lastSpawnFrame: 0,
+                groundY: 220
+            });
+
+            const images = useRef({ steve: new Image(), stone: new Image(), diamond: new Image() });
+
+            useEffect(() => {
+                images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
+                images.current.stone.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png";
+                images.current.diamond.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png";
+                
+                return () => {
+                    if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
+                };
+            }, []);
+
+            const startGame = () => {
+                setGameState('playing');
+                setScore(0);
+                gameRef.current = {
+                    reqId: null,
+                    player: { x: 50, y: 150, w: 40, h: 40, dy: 0, jumps: 0 },
+                    obstacles: [],
+                    diamonds: [],
+                    speed: 5,
+                    score: 0,
+                    frames: 0,
+                    lastSpawnFrame: 0,
+                    groundY: 220
+                };
+                loop();
+            };
+
+            const jump = () => {
+                const p = gameRef.current.player;
+                if (p.jumps < 2) {
+                    p.dy = -10.5; // 跳躍力度
+                    p.jumps++;
+                }
+            };
+
+            const loop = () => {
+                const cvs = canvasRef.current;
+                if (!cvs) return;
+                const ctx = cvs.getContext('2d');
+                const state = gameRef.current;
+                
+                // 物理
+                state.player.dy += 0.65; // 重力
+                state.player.y += state.player.dy;
+
+                let onGround = false;
+                let inPit = false;
+
+                // 檢查是否掉入坑洞
+                state.obstacles.forEach(obs => {
+                    if (obs.type === 'pit') {
+                        // 讓坑洞判定嚴格一點，中心點落在坑裡才算
+                        let pCenter = state.player.x + state.player.w / 2;
+                        if (pCenter > obs.x + 10 && pCenter < obs.x + obs.w - 10) {
+                            inPit = true;
+                        }
+                    }
+                });
+
+                // 地面碰撞
+                if (state.player.y + state.player.h >= state.groundY) {
+                    if (!inPit) {
+                        state.player.y = state.groundY - state.player.h;
+                        state.player.dy = 0;
+                        state.player.jumps = 0;
+                        onGround = true;
+                    }
+                }
+
+                // 掉入坑洞死亡
+                if (state.player.y > cvs.height) {
+                    endGame();
+                    return;
+                }
+
+                // 移動場景物件
+                state.obstacles.forEach(obs => obs.x -= state.speed);
+                state.diamonds.forEach(d => d.x -= state.speed);
+
+                // 清除畫面外的物件
+                state.obstacles = state.obstacles.filter(o => o.x + o.w > -50);
+                state.diamonds = state.diamonds.filter(d => d.x + d.w > -50 && !d.collected);
+
+                state.frames++;
+                
+                // 逐漸加速
+                if (state.frames % 120 === 0 && state.speed < 12) {
+                    state.speed += 0.15;
+                }
+
+                // 隨機生成地形與障礙 (保持一定間隔)
+                if (state.frames - state.lastSpawnFrame > 70) {
+                    if (Math.random() < 0.45) { // 45% 機率生成障礙
+                        state.lastSpawnFrame = state.frames;
+                        if (Math.random() < 0.6) {
+                            // 生成石頭
+                            state.obstacles.push({ type: 'stone', x: cvs.width, y: state.groundY - 40, w: 40, h: 40 });
+                        } else {
+                            // 生成坑洞
+                            state.obstacles.push({ type: 'pit', x: cvs.width, y: state.groundY, w: 90, h: 100 });
+                        }
+                    }
+                }
+                
+                // 隨機生成鑽石 (較常生成半空中)
+                if (state.frames % Math.floor(Math.random() * 50 + 40) === 0) {
+                    let dY = state.groundY - 60 - Math.random() * 80;
+                    state.diamonds.push({ x: cvs.width, y: dY, w: 24, h: 24, collected: false });
+                }
+
+                // 碰撞判定 (撞石頭死亡)
+                let dead = false;
+                state.obstacles.forEach(obs => {
+                    if (obs.type === 'stone') {
+                        // 稍微縮小碰撞箱讓遊戲體驗更好
+                        if (
+                            state.player.x + 10 < obs.x + obs.w - 10 &&
+                            state.player.x + state.player.w - 10 > obs.x + 10 &&
+                            state.player.y + 10 < obs.y + obs.h - 10 &&
+                            state.player.y + state.player.h > obs.y + 10
+                        ) {
+                            dead = true;
+                        }
+                    }
+                });
+
+                // 碰撞判定 (吃鑽石)
+                state.diamonds.forEach(d => {
+                    if (!d.collected &&
+                        state.player.x < d.x + d.w &&
+                        state.player.x + state.player.w > d.x &&
+                        state.player.y < d.y + d.h &&
+                        state.player.y + state.player.h > d.y
+                    ) {
+                        d.collected = true;
+                        state.score += 1;
+                        setScore(state.score);
+                    }
+                });
+
+                if (dead) {
+                    endGame();
+                    return;
+                }
+
+                // --- 渲染畫面 ---
+                ctx.clearRect(0, 0, cvs.width, cvs.height);
+                
+                // 畫地面
+                ctx.fillStyle = '#6b6b6b';
+                ctx.fillRect(0, state.groundY, cvs.width, cvs.height - state.groundY);
+                
+                // 畫坑洞 (挖空地面)
+                state.obstacles.forEach(obs => {
+                    if (obs.type === 'pit') {
+                        ctx.clearRect(obs.x, state.groundY, obs.w, cvs.height - state.groundY);
+                    }
+                });
+
+                // 畫石頭
+                state.obstacles.forEach(obs => {
+                    if (obs.type === 'stone') {
+                        if (images.current.stone.complete) {
+                            ctx.drawImage(images.current.stone, obs.x, obs.y, obs.w, obs.h);
+                        } else {
+                            ctx.fillStyle = '#444';
+                            ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                        }
+                    }
+                });
+
+                // 畫鑽石
+                state.diamonds.forEach(d => {
+                    if (!d.collected) {
+                        if (images.current.diamond.complete) {
+                            ctx.drawImage(images.current.diamond, d.x, d.y, d.w, d.h);
+                        } else {
+                            ctx.fillStyle = '#00ffff';
+                            ctx.fillRect(d.x, d.y, d.w, d.h);
+                        }
+                    }
+                });
+
+                // 畫史蒂夫
+                if (images.current.steve.complete) {
+                    ctx.drawImage(images.current.steve, state.player.x, state.player.y, state.player.w, state.player.h);
+                } else {
+                    ctx.fillStyle = '#ffccaa';
+                    ctx.fillRect(state.player.x, state.player.y, state.player.w, state.player.h);
+                }
+                
+                // 畫滑板
+                ctx.fillStyle = '#8b4513'; // 木板
+                ctx.fillRect(state.player.x - 4, state.player.y + state.player.h - 2, state.player.w + 8, 6);
+                ctx.fillStyle = '#111'; // 輪子
+                ctx.fillRect(state.player.x + 2, state.player.y + state.player.h + 4, 8, 8);
+                ctx.fillRect(state.player.x + state.player.w - 10, state.player.y + state.player.h + 4, 8, 8);
+
+                state.reqId = requestAnimationFrame(loop);
+            };
+
+            const endGame = () => {
+                setGameState('gameover');
+                onGameOver(gameRef.current.score); 
+                cancelAnimationFrame(gameRef.current.reqId);
+            };
+
+            return (
+                <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4">
+                    <div className="bg-gray-800 p-2 border-4 border-gray-600 no-round max-w-3xl w-full relative shadow-2xl">
+                        <div className="flex justify-between text-white font-bold mb-2 font-mono px-2 text-xl">
+                            <span className="flex items-center"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png" fallback="💎" className="w-6 h-6 mr-2 pixelated" /> {score}</span>
+                            <button onClick={onQuit} className="text-red-400 hover:text-red-300 transition-colors">✖ 離開</button>
+                        </div>
+                        
+                        <div 
+                            className="bg-[#6bc0ff] relative w-full overflow-hidden border-4 border-black" 
+                            style={{ height: '350px' }}
+                            onMouseDown={(e) => { e.preventDefault(); if(gameState==='playing') jump(); }}
+                            onTouchStart={(e) => { e.preventDefault(); if(gameState==='playing') jump(); }}
+                        >
+                            <canvas 
+                                ref={canvasRef} 
+                                width={800} 
+                                height={350} 
+                                className="w-full h-full pixelated block"
+                            ></canvas>
+                            
+                            {gameState === 'start' && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60">
+                                    <button onClick={startGame} className="mc-btn px-8 py-4 text-2xl animate-pulse">🛹 開始滑板挑戰</button>
+                                </div>
+                            )}
+                            
+                            {gameState === 'gameover' && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-80 text-white">
+                                    <h2 className="text-4xl font-black mb-2 text-red-500 drop-shadow-md">GAME OVER</h2>
+                                    <p className="mb-8 font-bold text-xl flex items-center">
+                                        獲得了 {score} <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png" fallback="💎" className="w-6 h-6 ml-2 pixelated" />
+                                    </p>
+                                    <div className="flex space-x-6">
+                                        <button onClick={startGame} className="mc-btn px-6 py-3 text-lg">🔄 再玩一次</button>
+                                        <button onClick={onQuit} className="mc-btn px-6 py-3 text-lg bg-gray-400">🔙 返回大廳</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <p className="text-center text-gray-400 text-sm mt-3 font-bold tracking-widest">點擊 / 觸控螢幕進行跳躍 (可二段跳)</p>
+                    </div>
+                </div>
+            );
+        }
+
+        // Minecraft 養成遊戲面板組件
         function MinecraftDashboard({ user, userProfile, showAlert }) {
             const [leaderboard, setLeaderboard] = useState([]);
-            const mcData = userProfile.mcData || { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
+            const [showMiniGame, setShowMiniGame] = useState(false);
             
+            const mcData = userProfile.mcData || { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
             const expToNextLevel = mcData.level * 20;
 
             useEffect(() => {
@@ -310,10 +585,12 @@
                 fetchLeaderboard();
             }, [userProfile.friends, mcData]);
 
-            const updateMcData = (updates) => {
+            const updateMcData = (updates, silent = false) => {
                 db.collection('users').doc(user.uid).update({
                     mcData: { ...mcData, ...updates }
-                }).catch(e => showAlert('更新失敗：' + e.message));
+                }).catch(e => {
+                    if (!silent) showAlert('更新失敗：' + e.message);
+                });
             };
 
             const handleCheckIn = () => {
@@ -366,6 +643,13 @@
                 updateMcData(updates);
             };
 
+            // 小遊戲結束回調
+            const handleMiniGameOver = (earnedDiamonds) => {
+                if (earnedDiamonds > 0) {
+                    updateMcData({ diamonds: mcData.diamonds + earnedDiamonds }, true); // silent update
+                }
+            };
+
             const mcBase = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item";
             const imgDiamond = `${mcBase}/diamond.png`;
             const imgApple = `${mcBase}/apple.png`;
@@ -375,13 +659,21 @@
             const imgSteve = "https://minotar.net/helm/Steve/64.png";
 
             return (
-                <div className="mc-bg h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar p-4">
+                <div className="mc-bg h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar p-4 relative">
+                    
+                    {showMiniGame && (
+                        <SkateboardGame 
+                            onGameOver={handleMiniGameOver} 
+                            onQuit={() => setShowMiniGame(false)} 
+                        />
+                    )}
+
                     <div className="max-w-4xl mx-auto mc-ui p-6 flex flex-col space-y-6 bg-opacity-90">
                         
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
                             <div>
                                 <h1 className="text-2xl font-black mb-2 text-gray-800 tracking-wide">⛏️ 史蒂夫的養成天地</h1>
-                                <p className="text-sm font-bold text-gray-600">完成好友分享的測驗可獲取大量鑽石！</p>
+                                <p className="text-sm font-bold text-gray-600">完成測驗或遊玩小遊戲來獲取鑽石！</p>
                             </div>
                             <div className="mc-panel-dark w-full md:w-auto text-white">
                                 <div className="flex space-x-6 text-sm items-center font-bold">
@@ -401,7 +693,12 @@
                             
                             <div className="space-y-6">
                                 <div className="mc-panel-dark text-white">
-                                    <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300">🏡 你的家</h2>
+                                    <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300 flex justify-between items-center">
+                                        <span>🏡 你的家</span>
+                                        <button onClick={() => setShowMiniGame(true)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1 border-2 border-blue-800 font-bold transition-colors">
+                                            🛹 玩滑板遊戲賺鑽石
+                                        </button>
+                                    </h2>
                                     <div className="text-center p-6 mc-bg border-4 border-gray-800 mb-4 h-36 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
                                         <McImg src={imgSteve} fallback="🧍‍♂️" className="w-16 h-16 pixelated shadow-lg border border-black" />
                                         <div className="flex space-x-2 text-2xl absolute bottom-2 right-2">
@@ -456,6 +753,8 @@
                 </div>
             );
         }
+
+        // --- 以下為 Dashboard, SocialDashboard, QuizApp, Main ---
 
         function SocialDashboard({ user, userProfile, showAlert }) {
             const friends = userProfile.friends || [];
@@ -738,7 +1037,6 @@
             const userFolders = userProfile.folders && userProfile.folders.length > 0 ? userProfile.folders : ['未分類'];
             const [currentFolder, setCurrentFolder] = useState('未分類');
             
-            // 新增：測驗狀態篩選器 (不互斥)
             const [filters, setFilters] = useState({ todo: true, doing: true, done: true });
 
             useEffect(() => {
@@ -813,7 +1111,6 @@
 
             const toggleFilter = (key) => setFilters(prev => ({ ...prev, [key]: !prev[key] }));
 
-            // 套用資料夾與狀態篩選
             const displayedRecords = records.filter(rec => {
                 if ((rec.folder || '未分類') !== currentFolder) return false;
                 
@@ -828,7 +1125,6 @@
                 return false;
             });
 
-            // 進入測驗時的時間限制檢查機制
             const handleEnterQuiz = (rec) => {
                 if (rec.hasTimer && !rec.results) {
                     const isNew = !rec.userAnswers || rec.userAnswers.filter(a => a !== '').length === 0;
@@ -859,7 +1155,6 @@
                         </button>
                     </div>
 
-                    {/* 測驗狀態多重篩選區塊 */}
                     <div className="flex items-center space-x-4 mb-6 shrink-0 bg-gray-50 border border-gray-200 px-3 py-2 no-round">
                         <span className="text-sm font-bold text-gray-500 border-r border-gray-300 pr-3">狀態篩選</span>
                         <label className="flex items-center space-x-1.5 text-sm cursor-pointer hover:text-black">
@@ -889,7 +1184,6 @@
                                             <h2 className="font-bold text-lg leading-tight pr-2 flex flex-wrap items-center gap-1">
                                                 <span className="truncate max-w-[150px]">{rec.testName || '未命名測驗'}</span>
                                                 {rec.isShared && <span className="text-xs bg-orange-100 text-orange-800 px-1.5 py-0.5 no-round align-middle font-normal whitespace-nowrap">好友分享</span>}
-                                                {/* 外觀顯示時間限制標籤 */}
                                                 {rec.hasTimer && <span className="text-xs bg-red-50 text-red-600 border border-red-200 px-1.5 py-0.5 no-round align-middle font-bold whitespace-nowrap">⏱ 限時 {rec.timeLimit}m</span>}
                                             </h2>
                                             {rec.results && (
