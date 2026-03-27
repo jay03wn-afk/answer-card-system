@@ -36,9 +36,6 @@
             appId: "1:224666683961:web:351991d6cbc8543b181be8"
         };
 
-        // ★★★ 在這裡填入你的信箱，只有你可以新增/修改試卷網址 ★★★
-        const ADMIN_EMAIL = "你的信箱@gmail.com"; 
-
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
@@ -127,7 +124,11 @@
                     .orderBy('timestamp', 'asc')
                     .onSnapshot(snapshot => {
                         setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+                        setTimeout(() => {
+                            if (messagesEndRef.current) {
+                                messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+                            }
+                        }, 100);
                     });
                 return () => unsub();
             }, [activeChat, user.uid]);
@@ -207,7 +208,7 @@
                         <div className="flex-grow overflow-y-auto p-2">
                             {friends.length === 0 ? <p className="text-center text-gray-400 text-sm mt-10">尚無好友，趕快新增吧！</p> : null}
                             {friends.map(f => (
-                                <div key={f.uid} onClick={() => setActiveChat(f)} className={`p-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors flex items-center space-x-3 ${activeChat?.uid === f.uid ? 'bg-orange-50 border-orange-100' : ''}`}>
+                                <div key={f.uid} onClick={() => setActiveChat(f)} className={`p-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors flex items-center space-x-3 ${activeChat && activeChat.uid === f.uid ? 'bg-orange-50 border-orange-100' : ''}`}>
                                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center font-bold text-gray-500">{f.name.charAt(0)}</div>
                                     <div>
                                         <div className="font-bold text-sm">{f.name}</div>
@@ -372,29 +373,29 @@
         }
 
         function QuizApp({ currentUser, activeQuizRecord, onBackToDashboard }) {
-            const [quizId, setQuizId] = useState(activeQuizRecord?.id || null);
-            const [step, setStep] = useState(activeQuizRecord?.results ? 'results' : (quizId ? 'answering' : 'setup'));
-            const [testName, setTestName] = useState(activeQuizRecord?.testName || '');
-            const [numQuestions, setNumQuestions] = useState(activeQuizRecord?.numQuestions || 50);
-            const [userAnswers, setUserAnswers] = useState(activeQuizRecord?.userAnswers || []);
-            const [starred, setStarred] = useState(activeQuizRecord?.starred || []);
-            const [correctAnswersInput, setCorrectAnswersInput] = useState(activeQuizRecord?.correctAnswersInput || '');
-            const [results, setResults] = useState(activeQuizRecord?.results || null);
-            const [questionFileUrl, setQuestionFileUrl] = useState(activeQuizRecord?.questionFileUrl || '');
-
-            const isAdmin = currentUser.email === ADMIN_EMAIL;
+            // ★ 修改點：全面移除較新的可選串連語法(?. )，以確保任何編譯環境都不會報錯白屏
+            const initialRecord = activeQuizRecord || {};
+            const [quizId, setQuizId] = useState(initialRecord.id || null);
+            const [step, setStep] = useState(initialRecord.results ? 'results' : (initialRecord.id ? 'answering' : 'setup'));
+            const [testName, setTestName] = useState(initialRecord.testName || '');
+            const [numQuestions, setNumQuestions] = useState(initialRecord.numQuestions || 50);
+            const [userAnswers, setUserAnswers] = useState(initialRecord.userAnswers || []);
+            const [starred, setStarred] = useState(initialRecord.starred || []);
+            const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
+            const [results, setResults] = useState(initialRecord.results || null);
+            const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
 
             useEffect(() => {
                 if (currentUser && quizId && (step === 'answering' || step === 'setup' || step === 'results')) {
                     if (userAnswers.length === 0 && numQuestions > 0 && step === 'answering') return;
                     const stateToSave = { 
                         testName, numQuestions, userAnswers, starred, correctAnswersInput, results, 
-                        showOnlyWrong, questionFileUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        showOnlyWrong: false, questionFileUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
                     db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
                       .catch(e => console.error("自動儲存失敗", e));
                 }
-            }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, showOnlyWrong, questionFileUrl, currentUser, quizId, step]);
+            }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, currentUser, quizId, step]);
 
             const handleStartTest = () => {
                 if (numQuestions < 1 || numQuestions > 100) return alert('題數限 1-100');
@@ -476,18 +477,19 @@
                             <p className="text-xs text-gray-500 mt-1">進度: <span className="font-bold text-black">{userAnswers.filter(a=>a).length}</span> / {numQuestions}</p>
                         </div>
                         <div className="flex items-center space-x-2 flex-shrink-0">
+                            
+                            {/* ★ 修改點：任何人都可以看見並使用貼上網址功能 ★ */}
                             {questionFileUrl ? (
                                 <div className="flex items-center space-x-1">
                                     <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="bg-gray-100 text-black px-4 py-2 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200">📎 檢視試卷</a>
-                                    {isAdmin && (
-                                        <button onClick={() => setQuestionFileUrl('')} className="bg-red-50 text-red-600 px-3 py-2 no-round font-bold border border-red-200 text-xs hover:bg-red-100" title="移除網址">✖</button>
-                                    )}
+                                    <button onClick={() => setQuestionFileUrl('')} className="bg-red-50 text-red-600 px-3 py-2 no-round font-bold border border-red-200 text-xs hover:bg-red-100" title="移除網址">✖</button>
                                 </div>
-                            ) : isAdmin ? (
+                            ) : (
                                 <button onClick={handleAddFileUrl} className="bg-orange-50 text-orange-800 border border-orange-200 px-4 py-2 no-round font-bold text-sm hover:bg-orange-100">
                                     📎 貼上試卷網址
                                 </button>
-                            ) : null}
+                            )}
+
                             <button onClick={handleResetProgress} className="bg-gray-100 text-gray-500 px-4 py-2 no-round font-bold hover:bg-gray-200 hover:text-red-600 text-sm hidden md:block">放棄作答</button>
                             <button onClick={() => setStep('grading')} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800">對答案</button>
                         </div>
@@ -521,36 +523,40 @@
                 </div>
             );
 
-            if (step === 'results') return (
-                <div className="max-w-4xl mx-auto p-4 pt-6">
-                    <div className="bg-white p-4 border border-gray-200 shadow-sm flex justify-between items-center mb-6 no-round">
-                        <h2 className="font-bold text-gray-800 truncate pr-4">{testName || '未命名'}</h2>
-                        <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-2 no-round hover:bg-gray-800 whitespace-nowrap">返回列表</button>
-                    </div>
-                    <div className="bg-white p-10 shadow-md border-t-8 border-black text-center mb-6 no-round relative overflow-hidden">
-                        <h2 className={`text-6xl font-black mb-4 ${results.score >= 60 ? 'text-green-600' : 'text-red-600'}`}>{results.score}</h2>
-                        <p className="text-gray-500 font-bold tracking-widest">答對 {results.correctCount} / {results.total} 題</p>
-                    </div>
-                    <div className="bg-white p-6 border border-gray-200 no-round shadow-sm">
-                        <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-3">
-                            <h3 className="font-bold text-lg">答案解析</h3>
-                            <button onClick={() => setShowOnlyWrong(!showOnlyWrong)} className="text-sm font-bold text-gray-500 hover:text-black bg-gray-100 px-3 py-1 no-round border border-gray-200">{showOnlyWrong ? '顯示全部' : '只看錯題'}</button>
+            if (step === 'results') {
+                // 將 showOnlyWrong 放在這個區塊獨立控制，不存入資料庫以避免干擾
+                const [showOnlyWrong, setShowOnlyWrong] = useState(false);
+                return (
+                    <div className="max-w-4xl mx-auto p-4 pt-6">
+                        <div className="bg-white p-4 border border-gray-200 shadow-sm flex justify-between items-center mb-6 no-round">
+                            <h2 className="font-bold text-gray-800 truncate pr-4">{testName || '未命名'}</h2>
+                            <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-2 no-round hover:bg-gray-800 whitespace-nowrap">返回列表</button>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                            {results.data.filter(q => showOnlyWrong ? !q.isCorrect : true).map(q => (
-                                <div key={q.number} className={`p-3 border no-round flex justify-between items-center ${q.isCorrect ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-200'}`}>
-                                    <span className={`font-black text-sm ${q.isCorrect ? 'text-green-800' : 'text-red-800'}`}>{q.number}.</span>
-                                    <div className="text-sm font-bold">
-                                        <span className={q.isCorrect ? 'text-gray-700' : 'text-red-600 line-through'}>{q.userAns}</span>
-                                        <span className="mx-2 text-gray-300">→</span>
-                                        <span className="text-green-700">{q.correctAns}</span>
+                        <div className="bg-white p-10 shadow-md border-t-8 border-black text-center mb-6 no-round relative overflow-hidden">
+                            <h2 className={`text-6xl font-black mb-4 ${results.score >= 60 ? 'text-green-600' : 'text-red-600'}`}>{results.score}</h2>
+                            <p className="text-gray-500 font-bold tracking-widest">答對 {results.correctCount} / {results.total} 題</p>
+                        </div>
+                        <div className="bg-white p-6 border border-gray-200 no-round shadow-sm">
+                            <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-3">
+                                <h3 className="font-bold text-lg">答案解析</h3>
+                                <button onClick={() => setShowOnlyWrong(!showOnlyWrong)} className="text-sm font-bold text-gray-500 hover:text-black bg-gray-100 px-3 py-1 no-round border border-gray-200">{showOnlyWrong ? '顯示全部' : '只看錯題'}</button>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                                {results.data.filter(q => showOnlyWrong ? !q.isCorrect : true).map(q => (
+                                    <div key={q.number} className={`p-3 border no-round flex justify-between items-center ${q.isCorrect ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-200'}`}>
+                                        <span className={`font-black text-sm ${q.isCorrect ? 'text-green-800' : 'text-red-800'}`}>{q.number}.</span>
+                                        <div className="text-sm font-bold">
+                                            <span className={q.isCorrect ? 'text-gray-700' : 'text-red-600 line-through'}>{q.userAns}</span>
+                                            <span className="mx-2 text-gray-300">→</span>
+                                            <span className="text-green-700">{q.correctAns}</span>
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
                     </div>
-                </div>
-            );
+                );
+            }
         }
 
         function Main() {
@@ -560,7 +566,6 @@
             const [activeTab, setActiveTab] = useState('dashboard');
             const [activeQuizRecord, setActiveQuizRecord] = useState(null);
 
-            // ★ 加入了強制捕捉錯誤 (.catch)，避免權限被鎖住時畫面卡死
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(usr => {
                     setUser(usr);
@@ -585,7 +590,7 @@
             
             if (loadingUser) return <div className="flex h-screen items-center justify-center font-bold tracking-widest animate-pulse text-gray-500">系統載入中...</div>;
             if (!user) return <AuthScreen />;
-            if (!userProfile?.displayName) return <ProfileSetup user={user} onComplete={(name) => setUserProfile({...userProfile, displayName: name})} />;
+            if (!userProfile || !userProfile.displayName) return <ProfileSetup user={user} onComplete={(name) => setUserProfile({...userProfile, displayName: name})} />;
 
             const TopNav = () => (
                 <div className="bg-black text-white px-4 flex justify-between items-center mb-6 shadow-md h-14">
@@ -606,7 +611,8 @@
                     {activeTab !== 'activeQuiz' && <TopNav />}
                     {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={() => { setActiveQuizRecord(null); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     {activeTab === 'social' && <SocialDashboard user={user} userProfile={userProfile} />}
-                    {activeTab === 'activeQuiz' && <QuizApp currentUser={user} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} />}
+                    {/* ★ 加入 key 確保每次進來狀態都強制歸零重置 ★ */}
+                    {activeTab === 'activeQuiz' && <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} />}
                 </div>
             );
         }
