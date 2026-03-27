@@ -487,14 +487,14 @@
                         if (rand < 0.4) {
                             state.obstacles.push({ type: 'stone', x: cvs.width, y: state.groundY - 40, w: 40, h: 40 });
                         } else if (rand < 0.75) {
-                            state.obstacles.push({ type: 'pit', x: cvs.width, y: state.groundY, w: Math.random() * 70 + 60, h: 100 });
+                            state.obstacles.push({ type: 'pit', x: cvs.width, y: state.groundY, w: Math.random() * 150 + 100, h: 100 });
                         } else {
                             state.obstacles.push({ type: 'zombie', x: cvs.width, y: state.groundY - 40, w: 40, h: 40 });
                         }
                     }
                 }
                 
-                if (state.frames % Math.floor(Math.random() * 40 + 30) === 0) {
+                if (state.frames % Math.floor(Math.random() * 400 + 300) === 0) {
                     let dY = state.groundY - 50 - Math.random() * 100;
                     state.diamonds.push({ x: cvs.width, y: dY, w: 24, h: 24, collected: false });
                 }
