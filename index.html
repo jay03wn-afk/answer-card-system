@@ -18,17 +18,14 @@
         .no-round { border-radius: 2px !important; }
         .columns-custom { column-gap: 1.5rem; }
         @media (min-width: 640px) { .columns-custom { column-count: 2; } }
-        /* 當進入雙螢幕模式時，答案卡空間變小，強制使用單欄或雙欄 */
         .split-view-columns { column-count: 1; column-gap: 1rem; }
         @media (min-width: 1280px) { .split-view-columns { column-count: 2; } }
         
         .break-avoid { break-inside: avoid; }
         
-        /* 隱藏滾動條但保留滾動功能 (美化介面) */
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         
-        /* 訂製細緻的滾動條給答案卡區域 */
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -62,18 +59,14 @@
             }, 300);
         };
 
-        // ★ 新增：Google Drive 連結自動轉換預覽格式函式
         const getEmbedUrl = (url) => {
             if (!url) return '';
             try {
-                // 擷取 Google Drive 的檔案 ID
                 const driveRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
                 const match = url.match(driveRegex);
                 if (match && match[1]) {
-                    // 強制轉換為 preview 格式才能嵌入 iframe
                     return `https://drive.google.com/file/d/${match[1]}/preview`;
                 }
-                // 若不是 Google Drive，原封不動回傳 (例如一般圖床網址)
                 return url;
             } catch(e) {
                 return url;
@@ -395,6 +388,9 @@
                                             ) : (
                                                 <p className="text-orange-600 font-bold">狀態：📝 作答中 (已填 {rec.userAnswers.filter(a=>a).length})</p>
                                             )}
+                                            {rec.questionFileUrl && (
+                                                <p>附件：<a href={rec.questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-xs hover:text-blue-800">查看試卷</a></p>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center border-t pt-4 border-gray-100">
@@ -475,8 +471,33 @@
                 }).catch(e => alert('建立紀錄失敗：' + e.message));
             };
 
+            // ★ 新增：重測一次的功能函式
+            const handleRetake = () => {
+                if(confirm("即將為您建立一份相同的空白試卷，先前的成績仍會保留在題庫中。\n確定要再做一次嗎？")) {
+                    const initialAnswers = Array(Number(numQuestions)).fill('');
+                    const initialStarred = Array(Number(numQuestions)).fill(false);
+                    
+                    db.collection('users').doc(currentUser.uid).collection('quizzes').add({
+                        testName: testName + ' (重測)',
+                        numQuestions: numQuestions,
+                        questionFileUrl: questionFileUrl || '',
+                        correctAnswersInput: correctAnswersInput || '', 
+                        userAnswers: initialAnswers,
+                        starred: initialStarred,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }).then(docRef => {
+                        setQuizId(docRef.id);
+                        setTestName(testName + ' (重測)');
+                        setUserAnswers(initialAnswers);
+                        setStarred(initialStarred);
+                        setResults(null);
+                        setStep('answering');
+                    }).catch(e => alert('建立重測紀錄失敗：' + e.message));
+                }
+            };
+
             const handleAddFileUrl = () => {
-                const url = prompt("請貼上試卷的公開網址 (Google Drive 連結等)：\n注意：Google Drive 檔案權限需設為「知道連結的人皆可查看」", questionFileUrl || "");
+                const url = prompt("請貼上試卷的公開網址 (例如 Google Drive 連結 或 Imgur 圖床網址)：\n注意：請確保該網址的權限已設為「知道連結的人皆可查看」", questionFileUrl || "");
                 if (url !== null && url.trim() !== "") {
                     setQuestionFileUrl(url.trim());
                 }
@@ -531,10 +552,8 @@
             );
 
             if (step === 'answering') return (
-                // ★ 這裡實作了滿版的雙螢幕分割架構 (Split View)
                 <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 max-w-[1600px] mx-auto gap-2 sm:gap-4 overflow-hidden">
                     
-                    {/* 頂部操作列 (不參與 flex-grow，固定高度) */}
                     <div className="bg-white p-3 sm:p-4 shadow-sm border border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center no-round gap-3 sm:gap-0 shrink-0 z-10">
                         <div className="flex items-center flex-grow mr-2 w-full sm:w-auto overflow-hidden">
                             <button onClick={onBackToDashboard} className="mr-3 text-gray-500 hover:text-black font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">← 返回</button>
@@ -557,10 +576,7 @@
                         </div>
                     </div>
                     
-                    {/* 主要內容區 (使用 Flex 分割，隱藏外層滾動) */}
                     <div className="flex-grow flex flex-col md:flex-row gap-2 sm:gap-4 overflow-hidden relative">
-                        
-                        {/* 左側：PDF 預覽區塊 (手機版佔上方 45%，電腦版佔左側比例) */}
                         {questionFileUrl && (
                             <div className="w-full md:w-3/5 lg:w-2/3 h-[45dvh] md:h-full bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0 md:shrink">
                                 <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
@@ -568,19 +584,15 @@
                                     <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 font-bold underline">在新分頁開啟全螢幕</a>
                                 </div>
                                 <div className="flex-grow w-full relative bg-gray-200">
-                                    {/* 自動帶入轉換好的 Embed URL */}
                                     <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0" allow="autoplay" allowFullScreen></iframe>
                                 </div>
                             </div>
                         )}
 
-                        {/* 右側：答案卡區塊 (各自擁有獨立滾動條) */}
                         <div className={`w-full ${questionFileUrl ? 'md:w-2/5 lg:w-1/3' : 'max-w-5xl mx-auto'} h-full flex flex-col bg-white border border-gray-200 shadow-sm no-round shrink-0 md:shrink`}>
                             <div className="bg-gray-50 border-b border-gray-200 px-4 py-2 shrink-0 flex justify-between items-center">
                                 <span className="font-bold text-xs text-gray-600">✏️ 答案卡</span>
                             </div>
-                            
-                            {/* ★ 這裡是答案卡獨立滾動的核心 */}
                             <div className="flex-grow overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-white">
                                 <div className={`${questionFileUrl ? 'split-view-columns' : 'columns-custom'} space-y-2`}>
                                     {userAnswers.map((ans, i) => (
@@ -619,7 +631,11 @@
                 <div className="max-w-4xl mx-auto p-4 pt-6 h-[100dvh] overflow-y-auto custom-scrollbar pb-10">
                     <div className="bg-white p-4 border border-gray-200 shadow-sm flex justify-between items-center mb-6 no-round shrink-0">
                         <h2 className="font-bold text-gray-800 truncate pr-4">{testName || '未命名'}</h2>
-                        <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-2 no-round hover:bg-gray-800 whitespace-nowrap">返回列表</button>
+                        {/* ★ 這裡新增了再做一次的按鈕 ★ */}
+                        <div className="flex space-x-2">
+                            <button onClick={handleRetake} className="text-sm font-bold bg-orange-50 text-orange-600 px-4 py-2 no-round border border-orange-200 hover:bg-orange-100 whitespace-nowrap transition-colors">再做一次</button>
+                            <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-2 no-round hover:bg-gray-800 whitespace-nowrap">返回列表</button>
+                        </div>
                     </div>
                     <div className="bg-white p-10 shadow-md border-t-8 border-black text-center mb-6 no-round relative overflow-hidden shrink-0">
                         <h2 className={`text-6xl font-black mb-4 ${results.score >= 60 ? 'text-green-600' : 'text-red-600'}`}>{results.score}</h2>
@@ -710,7 +726,6 @@
                 <div className="h-[100dvh] flex flex-col overflow-hidden">
                     {activeTab !== 'activeQuiz' && <TopNav />}
                     
-                    {/* 包裝器處理 Dashboard 與 Social 的間距 */}
                     {activeTab !== 'activeQuiz' ? (
                         <div className="flex-grow pt-6 overflow-hidden">
                             {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={() => { setActiveQuizRecord(null); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
