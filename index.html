@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>JJay線上測驗 - 社群版</title>
+    <title>JJay線上測驗 - 雙螢幕社群版</title>
     
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -16,19 +16,29 @@
 
     <style>
         .no-round { border-radius: 2px !important; }
-        .columns-custom { column-gap: 2rem; }
+        .columns-custom { column-gap: 1.5rem; }
         @media (min-width: 640px) { .columns-custom { column-count: 2; } }
-        @media (min-width: 1024px) { .columns-custom { column-count: 3; } }
-        @media (min-width: 1280px) { .columns-custom { column-count: 4; } }
-        .break-avoid { break-inside: avoid; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        /* 當進入雙螢幕模式時，答案卡空間變小，強制使用單欄或雙欄 */
+        .split-view-columns { column-count: 1; column-gap: 1rem; }
+        @media (min-width: 1280px) { .split-view-columns { column-count: 2; } }
         
-        /* 避免 iOS Safari 點擊輸入框時自動放大畫面 */
+        .break-avoid { break-inside: avoid; }
+        
+        /* 隱藏滾動條但保留滾動功能 (美化介面) */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* 訂製細緻的滾動條給答案卡區域 */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
         input, textarea, button { font-size: 16px !important; }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800 font-sans">
-    <div id="root"></div>
+<body class="bg-gray-100 text-gray-800 font-sans h-[100dvh] overflow-hidden">
+    <div id="root" class="h-full"></div>
 
     <script type="text/babel">
         const firebaseConfig = {
@@ -50,6 +60,24 @@
             setTimeout(() => {
                 target.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 300);
+        };
+
+        // ★ 新增：Google Drive 連結自動轉換預覽格式函式
+        const getEmbedUrl = (url) => {
+            if (!url) return '';
+            try {
+                // 擷取 Google Drive 的檔案 ID
+                const driveRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
+                const match = url.match(driveRegex);
+                if (match && match[1]) {
+                    // 強制轉換為 preview 格式才能嵌入 iframe
+                    return `https://drive.google.com/file/d/${match[1]}/preview`;
+                }
+                // 若不是 Google Drive，原封不動回傳 (例如一般圖床網址)
+                return url;
+            } catch(e) {
+                return url;
+            }
         };
 
         function AuthScreen() {
@@ -76,7 +104,7 @@
             };
 
             return (
-                <div className="flex min-h-[100dvh] items-center justify-center p-4">
+                <div className="flex h-full items-center justify-center p-4 overflow-y-auto">
                     <form onSubmit={handleAuth} className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200">
                         <div className="w-16 h-16 bg-black text-white rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-300">
                             <span className="text-3xl font-black">📝</span>
@@ -100,7 +128,7 @@
                   .catch(e => alert('設定失敗：' + e.message));
             };
             return (
-                <div className="flex min-h-[100dvh] items-center justify-center p-4 bg-gray-50">
+                <div className="flex h-full items-center justify-center p-4 bg-gray-50 overflow-y-auto">
                     <div className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200 text-center">
                         <h2 className="text-xl font-bold mb-4">歡迎加入！請設定你的社群暱稱</h2>
                         <input type="text" placeholder="例如：藥神、JJay..." className="w-full mb-6 p-3 border border-gray-300 no-round outline-none focus:border-black text-center" value={name} onChange={e => setName(e.target.value)} onFocus={handleFocusScroll} />
@@ -127,7 +155,6 @@
 
             const getChatId = (uid1, uid2) => [uid1, uid2].sort().join('_');
 
-            // ★ 新增：當進入某個聊天室，自動將該好友的未讀標記設為已讀
             useEffect(() => {
                 if (activeChat && userProfile?.unreadChats?.[activeChat.uid]) {
                     db.collection('users').doc(user.uid).set({
@@ -193,7 +220,6 @@
                     type: 'text'
                 }).then(() => {
                     setNewMessage('');
-                    // ★ 新增：傳送訊息時，標記對方有未讀訊息
                     db.collection('users').doc(activeChat.uid).set({
                         unreadChats: { [user.uid]: true }
                     }, { merge: true });
@@ -225,14 +251,14 @@
             return (
                 <div className="max-w-6xl mx-auto p-4 pt-0 grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100dvh-100px)]">
                     <div className="bg-white border border-gray-200 shadow-sm no-round flex flex-col h-full overflow-hidden">
-                        <div className="p-4 border-b border-gray-100 bg-gray-50">
+                        <div className="p-4 border-b border-gray-100 bg-gray-50 shrink-0">
                             <h2 className="font-bold mb-3">加入好友</h2>
                             <div className="flex space-x-2">
                                 <input type="email" placeholder="輸入好友信箱..." className="flex-grow p-2 text-sm border border-gray-300 no-round outline-none" value={searchEmail} onChange={e=>setSearchEmail(e.target.value)} onFocus={handleFocusScroll} />
                                 <button onClick={handleAddFriend} className="bg-black text-white px-3 py-2 no-round text-sm font-bold">加入</button>
                             </div>
                         </div>
-                        <div className="flex-grow overflow-y-auto p-2">
+                        <div className="flex-grow overflow-y-auto p-2 custom-scrollbar">
                             {friends.length === 0 ? <p className="text-center text-gray-400 text-sm mt-10">尚無好友，趕快新增吧！</p> : null}
                             {friends.map(f => (
                                 <div key={f.uid} onClick={() => setActiveChat(f)} className={`p-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors flex items-center space-x-3 ${activeChat && activeChat.uid === f.uid ? 'bg-orange-50 border-orange-100' : ''}`}>
@@ -241,7 +267,6 @@
                                         <div className="font-bold text-sm truncate">{f.name}</div>
                                         <div className="text-xs text-gray-400 truncate">{f.email}</div>
                                     </div>
-                                    {/* ★ 新增：如果這個好友有未讀訊息，顯示紅點 */}
                                     {userProfile?.unreadChats?.[f.uid] && (
                                         <div className="w-2.5 h-2.5 bg-red-500 rounded-full shrink-0"></div>
                                     )}
@@ -257,12 +282,12 @@
                                     <span className="text-xl">💬</span>
                                     <span>與 {activeChat.name} 的聊天室</span>
                                 </div>
-                                <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50">
+                                <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50 custom-scrollbar">
                                     {messages.map(msg => {
                                         const isMe = msg.senderId === user.uid;
                                         return (
                                             <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                                <div className={`max-w-[70%] p-3 text-sm no-round ${isMe ? 'bg-black text-white' : 'bg-white border border-gray-200 text-black'}`}>
+                                                <div className={`max-w-[70%] p-3 text-sm no-round ${isMe ? 'bg-black text-white' : 'bg-white border border-gray-200 text-black shadow-sm'}`}>
                                                     {msg.type === 'text' ? (
                                                         <p>{msg.text}</p>
                                                     ) : (
@@ -328,10 +353,10 @@
                         ownerId: user.uid,
                         quizId: showShareModal.id,
                         testName: showShareModal.testName,
-                        questionFileUrl: showShareModal.questionFileUrl || ''
+                        questionFileUrl: showShareModal.questionFileUrl || '',
+                        correctAnswersInput: showShareModal.correctAnswersInput || ''
                     }
                 }).then(() => {
-                    // ★ 新增：傳送試卷時，標記對方有未讀訊息
                     db.collection('users').doc(friend.uid).set({
                         unreadChats: { [user.uid]: true }
                     }, { merge: true });
@@ -341,8 +366,8 @@
             };
 
             return (
-                <div className="max-w-6xl mx-auto p-4 pt-0">
-                    <div className="flex justify-between items-center mb-6 border-b-2 border-black pb-2">
+                <div className="max-w-6xl mx-auto p-4 pt-0 h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar">
+                    <div className="flex justify-between items-center mb-6 border-b-2 border-black pb-2 shrink-0">
                         <h1 className="text-2xl font-black">我的題庫</h1>
                         <button onClick={onStartNew} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800 shadow-sm">+ 新測驗</button>
                     </div>
@@ -352,14 +377,14 @@
                     ) : records.length === 0 ? (
                         <div className="bg-white text-center text-gray-500 py-16 border border-gray-200 no-round shadow-sm">尚無測驗紀錄，點擊右上方按鈕開始！</div>
                     ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 pb-10">
                             {records.map(rec => (
                                 <div key={rec.id} className="bg-white border border-gray-200 p-6 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
                                     <div>
                                         <div className="flex justify-between items-start mb-2">
-                                            <h2 className="font-bold text-lg leading-tight truncate">{rec.testName || '未命名測驗'}</h2>
+                                            <h2 className="font-bold text-lg leading-tight truncate pr-2">{rec.testName || '未命名測驗'}</h2>
                                             {rec.results && (
-                                                <span className={`text-2xl font-black px-2 py-1 ml-2 ${rec.results.score >= 60 ? 'text-green-600' : 'text-red-600'}`}>{rec.results.score}</span>
+                                                <span className={`text-2xl font-black px-2 py-1 ml-2 shrink-0 ${rec.results.score >= 60 ? 'text-green-600' : 'text-red-600'}`}>{rec.results.score}</span>
                                             )}
                                         </div>
                                         <p className="text-xs text-gray-400 mb-4">{rec.createdAt ? rec.createdAt.toDate().toLocaleString('zh-TW') : ''}</p>
@@ -370,17 +395,14 @@
                                             ) : (
                                                 <p className="text-orange-600 font-bold">狀態：📝 作答中 (已填 {rec.userAnswers.filter(a=>a).length})</p>
                                             )}
-                                            {rec.questionFileUrl && (
-                                                <p>附件：<a href={rec.questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-xs hover:text-blue-800">查看試卷</a></p>
-                                            )}
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center border-t pt-4 border-gray-100">
-                                        <div className="space-x-2">
+                                        <div className="space-x-3">
                                             <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 hover:text-red-600 hover:underline">刪除</button>
                                             <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 hover:text-blue-700 font-bold">📤 分享</button>
                                         </div>
-                                        <button onClick={() => onContinueQuiz(rec)} className="bg-gray-100 px-5 py-2 no-round font-bold border border-gray-200 hover:bg-gray-200 text-sm">{rec.results ? '查看詳情' : '繼續作答'}</button>
+                                        <button onClick={() => onContinueQuiz(rec)} className="bg-gray-100 px-5 py-2 no-round font-bold border border-gray-200 hover:bg-gray-200 text-sm shrink-0">{rec.results ? '查看詳情' : '繼續作答'}</button>
                                     </div>
                                 </div>
                             ))}
@@ -391,7 +413,7 @@
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                             <div className="bg-white p-6 w-full max-w-sm no-round">
                                 <h3 className="font-bold text-lg mb-4">選擇要分享的好友</h3>
-                                <div className="max-h-60 overflow-y-auto mb-4 border border-gray-200">
+                                <div className="max-h-60 overflow-y-auto mb-4 border border-gray-200 custom-scrollbar">
                                     {(userProfile.friends || []).length === 0 ? <p className="p-4 text-sm text-gray-400">目前還沒有好友喔</p> : null}
                                     {(userProfile.friends || []).map(f => (
                                         <button key={f.uid} onClick={() => shareToFriend(f)} className="w-full text-left p-3 hover:bg-gray-50 border-b border-gray-100 font-bold text-sm">
@@ -454,7 +476,7 @@
             };
 
             const handleAddFileUrl = () => {
-                const url = prompt("請貼上試卷的公開網址 (例如 Google Drive 連結 或 Imgur 圖床網址)：\n注意：請確保該網址的權限已設為「知道連結的人皆可查看」", questionFileUrl || "");
+                const url = prompt("請貼上試卷的公開網址 (Google Drive 連結等)：\n注意：Google Drive 檔案權限需設為「知道連結的人皆可查看」", questionFileUrl || "");
                 if (url !== null && url.trim() !== "") {
                     setQuestionFileUrl(url.trim());
                 }
@@ -497,8 +519,8 @@
             };
 
             if (step === 'setup') return (
-                <div className="flex flex-col items-center justify-center p-4 min-h-[100dvh] relative">
-                    <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold">← 返回列表</button>
+                <div className="flex flex-col items-center justify-center p-4 h-[100dvh] overflow-y-auto relative">
+                    <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">← 返回列表</button>
                     <div className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200">
                         <h1 className="text-xl font-bold mb-6 border-b pb-2 tracking-tight">新增測驗</h1>
                         <input type="text" placeholder="例如: 藥理學與藥物化學期中考" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
@@ -509,76 +531,104 @@
             );
 
             if (step === 'answering') return (
-                <div className="max-w-5xl mx-auto p-4 pt-6">
-                    <div className="bg-white p-4 shadow-sm border border-gray-200 sticky top-4 z-10 flex flex-col md:flex-row justify-between items-start md:items-center mb-6 no-round gap-4 md:gap-0">
-                        <div className="flex items-center flex-grow mr-2 w-full md:w-auto">
-                            <button onClick={onBackToDashboard} className="mr-4 text-gray-500 hover:text-black font-bold text-sm whitespace-nowrap px-2 py-1 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">← 返回</button>
-                            <div className="overflow-hidden">
-                                <h2 className="font-bold truncate">{testName || '作答中'}</h2>
-                                <p className="text-xs text-gray-500 mt-1">進度: <span className="font-bold text-black">{userAnswers.filter(a=>a).length}</span> / {numQuestions}</p>
+                // ★ 這裡實作了滿版的雙螢幕分割架構 (Split View)
+                <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 max-w-[1600px] mx-auto gap-2 sm:gap-4 overflow-hidden">
+                    
+                    {/* 頂部操作列 (不參與 flex-grow，固定高度) */}
+                    <div className="bg-white p-3 sm:p-4 shadow-sm border border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center no-round gap-3 sm:gap-0 shrink-0 z-10">
+                        <div className="flex items-center flex-grow mr-2 w-full sm:w-auto overflow-hidden">
+                            <button onClick={onBackToDashboard} className="mr-3 text-gray-500 hover:text-black font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">← 返回</button>
+                            <div className="overflow-hidden flex-grow">
+                                <h2 className="font-bold truncate text-base">{testName || '作答中'}</h2>
+                                <p className="text-xs text-gray-500 mt-0.5">進度: <span className="font-bold text-black">{userAnswers.filter(a=>a).length}</span> / {numQuestions}</p>
                             </div>
                         </div>
 
-                        <div className="flex items-center space-x-2 flex-shrink-0 w-full md:w-auto justify-end">
+                        <div className="flex items-center space-x-2 flex-shrink-0 w-full sm:w-auto justify-end">
                             {questionFileUrl ? (
-                                <div className="flex items-center space-x-1">
-                                    <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="bg-gray-100 text-black px-4 py-2 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200">📎 檢視試卷</a>
-                                    <button onClick={() => setQuestionFileUrl('')} className="bg-red-50 text-red-600 px-3 py-2 no-round font-bold border border-red-200 text-xs hover:bg-red-100" title="移除網址">✖</button>
-                                </div>
+                                <button onClick={() => setQuestionFileUrl('')} className="bg-red-50 text-red-600 px-3 py-1.5 no-round font-bold border border-red-200 text-xs hover:bg-red-100" title="移除預覽">✖ 關閉預覽</button>
                             ) : (
-                                <button onClick={handleAddFileUrl} className="bg-orange-50 text-orange-800 border border-orange-200 px-4 py-2 no-round font-bold text-sm hover:bg-orange-100">
+                                <button onClick={handleAddFileUrl} className="bg-orange-50 text-orange-800 border border-orange-200 px-4 py-1.5 no-round font-bold text-xs hover:bg-orange-100">
                                     📎 貼上試卷網址
                                 </button>
                             )}
-                            
-                            <button onClick={handleResetProgress} className="bg-gray-50 text-red-400 px-4 py-2 no-round font-bold hover:bg-red-50 hover:text-red-600 border border-transparent hover:border-red-100 text-sm hidden sm:block transition-colors">刪除紀錄</button>
-                            <button onClick={() => setStep('grading')} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800 shadow-sm">對答案</button>
+                            <button onClick={handleResetProgress} className="bg-gray-50 text-red-400 px-4 py-1.5 no-round font-bold hover:bg-red-50 hover:text-red-600 border border-transparent hover:border-red-100 text-xs hidden md:block transition-colors">刪除紀錄</button>
+                            <button onClick={() => setStep('grading')} className="bg-black text-white px-6 py-1.5 no-round font-bold hover:bg-gray-800 text-sm shadow-sm">交卷對答案</button>
                         </div>
                     </div>
                     
-                    <div className="bg-white p-6 border border-gray-200 shadow-sm no-round columns-custom">
-                        {userAnswers.map((ans, i) => (
-                            <div key={i} className="break-avoid flex items-center justify-between py-2 border-b border-gray-50 hover:bg-gray-50">
-                                <div className="flex items-center space-x-2">
-                                    <span className="font-mono text-sm font-bold w-6 text-gray-400">{i+1}.</span>
-                                    <button onClick={() => toggleStar(i)} className={`text-sm ${starred[i] ? 'text-orange-500' : 'text-gray-200 hover:text-gray-300'}`}>★</button>
+                    {/* 主要內容區 (使用 Flex 分割，隱藏外層滾動) */}
+                    <div className="flex-grow flex flex-col md:flex-row gap-2 sm:gap-4 overflow-hidden relative">
+                        
+                        {/* 左側：PDF 預覽區塊 (手機版佔上方 45%，電腦版佔左側比例) */}
+                        {questionFileUrl && (
+                            <div className="w-full md:w-3/5 lg:w-2/3 h-[45dvh] md:h-full bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0 md:shrink">
+                                <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
+                                    <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
+                                    <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 font-bold underline">在新分頁開啟全螢幕</a>
                                 </div>
-                                <div className="flex space-x-1">
-                                    {['A','B','C','D'].map(o => (
-                                        <button key={o} onClick={() => handleAnswerSelect(i, o)} className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all ${ans === o ? 'bg-black border-black text-white scale-105' : 'bg-white border-gray-300 text-gray-400 hover:border-gray-500'}`}>{o}</button>
+                                <div className="flex-grow w-full relative bg-gray-200">
+                                    {/* 自動帶入轉換好的 Embed URL */}
+                                    <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0" allow="autoplay" allowFullScreen></iframe>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 右側：答案卡區塊 (各自擁有獨立滾動條) */}
+                        <div className={`w-full ${questionFileUrl ? 'md:w-2/5 lg:w-1/3' : 'max-w-5xl mx-auto'} h-full flex flex-col bg-white border border-gray-200 shadow-sm no-round shrink-0 md:shrink`}>
+                            <div className="bg-gray-50 border-b border-gray-200 px-4 py-2 shrink-0 flex justify-between items-center">
+                                <span className="font-bold text-xs text-gray-600">✏️ 答案卡</span>
+                            </div>
+                            
+                            {/* ★ 這裡是答案卡獨立滾動的核心 */}
+                            <div className="flex-grow overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-white">
+                                <div className={`${questionFileUrl ? 'split-view-columns' : 'columns-custom'} space-y-2`}>
+                                    {userAnswers.map((ans, i) => (
+                                        <div key={i} className="break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 hover:bg-gray-50 pr-2">
+                                            <div className="flex items-center space-x-2 shrink-0 w-14">
+                                                <span className="font-mono text-sm font-bold text-gray-400">{i+1}.</span>
+                                                <button onClick={() => toggleStar(i)} className={`text-sm focus:outline-none ${starred[i] ? 'text-orange-500' : 'text-gray-200 hover:text-gray-300'}`}>★</button>
+                                            </div>
+                                            <div className="flex space-x-1 shrink-0">
+                                                {['A','B','C','D'].map(o => (
+                                                    <button key={o} onClick={() => handleAnswerSelect(i, o)} className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all ${ans === o ? 'bg-black border-black text-white scale-105 shadow-sm' : 'bg-white border-gray-300 text-gray-400 hover:border-gray-500'}`}>{o}</button>
+                                                ))}
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
                             </div>
-                        ))}
+                        </div>
+
                     </div>
                 </div>
             );
 
             if (step === 'grading') return (
-                <div className="flex flex-col min-h-[100dvh] items-center justify-center p-4 relative py-10">
-                    <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold">← 繼續作答</button>
-                    <div className="bg-white p-8 shadow-md w-full max-w-lg no-round border border-gray-200">
+                <div className="flex flex-col min-h-[100dvh] items-center justify-center p-4 relative py-10 overflow-y-auto">
+                    <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">← 繼續作答</button>
+                    <div className="bg-white p-8 shadow-md w-full max-w-lg no-round border border-gray-200 mt-10">
                         <h2 className="font-bold mb-4 text-lg">輸入標準答案</h2>
-                        <textarea className="w-full h-40 p-3 border border-gray-300 no-round font-mono mb-4 focus:border-black outline-none tracking-widest text-lg uppercase" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)} onFocus={handleFocusScroll}></textarea>
-                        <button onClick={handleGrade} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 text-lg">開始批改</button>
+                        <textarea className="w-full h-40 p-3 border border-gray-300 no-round font-mono mb-4 focus:border-black outline-none tracking-widest text-lg uppercase custom-scrollbar" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)} onFocus={handleFocusScroll}></textarea>
+                        <button onClick={handleGrade} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 text-lg transition-colors">開始批改</button>
                     </div>
                 </div>
             );
 
             if (step === 'results') return (
-                <div className="max-w-4xl mx-auto p-4 pt-6">
-                    <div className="bg-white p-4 border border-gray-200 shadow-sm flex justify-between items-center mb-6 no-round">
+                <div className="max-w-4xl mx-auto p-4 pt-6 h-[100dvh] overflow-y-auto custom-scrollbar pb-10">
+                    <div className="bg-white p-4 border border-gray-200 shadow-sm flex justify-between items-center mb-6 no-round shrink-0">
                         <h2 className="font-bold text-gray-800 truncate pr-4">{testName || '未命名'}</h2>
                         <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-2 no-round hover:bg-gray-800 whitespace-nowrap">返回列表</button>
                     </div>
-                    <div className="bg-white p-10 shadow-md border-t-8 border-black text-center mb-6 no-round relative overflow-hidden">
+                    <div className="bg-white p-10 shadow-md border-t-8 border-black text-center mb-6 no-round relative overflow-hidden shrink-0">
                         <h2 className={`text-6xl font-black mb-4 ${results.score >= 60 ? 'text-green-600' : 'text-red-600'}`}>{results.score}</h2>
                         <p className="text-gray-500 font-bold tracking-widest">答對 {results.correctCount} / {results.total} 題</p>
                     </div>
-                    <div className="bg-white p-6 border border-gray-200 no-round shadow-sm">
+                    <div className="bg-white p-6 border border-gray-200 no-round shadow-sm shrink-0">
                         <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-3">
                             <h3 className="font-bold text-lg">答案解析</h3>
-                            <button onClick={() => setShowOnlyWrong(!showOnlyWrong)} className="text-sm font-bold text-gray-500 hover:text-black bg-gray-100 px-3 py-1 no-round border border-gray-200">{showOnlyWrong ? '顯示全部' : '只看錯題'}</button>
+                            <button onClick={() => setShowOnlyWrong(!showOnlyWrong)} className="text-sm font-bold text-gray-500 hover:text-black bg-gray-100 px-3 py-1 no-round border border-gray-200 transition-colors">{showOnlyWrong ? '顯示全部' : '只看錯題'}</button>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
                             {results.data.filter(q => showOnlyWrong ? !q.isCorrect : true).map(q => (
@@ -636,16 +686,14 @@
             if (!user) return <AuthScreen />;
             if (!userProfile || !userProfile.displayName) return <ProfileSetup user={user} onComplete={(name) => setUserProfile({...userProfile, displayName: name})} />;
 
-            // ★ 判斷是否有任何未讀訊息
             const hasUnreadMessages = userProfile.unreadChats && Object.values(userProfile.unreadChats).includes(true);
 
             const TopNav = () => (
-                <div className="bg-black text-white px-4 flex justify-between items-center mb-6 shadow-md h-14">
+                <div className="bg-black text-white px-4 flex justify-between items-center shadow-md h-14 shrink-0 relative z-20">
                     <div className="flex space-x-6 items-center h-full">
                         <span className="font-black text-lg tracking-widest mr-4">JJay</span>
                         <button onClick={() => setActiveTab('dashboard')} className={`h-full px-2 font-bold transition-colors ${activeTab === 'dashboard' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>我的題庫</button>
                         
-                        {/* ★ 新增：選單上的紅點提示 */}
                         <button onClick={() => setActiveTab('social')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'social' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>
                             社群交流
                             {hasUnreadMessages && <span className="ml-1.5 w-2 h-2 bg-red-500 rounded-full"></span>}
@@ -659,11 +707,18 @@
             );
 
             return (
-                <div>
+                <div className="h-[100dvh] flex flex-col overflow-hidden">
                     {activeTab !== 'activeQuiz' && <TopNav />}
-                    {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={() => { setActiveQuizRecord(null); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
-                    {activeTab === 'social' && <SocialDashboard user={user} userProfile={userProfile} />}
-                    {activeTab === 'activeQuiz' && <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} />}
+                    
+                    {/* 包裝器處理 Dashboard 與 Social 的間距 */}
+                    {activeTab !== 'activeQuiz' ? (
+                        <div className="flex-grow pt-6 overflow-hidden">
+                            {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={() => { setActiveQuizRecord(null); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
+                            {activeTab === 'social' && <SocialDashboard user={user} userProfile={userProfile} />}
+                        </div>
+                    ) : (
+                        <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} />
+                    )}
                 </div>
             );
         }
