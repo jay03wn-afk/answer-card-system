@@ -287,7 +287,8 @@
                 score: 0,
                 frames: 0,
                 lastSpawnFrame: 0,
-                groundY: 250
+                groundY: 250,
+                lastFrameTime: 0 // 新增：用於鎖定 60 FPS
             });
 
             const images = useRef({ 
@@ -334,9 +335,10 @@
                     score: 0,
                     frames: 0,
                     lastSpawnFrame: 0,
-                    groundY: 250
+                    groundY: 250,
+                    lastFrameTime: performance.now() // 初始化時間
                 };
-                loop();
+                gameRef.current.reqId = requestAnimationFrame(loop);
             };
 
             const jump = () => {
@@ -347,11 +349,28 @@
                 }
             };
 
-            const loop = () => {
+            // 加入 currentTime 參數
+            const loop = (currentTime) => {
                 const cvs = canvasRef.current;
                 if (!cvs) return;
-                const ctx = cvs.getContext('2d');
                 const state = gameRef.current;
+                
+                // === 鎖定 60 FPS 的關鍵邏輯 ===
+                if (!currentTime) currentTime = performance.now();
+                const fpsInterval = 1000 / 60; // 60 FPS
+                const elapsed = currentTime - state.lastFrameTime;
+
+                // 如果距離上一幀的時間太短 (例如 144Hz 螢幕)，就直接跳過不計算物理
+                if (elapsed < fpsInterval) {
+                    state.reqId = requestAnimationFrame(loop);
+                    return;
+                }
+
+                // 校正時間誤差
+                state.lastFrameTime = currentTime - (elapsed % fpsInterval);
+                // ===================================
+
+                const ctx = cvs.getContext('2d');
                 
                 // 記錄位移前的底部位置 (為了精準判斷是降落還是撞牆)
                 let prevBottom = state.player.y + state.player.h; 
@@ -379,14 +398,13 @@
                 // 地面碰撞 (若不在坑洞上方)
                 if (state.player.y + state.player.h >= state.groundY) {
                     if (!inPit) {
-                        // 【關鍵修正】檢查前一幀是不是在地面之上
-                        // 如果前一幀在地上或空中，代表是安全降落
+                        // 檢查前一幀是不是在地面之上
                         if (prevBottom <= state.groundY + 10) {
                             state.player.y = state.groundY - state.player.h;
                             state.player.dy = 0;
                             state.player.jumps = 0;
                         } else {
-                            // 前一幀已經在地面之下，代表撞到了坑洞側面的牆壁！
+                            // 前一幀已經在地面之下，代表撞到了坑洞側面的牆壁
                             dead = true;
                         }
                     }
@@ -476,7 +494,7 @@
                     }
                 }
                 
-                if (state.frames % Math.floor(Math.random() * 200 + 400) === 0) {
+                if (state.frames % Math.floor(Math.random() * 40 + 30) === 0) {
                     let dY = state.groundY - 50 - Math.random() * 100;
                     state.diamonds.push({ x: cvs.width, y: dY, w: 24, h: 24, collected: false });
                 }
