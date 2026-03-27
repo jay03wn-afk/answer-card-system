@@ -10,12 +10,12 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
-    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
-
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
 
     <style>
         .no-round { border-radius: 2px !important; }
@@ -31,12 +31,12 @@
 
         input, textarea, button { font-size: 16px !important; }
         .locked-btn { cursor: not-allowed; opacity: 0.5; filter: grayscale(100%); }
-
-        /* 讓 Quill 編輯器內容在閱讀模式下也能漂亮呈現 */
-        .ql-editor { padding: 1rem; font-family: sans-serif; font-size: 16px; line-height: 1.6; }
-        .ql-editor img { max-width: 100%; height: auto; border-radius: 4px; }
-        .ql-container.ql-snow { border: 1px solid #e5e7eb !important; border-radius: 2px; }
-        .ql-toolbar.ql-snow { border: 1px solid #e5e7eb !important; border-radius: 2px 2px 0 0; background: #f9fafb; }
+        
+        /* 微調 Quill 編輯器的高度與樣式，配合 Tailwind */
+        .ql-container { font-size: 16px; font-family: inherit; }
+        .ql-editor { min-height: 200px; max-height: 50vh; overflow-y: auto; }
+        .ql-toolbar { border-radius: 2px 2px 0 0; background-color: #f8fafc; }
+        .ql-container.ql-snow { border-radius: 0 0 2px 2px; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans h-[100dvh] overflow-hidden">
@@ -64,6 +64,16 @@
             }, 300);
         };
 
+        const getEmbedUrl = (url) => {
+            if (!url) return '';
+            try {
+                const driveRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
+                const match = url.match(driveRegex);
+                if (match && match[1]) return `https://drive.google.com/file/d/${match[1]}/preview`;
+                return url;
+            } catch(e) { return url; }
+        };
+
         const formatTime = (seconds) => {
             if (seconds == null || seconds < 0) return '00:00';
             const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -72,43 +82,46 @@
         };
 
         // ★ 新增：Quill 富文本編輯器元件
-        function QuillEditor({ value, onChange }) {
+        function RichTextEditor({ value, onChange }) {
             const editorRef = useRef(null);
-            const quillInstance = useRef(null);
+            const quillRef = useRef(null);
 
             useEffect(() => {
-                if (editorRef.current && !quillInstance.current) {
-                    quillInstance.current = new Quill(editorRef.current, {
+                if (editorRef.current && !quillRef.current) {
+                    quillRef.current = new Quill(editorRef.current, {
                         theme: 'snow',
-                        placeholder: '請在此輸入或從 Word 複製貼上題目內容...',
+                        placeholder: '請在此輸入或從 Word 貼上題目...',
                         modules: {
                             toolbar: [
-                                [{ 'header': [1, 2, 3, false] }],
+                                [{'header': [1, 2, 3, false]}],
                                 ['bold', 'italic', 'underline', 'strike'],
-                                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-                                [{ 'color': [] }, { 'background': [] }],
-                                ['image', 'link'],
-                                ['clean']
+                                [{'color': []}, {'background': []}],
+                                [{'list': 'ordered'}, {'list': 'bullet'}],
+                                ['clean'] // 移除圖片按鈕，避免超過資料庫大小限制
                             ]
                         }
                     });
-                    
+
                     if (value) {
-                        quillInstance.current.clipboard.dangerouslyPasteHTML(value);
+                        quillRef.current.clipboard.dangerouslyPasteHTML(value);
                     }
-                    
-                    quillInstance.current.on('text-change', () => {
-                        onChange(quillInstance.current.root.innerHTML);
+
+                    quillRef.current.on('text-change', () => {
+                        onChange(quillRef.current.root.innerHTML);
                     });
                 }
             }, []);
 
-            return <div className="bg-white"><div ref={editorRef} style={{ height: '350px' }}></div></div>;
+            return <div ref={editorRef} className="bg-white"></div>;
         }
 
         function DialogOverlay({ dialog, onClose }) {
             const [inputValue, setInputValue] = useState('');
-            useEffect(() => { if (dialog && dialog.type === 'prompt') setInputValue(dialog.defaultValue || ''); }, [dialog]);
+            
+            useEffect(() => {
+                if (dialog && dialog.type === 'prompt') setInputValue(dialog.defaultValue || '');
+            }, [dialog]);
+
             if (!dialog) return null;
 
             const handleConfirm = () => {
@@ -126,9 +139,17 @@
                             {dialog.type === 'alert' ? 'ℹ️ 系統提示' : '🤔 請確認'}
                         </h3>
                         <p className="mb-5 text-gray-600 text-sm whitespace-pre-wrap leading-relaxed">{dialog.message}</p>
+                        
                         {dialog.type === 'prompt' && (
-                            <input type="text" className="w-full mb-5 p-3 border border-gray-300 no-round outline-none focus:border-black text-sm" value={inputValue} onChange={e => setInputValue(e.target.value)} autoFocus />
+                            <input 
+                                type="text" 
+                                className="w-full mb-5 p-3 border border-gray-300 no-round outline-none focus:border-black text-sm" 
+                                value={inputValue} 
+                                onChange={e => setInputValue(e.target.value)} 
+                                autoFocus 
+                            />
                         )}
+                        
                         <div className="flex justify-end space-x-3 mt-2 border-t border-gray-100 pt-4">
                             {(dialog.type === 'confirm' || dialog.type === 'prompt') && (
                                 <button onClick={onClose} className="bg-gray-100 text-gray-600 px-5 py-2 no-round font-bold text-sm hover:bg-gray-200 transition-colors">取消</button>
@@ -140,6 +161,7 @@
             );
         }
 
+        // [AuthScreen, ProfileSetup, SocialDashboard 保持不變]
         function AuthScreen({ showAlert }) {
             const [isSignUp, setIsSignUp] = useState(false);
             const [email, setEmail] = useState('');
@@ -149,16 +171,26 @@
             const handleAuth = (e) => {
                 e.preventDefault();
                 setLoading(true);
-                const request = isSignUp ? auth.createUserWithEmailAndPassword(email, password) : auth.signInWithEmailAndPassword(email, password);
+                const request = isSignUp 
+                    ? auth.createUserWithEmailAndPassword(email, password)
+                    : auth.signInWithEmailAndPassword(email, password);
+                
                 request.then((cred) => {
-                    if (isSignUp) return db.collection('users').doc(cred.user.uid).set({ email: email.toLowerCase(), friends: [], unreadChats: {} }).catch(err => showAlert("註冊成功，但建立資料庫檔案失敗: " + err.message));
-                }).catch(err => showAlert('認證失敗：' + err.message)).finally(() => setLoading(false));
+                    if (isSignUp) {
+                        return db.collection('users').doc(cred.user.uid).set({ email: email.toLowerCase(), friends: [], unreadChats: {} })
+                          .catch(err => showAlert("註冊成功，但建立資料庫檔案失敗: " + err.message));
+                    }
+                })
+                .catch(err => showAlert('認證失敗：' + err.message))
+                .finally(() => setLoading(false));
             };
 
             return (
                 <div className="flex h-full items-center justify-center p-4 overflow-y-auto">
                     <form onSubmit={handleAuth} className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200">
-                        <div className="w-16 h-16 bg-black text-white rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-300"><span className="text-3xl font-black">📝</span></div>
+                        <div className="w-16 h-16 bg-black text-white rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-300">
+                            <span className="text-3xl font-black">📝</span>
+                        </div>
                         <h1 className="text-xl font-bold mb-6 tracking-tight text-center">JJay線上測驗</h1>
                         <input type="email" placeholder="電子郵件" className="w-full mb-3 p-3 border border-gray-300 no-round outline-none focus:border-black" value={email} onChange={e => setEmail(e.target.value)} onFocus={handleFocusScroll} required />
                         <input type="password" placeholder="密碼" className="w-full mb-6 p-3 border border-gray-300 no-round outline-none focus:border-black" value={password} onChange={e => setPassword(e.target.value)} onFocus={handleFocusScroll} required />
@@ -207,17 +239,25 @@
 
             useEffect(() => {
                 if (activeChat && userProfile && userProfile.unreadChats && userProfile.unreadChats[activeChat.uid]) {
-                    db.collection('users').doc(user.uid).update({ [`unreadChats.${activeChat.uid}`]: firebase.firestore.FieldValue.delete() }).catch(e => console.error("清除紅點失敗", e));
+                    db.collection('users').doc(user.uid).update({
+                        [`unreadChats.${activeChat.uid}`]: firebase.firestore.FieldValue.delete()
+                    }).catch(e => console.error("清除紅點失敗", e));
                 }
             }, [activeChat, userProfile, user.uid]);
 
             useEffect(() => {
                 if(!activeChat) return;
                 const chatId = getChatId(user.uid, activeChat.uid);
-                const unsub = db.collection('chats').doc(chatId).collection('messages').orderBy('timestamp', 'asc').onSnapshot(snapshot => {
-                    setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                    setTimeout(() => { if (messagesEndRef.current) messagesEndRef.current.scrollIntoView({ behavior: "smooth" }); }, 100);
-                });
+                const unsub = db.collection('chats').doc(chatId).collection('messages')
+                    .orderBy('timestamp', 'asc')
+                    .onSnapshot(snapshot => {
+                        setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                        setTimeout(() => {
+                            if (messagesEndRef.current) {
+                                messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+                            }
+                        }, 100);
+                    });
                 return () => unsub();
             }, [activeChat, user.uid]);
 
@@ -225,17 +265,28 @@
                 const cleanEmail = searchEmail.trim().toLowerCase();
                 if(!cleanEmail) return;
                 if(cleanEmail === user.email.toLowerCase()) return showAlert('不能加自己為好友！');
-                db.collection('users').where('email', '==', cleanEmail).get().then(snap => {
+                
+                db.collection('users').where('email', '==', cleanEmail).get()
+                .then(snap => {
                     if(snap.empty) return showAlert('找不到此信箱的使用者 (請確認對方已登入過系統)');
                     const targetUser = snap.docs[0];
                     const targetData = targetUser.data();
                     const targetUid = targetUser.id;
+                    
                     if(friends.find(f => f.uid === targetUid)) return showAlert('已經是好友了！');
 
                     const batch = db.batch();
-                    batch.update(db.collection('users').doc(user.uid), { friends: firebase.firestore.FieldValue.arrayUnion({ uid: targetUid, name: targetData.displayName, email: targetData.email }) });
-                    batch.update(db.collection('users').doc(targetUid), { friends: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid, name: userProfile.displayName, email: user.email }) });
-                    return batch.commit().then(() => { showAlert(`已成功加入 ${targetData.displayName}！`); setSearchEmail(''); });
+                    batch.update(db.collection('users').doc(user.uid), {
+                        friends: firebase.firestore.FieldValue.arrayUnion({ uid: targetUid, name: targetData.displayName, email: targetData.email })
+                    });
+                    batch.update(db.collection('users').doc(targetUid), {
+                        friends: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid, name: userProfile.displayName, email: user.email })
+                    });
+                    
+                    return batch.commit().then(() => {
+                        showAlert(`已成功加入 ${targetData.displayName}！`);
+                        setSearchEmail('');
+                    });
                 }).catch(e => showAlert('加入失敗：' + e.message));
             };
 
@@ -244,21 +295,41 @@
                 if(!newMessage.trim() || !activeChat) return;
                 const chatId = getChatId(user.uid, activeChat.uid);
                 db.collection('chats').doc(chatId).collection('messages').add({
-                    text: newMessage.trim(), senderId: user.uid, senderName: userProfile.displayName, timestamp: firebase.firestore.FieldValue.serverTimestamp(), type: 'text'
+                    text: newMessage.trim(),
+                    senderId: user.uid,
+                    senderName: userProfile.displayName,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    type: 'text'
                 }).then(() => {
                     setNewMessage('');
-                    db.collection('users').doc(activeChat.uid).set({ unreadChats: { [user.uid]: true } }, { merge: true });
+                    db.collection('users').doc(activeChat.uid).set({
+                        unreadChats: { [user.uid]: true }
+                    }, { merge: true });
                 });
             };
 
             const playRPS = () => {
                 if(!activeChat) return;
-                const choices = [ { face: '✊', name: '石頭' }, { face: '✌️', name: '剪刀' }, { face: '✋', name: '布' } ];
+                const choices = [
+                    { face: '✊', name: '石頭' },
+                    { face: '✌️', name: '剪刀' },
+                    { face: '✋', name: '布' }
+                ];
                 const result = choices[Math.floor(Math.random() * choices.length)];
                 const chatId = getChatId(user.uid, activeChat.uid);
+                
                 db.collection('chats').doc(chatId).collection('messages').add({
-                    text: `出了 ${result.name}！`, senderId: user.uid, senderName: userProfile.displayName, timestamp: firebase.firestore.FieldValue.serverTimestamp(), type: 'game_rps', rpsFace: result.face
-                }).then(() => { db.collection('users').doc(activeChat.uid).set({ unreadChats: { [user.uid]: true } }, { merge: true }); });
+                    text: `出了 ${result.name}！`,
+                    senderId: user.uid,
+                    senderName: userProfile.displayName,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    type: 'game_rps',
+                    rpsFace: result.face
+                }).then(() => {
+                    db.collection('users').doc(activeChat.uid).set({
+                        unreadChats: { [user.uid]: true }
+                    }, { merge: true });
+                });
             };
 
             const downloadSharedQuiz = (quizData) => {
@@ -273,7 +344,9 @@
                     return db.collection('users').doc(user.uid).collection('quizzes').add({
                         testName: originalData.testName + ' (來自好友)',
                         numQuestions: originalData.numQuestions,
-                        questionContent: originalData.questionContent || '', 
+                        inputType: originalData.inputType || 'url',
+                        questionFileUrl: originalData.questionFileUrl || '',
+                        questionText: originalData.questionText || '',
                         correctAnswersInput: originalData.correctAnswersInput || '', 
                         userAnswers: emptyAnswers,
                         starred: emptyStarred,
@@ -339,7 +412,10 @@
                                                     {(() => {
                                                         if (msg.type === 'game_rps') {
                                                             return (
-                                                                <div className="text-center py-2 px-4"><span className="text-5xl leading-none">{msg.rpsFace}</span><p className="mt-2 font-bold">{msg.text}</p></div>
+                                                                <div className="text-center py-2 px-4">
+                                                                    <span className="text-5xl leading-none">{msg.rpsFace}</span>
+                                                                    <p className="mt-2 font-bold">{msg.text}</p>
+                                                                </div>
                                                             );
                                                         } else if (msg.type === 'score_share') {
                                                             return (
@@ -420,7 +496,10 @@
                         ownerId: user.uid,
                         quizId: showShareModal.id,
                         testName: showShareModal.testName,
-                        questionContent: showShareModal.questionContent || '',
+                        // 同步分享原本的文字或連結
+                        questionFileUrl: showShareModal.questionFileUrl || '',
+                        questionText: showShareModal.questionText || '',
+                        inputType: showShareModal.inputType || 'url',
                         correctAnswersInput: showShareModal.correctAnswersInput || ''
                     }
                 }).then(() => {
@@ -497,6 +576,62 @@
             );
         }
 
+        // ★ 新增：專屬的修改題目內容 Modal
+        function UpdateContentModal({ currentType, currentUrl, currentText, onClose, onSave }) {
+            const [type, setType] = useState(currentType || 'url');
+            const [url, setUrl] = useState(currentUrl || '');
+            const [text, setText] = useState(currentText || '');
+            const [isSaving, setIsSaving] = useState(false);
+
+            const handleSave = () => {
+                setIsSaving(true);
+                onSave({ type, url: url.trim(), text }).finally(() => {
+                    setIsSaving(false);
+                    onClose();
+                });
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white p-6 w-full max-w-3xl no-round shadow-2xl flex flex-col h-[90vh]">
+                        <h3 className="font-bold text-xl mb-4 shrink-0 flex justify-between items-center">
+                            <span>✏️ 編輯題目內容</span>
+                            <button onClick={onClose} className="text-gray-400 hover:text-red-500">✖</button>
+                        </h3>
+                        <p className="text-sm text-orange-600 font-bold mb-4 shrink-0">※ 注意：更新後將同步給所有已下載這份試卷的好友！</p>
+                        
+                        <div className="flex space-x-2 mb-4 shrink-0">
+                            <button onClick={() => setType('url')} className={`px-4 py-2 font-bold text-sm border-b-2 ${type === 'url' ? 'border-black text-black' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>🔗 網址預覽</button>
+                            <button onClick={() => setType('text')} className={`px-4 py-2 font-bold text-sm border-b-2 ${type === 'text' ? 'border-black text-black' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>📝 文字編輯</button>
+                        </div>
+
+                        <div className="flex-grow overflow-y-auto bg-gray-50 border border-gray-200 p-4">
+                            {type === 'url' ? (
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">試卷公開網址：</label>
+                                    <input type="text" placeholder="請貼上 Google Drive 連結或留空" className="w-full p-3 border border-gray-300 no-round outline-none focus:border-black" value={url} onChange={e => setUrl(e.target.value)} />
+                                </div>
+                            ) : (
+                                <div className="h-full flex flex-col">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2 shrink-0">編輯題目文字 (支援從 Word 貼上)：</label>
+                                    <div className="flex-grow bg-white border border-gray-300 overflow-hidden relative pb-10">
+                                        <RichTextEditor value={text} onChange={setText} />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end space-x-3 mt-4 shrink-0 border-t border-gray-100 pt-4">
+                            <button onClick={onClose} className="bg-gray-100 text-gray-600 px-6 py-2 no-round font-bold hover:bg-gray-200 transition-colors" disabled={isSaving}>取消</button>
+                            <button onClick={handleSave} className="bg-blue-600 text-white px-6 py-2 no-round font-bold hover:bg-blue-700 transition-colors" disabled={isSaving}>
+                                {isSaving ? '同步更新中...' : '儲存並同步'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard, showAlert, showConfirm, showPrompt }) {
             const initialRecord = activeQuizRecord || {};
             
@@ -509,11 +644,11 @@
             const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
             const [results, setResults] = useState(initialRecord.results || null);
             
-            // ★ 修改：將 questionFileUrl 取代為 questionContent
-            const [questionContent, setQuestionContent] = useState(initialRecord.questionContent || '');
-            const [isEditingContent, setIsEditingContent] = useState(false);
-            const [tempContent, setTempContent] = useState('');
-
+            // ★ 新增：支援兩種內容類型
+            const [inputType, setInputType] = useState(initialRecord.inputType || 'url'); // 'url' or 'text'
+            const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
+            const [questionText, setQuestionText] = useState(initialRecord.questionText || '');
+            
             const isShared = initialRecord.isShared === true;
             
             const [hasTimer, setHasTimer] = useState(initialRecord.hasTimer || false);
@@ -532,8 +667,12 @@
             const [showOnlyWrong, setShowOnlyWrong] = useState(false);
             const [showOnlyStarred, setShowOnlyStarred] = useState(false);
             const [showShareScoreModal, setShowShareScoreModal] = useState(false);
+            const [showUpdateModal, setShowUpdateModal] = useState(false);
 
             const starredIndices = starred.map((s, i) => s ? i + 1 : null).filter(Boolean);
+
+            // 判斷當前是否有預覽內容
+            const hasContent = (inputType === 'url' && questionFileUrl) || (inputType === 'text' && questionText);
 
             useEffect(() => {
                 let timerId;
@@ -542,7 +681,9 @@
                         if (timeRemainingRef.current > 0) {
                             timeRemainingRef.current -= 1;
                             setDisplayTime(timeRemainingRef.current);
+                            
                             if (timeRemainingRef.current % 15 === 0) setSyncTrigger(s => s + 1);
+
                             if (timeRemainingRef.current <= 0) {
                                 setIsTimeUp(true);
                                 setSyncTrigger(s => s + 1);
@@ -560,7 +701,7 @@
                     
                     const stateToSave = { 
                         testName, numQuestions, userAnswers, starred, correctAnswersInput, results, 
-                        questionContent, hasTimer, timeLimit,
+                        inputType, questionFileUrl, questionText, hasTimer, timeLimit,
                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
                     if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
@@ -568,7 +709,7 @@
                     db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
                       .catch(e => console.error("自動儲存失敗", e));
                 }
-            }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionContent, currentUser, quizId, step, syncTrigger]);
+            }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, inputType, questionFileUrl, questionText, currentUser, quizId, step, syncTrigger]);
 
             const handleDragStart = (e) => setIsDragging(true);
 
@@ -622,7 +763,9 @@
                 db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                     testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
                     correctAnswersInput: '',
-                    questionContent: questionContent,
+                    inputType: inputType,
+                    questionFileUrl: questionFileUrl.trim(),
+                    questionText: questionText,
                     hasTimer: hasTimer,
                     timeLimit: hasTimer ? Number(timeLimit) : null,
                     timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
@@ -646,7 +789,9 @@
                     db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                         testName: testName + ' (重測)',
                         numQuestions: numQuestions,
-                        questionContent: questionContent,
+                        inputType: inputType,
+                        questionFileUrl: questionFileUrl || '',
+                        questionText: questionText || '',
                         correctAnswersInput: correctAnswersInput || '', 
                         userAnswers: initialAnswers,
                         starred: initialStarred,
@@ -673,33 +818,37 @@
                 });
             };
 
-            // ★ 新增：同步修改題目的邏輯
-            const handleSyncQuestionContent = async () => {
-                try {
-                    await db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
-                        questionContent: tempContent
-                    });
-                    setQuestionContent(tempContent);
+            // ★ 強化的同步更新邏輯
+            const handleSyncContentUpdate = async ({ type, url, text }) => {
+                setInputType(type);
+                setQuestionFileUrl(url);
+                setQuestionText(text);
+                
+                if ((type === 'url' && url) || (type === 'text' && text)) setPreviewOpen(true);
 
-                    if (!isShared) {
+                if (!isShared && quizId) {
+                    try {
                         const myDoc = await db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
                         const latestSharedTo = myDoc.data()?.sharedTo || [];
                         
                         if (latestSharedTo.length > 0) {
                             const promises = latestSharedTo.map(target => {
-                                return db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId).update({ questionContent: tempContent });
+                                return db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId).update({ 
+                                    inputType: type,
+                                    questionFileUrl: url,
+                                    questionText: text
+                                });
                             });
                             await Promise.all(promises);
-                            showAlert('✅ 題目內容已更新，並同步給所有下載過的好友！');
+                            showAlert('✅ 題目內容已更新，並同步給所有已下載的好友！');
                         } else {
                             showAlert('✅ 題目內容已更新！');
                         }
+                    } catch(e) {
+                        console.error("同步內容失敗", e);
+                        showAlert('內容已更新，但同步給好友時發生錯誤。');
                     }
-                } catch(e) {
-                    console.error("同步題目失敗", e);
-                    showAlert('更新失敗：' + e.message);
                 }
-                setIsEditingContent(false);
             };
 
             const handleAnswerSelect = (idx, opt) => {
@@ -802,67 +951,95 @@
                 }).catch(e => showAlert('炫耀失敗：' + e.message));
             };
 
-            // ★ 修改：新增測驗畫面 (導入富文本編輯器)
+            // ★ 預覽區塊渲染邏輯
+            const renderPreviewArea = () => {
+                if (!hasContent || !previewOpen) return null;
+                
+                return (
+                    <div 
+                        className="bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0"
+                        style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
+                    >
+                        <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
+                            <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 題目預覽區</span>
+                            {inputType === 'url' && questionFileUrl && (
+                                <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 font-bold underline">在新分頁開啟全螢幕</a>
+                            )}
+                        </div>
+                        <div className="flex-grow w-full relative bg-gray-100 overflow-hidden">
+                            {inputType === 'url' ? (
+                                <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0" allow="autoplay" allowFullScreen></iframe>
+                            ) : (
+                                <div className="absolute inset-0 overflow-y-auto p-6 bg-white custom-scrollbar">
+                                    {/* 渲染 Quill 產生的 HTML，套用 ql-editor 樣式讓排版一致 */}
+                                    <div className="ql-snow"><div className="ql-editor" dangerouslySetInnerHTML={{ __html: questionText }} /></div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
             if (step === 'setup') return (
-                <div className="flex flex-col items-center p-4 h-[100dvh] overflow-y-auto relative pt-16 pb-10 custom-scrollbar">
+                <div className="flex flex-col items-center justify-center p-4 h-[100dvh] overflow-y-auto relative custom-scrollbar">
                     <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">← 返回列表</button>
-                    
-                    <div className="bg-white p-6 md:p-8 shadow-md w-full max-w-3xl no-round border border-gray-200">
-                        <h1 className="text-2xl font-black mb-6 border-b pb-3 tracking-tight">📝 新增測驗</h1>
+                    <div className="bg-white p-8 shadow-md w-full max-w-3xl no-round border border-gray-200 mt-10">
+                        <h1 className="text-xl font-bold mb-6 border-b pb-2 tracking-tight">新增測驗</h1>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 mb-1">測驗名稱</label>
-                                <input type="text" placeholder="例如: 藥理學期中考" className="w-full p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
-                            </div>
-                            <div>
+                                <input type="text" placeholder="例如: 藥理學期中考" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
+                                
                                 <label className="block text-xs font-bold text-gray-500 mb-1">題數 (1-100)</label>
                                 <input type="number" placeholder="50" className="w-full p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
                             </div>
+                            
+                            <div className="border border-gray-200 p-4 bg-gray-50 no-round">
+                                <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm">
+                                    <input type="checkbox" checked={hasTimer} onChange={e => setHasTimer(e.target.checked)} className="w-4 h-4" />
+                                    <span>⏱ 開啟測驗倒數計時</span>
+                                </label>
+                                {hasTimer && (
+                                    <div className="flex items-center space-x-2 mt-3 pt-3 border-t border-gray-200">
+                                        <span className="text-sm text-gray-600">測驗時間：</span>
+                                        <input type="number" min="1" max="999" className="w-16 p-1.5 border border-gray-300 no-round outline-none focus:border-black text-center text-sm" value={timeLimit} onChange={e => setTimeLimit(e.target.value)} onFocus={handleFocusScroll} />
+                                        <span className="text-sm text-gray-600">分鐘</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         
-                        <div className="mb-6 border border-gray-200 p-4 bg-gray-50 no-round">
-                            <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm">
-                                <input type="checkbox" checked={hasTimer} onChange={e => setHasTimer(e.target.checked)} className="w-4 h-4" />
-                                <span>⏱ 開啟測驗倒數計時</span>
-                            </label>
-                            {hasTimer && (
-                                <div className="flex items-center space-x-2 mt-3 pt-3 border-t border-gray-200">
-                                    <span className="text-sm text-gray-600">測驗時間：</span>
-                                    <input type="number" min="1" max="999" className="w-16 p-1.5 border border-gray-300 no-round outline-none focus:border-black text-center text-sm" value={timeLimit} onChange={e => setTimeLimit(e.target.value)} onFocus={handleFocusScroll} />
-                                    <span className="text-sm text-gray-600">分鐘</span>
+                        <div className="mb-8 border border-gray-200 p-4 bg-gray-50">
+                            <label className="block text-sm font-bold text-gray-700 mb-3">設定題目內容 (選填)：</label>
+                            <div className="flex space-x-2 mb-3 border-b border-gray-200 pb-2">
+                                <button onClick={() => setInputType('url')} className={`px-4 py-1.5 font-bold text-sm no-round ${inputType === 'url' ? 'bg-black text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>🔗 試卷網址</button>
+                                <button onClick={() => setInputType('text')} className={`px-4 py-1.5 font-bold text-sm no-round ${inputType === 'text' ? 'bg-black text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>📝 直接貼上文字</button>
+                            </div>
+                            
+                            {inputType === 'url' ? (
+                                <input type="text" placeholder="請貼上 Google Drive 公開連結..." className="w-full p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} onFocus={handleFocusScroll} />
+                            ) : (
+                                <div className="bg-white border border-gray-300">
+                                    <RichTextEditor value={questionText} onChange={setQuestionText} />
                                 </div>
                             )}
                         </div>
 
-                        <div className="mb-8">
-                            <label className="block text-sm font-bold text-gray-700 mb-2">📄 貼上試卷內容 (支援從 Word 複製貼上圖片與格式)</label>
-                            <QuillEditor value={questionContent} onChange={setQuestionContent} />
-                        </div>
-
-                        <button onClick={handleStartTest} className="w-full bg-black text-white p-4 font-bold text-lg no-round hover:bg-gray-800 transition-colors">🚀 建立並開始作答</button>
-                    </div>
-                </div>
-            );
-
-            // ★ 新增：修改題目的全螢幕 Modal
-            if (isEditingContent) return (
-                <div className="fixed inset-0 bg-gray-100 z-50 flex flex-col p-4 custom-scrollbar overflow-y-auto">
-                    <div className="max-w-4xl w-full mx-auto bg-white p-6 shadow-md border border-gray-200 flex flex-col h-full">
-                        <div className="flex justify-between items-center mb-4 pb-2 border-b">
-                            <h2 className="text-xl font-bold">✏️ 修改題目內容</h2>
-                            <button onClick={() => setIsEditingContent(false)} className="text-gray-500 hover:text-black font-bold text-sm">✖ 取消</button>
-                        </div>
-                        <div className="flex-grow mb-4 relative">
-                            <QuillEditor value={tempContent} onChange={setTempContent} />
-                        </div>
-                        <button onClick={handleSyncQuestionContent} className="w-full bg-black text-white p-3 font-bold text-lg no-round hover:bg-gray-800 mt-4 shrink-0">💾 儲存並同步給好友</button>
+                        <button onClick={handleStartTest} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 transition-colors text-lg tracking-widest">開始作答</button>
                     </div>
                 </div>
             );
 
             if (step === 'answering') return (
                 <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 w-full overflow-hidden">
+                    {showUpdateModal && (
+                        <UpdateContentModal 
+                            currentType={inputType} currentUrl={questionFileUrl} currentText={questionText} 
+                            onClose={() => setShowUpdateModal(false)} onSave={handleSyncContentUpdate} 
+                        />
+                    )}
+
                     <div className="bg-white p-3 sm:p-4 shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10">
                         <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
                             <button onClick={onBackToDashboard} className="mr-3 text-gray-500 hover:text-black font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">← 返回</button>
@@ -888,22 +1065,21 @@
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
-                            {questionContent && previewOpen && (
+                            {hasContent && previewOpen && (
                                 <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
-                                    {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
+                                    {layoutMode === 'horizontal' ? '🔄 上下排列' : '🔄 左右排列'}
                                 </button>
                             )}
 
-                            {/* ★ 修改按鈕：改成修改題目內容 */}
                             {!isShared && (
-                                <button onClick={() => { setTempContent(questionContent); setIsEditingContent(true); }} className={`bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
-                                    ✏️ 修改題目
+                                <button onClick={() => setShowUpdateModal(true)} className={`${hasContent ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'} px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
+                                    ✏️ 編輯題目內容
                                 </button>
                             )}
 
-                            {questionContent && (
+                            {hasContent && (
                                 <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
-                                    {previewOpen ? '👀 關閉預覽' : '👀 開啟預覽'}
+                                    {previewOpen ? '👀 關閉題目' : '👀 開啟題目'}
                                 </button>
                             )}
                             
@@ -914,28 +1090,15 @@
                     
                     <div 
                         ref={splitContainerRef}
-                        className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full mt-2 sm:mt-4 gap-2`}
+                        className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full mt-2 sm:mt-4`}
                     >
                         {isDragging && (
                             <div className="absolute inset-0 z-50" style={{ cursor: layoutMode === 'horizontal' ? 'col-resize' : 'row-resize' }}></div>
                         )}
 
-                        {/* ★ 修改：使用 dangerouslySetInnerHTML 來渲染 Quill 的 HTML */}
-                        {questionContent && previewOpen && (
-                            <div 
-                                className="bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0 overflow-hidden"
-                                style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
-                            >
-                                <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
-                                    <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
-                                </div>
-                                <div className="flex-grow w-full overflow-y-auto custom-scrollbar bg-white relative">
-                                    <div className="ql-editor" dangerouslySetInnerHTML={{ __html: questionContent }}></div>
-                                </div>
-                            </div>
-                        )}
+                        {renderPreviewArea()}
 
-                        {questionContent && previewOpen && (
+                        {hasContent && previewOpen && (
                             <div 
                                 onMouseDown={handleDragStart}
                                 onTouchStart={handleDragStart}
@@ -1007,6 +1170,13 @@
 
             if (step === 'results') return (
                 <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 w-full overflow-hidden">
+                    {showUpdateModal && (
+                        <UpdateContentModal 
+                            currentType={inputType} currentUrl={questionFileUrl} currentText={questionText} 
+                            onClose={() => setShowUpdateModal(false)} onSave={handleSyncContentUpdate} 
+                        />
+                    )}
+
                     <div className="bg-white p-3 sm:p-4 shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10">
                         <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
                             <h2 className="font-bold truncate text-base pr-4">{testName || '未命名'} - 測驗結果</h2>
@@ -1017,22 +1187,21 @@
                                 <button onClick={() => setStep('grading')} className="text-sm font-bold bg-blue-50 text-blue-600 px-4 py-1.5 no-round border border-blue-200 hover:bg-blue-100 whitespace-nowrap transition-colors">✏️ 修改解答</button>
                             )}
 
-                            {/* ★ 在成績單畫面一樣可以修改題目 */}
                             {!isShared && (
-                                <button onClick={() => { setTempContent(questionContent); setIsEditingContent(true); }} className={`bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
-                                    ✏️ 修改題目
+                                <button onClick={() => setShowUpdateModal(true)} className={`${hasContent ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'} px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
+                                    ✏️ 編輯題目
                                 </button>
                             )}
 
-                            {questionContent && previewOpen && (
+                            {hasContent && previewOpen && (
                                 <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
-                                    {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
+                                    {layoutMode === 'horizontal' ? '🔄 上下排列' : '🔄 左右排列'}
                                 </button>
                             )}
 
-                            {questionContent && (
+                            {hasContent && (
                                 <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
-                                    {previewOpen ? '👀 關閉預覽' : '👀 開啟預覽'}
+                                    {previewOpen ? '👀 關閉題目' : '👀 開啟題目'}
                                 </button>
                             )}
                             
@@ -1044,27 +1213,15 @@
                     
                     <div 
                         ref={splitContainerRef}
-                        className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full mt-2 sm:mt-4 gap-2`}
+                        className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full mt-2 sm:mt-4`}
                     >
                         {isDragging && (
                             <div className="absolute inset-0 z-50" style={{ cursor: layoutMode === 'horizontal' ? 'col-resize' : 'row-resize' }}></div>
                         )}
 
-                        {questionContent && previewOpen && (
-                            <div 
-                                className="bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0 overflow-hidden"
-                                style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
-                            >
-                                <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
-                                    <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
-                                </div>
-                                <div className="flex-grow w-full overflow-y-auto custom-scrollbar bg-white relative">
-                                    <div className="ql-editor" dangerouslySetInnerHTML={{ __html: questionContent }}></div>
-                                </div>
-                            </div>
-                        )}
+                        {renderPreviewArea()}
 
-                        {questionContent && previewOpen && (
+                        {hasContent && previewOpen && (
                             <div 
                                 onMouseDown={handleDragStart}
                                 onTouchStart={handleDragStart}
