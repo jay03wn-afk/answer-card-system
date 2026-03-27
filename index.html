@@ -35,7 +35,7 @@
         
         .mc-bg {
             background-color: #7d7d7d;
-            background-image: url('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/block/stone.png');
+            background-image: url('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png');
             background-size: 64px;
             image-rendering: pixelated;
         }
@@ -120,6 +120,15 @@
             return `${m}:${s}`;
         };
 
+        // --- 防呆圖片組件 (破圖時自動轉回 Emoji) ---
+        function McImg({ src, fallback, className }) {
+            const [hasError, setHasError] = useState(false);
+            if (hasError) {
+                return <span className={`${className} inline-flex items-center justify-center`} style={{ fontSize: '1.2em', lineHeight: 1 }}>{fallback}</span>;
+            }
+            return <img src={src} className={className} onError={() => setHasError(true)} alt={fallback} />;
+        }
+
         function DialogOverlay({ dialog, onClose }) {
             const [inputValue, setInputValue] = useState('');
             
@@ -170,7 +179,6 @@
             );
         }
 
-        // --- 新用戶指引元件 ---
         function TutorialOverlay({ onComplete }) {
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[70] p-4">
@@ -220,7 +228,7 @@
                             unreadChats: {}, 
                             folders: ['未分類'], 
                             mcData: initMcData,
-                            hasSeenTutorial: false // 註冊時寫入 false
+                            hasSeenTutorial: false 
                         }).catch(err => showAlert("註冊成功，但建立資料庫檔案失敗: " + err.message));
                     }
                 })
@@ -360,12 +368,13 @@
                 updateMcData(updates);
             };
 
-            // 圖源庫 (Github MC assets API & Minotar)
-            const imgDiamond = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/item/diamond.png";
-            const imgApple = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/item/apple.png";
-            const imgMeat = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/item/cooked_beef.png";
-            const imgSword = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/item/diamond_sword.png";
-            const imgCatEgg = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/item/cat_spawn_egg.png";
+            // 圖源庫 (修正為 1.20 分支，並配有 fallback Emoji)
+            const mcBase = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item";
+            const imgDiamond = `${mcBase}/diamond.png`;
+            const imgApple = `${mcBase}/apple.png`;
+            const imgMeat = `${mcBase}/cooked_beef.png`;
+            const imgSword = `${mcBase}/diamond_sword.png`;
+            const imgCatEgg = `${mcBase}/cat_spawn_egg.png`;
             const imgSteve = "https://minotar.net/helm/Steve/64.png";
 
             return (
@@ -385,8 +394,8 @@
                                         <p className="text-xs text-gray-300">EXP: {mcData.exp}/{expToNextLevel}</p>
                                     </div>
                                     <div className="space-y-1">
-                                        <p className="flex items-center text-blue-300"><img src={imgDiamond} className="w-4 h-4 mr-1 pixelated" /> {mcData.diamonds}</p>
-                                        <p className="flex items-center text-orange-300"><img src={imgMeat} className="w-4 h-4 mr-1 pixelated" /> {mcData.hunger}/10</p>
+                                        <p className="flex items-center text-blue-300"><McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mr-1 pixelated" /> {mcData.diamonds}</p>
+                                        <p className="flex items-center text-orange-300"><McImg src={imgMeat} fallback="🍖" className="w-4 h-4 mr-1 pixelated" /> {mcData.hunger}/10</p>
                                     </div>
                                 </div>
                             </div>
@@ -400,14 +409,14 @@
                                 <div className="mc-panel-dark text-white">
                                     <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300">🏡 你的家</h2>
                                     <div className="text-center p-6 mc-bg border-4 border-gray-800 mb-4 h-36 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
-                                        <img src={imgSteve} alt="Steve" className="w-16 h-16 pixelated shadow-lg border border-black" />
+                                        <McImg src={imgSteve} fallback="🧍‍♂️" className="w-16 h-16 pixelated shadow-lg border border-black" />
                                         <div className="flex space-x-2 text-2xl absolute bottom-2 right-2">
                                             {Array.from({ length: mcData.cats || 0 }).map((_, i) => <span key={i} title="斑點貓">🐱</span>)}
-                                            {(mcData.items || []).includes('鑽石劍') && <img src={imgSword} className="w-8 h-8 pixelated drop-shadow-md" />}
+                                            {(mcData.items || []).includes('鑽石劍') && <McImg src={imgSword} fallback="🗡️" className="w-8 h-8 pixelated drop-shadow-md" />}
                                         </div>
                                     </div>
                                     <button onClick={handleCheckIn} className="mc-btn w-full py-2 flex justify-center items-center">
-                                        📅 每日簽到 (+20 <img src={imgDiamond} className="w-4 h-4 mx-1 pixelated"/>)
+                                        📅 每日簽到 (+20 <McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mx-1 pixelated"/>)
                                     </button>
                                 </div>
 
@@ -415,16 +424,16 @@
                                     <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300">🛒 商店</h2>
                                     <div className="space-y-3">
                                         <button onClick={() => handleBuy('apple', 10, 'food')} className="mc-btn w-full py-2 flex justify-between px-4 items-center">
-                                            <span className="flex items-center"><img src={imgApple} className="w-5 h-5 mr-2 pixelated"/> 買蘋果 (+3 飽食)</span>
-                                            <span className="text-blue-800 flex items-center">10 <img src={imgDiamond} className="w-4 h-4 ml-1 pixelated"/></span>
+                                            <span className="flex items-center"><McImg src={imgApple} fallback="🍎" className="w-5 h-5 mr-2 pixelated"/> 買蘋果 (+3 飽食)</span>
+                                            <span className="text-blue-800 flex items-center">10 <McImg src={imgDiamond} fallback="💎" className="w-4 h-4 ml-1 pixelated"/></span>
                                         </button>
                                         <button onClick={() => handleBuy('cat', 100, 'cat')} className="mc-btn w-full py-2 flex justify-between px-4 items-center">
-                                            <span className="flex items-center"><img src={imgCatEgg} className="w-5 h-5 mr-2 pixelated"/> 領養斑點貓咪</span>
-                                            <span className="text-blue-800 flex items-center">100 <img src={imgDiamond} className="w-4 h-4 ml-1 pixelated"/></span>
+                                            <span className="flex items-center"><McImg src={imgCatEgg} fallback="🥚" className="w-5 h-5 mr-2 pixelated"/> 領養斑點貓咪</span>
+                                            <span className="text-blue-800 flex items-center">100 <McImg src={imgDiamond} fallback="💎" className="w-4 h-4 ml-1 pixelated"/></span>
                                         </button>
                                         <button onClick={() => handleBuy('sword', 300, 'sword')} className="mc-btn w-full py-2 flex justify-between px-4 items-center">
-                                            <span className="flex items-center"><img src={imgSword} className="w-5 h-5 mr-2 pixelated"/> 鑽石劍 (+50 EXP)</span>
-                                            <span className="text-blue-800 flex items-center">300 <img src={imgDiamond} className="w-4 h-4 ml-1 pixelated"/></span>
+                                            <span className="flex items-center"><McImg src={imgSword} fallback="🗡️" className="w-5 h-5 mr-2 pixelated"/> 鑽石劍 (+50 EXP)</span>
+                                            <span className="text-blue-800 flex items-center">300 <McImg src={imgDiamond} fallback="💎" className="w-4 h-4 ml-1 pixelated"/></span>
                                         </button>
                                     </div>
                                 </div>
@@ -442,7 +451,7 @@
                                             </div>
                                             <div className="text-right flex items-center space-x-4">
                                                 <span className="text-green-400 font-bold">Lv.{lb.level}</span>
-                                                <span className="text-xs text-gray-300 flex items-center w-12 justify-end"><img src={imgDiamond} className="w-3 h-3 mr-1 pixelated" /> {lb.diamonds}</span>
+                                                <span className="text-xs text-gray-300 flex items-center w-12 justify-end"><McImg src={imgDiamond} fallback="💎" className="w-3 h-3 mr-1 pixelated" /> {lb.diamonds}</span>
                                             </div>
                                         </div>
                                     ))}
@@ -454,8 +463,6 @@
                 </div>
             );
         }
-
-        // --- 以下為 Dashboard, SocialDashboard, QuizApp, Main ---
 
         function SocialDashboard({ user, userProfile, showAlert }) {
             const friends = userProfile.friends || [];
@@ -1667,7 +1674,6 @@
                                 
                                 if (!data.folders || data.folders.length === 0) updates.folders = ['未分類'];
                                 if (data.mcData === undefined) updates.mcData = { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
-                                // 如果既有帳號沒有 hasSeenTutorial 欄位，就當作沒看過
                                 if (data.hasSeenTutorial === undefined) updates.hasSeenTutorial = false;
                                 
                                 if (Object.keys(updates).length > 0) {
