@@ -13,7 +13,6 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
 
     <style>
         .no-round { border-radius: 2px !important; }
@@ -29,23 +28,20 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // 你的專屬 Firebase 設定檔
         const firebaseConfig = {
             apiKey: "AIzaSyBAGM92NBQnUlI1gnLRK-mufM6YtDq5sHk",
             authDomain: "anser-card.firebaseapp.com",
             projectId: "anser-card",
-            storageBucket: "anser-card.firebasestorage.app",
             messagingSenderId: "224666683961",
             appId: "1:224666683961:web:351991d6cbc8543b181be8"
         };
 
-        // ★★★ 在這裡填入你的信箱，只有你可以上傳試卷 ★★★
-        const ADMIN_EMAIL = "jay03wn@gmail.com"; 
+        // ★★★ 在這裡填入你的信箱，只有你可以新增/修改試卷網址 ★★★
+        const ADMIN_EMAIL = "你的信箱@gmail.com"; 
 
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
-        const storage = firebase.storage();
 
         const { useState, useEffect, useRef } = React;
 
@@ -283,12 +279,11 @@
                 return () => unsubscribe();
             }, [user]);
 
-            const handleDelete = (id, fileUrl) => {
+            const handleDelete = (id) => {
                 if(!confirm("確定要刪除這筆紀錄嗎？資料將無法恢復！")) return;
+                // 因為沒有真實檔案上傳，所以只要刪除資料庫紀錄即可
                 db.collection('users').doc(user.uid).collection('quizzes').doc(id).delete()
-                .then(() => {
-                    if (fileUrl) storage.refFromURL(fileUrl).delete().catch(e => console.warn("檔案不存在", e));
-                }).catch(error => alert('刪除失敗：' + error.message));
+                .catch(error => alert('刪除失敗：' + error.message));
             }
 
             const shareToFriend = (friend) => {
@@ -347,7 +342,7 @@
                                     </div>
                                     <div className="flex justify-between items-center border-t pt-4 border-gray-100">
                                         <div className="space-x-2">
-                                            <button onClick={() => handleDelete(rec.id, rec.questionFileUrl)} className="text-xs text-gray-400 hover:text-red-600 hover:underline">刪除</button>
+                                            <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 hover:text-red-600 hover:underline">刪除</button>
                                             <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 hover:text-blue-700 font-bold">📤 分享</button>
                                         </div>
                                         <button onClick={() => onContinueQuiz(rec)} className="bg-gray-100 px-5 py-2 no-round font-bold border border-gray-200 hover:bg-gray-200 text-sm">{rec.results ? '查看詳情' : '繼續作答'}</button>
@@ -388,12 +383,8 @@
             const [correctAnswersInput, setCorrectAnswersInput] = useState(activeQuizRecord?.correctAnswersInput || '');
             const [results, setResults] = useState(activeQuizRecord?.results || null);
             const [questionFileUrl, setQuestionFileUrl] = useState(activeQuizRecord?.questionFileUrl || '');
-            const [showOnlyWrong, setShowOnlyWrong] = useState(activeQuizRecord?.showOnlyWrong || false);
-            
-            const fileInputRef = useRef(null);
-            const [uploading, setUploading] = useState(false);
 
-            // ★ 判斷目前登入者是否為管理員
+            // 判斷目前登入者是否為管理員
             const isAdmin = currentUser.email === ADMIN_EMAIL;
 
             useEffect(() => {
@@ -425,26 +416,12 @@
                 }).catch(e => alert('建立紀錄失敗：' + e.message));
             };
 
-            const handleUploadFile = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                if (!quizId) return alert('需先建立紀錄後才可上傳');
-                if (file.size > 10 * 1024 * 1024) return alert('檔案需小於 10MB');
-
-                setUploading(true);
-                const fileRef = storage.ref(`users/${currentUser.uid}/quizzes/${quizId}/${file.name}`);
-                
-                fileRef.put(file).then(snapshot => {
-                    return snapshot.ref.getDownloadURL();
-                }).then(url => {
-                    setQuestionFileUrl(url);
-                    alert('附件上傳成功！');
-                }).catch(error => {
-                    console.error("上傳錯誤細節：", error);
-                    alert('上傳失敗！\n請前往 Firebase 控制台，點擊左側 Storage -> Rules，確保權限沒有被鎖住 (例如: allow read, write: if request.auth != null;)\n錯誤訊息：' + error.message);
-                }).finally(() => {
-                    setUploading(false);
-                });
+            // ★ 新增：輸入網址的邏輯
+            const handleAddFileUrl = () => {
+                const url = prompt("請貼上試卷的公開網址 (例如 Google Drive 連結 或 Imgur 圖床網址)：\n注意：請確保該網址的權限已設為「知道連結的人皆可查看」", questionFileUrl || "");
+                if (url !== null && url.trim() !== "") {
+                    setQuestionFileUrl(url.trim());
+                }
             };
 
             const handleAnswerSelect = (idx, opt) => {
@@ -504,16 +481,18 @@
                         </div>
                         <div className="flex items-center space-x-2 flex-shrink-0">
                             
-                            {/* ★ 上傳區塊權限控制 ★ */}
+                            {/* ★ 改版後的網址連結區塊 ★ */}
                             {questionFileUrl ? (
-                                <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="bg-gray-100 text-black px-4 py-2 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200">📎 檢視試卷</a>
+                                <div className="flex items-center space-x-1">
+                                    <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="bg-gray-100 text-black px-4 py-2 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200">📎 檢視試卷</a>
+                                    {isAdmin && (
+                                        <button onClick={() => setQuestionFileUrl('')} className="bg-red-50 text-red-600 px-3 py-2 no-round font-bold border border-red-200 text-xs hover:bg-red-100" title="移除網址">✖</button>
+                                    )}
+                                </div>
                             ) : isAdmin ? (
-                                <>
-                                    <button onClick={() => fileInputRef.current.click()} className="bg-orange-50 text-orange-800 border border-orange-200 px-4 py-2 no-round font-bold text-sm disabled:opacity-50" disabled={uploading}>
-                                        {uploading ? '上傳中...' : '📎 附上試卷'}
-                                    </button>
-                                    <input type="file" ref={fileInputRef} onChange={handleUploadFile} className="hidden" accept="image/*,.pdf,.doc,.docx" />
-                                </>
+                                <button onClick={handleAddFileUrl} className="bg-orange-50 text-orange-800 border border-orange-200 px-4 py-2 no-round font-bold text-sm hover:bg-orange-100">
+                                    📎 貼上試卷網址
+                                </button>
                             ) : null}
 
                             <button onClick={handleResetProgress} className="bg-gray-100 text-gray-500 px-4 py-2 no-round font-bold hover:bg-gray-200 hover:text-red-600 text-sm hidden md:block">放棄作答</button>
