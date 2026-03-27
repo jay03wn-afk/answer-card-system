@@ -67,7 +67,6 @@
             } catch(e) { return url; }
         };
 
-        // 格式化秒數為 MM:SS
         const formatTime = (seconds) => {
             if (seconds == null || seconds < 0) return '00:00';
             const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -140,7 +139,7 @@
                 
                 request.then((cred) => {
                     if (isSignUp) {
-                        return db.collection('users').doc(cred.user.uid).set({ email: email.toLowerCase(), friends: [], unreadChats: {} })
+                        return db.collection('users').doc(cred.user.uid).set({ email: email.toLowerCase(), friends: [], unreadChats: {}, folders: ['未分類'] })
                           .catch(err => showAlert("註冊成功，但建立資料庫檔案失敗: " + err.message));
                     }
                 })
@@ -190,10 +189,14 @@
             const [messages, setMessages] = useState([]);
             const [newMessage, setNewMessage] = useState('');
             const messagesEndRef = useRef(null);
+            
+            // 聊天室省流限制機制
+            const [messageLimit, setMessageLimit] = useState(5);
+            const [lastMsgIdForScroll, setLastMsgIdForScroll] = useState(null);
 
             const getChatId = (uid1, uid2) => [uid1, uid2].sort().join('_');
 
-            // 進入聊天室即消除紅點通知
+            // 進入聊天室即消除紅點通知，並重置載入數量
             useEffect(() => {
                 if (activeChat && userProfile && userProfile.unreadChats && userProfile.unreadChats[activeChat.uid]) {
                     db.collection('users').doc(user.uid).update({
@@ -202,17 +205,18 @@
                 }
             }, [activeChat, userProfile, user.uid]);
 
-            // 讀取與設定訊息監聽
+            // 讀取與設定訊息監聽 (降序排列並限制數量)
             useEffect(() => {
                 if(!activeChat) return;
                 const chatId = getChatId(user.uid, activeChat.uid);
                 const unsub = db.collection('chats').doc(chatId).collection('messages')
-                    .orderBy('timestamp', 'asc')
+                    .orderBy('timestamp', 'desc')
+                    .limit(messageLimit)
                     .onSnapshot(snapshot => {
-                        const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        // 因為查詢是 desc，需要 reverse() 以正常時間軸顯示
+                        const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse();
                         setMessages(msgs);
                         
-                        // 收到對方未讀的訊息時，標記為已讀
                         const unreadDocs = snapshot.docs.filter(doc => doc.data().senderId !== user.uid && !doc.data().read);
                         if (unreadDocs.length > 0) {
                             const batch = db.batch();
@@ -222,14 +226,21 @@
                             batch.commit().catch(e => console.error("更新已讀狀態失敗", e));
                         }
 
-                        setTimeout(() => {
-                            if (messagesEndRef.current) {
-                                messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+                        // 自動捲動邏輯：僅在有新訊息或初始載入時捲動至底端
+                        if (msgs.length > 0) {
+                            const latestMsgId = msgs[msgs.length - 1].id;
+                            if (latestMsgId !== lastMsgIdForScroll || messageLimit === 5) {
+                                setLastMsgIdForScroll(latestMsgId);
+                                setTimeout(() => {
+                                    if (messagesEndRef.current) {
+                                        messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+                                    }
+                                }, 100);
                             }
-                        }, 100);
+                        }
                     });
                 return () => unsub();
-            }, [activeChat, user.uid]);
+            }, [activeChat, user.uid, messageLimit]);
 
             const handleAddFriend = () => {
                 const cleanEmail = searchEmail.trim().toLowerCase();
@@ -325,6 +336,7 @@
                         timeLimit: originalData.timeLimit || null,
                         timeRemaining: originalData.hasTimer ? (originalData.timeLimit * 60) : null,
                         isShared: true, 
+                        folder: '未分類', // 分享過來的預設放在未分類
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
                 })
@@ -340,6 +352,9 @@
                 });
             };
 
+            // 取得使用者送出的「最後一則訊息 ID」，用來決定已讀標籤只顯示在最新一則
+            const lastMyMsgId = messages.slice().reverse().find(m => m.senderId === user.uid)?.id;
+
             return (
                 <div className="max-w-6xl mx-auto p-4 pt-0 grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100dvh-100px)]">
                     <div className="bg-white border border-gray-200 shadow-sm no-round flex flex-col h-full overflow-hidden">
@@ -353,7 +368,7 @@
                         <div className="flex-grow overflow-y-auto p-2 custom-scrollbar">
                             {friends.length === 0 ? <p className="text-center text-gray-400 text-sm mt-10">尚無好友，趕快新增吧！</p> : null}
                             {friends.map(f => (
-                                <div key={f.uid} onClick={() => setActiveChat(f)} className={`p-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors flex items-center space-x-3 ${activeChat && activeChat.uid === f.uid ? 'bg-orange-50 border-orange-100' : ''}`}>
+                                <div key={f.uid} onClick={() => { setActiveChat(f); setMessageLimit(5); }} className={`p-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors flex items-center space-x-3 ${activeChat && activeChat.uid === f.uid ? 'bg-orange-50 border-orange-100' : ''}`}>
                                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center font-bold text-gray-500 shrink-0">{f.name.charAt(0)}</div>
                                     <div className="flex-grow overflow-hidden">
                                         <div className="font-bold text-sm truncate">{f.name}</div>
@@ -375,6 +390,16 @@
                                     <span>與 {activeChat.name} 的聊天室</span>
                                 </div>
                                 <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50 custom-scrollbar">
+                                    
+                                    {/* 省流：載入更早訊息按鈕 */}
+                                    {messages.length >= messageLimit && (
+                                        <div className="flex justify-center mb-4">
+                                            <button onClick={() => setMessageLimit(p => p + 10)} className="bg-white border border-gray-300 text-gray-600 text-xs px-4 py-2 font-bold hover:bg-gray-100 transition-colors no-round shadow-sm">
+                                                ⬆️ 點擊載入更早的訊息...
+                                            </button>
+                                        </div>
+                                    )}
+
                                     {messages.map(msg => {
                                         const isMe = msg.senderId === user.uid;
                                         const timeStr = msg.timestamp ? msg.timestamp.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -415,7 +440,8 @@
                                                 </div>
                                                 <div className="text-[10px] text-gray-400 mt-1 flex items-center space-x-2 px-1">
                                                     <span>{timeStr}</span>
-                                                    {isMe && <span>{msg.read ? '已讀' : '未讀'}</span>}
+                                                    {/* 已讀功能改成只顯示最新消息 */}
+                                                    {isMe && msg.id === lastMyMsgId && <span>{msg.read ? '已讀' : '未讀'}</span>}
                                                 </div>
                                             </div>
                                         )
@@ -436,10 +462,15 @@
             );
         }
 
-        function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm }) {
+        function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm, showPrompt }) {
             const [records, setRecords] = useState([]);
             const [loading, setLoading] = useState(true);
             const [showShareModal, setShowShareModal] = useState(null);
+            const [showMoveModal, setShowMoveModal] = useState(null);
+
+            // 資料夾系統
+            const userFolders = userProfile.folders && userProfile.folders.length > 0 ? userProfile.folders : ['未分類'];
+            const [currentFolder, setCurrentFolder] = useState('未分類');
 
             useEffect(() => {
                 const unsubscribe = db.collection('users').doc(user.uid).collection('quizzes')
@@ -460,6 +491,31 @@
                     .catch(error => showAlert('刪除失敗：' + error.message));
                 });
             }
+
+            const handleCreateFolder = () => {
+                showPrompt("請輸入新資料夾名稱：", "", (name) => {
+                    const cleanName = name?.trim();
+                    if(cleanName && !userFolders.includes(cleanName)) {
+                        db.collection('users').doc(user.uid).set({
+                            folders: firebase.firestore.FieldValue.arrayUnion(cleanName)
+                        }, { merge: true }).then(() => {
+                            setCurrentFolder(cleanName);
+                            showAlert(`✅ 已建立資料夾「${cleanName}」`);
+                        }).catch(e => showAlert('建立失敗：' + e.message));
+                    } else if (userFolders.includes(cleanName)) {
+                        showAlert('❌ 資料夾名稱已存在');
+                    }
+                });
+            };
+
+            const moveQuizToFolder = (quiz, targetFolder) => {
+                db.collection('users').doc(user.uid).collection('quizzes').doc(quiz.id).update({ folder: targetFolder })
+                .then(() => {
+                    showAlert(`✅ 已成功移動至 ${targetFolder}`);
+                    setShowMoveModal(null);
+                })
+                .catch(e => showAlert('移動失敗：' + e.message));
+            };
 
             const shareToFriend = (friend) => {
                 const chatId = [user.uid, friend.uid].sort().join('_');
@@ -486,20 +542,34 @@
                 }).catch(e => showAlert('分享失敗：' + e.message));
             };
 
+            const displayedRecords = records.filter(rec => (rec.folder || '未分類') === currentFolder);
+
             return (
                 <div className="max-w-6xl mx-auto p-4 pt-0 h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar">
-                    <div className="flex justify-between items-center mb-6 border-b-2 border-black pb-2 shrink-0">
+                    <div className="flex justify-between items-center mb-4 border-b-2 border-black pb-2 shrink-0">
                         <h1 className="text-2xl font-black">我的題庫</h1>
-                        <button onClick={onStartNew} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800 shadow-sm transition-colors">+ 新測驗</button>
+                        <button onClick={() => onStartNew(currentFolder)} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800 shadow-sm transition-colors">+ 新測驗</button>
+                    </div>
+
+                    {/* 資料夾導覽列 */}
+                    <div className="flex items-center space-x-2 mb-6 overflow-x-auto custom-scrollbar pb-2 shrink-0">
+                        {userFolders.map(f => (
+                            <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors ${currentFolder === f ? 'bg-black text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'}`}>
+                                📁 {f}
+                            </button>
+                        ))}
+                        <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm font-bold bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 no-round whitespace-nowrap transition-colors">
+                            + 新增資料夾
+                        </button>
                     </div>
 
                     {loading ? (
                         <div className="text-center text-gray-500 py-10 font-bold animate-pulse">讀取雲端資料中...</div>
-                    ) : records.length === 0 ? (
-                        <div className="bg-white text-center text-gray-500 py-16 border border-gray-200 no-round shadow-sm">尚無測驗紀錄，點擊右上方按鈕開始！</div>
+                    ) : displayedRecords.length === 0 ? (
+                        <div className="bg-white text-center text-gray-500 py-16 border border-gray-200 no-round shadow-sm">此資料夾尚無測驗紀錄。</div>
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 pb-10">
-                            {records.map(rec => (
+                            {displayedRecords.map(rec => (
                                 <div key={rec.id} className="bg-white border border-gray-200 p-6 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
                                     <div>
                                         <div className="flex justify-between items-start mb-2">
@@ -524,6 +594,7 @@
                                     <div className="flex justify-between items-center border-t pt-4 border-gray-100">
                                         <div className="space-x-3">
                                             <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 hover:text-red-600 hover:underline transition-colors">刪除</button>
+                                            <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 hover:text-green-800 font-bold transition-colors">📁 移動</button>
                                             <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 hover:text-blue-700 font-bold transition-colors">📤 分享</button>
                                         </div>
                                         <button onClick={() => onContinueQuiz(rec)} className="bg-gray-100 px-5 py-2 no-round font-bold border border-gray-200 hover:bg-gray-200 text-sm shrink-0 transition-colors">{rec.results ? '查看詳情' : '繼續作答'}</button>
@@ -549,12 +620,29 @@
                             </div>
                         </div>
                     )}
+
+                    {showMoveModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white p-6 w-full max-w-sm no-round shadow-xl">
+                                <h3 className="font-bold text-lg mb-4">選擇目標資料夾</h3>
+                                <div className="max-h-60 overflow-y-auto mb-4 border border-gray-200 custom-scrollbar">
+                                    {userFolders.map(f => (
+                                        <button key={f} onClick={() => moveQuizToFolder(showMoveModal, f)} className="w-full text-left p-3 hover:bg-gray-50 border-b border-gray-100 font-bold text-sm transition-colors">
+                                            📁 {f}
+                                        </button>
+                                    ))}
+                                </div>
+                                <button onClick={() => setShowMoveModal(null)} className="w-full bg-gray-100 text-black p-2 font-bold no-round hover:bg-gray-200 transition-colors">取消</button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
 
         function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard, showAlert, showConfirm, showPrompt }) {
             const initialRecord = activeQuizRecord || {};
+            const userFolders = userProfile.folders && userProfile.folders.length > 0 ? userProfile.folders : ['未分類'];
             
             const [quizId, setQuizId] = useState(initialRecord.id || null);
             const [step, setStep] = useState(initialRecord.results ? 'results' : (initialRecord.id ? 'answering' : 'setup'));
@@ -566,8 +654,8 @@
             const [results, setResults] = useState(initialRecord.results || null);
             const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
             const [questionText, setQuestionText] = useState(initialRecord.questionText || ''); 
+            const [folder, setFolder] = useState(initialRecord.folder || '未分類');
             
-            // 新增：判斷初始狀態要顯示哪種輸入框 (預設網址，若有純文字內容則切換到文字)
             const [inputType, setInputType] = useState((initialRecord.questionText && !initialRecord.questionFileUrl) ? 'text' : 'url');
             
             const isShared = initialRecord.isShared === true;
@@ -618,7 +706,7 @@
                     
                     const stateToSave = { 
                         testName, numQuestions, userAnswers, starred, correctAnswersInput, results, 
-                        questionFileUrl, questionText, hasTimer, timeLimit,
+                        questionFileUrl, questionText, hasTimer, timeLimit, folder,
                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
                     if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
@@ -626,7 +714,7 @@
                     db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
                       .catch(e => console.error("自動儲存失敗", e));
                 }
-            }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, questionText, currentUser, quizId, step, syncTrigger]);
+            }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, questionText, folder, currentUser, quizId, step, syncTrigger]);
 
             const handleDragStart = (e) => setIsDragging(true);
 
@@ -677,7 +765,6 @@
                 setUserAnswers(initialAnswers);
                 setStarred(initialStarred);
 
-                // 儲存時，根據選擇的類型清理另一個內容
                 const finalFileUrl = inputType === 'url' ? questionFileUrl.trim() : '';
                 const finalQuestionText = inputType === 'text' ? questionText : '';
                 setQuestionFileUrl(finalFileUrl);
@@ -691,6 +778,7 @@
                     hasTimer: hasTimer,
                     timeLimit: hasTimer ? Number(timeLimit) : null,
                     timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
+                    folder: folder,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 }).then(docRef => {
                     setQuizId(docRef.id);
@@ -720,6 +808,7 @@
                         hasTimer: hasTimer,
                         timeLimit: timeLimit,
                         timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
+                        folder: folder,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     }).then(docRef => {
                         setQuizId(docRef.id);
@@ -891,11 +980,16 @@
             };
 
             if (step === 'setup') return (
-                <div className="flex flex-col items-center p-4 h-[100dvh] overflow-y-auto relative">
+                <div className="flex flex-col items-center p-4 h-[100dvh] overflow-y-auto relative custom-scrollbar">
                     <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">← 返回列表</button>
                     <div className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200 mt-10 mb-10">
                         <h1 className="text-xl font-bold mb-6 border-b pb-2 tracking-tight">新增測驗</h1>
                         
+                        <label className="block text-xs font-bold text-gray-500 mb-1">存放資料夾</label>
+                        <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black text-sm cursor-pointer">
+                            {userFolders.map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
+
                         <label className="block text-xs font-bold text-gray-500 mb-1">測驗名稱</label>
                         <input type="text" placeholder="例如: 藥理學期中考" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
                         
@@ -1280,7 +1374,6 @@
             const showPrompt = (message, defaultValue, onConfirm) => setDialog({ type: 'prompt', message, defaultValue, onConfirm });
             const closeDialog = () => setDialog(null);
 
-            // 修改此處：透過 onSnapshot 綁定監聽，確保資料能即時更新全局紅點狀態
             useEffect(() => {
                 let unsubProfile = null;
                 const unsubscribeAuth = auth.onAuthStateChanged(usr => {
@@ -1290,7 +1383,7 @@
                             if (doc.exists) {
                                 setUserProfile(doc.data());
                             } else {
-                                const newProfile = { email: usr.email, friends: [], unreadChats: {} };
+                                const newProfile = { email: usr.email, friends: [], unreadChats: {}, folders: ['未分類'] };
                                 db.collection('users').doc(usr.uid).set(newProfile)
                                   .then(() => setUserProfile(newProfile));
                             }
@@ -1355,8 +1448,8 @@
                     {activeTab !== 'activeQuiz' && <TopNav />}
                     
                     {activeTab !== 'activeQuiz' ? (
-                        <div className="flex-grow pt-6 overflow-hidden">
-                            {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={() => { setActiveQuizRecord(null); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} showAlert={showAlert} showConfirm={showConfirm} />}
+                        <div className="flex-grow pt-6 overflow-hidden bg-gray-50">
+                            {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={(folderName) => { setActiveQuizRecord({ folder: folderName }); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
                             {activeTab === 'social' && <SocialDashboard user={user} userProfile={userProfile} showAlert={showAlert} />}
                         </div>
                     ) : (
