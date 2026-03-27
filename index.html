@@ -278,6 +278,10 @@
             
             const bgmRef = useRef(null);
             
+            // 邏輯長寬 (固定值，不受螢幕解析度影響)
+            const LOG_W = 800;
+            const LOG_H = 350;
+            
             const gameRef = useRef({
                 reqId: null,
                 player: { x: 50, y: 0, w: 40, h: 40, dy: 0, jumps: 0 },
@@ -288,26 +292,39 @@
                 frames: 0,
                 lastSpawnFrame: 0,
                 groundY: 250,
-                lastFrameTime: 0 // 新增：用於鎖定 60 FPS
+                lastFrameTime: 0
             });
 
             const images = useRef({ 
                 steve: new Image(), 
                 stone: new Image(), 
                 diamond: new Image(),
-                zombie: new Image()
+                zombie: new Image(),
+                husk: new Image()
             });
 
+            // 初始化時設定高解析度 Canvas
             useEffect(() => {
                 images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
                 images.current.stone.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png";
                 images.current.diamond.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png";
                 images.current.zombie.src = "https://minotar.net/helm/Zombie/64.png";
+                images.current.husk.src = "https://minotar.net/helm/Husk/64.png"; // 沙漠殭屍
                 
                 bgmRef.current = new Audio("https://raw.githubusercontent.com/libgdx/libgdx-demo-superjumper/master/android/assets/data/music.mp3");
                 bgmRef.current.loop = true;
                 bgmRef.current.volume = 0.4;
                 
+                const cvs = canvasRef.current;
+                if (cvs) {
+                    const ctx = cvs.getContext('2d');
+                    const dpr = window.devicePixelRatio || 1;
+                    // 將實際像素乘上螢幕密度，解決手機失真
+                    cvs.width = LOG_W * dpr;
+                    cvs.height = LOG_H * dpr;
+                    ctx.scale(dpr, dpr);
+                }
+
                 return () => {
                     if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
                     if (bgmRef.current) {
@@ -336,7 +353,7 @@
                     frames: 0,
                     lastSpawnFrame: 0,
                     groundY: 250,
-                    lastFrameTime: performance.now() // 初始化時間
+                    lastFrameTime: performance.now()
                 };
                 gameRef.current.reqId = requestAnimationFrame(loop);
             };
@@ -346,36 +363,37 @@
                 if (p.jumps < 2) {
                     p.dy = -11.5; 
                     p.jumps++;
+                    
+                    // 當玩家跳躍時，畫面中所有的沙漠殭屍 (husk) 也會跟著跳！
+                    gameRef.current.obstacles.forEach(obs => {
+                        if (obs.type === 'husk' && obs.y >= gameRef.current.groundY - obs.h - 10) {
+                            obs.dy = -11.5; 
+                        }
+                    });
                 }
             };
 
-            // 加入 currentTime 參數
             const loop = (currentTime) => {
                 const cvs = canvasRef.current;
                 if (!cvs) return;
                 const state = gameRef.current;
                 
-                // === 鎖定 60 FPS 的關鍵邏輯 ===
+                // === 鎖定 60 FPS 機制 ===
                 if (!currentTime) currentTime = performance.now();
-                const fpsInterval = 1000 / 60; // 60 FPS
+                const fpsInterval = 1000 / 60; // 16.67ms
                 const elapsed = currentTime - state.lastFrameTime;
 
-                // 如果距離上一幀的時間太短 (例如 144Hz 螢幕)，就直接跳過不計算物理
                 if (elapsed < fpsInterval) {
                     state.reqId = requestAnimationFrame(loop);
                     return;
                 }
-
-                // 校正時間誤差
                 state.lastFrameTime = currentTime - (elapsed % fpsInterval);
-                // ===================================
+                // =========================
 
                 const ctx = cvs.getContext('2d');
-                
-                // 記錄位移前的底部位置 (為了精準判斷是降落還是撞牆)
                 let prevBottom = state.player.y + state.player.h; 
                 
-                state.player.dy += 0.7; // 重力
+                state.player.dy += 0.7; // 玩家重力
                 state.player.y += state.player.dy;
 
                 let inPit = false;
@@ -385,7 +403,7 @@
                 state.obstacles = state.obstacles.filter(o => o.x + o.w > -50);
                 state.diamonds = state.diamonds.filter(d => d.x + d.w > -50 && !d.collected);
 
-                // 檢查坑洞 (中心點稍微寬鬆一點)
+                // 檢查坑洞
                 state.obstacles.forEach(obs => {
                     if (obs.type === 'pit') {
                         let pCenter = state.player.x + state.player.w / 2;
@@ -395,23 +413,22 @@
                     }
                 });
 
-                // 地面碰撞 (若不在坑洞上方)
+                // 地面碰撞
                 if (state.player.y + state.player.h >= state.groundY) {
                     if (!inPit) {
-                        // 檢查前一幀是不是在地面之上
                         if (prevBottom <= state.groundY + 10) {
                             state.player.y = state.groundY - state.player.h;
                             state.player.dy = 0;
                             state.player.jumps = 0;
                         } else {
-                            // 前一幀已經在地面之下，代表撞到了坑洞側面的牆壁
+                            // 前一幀在地面下，代表撞到坑洞側邊的牆壁
                             dead = true;
                         }
                     }
                 }
 
                 // 掉出畫面死亡
-                if (state.player.y > cvs.height) {
+                if (state.player.y > LOG_H) {
                     endGame();
                     return;
                 }
@@ -425,8 +442,18 @@
                         continue;
                     }
 
-                    if (obs.type === 'zombie') {
-                        obs.x -= (state.speed + 1.5); 
+                    if (obs.type === 'zombie' || obs.type === 'husk') {
+                        obs.x -= (state.speed + 1.2); // 怪物走得比地板快一點
+                        
+                        // 沙漠殭屍自己的獨立重力系統
+                        if (obs.type === 'husk') {
+                            obs.dy += 0.7;
+                            obs.y += obs.dy;
+                            if (obs.y + obs.h >= state.groundY) {
+                                obs.y = state.groundY - obs.h;
+                                obs.dy = 0;
+                            }
+                        }
                     } else {
                         obs.x -= state.speed;
                     }
@@ -446,7 +473,7 @@
                             } else {
                                 dead = true; 
                             }
-                        } else if (obs.type === 'zombie') {
+                        } else if (obs.type === 'zombie' || obs.type === 'husk') {
                             dead = true; 
                         }
                     }
@@ -484,32 +511,34 @@
                     if (Math.random() < 0.55) { 
                         state.lastSpawnFrame = state.frames;
                         let rand = Math.random();
-                        if (rand < 0.4) {
-                            state.obstacles.push({ type: 'stone', x: cvs.width, y: state.groundY - 40, w: 40, h: 40 });
-                        } else if (rand < 0.75) {
-                            state.obstacles.push({ type: 'pit', x: cvs.width, y: state.groundY, w: Math.random() * 150 + 100, h: 100 });
+                        if (rand < 0.3) {
+                            state.obstacles.push({ type: 'stone', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
+                        } else if (rand < 0.6) {
+                            state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 70 + 60, h: 100 });
+                        } else if (rand < 0.8) {
+                            state.obstacles.push({ type: 'zombie', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
                         } else {
-                            state.obstacles.push({ type: 'zombie', x: cvs.width, y: state.groundY - 40, w: 40, h: 40 });
+                            state.obstacles.push({ type: 'husk', x: LOG_W, y: state.groundY - 40, w: 40, h: 40, dy: 0 }); // 沙漠殭屍
                         }
                     }
                 }
                 
-                if (state.frames % Math.floor(Math.random() * 400 + 300) === 0) {
+                if (state.frames % Math.floor(Math.random() * 40 + 30) === 0) {
                     let dY = state.groundY - 50 - Math.random() * 100;
-                    state.diamonds.push({ x: cvs.width, y: dY, w: 24, h: 24, collected: false });
+                    state.diamonds.push({ x: LOG_W, y: dY, w: 24, h: 24, collected: false });
                 }
 
                 // --- 渲染畫面 ---
-                ctx.clearRect(0, 0, cvs.width, cvs.height);
+                ctx.clearRect(0, 0, LOG_W, LOG_H);
                 
                 ctx.fillStyle = '#5A5A5A';
-                ctx.fillRect(0, state.groundY, cvs.width, cvs.height - state.groundY);
+                ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
                 ctx.fillStyle = '#4A4A4A'; 
-                ctx.fillRect(0, state.groundY, cvs.width, 8);
+                ctx.fillRect(0, state.groundY, LOG_W, 8);
                 
                 state.obstacles.forEach(obs => {
                     if (obs.type === 'pit') {
-                        ctx.clearRect(obs.x, state.groundY, obs.w, cvs.height - state.groundY);
+                        ctx.clearRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
                     }
                 });
 
@@ -520,6 +549,9 @@
                     } else if (obs.type === 'zombie') {
                         if (images.current.zombie.complete) ctx.drawImage(images.current.zombie, obs.x, obs.y, obs.w, obs.h);
                         else { ctx.fillStyle = '#005500'; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); }
+                    } else if (obs.type === 'husk') {
+                        if (images.current.husk.complete) ctx.drawImage(images.current.husk, obs.x, obs.y, obs.w, obs.h);
+                        else { ctx.fillStyle = '#b3a172'; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); }
                     }
                 });
 
@@ -567,7 +599,8 @@
                             onMouseDown={(e) => { e.preventDefault(); if(gameState==='playing') jump(); }}
                             onTouchStart={(e) => { e.preventDefault(); if(gameState==='playing') jump(); }}
                         >
-                            <canvas ref={canvasRef} width={800} height={350} className="w-full h-full pixelated block"></canvas>
+                            {/* 加入 w-full 跟 h-full 以及 style 確保 RWD 時正常縮放 */}
+                            <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} className="pixelated block"></canvas>
                             
                             {gameState === 'start' && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60">
@@ -588,8 +621,11 @@
                                 </div>
                             )}
                         </div>
-                        <p className="text-center text-gray-400 text-sm mt-3 font-bold tracking-widest">
-                            點擊/觸控以跳躍 (可二段跳) <br/> <span className="text-xs text-gray-500">避開坑洞與殭屍，撞到牆壁會死！</span>
+                        <p className="text-center text-gray-400 text-sm mt-3 font-bold tracking-widest leading-relaxed">
+                            點擊/觸控以跳躍 (可二段跳) <br/> 
+                            <span className="text-xs text-gray-500">
+                                避開坑洞與綠殭屍。沙漠殭屍(黃)會模仿你跳躍，請利用二段跳或踩石頭越過他！撞牆必死！
+                            </span>
                         </p>
                     </div>
                 </div>
@@ -696,7 +732,6 @@
                 updateMcData(updates);
             };
 
-            // 小遊戲結束回調
             const handleMiniGameOver = (earnedDiamonds) => {
                 if (earnedDiamonds > 0) {
                     updateMcData({ diamonds: mcData.diamonds + earnedDiamonds }, true); 
@@ -1087,22 +1122,38 @@
             const [showShareModal, setShowShareModal] = useState(null);
             const [showMoveModal, setShowMoveModal] = useState(null);
 
-            const userFolders = userProfile.folders && userProfile.folders.length > 0 ? userProfile.folders : ['未分類'];
+            // 強制讓 userFolders 一定包含未分類，解決舊資料或不同步的問題
+            const userFolders = Array.from(new Set(['未分類', ...(userProfile.folders || [])]));
             const [currentFolder, setCurrentFolder] = useState('未分類');
             
             const [filters, setFilters] = useState({ todo: true, doing: true, done: true });
 
             useEffect(() => {
+                let isMounted = true;
+                
+                // 防呆機制：如果 4 秒後還是 loading，就強制解除 loading 狀態避免卡死
+                let fallbackTimer = setTimeout(() => {
+                    if (isMounted) setLoading(false);
+                }, 4000);
+
                 const unsubscribe = db.collection('users').doc(user.uid).collection('quizzes')
                     .orderBy('createdAt', 'desc')
                     .onSnapshot(snapshot => {
-                        setRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                        setLoading(false);
+                        if (isMounted) {
+                            setRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                            setLoading(false);
+                            clearTimeout(fallbackTimer);
+                        }
                     }, err => {
                         console.error(err);
-                        setLoading(false);
+                        if (isMounted) setLoading(false);
                     });
-                return () => unsubscribe();
+
+                return () => {
+                    isMounted = false;
+                    clearTimeout(fallbackTimer);
+                    unsubscribe();
+                };
             }, [user]);
 
             const handleDelete = (id) => {
@@ -1306,7 +1357,7 @@
 
         function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard, showAlert, showConfirm, showPrompt }) {
             const initialRecord = activeQuizRecord || {};
-            const userFolders = userProfile.folders && userProfile.folders.length > 0 ? userProfile.folders : ['未分類'];
+            const userFolders = Array.from(new Set(['未分類', ...(userProfile.folders || [])]));
             
             const [quizId, setQuizId] = useState(initialRecord.id || null);
             const [step, setStep] = useState(initialRecord.results ? 'results' : (initialRecord.id ? 'answering' : 'setup'));
