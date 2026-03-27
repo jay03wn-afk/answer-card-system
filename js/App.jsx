@@ -128,48 +128,12 @@ function Main() {
         </div>
     );
 
-    // ... 前面的狀態設定保持不變 ...
-
     if (loading) return (
         <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white font-mono">
             <div className="text-2xl mb-4 animate-bounce">💊</div>
             <div>載入中...</div>
         </div>
     );
-
-    // --- 關鍵修正：確保 CustomModal 永遠在最外層 ---
-    return (
-        <div className="h-[100dvh] flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-900 transition-colors">
-            {/* 1. 彈窗中心：放在最外面，任何畫面都看得到 */}
-            <CustomModal />
-
-            {!user ? (
-                /* 2. 未登入：顯示登入畫面 */
-                <AuthScreen showAlert={showAlert} />
-            ) : (
-                /* 3. 已登入：顯示主程式內容 */
-                <>
-                    {activeTab !== 'activeQuiz' && <TopNav />}
-                    
-                    {activeTab !== 'activeQuiz' ? (
-                        <div className="flex-grow pt-6 overflow-hidden bg-gray-50 dark:bg-gray-900 transition-colors">
-                            {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={(folderName) => { setActiveQuizRecord({ folder: folderName }); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
-                            {activeTab === 'social' && <SocialDashboard user={user} userProfile={userProfile} showAlert={showAlert} />}
-                            {activeTab === 'minecraft' && <MinecraftDashboard user={user} userProfile={userProfile} showAlert={showAlert} />}
-                            {activeTab === 'profile' && <ProfilePage user={user} userProfile={userProfile} showAlert={showAlert} />}
-                        </div>
-                    ) : (
-                        <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} userProfile={userProfile} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />
-                    )}
-                </>
-            )}
-        </div>
-    );
-}
-
-// 渲染到根節點
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<Main />);
 
     // 如果未登入，顯示登入畫面
     if (!user) return <AuthScreen showAlert={showAlert} />;
