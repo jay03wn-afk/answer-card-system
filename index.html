@@ -468,7 +468,7 @@
                             state.obstacles.push({ type: 'stone', x: cvs.width, y: state.groundY - 40, w: 40, h: 40 });
                         } else if (rand < 0.75) {
                             // 產生坑洞 (坑洞寬度變得更隨機 60~130)
-                            state.obstacles.push({ type: 'pit', x: cvs.width, y: state.groundY, w: Math.random() * 70 + 60, h: 100 });
+                            state.obstacles.push({ type: 'pit', x: cvs.width, y: state.groundY, w: Math.random() * 70 + 120, h: 100 });
                         } else {
                             // 產生殭屍
                             state.obstacles.push({ type: 'zombie', x: cvs.width, y: state.groundY - 40, w: 40, h: 40 });
