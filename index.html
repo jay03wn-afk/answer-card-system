@@ -57,7 +57,7 @@
                 
                 request.then((cred) => {
                     if (isSignUp) {
-                        return db.collection('users').doc(cred.user.uid).set({ email: email, friends: [] })
+                        return db.collection('users').doc(cred.user.uid).set({ email: email.toLowerCase(), friends: [] })
                           .catch(err => alert("註冊成功，但建立資料庫檔案失敗: " + err.message));
                     }
                 })
@@ -134,12 +134,14 @@
             }, [activeChat, user.uid]);
 
             const handleAddFriend = () => {
-                if(!searchEmail) return;
-                if(searchEmail === user.email) return alert('不能加自己為好友！');
+                // 自動清除前後空白並轉小寫，防呆設計
+                const cleanEmail = searchEmail.trim().toLowerCase();
+                if(!cleanEmail) return;
+                if(cleanEmail === user.email.toLowerCase()) return alert('不能加自己為好友！');
                 
-                db.collection('users').where('email', '==', searchEmail).get()
+                db.collection('users').where('email', '==', cleanEmail).get()
                 .then(snap => {
-                    if(snap.empty) return alert('找不到此信箱的使用者');
+                    if(snap.empty) return alert('找不到此信箱的使用者 (請確認對方已登入過系統)');
                     const targetUser = snap.docs[0];
                     const targetData = targetUser.data();
                     const targetUid = targetUser.id;
@@ -375,7 +377,6 @@
         function QuizApp({ currentUser, activeQuizRecord, onBackToDashboard }) {
             const initialRecord = activeQuizRecord || {};
             
-            // ★ 將所有的 Hook 統一放在元件最頂層，無條件呼叫
             const [quizId, setQuizId] = useState(initialRecord.id || null);
             const [step, setStep] = useState(initialRecord.results ? 'results' : (initialRecord.id ? 'answering' : 'setup'));
             const [testName, setTestName] = useState(initialRecord.testName || '');
@@ -385,15 +386,12 @@
             const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
             const [results, setResults] = useState(initialRecord.results || null);
             const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
-            
-            // ★ 將原本放在 if (step === 'results') 裡的 state 移到最外面
             const [showOnlyWrong, setShowOnlyWrong] = useState(false);
 
             useEffect(() => {
                 if (currentUser && quizId && (step === 'answering' || step === 'setup' || step === 'results')) {
                     if (userAnswers.length === 0 && numQuestions > 0 && step === 'answering') return;
                     
-                    // 這裡故意不把 showOnlyWrong 存進資料庫，避免佔用雲端空間
                     const stateToSave = { 
                         testName, numQuestions, userAnswers, starred, correctAnswersInput, results, 
                         questionFileUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -572,10 +570,17 @@
                     setUser(usr);
                     if (usr) {
                         db.collection('users').doc(usr.uid).get().then(doc => {
-                            if (doc.exists) setUserProfile(doc.data());
+                            if (doc.exists) {
+                                setUserProfile(doc.data());
+                            } else {
+                                // ★ 舊帳號自動修復機制：幫未建立資料庫的人補建立
+                                const newProfile = { email: usr.email, friends: [] };
+                                db.collection('users').doc(usr.uid).set(newProfile)
+                                  .then(() => setUserProfile(newProfile));
+                            }
                         }).catch(err => {
                             console.error("無法讀取資料庫", err);
-                            alert("系統錯誤：無法讀取您的資料！\n請確定已前往 Firebase 開放 Firestore 的讀寫權限。\n詳細錯誤：" + err.message);
+                            alert("系統錯誤：無法讀取資料庫！\n請確定已開放 Firestore 讀寫權限。\n錯誤：" + err.message);
                         }).finally(() => {
                             setLoadingUser(false);
                         });
