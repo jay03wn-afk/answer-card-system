@@ -179,6 +179,33 @@
             );
         }
 
+        function TutorialOverlay({ onComplete }) {
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[70] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-lg no-round shadow-2xl relative border-t-4 border-black dark:border-gray-500 animate-fade-in-up">
+                        <h2 className="text-2xl font-black mb-6 text-center tracking-wider dark:text-white">🎉 歡迎加入 JJay 線上測驗</h2>
+                        <div className="space-y-6 text-gray-700 dark:text-gray-300 mb-8">
+                            <div>
+                                <p className="font-bold border-l-4 border-black dark:border-gray-400 pl-3 text-lg dark:text-gray-100">📖 我的題庫</p>
+                                <p className="pl-4 mt-1 text-sm leading-relaxed">首創雙螢幕排版，貼上雲端題本或純文字，左邊看題、右邊畫卡，並支援資料夾與測驗代碼功能。</p>
+                            </div>
+                            <div>
+                                <p className="font-bold border-l-4 border-blue-500 pl-3 text-lg dark:text-gray-100">💬 社群交流</p>
+                                <p className="pl-4 mt-1 text-sm leading-relaxed">不再是一個人讀書！新增好友即時對話，還能一鍵打包你的測驗卷分享給好友作答、互相炫耀成績。支援圖片閱後即焚！</p>
+                            </div>
+                            <div>
+                                <p className="font-bold border-l-4 border-orange-500 pl-3 text-lg dark:text-gray-100">⛏️ 史蒂夫養成</p>
+                                <p className="pl-4 mt-1 text-sm leading-relaxed">讀書也要有儀式感。賺取鑽石佈置你的 Minecraft 家園，還能玩滑板小遊戲與好友競爭等級！</p>
+                            </div>
+                        </div>
+                        <button onClick={onComplete} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors">
+                            🚀 開始體驗
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
         function AuthScreen({ showAlert }) {
             const [isSignUp, setIsSignUp] = useState(false);
             const [email, setEmail] = useState('');
@@ -402,6 +429,7 @@
                 if (!cvs) return;
                 const state = gameRef.current;
                 
+                // 鎖定 60 FPS
                 if (!currentTime) currentTime = performance.now();
                 const fpsInterval = 1000 / 60;
                 const elapsed = currentTime - state.lastFrameTime;
@@ -444,77 +472,144 @@
                         obs.x -= (state.speed + 1.2); 
                     } else if (obs.type === 'husk') {
                         obs.x -= (state.speed + 1.2); 
-                        // Husk AI: 玩家在地面的時候，主動跳躍越過玩家 (大幅躍起)
+                        // Husk AI: 玩家在地面的時候，主動跳躍越過玩家
                         let dist = obs.x - (state.player.x + state.player.w);
-                        if (dist > 10 && dist < 110 && state.player.y >= state.groundY - 10 && obs.y >= state.groundY - obs.h - 5) {
-                            obs.dy = -13.5; 
+                        if (dist > 20 && dist < 110 && state.player.y >= state.groundY - 10 && obs.y >= state.groundY - obs.h - 5) {
+                            obs.dy = -13.5; // 飛越玩家
                         }
+
                         obs.dy += 0.7;
                         obs.y += obs.dy;
-                        if (obs.y + obs.h >= state.groundY) { obs.y = state.groundY - obs.h; obs.dy = 0; }
+                        if (obs.y + obs.h >= state.groundY) {
+                            obs.y = state.groundY - obs.h;
+                            obs.dy = 0;
+                        }
                     } else {
                         obs.x -= state.speed;
                     }
 
-                    if (state.player.x + 8 < obs.x + obs.w - 8 && state.player.x + state.player.w - 8 > obs.x + 8 && state.player.y + 5 < obs.y + obs.h - 5 && state.player.y + state.player.h > obs.y + 5) {
+                    if (
+                        state.player.x + 8 < obs.x + obs.w - 8 &&
+                        state.player.x + state.player.w - 8 > obs.x + 8 &&
+                        state.player.y + 5 < obs.y + obs.h - 5 &&
+                        state.player.y + state.player.h > obs.y + 5
+                    ) {
                         if (obs.type === 'stone') {
                             if (state.player.dy > 0 && prevBottom <= obs.y + 15) {
-                                state.player.y = obs.y - state.player.h; state.player.dy = 0; state.player.jumps = 0; landedOnPlatform = true;
-                            } else dead = true; 
-                        } else if (obs.type === 'zombie' || obs.type === 'husk') dead = true; 
+                                state.player.y = obs.y - state.player.h;
+                                state.player.dy = 0;
+                                state.player.jumps = 0; 
+                                landedOnPlatform = true;
+                            } else {
+                                dead = true; 
+                            }
+                        } else if (obs.type === 'zombie' || obs.type === 'husk') {
+                            dead = true; 
+                        }
                     }
                 }
 
                 state.diamonds.forEach(d => {
                     d.x -= state.speed;
-                    if (!d.collected && state.player.x < d.x + d.w && state.player.x + state.player.w > d.x && state.player.y < d.y + d.h && state.player.y + state.player.h > d.y) {
-                        d.collected = true; state.score += 1; setScore(state.score);
+                    if (!d.collected &&
+                        state.player.x < d.x + d.w &&
+                        state.player.x + state.player.w > d.x &&
+                        state.player.y < d.y + d.h &&
+                        state.player.y + state.player.h > d.y
+                    ) {
+                        d.collected = true;
+                        state.score += 1;
+                        setScore(state.score);
                     }
                 });
 
-                if (dead) { endGame(); return; }
+                if (dead) {
+                    endGame();
+                    return;
+                }
 
                 state.frames++;
-                if (state.frames % 100 === 0 && state.speed < 15) state.speed += 0.2;
+                
+                if (state.frames % 100 === 0 && state.speed < 15) {
+                    state.speed += 0.2;
+                }
 
+                // 產生地形
                 let spawnInterval = Math.max(40, 100 - state.speed * 4);
                 const lastObs = state.obstacles[state.obstacles.length - 1];
-                if (lastObs && lastObs.type === 'pit') spawnInterval = Math.max(spawnInterval, Math.floor((lastObs.w / state.speed) + 20));
+                if (lastObs && lastObs.type === 'pit') {
+                    spawnInterval = Math.max(spawnInterval, Math.floor((lastObs.w / state.speed) + 20));
+                }
 
                 if (state.frames - state.lastSpawnFrame > spawnInterval) {
                     if (Math.random() < 0.55) { 
                         state.lastSpawnFrame = state.frames;
                         let rand = Math.random();
-                        if (rand < 0.3) state.obstacles.push({ type: 'stone', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
-                        else if (rand < 0.6) state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 150 + 150, h: 100 });
-                        else if (rand < 0.8) state.obstacles.push({ type: 'zombie', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
-                        else state.obstacles.push({ type: 'husk', x: LOG_W, y: state.groundY - 40, w: 40, h: 40, dy: 0 }); 
+                        if (rand < 0.3) {
+                            state.obstacles.push({ type: 'stone', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
+                        } else if (rand < 0.6) {
+                            // 坑洞寬度變得極寬 (150 + 150*)
+                            state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 150 + 150, h: 100 });
+                        } else if (rand < 0.8) {
+                            state.obstacles.push({ type: 'zombie', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
+                        } else {
+                            state.obstacles.push({ type: 'husk', x: LOG_W, y: state.groundY - 40, w: 40, h: 40, dy: 0 }); 
+                        }
                     }
                 }
                 
-                // 鑽石頻率 400+300* if (state.frames % Math.floor(Math.random() * 300 + 400) === 0) {
+                // 鑽石極度稀有化 (頻率 400 + 300*)
+                if (state.frames % Math.floor(Math.random() * 300 + 400) === 0) {
                     let dY = state.groundY - 50 - Math.random() * 100;
                     state.diamonds.push({ x: LOG_W, y: dY, w: 24, h: 24, collected: false });
                 }
 
+                // 渲染
                 ctx.clearRect(0, 0, LOG_W, LOG_H);
-                ctx.fillStyle = '#5A5A5A'; ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
-                ctx.fillStyle = '#4A4A4A'; ctx.fillRect(0, state.groundY, LOG_W, 8);
                 
-                state.obstacles.forEach(obs => { if (obs.type === 'pit') ctx.clearRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY); });
+                ctx.fillStyle = '#5A5A5A';
+                ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
+                ctx.fillStyle = '#4A4A4A'; 
+                ctx.fillRect(0, state.groundY, LOG_W, 8);
+                
                 state.obstacles.forEach(obs => {
-                    if (obs.type === 'stone') { if (images.current.stone.complete) ctx.drawImage(images.current.stone, obs.x, obs.y, obs.w, obs.h); else { ctx.fillStyle = '#888'; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); } }
-                    else if (obs.type === 'zombie') { if (images.current.zombie.complete) ctx.drawImage(images.current.zombie, obs.x, obs.y, obs.w, obs.h); else { ctx.fillStyle = '#005500'; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); } }
-                    else if (obs.type === 'husk') { if (images.current.husk.complete) ctx.drawImage(images.current.husk, obs.x, obs.y, obs.w, obs.h); else { ctx.fillStyle = '#b3a172'; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); } }
+                    if (obs.type === 'pit') {
+                        ctx.clearRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
+                    }
                 });
+
+                state.obstacles.forEach(obs => {
+                    if (obs.type === 'stone') {
+                        if (images.current.stone.complete) ctx.drawImage(images.current.stone, obs.x, obs.y, obs.w, obs.h);
+                        else { ctx.fillStyle = '#888'; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); }
+                    } else if (obs.type === 'zombie') {
+                        if (images.current.zombie.complete) ctx.drawImage(images.current.zombie, obs.x, obs.y, obs.w, obs.h);
+                        else { ctx.fillStyle = '#005500'; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); }
+                    } else if (obs.type === 'husk') {
+                        if (images.current.husk.complete) ctx.drawImage(images.current.husk, obs.x, obs.y, obs.w, obs.h);
+                        else { ctx.fillStyle = '#b3a172'; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); }
+                    }
+                });
+
                 state.diamonds.forEach(d => {
-                    if (!d.collected) { if (images.current.diamond.complete) ctx.drawImage(images.current.diamond, d.x, d.y, d.w, d.h); else { ctx.fillStyle = '#00ffff'; ctx.fillRect(d.x, d.y, d.w, d.h); } }
+                    if (!d.collected) {
+                        if (images.current.diamond.complete) ctx.drawImage(images.current.diamond, d.x, d.y, d.w, d.h);
+                        else { ctx.fillStyle = '#00ffff'; ctx.fillRect(d.x, d.y, d.w, d.h); }
+                    }
                 });
-                if (images.current.steve.complete) ctx.drawImage(images.current.steve, state.player.x, state.player.y, state.player.w, state.player.h);
-                else { ctx.fillStyle = '#ffccaa'; ctx.fillRect(state.player.x, state.player.y, state.player.w, state.player.h); }
+
+                if (images.current.steve.complete) {
+                    ctx.drawImage(images.current.steve, state.player.x, state.player.y, state.player.w, state.player.h);
+                } else {
+                    ctx.fillStyle = '#ffccaa';
+                    ctx.fillRect(state.player.x, state.player.y, state.player.w, state.player.h);
+                }
                 
-                ctx.fillStyle = '#8b4513'; ctx.fillRect(state.player.x - 4, state.player.y + state.player.h - 2, state.player.w + 8, 6);
-                ctx.fillStyle = '#111'; ctx.fillRect(state.player.x + 2, state.player.y + state.player.h + 4, 8, 8); ctx.fillRect(state.player.x + state.player.w - 10, state.player.y + state.player.h + 4, 8, 8);
+                ctx.fillStyle = '#8b4513'; 
+                ctx.fillRect(state.player.x - 4, state.player.y + state.player.h - 2, state.player.w + 8, 6);
+                ctx.fillStyle = '#111'; 
+                ctx.fillRect(state.player.x + 2, state.player.y + state.player.h + 4, 8, 8);
+                ctx.fillRect(state.player.x + state.player.w - 10, state.player.y + state.player.h + 4, 8, 8);
 
                 state.reqId = requestAnimationFrame(loop);
             };
@@ -533,13 +628,21 @@
                             <span className="flex items-center"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png" fallback="💎" className="w-6 h-6 mr-2 pixelated" /> {score}</span>
                             <button onClick={onQuit} className="text-red-400 hover:text-red-300 transition-colors">✖ 離開</button>
                         </div>
-                        <div className="bg-[#6bc0ff] relative w-full overflow-hidden border-4 border-black" style={{ height: '350px' }} onMouseDown={(e) => { e.preventDefault(); if(gameState==='playing') jump(); }} onTouchStart={(e) => { e.preventDefault(); if(gameState==='playing') jump(); }}>
+                        
+                        <div 
+                            className="bg-[#6bc0ff] relative w-full overflow-hidden border-4 border-black" 
+                            style={{ height: '350px' }}
+                            onMouseDown={(e) => { e.preventDefault(); if(gameState==='playing') jump(); }}
+                            onTouchStart={(e) => { e.preventDefault(); if(gameState==='playing') jump(); }}
+                        >
                             <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} className="pixelated block"></canvas>
+                            
                             {gameState === 'start' && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60">
                                     <button onClick={startGame} className="mc-btn px-8 py-4 text-2xl animate-pulse">🛹 開始跑酷</button>
                                 </div>
                             )}
+                            
                             {gameState === 'gameover' && (
                                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-80 text-white">
                                     <h2 className="text-4xl font-black mb-2 text-red-500 drop-shadow-md">GAME OVER</h2>
@@ -554,13 +657,17 @@
                             )}
                         </div>
                         <p className="text-center text-gray-400 text-sm mt-3 font-bold tracking-widest leading-relaxed">
-                            點擊/觸控以跳躍 (可二段跳) <br/> <span className="text-xs text-gray-500">沙漠殭屍(黃)靠近時會飛越你，站地上不動即可閃避。</span>
+                            點擊/觸控以跳躍 (可二段跳) <br/> 
+                            <span className="text-xs text-gray-500">
+                                沙漠殭屍(黃)靠近時會飛越你，站地上不動即可閃避。
+                            </span>
                         </p>
                     </div>
                 </div>
             );
         }
 
+        // Minecraft 養成遊戲面板組件
         function MinecraftDashboard({ user, userProfile, showAlert }) {
             const [leaderboard, setLeaderboard] = useState([]);
             const [showMiniGame, setShowMiniGame] = useState(false);
@@ -1429,7 +1536,6 @@
                                                 <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:underline transition-colors">刪除</button>
                                                 <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 font-bold transition-colors">📁 移動</button>
                                                 <button onClick={() => {
-                                                    // 點擊分享直接生成代碼並顯示模態框
                                                     if (!rec.shortCode) handleGenerateCode(rec);
                                                     else setShowShareModal(rec);
                                                 }} className="text-xs text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-bold transition-colors">📤 分享</button>
@@ -2010,7 +2116,7 @@
                                             </button>
                                         )}
                                         {questionFileUrl && (
-                                            <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold underline">新分頁開啟</a>
+                                            <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold underline">在新分頁開啟全螢幕</a>
                                         )}
                                     </div>
                                 </div>
