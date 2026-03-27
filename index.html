@@ -830,6 +830,7 @@
             const [messages, setMessages] = useState([]);
             const [newMessage, setNewMessage] = useState('');
             const messagesEndRef = useRef(null);
+            const chatInputRef = useRef(null); // 防止收鍵盤用
             
             const [messageLimit, setMessageLimit] = useState(5);
             const [lastMsgIdForScroll, setLastMsgIdForScroll] = useState(null);
@@ -923,6 +924,11 @@
                     db.collection('users').doc(activeChat.uid).set({
                         unreadChats: { [user.uid]: true }
                     }, { merge: true });
+                    
+                    // 強制重獲焦點，防止手機鍵盤收起
+                    setTimeout(() => {
+                        if (chatInputRef.current) chatInputRef.current.focus();
+                    }, 10);
                 });
             };
 
@@ -1085,9 +1091,9 @@
                                     <div ref={messagesEndRef} />
                                 </div>
                                 <form onSubmit={sendMessage} className="p-3 border-t border-gray-200 flex space-x-2 bg-white shrink-0 items-center">
-                                    <button type="button" onClick={playRPS} className="bg-gray-100 text-xl px-4 py-2 no-round border border-gray-300 hover:bg-gray-200 transition-colors" title="猜拳決勝負">✌️</button>
-                                    <input type="text" placeholder="輸入訊息..." className="flex-grow p-2 border border-gray-300 no-round outline-none" value={newMessage} onChange={e=>setNewMessage(e.target.value)} onFocus={handleFocusScroll} />
-                                    <button type="submit" className="bg-black text-white px-5 py-2 no-round font-bold hover:bg-gray-800 transition-colors">傳送</button>
+                                    <button type="button" onMouseDown={e => e.preventDefault()} onClick={playRPS} className="bg-gray-100 text-xl px-4 py-2 no-round border border-gray-300 hover:bg-gray-200 transition-colors" title="猜拳決勝負">✌️</button>
+                                    <input type="text" ref={chatInputRef} placeholder="輸入訊息..." className="flex-grow p-2 border border-gray-300 no-round outline-none" value={newMessage} onChange={e=>setNewMessage(e.target.value)} onFocus={handleFocusScroll} />
+                                    <button type="submit" onMouseDown={e => e.preventDefault()} className="bg-black text-white px-5 py-2 no-round font-bold hover:bg-gray-800 transition-colors">傳送</button>
                                 </form>
                             </>
                         ) : (
@@ -1103,6 +1109,7 @@
             const [loading, setLoading] = useState(true);
             const [showShareModal, setShowShareModal] = useState(null);
             const [showMoveModal, setShowMoveModal] = useState(null);
+            const [isGeneratingCode, setIsGeneratingCode] = useState(false);
 
             const userFolders = Array.from(new Set(['未分類', ...(userProfile.folders || [])]));
             const [currentFolder, setCurrentFolder] = useState('未分類');
@@ -1169,44 +1176,85 @@
                 .catch(e => showAlert('移動失敗：' + e.message));
             };
 
+            const handleGenerateCode = async (quiz) => {
+                if (quiz.shortCode) {
+                    navigator.clipboard.writeText(quiz.shortCode);
+                    showAlert(`✅ 已複製代碼：${quiz.shortCode}`);
+                    return;
+                }
+                setIsGeneratingCode(true);
+                const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                try {
+                    await db.collection('shareCodes').doc(newCode).set({
+                        ownerId: user.uid,
+                        quizId: quiz.id
+                    });
+                    await db.collection('users').doc(user.uid).collection('quizzes').doc(quiz.id).update({
+                        shortCode: newCode
+                    });
+                    setShowShareModal(prev => ({...prev, shortCode: newCode}));
+                    navigator.clipboard.writeText(newCode);
+                    showAlert(`✅ 成功生成並複製代碼：${newCode}`);
+                } catch(e) {
+                    showAlert('生成代碼失敗：' + e.message);
+                }
+                setIsGeneratingCode(false);
+            };
+
             const handleImportCode = () => {
-                showPrompt("請輸入好友分享的測驗代碼：", "", (code) => {
-                    if(!code || !code.trim()) return;
+                showPrompt("請輸入 6 碼測驗代碼：", "", async (code) => {
+                    const cleanCode = code?.trim().toUpperCase();
+                    if(!cleanCode) return;
+                    
                     try {
-                        const decoded = atob(code.trim());
-                        const [ownerId, qId] = decoded.split('_');
-                        if(!ownerId || !qId) throw new Error("無效代碼");
+                        const codeDoc = await db.collection('shareCodes').doc(cleanCode).get();
+                        let ownerId, qId;
                         
-                        db.collection('users').doc(ownerId).collection('quizzes').doc(qId).get()
-                        .then(doc => {
-                            if(!doc.exists) throw new Error('找不到該試卷，可能已失效或被擁有者刪除！');
-                            const data = doc.data();
-                            const emptyAnswers = Array(Number(data.numQuestions)).fill('');
-                            const emptyStarred = Array(Number(data.numQuestions)).fill(false);
-                            return db.collection('users').doc(user.uid).collection('quizzes').add({
-                                testName: data.testName + ' (來自代碼)',
-                                numQuestions: data.numQuestions,
-                                questionFileUrl: data.questionFileUrl || '',
-                                questionText: data.questionText || '',
-                                correctAnswersInput: data.correctAnswersInput || '', 
-                                userAnswers: emptyAnswers,
-                                starred: emptyStarred,
-                                hasTimer: data.hasTimer || false,
-                                timeLimit: data.timeLimit || null,
-                                timeRemaining: data.hasTimer ? (data.timeLimit * 60) : null,
-                                isShared: true, 
-                                folder: '未分類', 
-                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                            }).then(newDocRef => {
-                                return db.collection('users').doc(ownerId).collection('quizzes').doc(qId).update({
-                                    sharedTo: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid, quizId: newDocRef.id })
-                                });
-                            });
-                        })
-                        .then(() => showAlert('✅ 已成功匯入！\n試卷已加入「未分類」資料夾中，請準備好後點擊進入測驗。'))
-                        .catch(e => showAlert('匯入失敗：' + e.message));
+                        if (codeDoc.exists) {
+                            const data = codeDoc.data();
+                            ownerId = data.ownerId;
+                            qId = data.quizId;
+                        } else {
+                            try {
+                                const decoded = atob(cleanCode);
+                                [ownerId, qId] = decoded.split('_');
+                            } catch(e) {
+                                throw new Error("找不到該代碼，請確認是否輸入正確！");
+                            }
+                        }
+
+                        if(!ownerId || !qId) throw new Error("無效代碼格式");
+                        
+                        const doc = await db.collection('users').doc(ownerId).collection('quizzes').doc(qId).get();
+                        if(!doc.exists) throw new Error('找不到該試卷，可能已失效或被擁有者刪除！');
+                        
+                        const data = doc.data();
+                        const emptyAnswers = Array(Number(data.numQuestions)).fill('');
+                        const emptyStarred = Array(Number(data.numQuestions)).fill(false);
+                        
+                        const newDocRef = await db.collection('users').doc(user.uid).collection('quizzes').add({
+                            testName: data.testName + ' (來自代碼)',
+                            numQuestions: data.numQuestions,
+                            questionFileUrl: data.questionFileUrl || '',
+                            questionText: data.questionText || '',
+                            correctAnswersInput: data.correctAnswersInput || '', 
+                            userAnswers: emptyAnswers,
+                            starred: emptyStarred,
+                            hasTimer: data.hasTimer || false,
+                            timeLimit: data.timeLimit || null,
+                            timeRemaining: data.hasTimer ? (data.timeLimit * 60) : null,
+                            isShared: true, 
+                            folder: '未分類', 
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+
+                        await db.collection('users').doc(ownerId).collection('quizzes').doc(qId).update({
+                            sharedTo: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid, quizId: newDocRef.id })
+                        });
+
+                        showAlert('✅ 已成功匯入！\n試卷已加入「未分類」資料夾中，請準備好後點擊進入測驗。');
                     } catch(e) {
-                        showAlert('❌ 無效的代碼格式！請確認複製的內容是否完整。');
+                        showAlert('❌ 匯入失敗：' + e.message);
                     }
                 });
             };
@@ -1348,8 +1396,30 @@
                     {showShareModal && (
                         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
                             <div className="bg-white p-6 w-full max-w-sm no-round shadow-xl">
-                                <h3 className="font-bold text-lg mb-4">選擇要分享的好友</h3>
-                                <div className="max-h-60 overflow-y-auto mb-4 border border-gray-200 custom-scrollbar">
+                                <h3 className="font-bold text-lg mb-4 flex justify-between items-center">
+                                    <span>📤 分享試卷</span>
+                                    <button onClick={() => setShowShareModal(null)} className="text-gray-400 hover:text-black">✖</button>
+                                </h3>
+
+                                <div className="mb-6 p-4 bg-gray-50 border border-gray-200">
+                                    <p className="text-sm font-bold text-gray-600 mb-2">公開測驗代碼</p>
+                                    {showShareModal.shortCode ? (
+                                        <div className="flex items-center justify-between bg-white border border-gray-300 p-2">
+                                            <span className="text-2xl font-mono font-black tracking-widest text-blue-600">{showShareModal.shortCode}</span>
+                                            <button onClick={() => {
+                                                navigator.clipboard.writeText(showShareModal.shortCode);
+                                                showAlert(`✅ 已複製代碼：${showShareModal.shortCode}`);
+                                            }} className="text-xs bg-black text-white px-3 py-1.5 no-round font-bold hover:bg-gray-800">複製</button>
+                                        </div>
+                                    ) : (
+                                        <button onClick={() => handleGenerateCode(showShareModal)} disabled={isGeneratingCode} className="text-sm bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 no-round font-bold hover:bg-blue-100 w-full transition-colors">
+                                            {isGeneratingCode ? '生成中...' : '🔑 生成 6 碼分享代碼'}
+                                        </button>
+                                    )}
+                                </div>
+
+                                <h4 className="font-bold text-sm mb-2 text-gray-600">傳送給好友</h4>
+                                <div className="max-h-40 overflow-y-auto mb-4 border border-gray-200 custom-scrollbar bg-white">
                                     {(userProfile.friends || []).length === 0 ? <p className="p-4 text-sm text-gray-400">目前還沒有好友喔</p> : null}
                                     {(userProfile.friends || []).map(f => (
                                         <button key={f.uid} onClick={() => shareToFriend(f)} className="w-full text-left p-3 hover:bg-gray-50 border-b border-gray-100 font-bold text-sm transition-colors">
@@ -1357,7 +1427,6 @@
                                         </button>
                                     ))}
                                 </div>
-                                <button onClick={() => setShowShareModal(null)} className="w-full bg-gray-100 text-black p-2 font-bold no-round hover:bg-gray-200 transition-colors">取消</button>
                             </div>
                         </div>
                     )}
@@ -1396,6 +1465,7 @@
             const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
             const [questionText, setQuestionText] = useState(initialRecord.questionText || ''); 
             const [folder, setFolder] = useState(initialRecord.folder || '未分類');
+            const [shortCode, setShortCode] = useState(initialRecord.shortCode || null);
             
             const [inputType, setInputType] = useState((initialRecord.questionText && !initialRecord.questionFileUrl) ? 'text' : 'url');
             
@@ -1557,6 +1627,7 @@
                         setUserAnswers(initialAnswers);
                         setStarred(initialStarred);
                         setResults(null);
+                        setShortCode(null);
                         
                         if (hasTimer) {
                             timeRemainingRef.current = Number(timeLimit) * 60;
@@ -1711,14 +1782,13 @@
                  });
             };
 
-            // 炫耀功能：結合分享試卷資料
             const shareScoreToFriend = (friend) => {
                 const chatId = [currentUser.uid, friend.uid].sort().join('_');
                 db.collection('chats').doc(chatId).collection('messages').add({
                     senderId: currentUser.uid,
                     senderName: userProfile.displayName,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    type: 'score_share', // 沿用 score_share 以利相容
+                    type: 'score_share', 
                     read: false,
                     scoreData: {
                         testName: testName,
@@ -1726,7 +1796,6 @@
                         correctCount: results.correctCount,
                         total: results.total
                     },
-                    // 將試卷資料也一併放入
                     quizData: {
                         ownerId: currentUser.uid,
                         quizId: quizId,
@@ -1977,11 +2046,23 @@
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
-                            {/* 新增測驗代碼按鈕 */}
                             {!isShared && (
-                                <button onClick={() => {
-                                    const code = btoa(`${currentUser.uid}_${quizId}`);
-                                    navigator.clipboard.writeText(code).then(() => showAlert(`✅ 測驗代碼已複製！\n\n您的代碼：\n${code}\n\n將此代碼傳給朋友，他們可在題庫點擊「📥 輸入代碼」直接下載。`));
+                                <button onClick={async () => {
+                                    if (shortCode) {
+                                        navigator.clipboard.writeText(shortCode);
+                                        showAlert(`✅ 測驗代碼已複製！\n\n您的代碼：\n${shortCode}\n\n將此代碼傳給朋友，他們可在題庫點擊「📥 輸入代碼」直接下載。`);
+                                    } else {
+                                        const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                                        try {
+                                            await db.collection('shareCodes').doc(newCode).set({ ownerId: currentUser.uid, quizId: quizId });
+                                            await db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({ shortCode: newCode });
+                                            setShortCode(newCode);
+                                            navigator.clipboard.writeText(newCode);
+                                            showAlert(`✅ 測驗代碼已生成並複製！\n\n您的代碼：\n${newCode}\n\n將此代碼傳給朋友，他們可在題庫點擊「📥 輸入代碼」直接下載。`);
+                                        } catch (e) {
+                                            showAlert('生成代碼失敗：' + e.message);
+                                        }
+                                    }
                                 }} className="text-sm font-bold bg-blue-50 text-blue-600 px-4 py-1.5 no-round border border-blue-200 hover:bg-blue-100 whitespace-nowrap transition-colors">🔑 複製代碼</button>
                             )}
 
