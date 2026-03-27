@@ -14,6 +14,9 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+
     <style>
         .no-round { border-radius: 2px !important; }
         .break-avoid { break-inside: avoid; }
@@ -30,6 +33,11 @@
         
         /* 鎖定狀態動畫與樣式 */
         .locked-btn { cursor: not-allowed; opacity: 0.5; filter: grayscale(100%); }
+
+        /* Quill 編輯器客製化樣式 */
+        .ql-toolbar.ql-snow { border-radius: 2px 2px 0 0 !important; border-color: #d1d5db !important; background: #f9fafb; }
+        .ql-container.ql-snow { border-radius: 0 0 2px 2px !important; border-color: #d1d5db !important; font-family: inherit; font-size: 16px; }
+        .ql-editor { min-height: 200px; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans h-[100dvh] overflow-hidden">
@@ -67,13 +75,51 @@
             } catch(e) { return url; }
         };
 
-        // 格式化秒數為 MM:SS
         const formatTime = (seconds) => {
             if (seconds == null || seconds < 0) return '00:00';
             const m = Math.floor(seconds / 60).toString().padStart(2, '0');
             const s = (seconds % 60).toString().padStart(2, '0');
             return `${m}:${s}`;
         };
+
+        // Quill 文字編輯器元件
+        function QuillEditor({ value, onChange, readOnly }) {
+            const editorRef = useRef(null);
+            const quillRef = useRef(null);
+            const valueRef = useRef(value);
+
+            useEffect(() => {
+                if (editorRef.current && !quillRef.current) {
+                    quillRef.current = new window.Quill(editorRef.current, {
+                        theme: 'snow',
+                        readOnly: readOnly,
+                        modules: {
+                            toolbar: readOnly ? false : [
+                                [{ 'header': [1, 2, 3, false] }],
+                                ['bold', 'italic', 'underline', 'strike'],
+                                [{ 'color': [] }, { 'background': [] }],
+                                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                                ['clean']
+                            ]
+                        }
+                    });
+
+                    if (valueRef.current) {
+                        quillRef.current.clipboard.dangerouslyPasteHTML(valueRef.current);
+                    }
+
+                    quillRef.current.on('text-change', () => {
+                        onChange(quillRef.current.root.innerHTML);
+                    });
+                }
+            }, [readOnly, onChange]);
+
+            return (
+                <div className="flex flex-col h-full w-full bg-white relative z-0">
+                    <div ref={editorRef} className={`flex-grow overflow-y-auto ${readOnly ? 'border-none' : ''}`}></div>
+                </div>
+            );
+        }
 
         function DialogOverlay({ dialog, onClose }) {
             const [inputValue, setInputValue] = useState('');
@@ -93,7 +139,7 @@
             };
 
             return (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[70] p-4">
                     <div className="bg-white p-6 w-full max-w-sm no-round shadow-2xl transform transition-all">
                         <h3 className="font-bold text-lg mb-3 flex items-center">
                             {dialog.type === 'alert' ? 'ℹ️ 系統提示' : '🤔 請確認'}
@@ -307,7 +353,9 @@
                     return db.collection('users').doc(user.uid).collection('quizzes').add({
                         testName: originalData.testName + ' (來自好友)',
                         numQuestions: originalData.numQuestions,
+                        questionType: originalData.questionType || 'url',
                         questionFileUrl: originalData.questionFileUrl || '',
+                        questionContent: originalData.questionContent || '',
                         correctAnswersInput: originalData.correctAnswersInput || '', 
                         userAnswers: emptyAnswers,
                         starred: emptyStarred,
@@ -457,7 +505,9 @@
                         ownerId: user.uid,
                         quizId: showShareModal.id,
                         testName: showShareModal.testName,
+                        questionType: showShareModal.questionType || 'url',
                         questionFileUrl: showShareModal.questionFileUrl || '',
+                        questionContent: showShareModal.questionContent || '',
                         correctAnswersInput: showShareModal.correctAnswersInput || ''
                     }
                 }).then(() => {
@@ -547,7 +597,10 @@
             const [starred, setStarred] = useState(initialRecord.starred || []);
             const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
             const [results, setResults] = useState(initialRecord.results || null);
+            
+            const [questionType, setQuestionType] = useState(initialRecord.questionType || 'url');
             const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
+            const [questionContent, setQuestionContent] = useState(initialRecord.questionContent || '');
             
             const isShared = initialRecord.isShared === true;
             
@@ -568,7 +621,11 @@
             const [showOnlyStarred, setShowOnlyStarred] = useState(false);
             const [showShareScoreModal, setShowShareScoreModal] = useState(false);
 
+            const [showTextEditorModal, setShowTextEditorModal] = useState(false);
+            const [tempTextContent, setTempTextContent] = useState('');
+
             const starredIndices = starred.map((s, i) => s ? i + 1 : null).filter(Boolean);
+            const hasPreviewContent = (questionType === 'url' && questionFileUrl) || (questionType === 'text' && questionContent);
 
             useEffect(() => {
                 let timerId;
@@ -597,7 +654,7 @@
                     
                     const stateToSave = { 
                         testName, numQuestions, userAnswers, starred, correctAnswersInput, results, 
-                        questionFileUrl, hasTimer, timeLimit,
+                        questionType, questionFileUrl, questionContent, hasTimer, timeLimit,
                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
                     if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
@@ -605,7 +662,7 @@
                     db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
                       .catch(e => console.error("自動儲存失敗", e));
                 }
-            }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, currentUser, quizId, step, syncTrigger]);
+            }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionType, questionFileUrl, questionContent, currentUser, quizId, step, syncTrigger]);
 
             const handleDragStart = (e) => setIsDragging(true);
 
@@ -659,7 +716,9 @@
                 db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                     testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
                     correctAnswersInput: '',
+                    questionType: questionType,
                     questionFileUrl: questionFileUrl.trim(),
+                    questionContent: questionContent,
                     hasTimer: hasTimer,
                     timeLimit: hasTimer ? Number(timeLimit) : null,
                     timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
@@ -683,7 +742,9 @@
                     db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                         testName: testName + ' (重測)',
                         numQuestions: numQuestions,
+                        questionType: questionType,
                         questionFileUrl: questionFileUrl || '',
+                        questionContent: questionContent || '',
                         correctAnswersInput: correctAnswersInput || '', 
                         userAnswers: initialAnswers,
                         starred: initialStarred,
@@ -737,6 +798,38 @@
                         }
                     }
                 );
+            };
+
+            const handleOpenTextEditor = () => {
+                setTempTextContent(questionContent);
+                setShowTextEditorModal(true);
+            };
+
+            const handleSaveTextContent = async () => {
+                setQuestionContent(tempTextContent);
+                setShowTextEditorModal(false);
+                setPreviewOpen(true);
+                
+                await db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
+                    questionContent: tempTextContent
+                });
+
+                if (!isShared && quizId) {
+                    try {
+                        const myDoc = await db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
+                        const latestSharedTo = myDoc.data()?.sharedTo || [];
+                        
+                        if (latestSharedTo.length > 0) {
+                            const promises = latestSharedTo.map(target => {
+                                return db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId).update({ questionContent: tempTextContent });
+                            });
+                            await Promise.all(promises);
+                            showAlert('✅ 文字內容已更新，並同步給所有好友！');
+                        }
+                    } catch(e) {
+                        console.error("同步文字內容失敗", e);
+                    }
+                }
             };
 
             const handleAnswerSelect = (idx, opt) => {
@@ -839,10 +932,53 @@
                 }).catch(e => showAlert('炫耀失敗：' + e.message));
             };
 
+            // 用於渲染預覽區的輔助元件
+            const renderPreviewArea = () => {
+                if (!hasPreviewContent || !previewOpen) return null;
+                
+                return (
+                    <div 
+                        className="bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0"
+                        style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
+                    >
+                        <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
+                            <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
+                            {questionType === 'url' && questionFileUrl && (
+                                <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 font-bold underline">在新分頁開啟全螢幕</a>
+                            )}
+                        </div>
+                        <div className="flex-grow w-full relative bg-gray-200 overflow-hidden">
+                            {questionType === 'url' ? (
+                                <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0" allow="autoplay" allowFullScreen></iframe>
+                            ) : (
+                                <div className="absolute inset-0 w-full h-full bg-white overflow-y-auto p-6 custom-scrollbar">
+                                    <div className="ql-editor break-words p-0 min-h-full" dangerouslySetInnerHTML={{ __html: questionContent }}></div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderDragBar = () => {
+                if (!hasPreviewContent || !previewOpen) return null;
+                
+                return (
+                    <div 
+                        onMouseDown={handleDragStart}
+                        onTouchStart={handleDragStart}
+                        className={`${layoutMode === 'horizontal' ? 'w-4 h-full cursor-col-resize flex-col' : 'h-4 w-full cursor-row-resize flex-row'} bg-gray-100 hover:bg-blue-200 flex items-center justify-center shrink-0 z-40 transition-colors active:bg-blue-300`}
+                    >
+                        <div className={`${layoutMode === 'horizontal' ? 'w-1 h-8' : 'h-1 w-8'} bg-gray-400 rounded-full`}></div>
+                    </div>
+                );
+            }
+
+
             if (step === 'setup') return (
-                <div className="flex flex-col items-center justify-center p-4 h-[100dvh] overflow-y-auto relative">
+                <div className="flex flex-col items-center justify-center p-4 h-[100dvh] overflow-y-auto relative custom-scrollbar">
                     <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">← 返回列表</button>
-                    <div className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200 mt-10">
+                    <div className="bg-white p-8 shadow-md w-full max-w-lg no-round border border-gray-200 mt-10">
                         <h1 className="text-xl font-bold mb-6 border-b pb-2 tracking-tight">新增測驗</h1>
                         
                         <label className="block text-xs font-bold text-gray-500 mb-1">測驗名稱</label>
@@ -851,12 +987,32 @@
                         <label className="block text-xs font-bold text-gray-500 mb-1">題數 (1-100)</label>
                         <input type="number" placeholder="50" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
                         
-                        <label className="block text-xs font-bold text-gray-500 mb-1">試卷公開網址 (選填)</label>
-                        <input type="text" placeholder="請貼上 Google Drive 連結" className="w-full mb-6 p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} onFocus={handleFocusScroll} />
+                        <label className="block text-xs font-bold text-gray-500 mb-2">試卷來源設定</label>
+                        <div className="flex space-x-6 mb-4">
+                            <label className="flex items-center space-x-2 text-sm cursor-pointer font-bold">
+                                <input type="radio" checked={questionType === 'url'} onChange={() => setQuestionType('url')} className="w-4 h-4 accent-black" />
+                                <span>🌐 網址連結 (Drive/PDF)</span>
+                            </label>
+                            <label className="flex items-center space-x-2 text-sm cursor-pointer font-bold">
+                                <input type="radio" checked={questionType === 'text'} onChange={() => setQuestionType('text')} className="w-4 h-4 accent-black" />
+                                <span>📝 貼上文字 (支援 Word)</span>
+                            </label>
+                        </div>
+
+                        {questionType === 'url' ? (
+                            <div className="mb-6">
+                                <label className="block text-xs font-bold text-gray-500 mb-1">試卷公開網址 (選填)</label>
+                                <input type="text" placeholder="請貼上 Google Drive 連結..." className="w-full p-2 border border-gray-300 no-round outline-none focus:border-black text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} onFocus={handleFocusScroll} />
+                            </div>
+                        ) : (
+                            <div className="mb-6 h-64 border border-gray-300 no-round overflow-hidden bg-white">
+                                <QuillEditor value={questionContent} onChange={setQuestionContent} readOnly={false} />
+                            </div>
+                        )}
                         
                         <div className="mb-6 border border-gray-200 p-4 bg-gray-50 no-round">
                             <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm">
-                                <input type="checkbox" checked={hasTimer} onChange={e => setHasTimer(e.target.checked)} className="w-4 h-4" />
+                                <input type="checkbox" checked={hasTimer} onChange={e => setHasTimer(e.target.checked)} className="w-4 h-4 accent-black" />
                                 <span>⏱ 開啟測驗倒數計時</span>
                             </label>
                             {hasTimer && (
@@ -868,13 +1024,13 @@
                             )}
                         </div>
 
-                        <button onClick={handleStartTest} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 transition-colors">開始作答</button>
+                        <button onClick={handleStartTest} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 transition-colors text-lg">開始作答</button>
                     </div>
                 </div>
             );
 
             if (step === 'answering') return (
-                <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 w-full overflow-hidden">
+                <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 w-full overflow-hidden relative">
                     <div className="bg-white p-3 sm:p-4 shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10">
                         <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
                             <button onClick={onBackToDashboard} className="mr-3 text-gray-500 hover:text-black font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">← 返回</button>
@@ -900,19 +1056,25 @@
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
-                            {questionFileUrl && previewOpen && (
+                            {hasPreviewContent && previewOpen && (
                                 <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
                                     {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
                                 </button>
                             )}
 
-                            {!isShared && (
+                            {!isShared && questionType === 'url' && (
                                 <button onClick={handleUpdateFileUrl} className={`${questionFileUrl ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'} px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
                                     {questionFileUrl ? '🔗 修改/移除網址' : '📎 貼上試卷網址'}
                                 </button>
                             )}
 
-                            {questionFileUrl && (
+                            {!isShared && questionType === 'text' && (
+                                <button onClick={handleOpenTextEditor} className={`${questionContent ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'} px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
+                                    {questionContent ? '📝 修改文字試卷' : '📝 編輯文字試卷'}
+                                </button>
+                            )}
+
+                            {hasPreviewContent && (
                                 <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
                                     {previewOpen ? '👀 關閉預覽' : '👀 開啟預覽'}
                                 </button>
@@ -931,30 +1093,8 @@
                             <div className="absolute inset-0 z-50" style={{ cursor: layoutMode === 'horizontal' ? 'col-resize' : 'row-resize' }}></div>
                         )}
 
-                        {questionFileUrl && previewOpen && (
-                            <div 
-                                className="bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0"
-                                style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
-                            >
-                                <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
-                                    <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
-                                    <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 font-bold underline">在新分頁開啟全螢幕</a>
-                                </div>
-                                <div className="flex-grow w-full relative bg-gray-200">
-                                    <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0" allow="autoplay" allowFullScreen></iframe>
-                                </div>
-                            </div>
-                        )}
-
-                        {questionFileUrl && previewOpen && (
-                            <div 
-                                onMouseDown={handleDragStart}
-                                onTouchStart={handleDragStart}
-                                className={`${layoutMode === 'horizontal' ? 'w-4 h-full cursor-col-resize flex-col' : 'h-4 w-full cursor-row-resize flex-row'} bg-gray-100 hover:bg-blue-200 flex items-center justify-center shrink-0 z-40 transition-colors active:bg-blue-300`}
-                            >
-                                <div className={`${layoutMode === 'horizontal' ? 'w-1 h-8' : 'h-1 w-8'} bg-gray-400 rounded-full`}></div>
-                            </div>
-                        )}
+                        {renderPreviewArea()}
+                        {renderDragBar()}
 
                         <div className={`flex-grow flex flex-col bg-white border border-gray-200 shadow-sm no-round overflow-hidden`}>
                             <div className="bg-gray-50 border-b border-gray-200 px-4 py-2 shrink-0 flex justify-between items-center">
@@ -989,8 +1129,26 @@
                                 </div>
                             </div>
                         </div>
-
                     </div>
+
+                    {/* 文字編輯器 Modal */}
+                    {showTextEditorModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+                            <div className="bg-white flex flex-col w-full max-w-4xl h-[85vh] no-round shadow-2xl">
+                                <div className="p-4 border-b border-gray-200 bg-gray-50 font-bold flex justify-between items-center shrink-0">
+                                    <span className="flex items-center"><span className="text-xl mr-2">📝</span> 編輯文字試卷內容</span>
+                                    <button onClick={() => setShowTextEditorModal(false)} className="text-gray-400 hover:text-black font-bold px-2 py-1 bg-white border border-gray-200 transition-colors">關閉 ✖</button>
+                                </div>
+                                <div className="flex-grow overflow-hidden relative">
+                                    <QuillEditor value={tempTextContent} onChange={setTempTextContent} readOnly={false} />
+                                </div>
+                                <div className="p-4 border-t border-gray-200 flex justify-end space-x-3 shrink-0 bg-gray-50">
+                                    <button onClick={() => setShowTextEditorModal(false)} className="px-6 py-2 bg-white border border-gray-300 font-bold text-sm hover:bg-gray-100 transition-colors">取消</button>
+                                    <button onClick={handleSaveTextContent} className="px-6 py-2 bg-black text-white font-bold text-sm hover:bg-gray-800 transition-colors shadow-sm">儲存並同步給好友</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
 
@@ -1017,7 +1175,7 @@
             );
 
             if (step === 'results') return (
-                <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 w-full overflow-hidden">
+                <div className="flex flex-col h-[100dvh] bg-gray-100 p-2 sm:p-4 w-full overflow-hidden relative">
                     <div className="bg-white p-3 sm:p-4 shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10">
                         <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
                             <h2 className="font-bold truncate text-base pr-4">{testName || '未命名'} - 測驗結果</h2>
@@ -1028,19 +1186,25 @@
                                 <button onClick={() => setStep('grading')} className="text-sm font-bold bg-blue-50 text-blue-600 px-4 py-1.5 no-round border border-blue-200 hover:bg-blue-100 whitespace-nowrap transition-colors">✏️ 修改解答</button>
                             )}
 
-                            {!isShared && (
+                            {!isShared && questionType === 'url' && (
                                 <button onClick={handleUpdateFileUrl} className={`${questionFileUrl ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'} px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
                                     {questionFileUrl ? '🔗 修改/移除網址' : '📎 貼上試卷網址'}
                                 </button>
                             )}
 
-                            {questionFileUrl && previewOpen && (
+                            {!isShared && questionType === 'text' && (
+                                <button onClick={handleOpenTextEditor} className={`${questionContent ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100' : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'} px-3 py-1.5 border no-round font-bold text-xs transition-colors whitespace-nowrap`}>
+                                    {questionContent ? '📝 修改文字試卷' : '📝 編輯文字試卷'}
+                                </button>
+                            )}
+
+                            {hasPreviewContent && previewOpen && (
                                 <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
                                     {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
                                 </button>
                             )}
 
-                            {questionFileUrl && (
+                            {hasPreviewContent && (
                                 <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 text-black px-3 py-1.5 no-round font-bold border border-gray-200 text-xs hover:bg-gray-200 transition-colors">
                                     {previewOpen ? '👀 暫時關閉預覽' : '👀 開啟預覽'}
                                 </button>
@@ -1060,30 +1224,8 @@
                             <div className="absolute inset-0 z-50" style={{ cursor: layoutMode === 'horizontal' ? 'col-resize' : 'row-resize' }}></div>
                         )}
 
-                        {questionFileUrl && previewOpen && (
-                            <div 
-                                className="bg-white border border-gray-200 shadow-sm no-round flex flex-col shrink-0"
-                                style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
-                            >
-                                <div className="bg-gray-50 border-b border-gray-200 px-3 py-2 flex justify-between items-center shrink-0">
-                                    <span className="font-bold text-xs text-gray-600 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
-                                    <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:text-blue-800 font-bold underline">在新分頁開啟全螢幕</a>
-                                </div>
-                                <div className="flex-grow w-full relative bg-gray-200">
-                                    <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0" allow="autoplay" allowFullScreen></iframe>
-                                </div>
-                            </div>
-                        )}
-
-                        {questionFileUrl && previewOpen && (
-                            <div 
-                                onMouseDown={handleDragStart}
-                                onTouchStart={handleDragStart}
-                                className={`${layoutMode === 'horizontal' ? 'w-4 h-full cursor-col-resize flex-col' : 'h-4 w-full cursor-row-resize flex-row'} bg-gray-100 hover:bg-blue-200 flex items-center justify-center shrink-0 z-40 transition-colors active:bg-blue-300`}
-                            >
-                                <div className={`${layoutMode === 'horizontal' ? 'w-1 h-8' : 'h-1 w-8'} bg-gray-400 rounded-full`}></div>
-                            </div>
-                        )}
+                        {renderPreviewArea()}
+                        {renderDragBar()}
 
                         <div className={`flex-grow flex flex-col bg-white border border-gray-200 shadow-sm no-round overflow-hidden`}>
                             <div className="flex-grow overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-gray-50">
@@ -1142,6 +1284,25 @@
                                     ))}
                                 </div>
                                 <button onClick={() => setShowShareScoreModal(false)} className="w-full bg-gray-100 text-black p-2 font-bold no-round hover:bg-gray-200 transition-colors">取消</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 文字編輯器 Modal */}
+                    {showTextEditorModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+                            <div className="bg-white flex flex-col w-full max-w-4xl h-[85vh] no-round shadow-2xl">
+                                <div className="p-4 border-b border-gray-200 bg-gray-50 font-bold flex justify-between items-center shrink-0">
+                                    <span className="flex items-center"><span className="text-xl mr-2">📝</span> 編輯文字試卷內容</span>
+                                    <button onClick={() => setShowTextEditorModal(false)} className="text-gray-400 hover:text-black font-bold px-2 py-1 bg-white border border-gray-200 transition-colors">關閉 ✖</button>
+                                </div>
+                                <div className="flex-grow overflow-hidden relative">
+                                    <QuillEditor value={tempTextContent} onChange={setTempTextContent} readOnly={false} />
+                                </div>
+                                <div className="p-4 border-t border-gray-200 flex justify-end space-x-3 shrink-0 bg-gray-50">
+                                    <button onClick={() => setShowTextEditorModal(false)} className="px-6 py-2 bg-white border border-gray-300 font-bold text-sm hover:bg-gray-100 transition-colors">取消</button>
+                                    <button onClick={handleSaveTextContent} className="px-6 py-2 bg-black text-white font-bold text-sm hover:bg-gray-800 transition-colors shadow-sm">儲存並同步給好友</button>
+                                </div>
                             </div>
                         </div>
                     )}
