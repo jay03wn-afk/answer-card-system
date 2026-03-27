@@ -31,6 +31,15 @@
         .locked-btn { cursor: not-allowed; opacity: 0.5; filter: grayscale(100%); }
 
         /* Minecraft 仿真 UI 樣式 */
+        .pixelated { image-rendering: pixelated; }
+        
+        .mc-bg {
+            background-color: #7d7d7d;
+            background-image: url('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/block/stone.png');
+            background-size: 64px;
+            image-rendering: pixelated;
+        }
+        
         .mc-ui {
             background-color: #c6c6c6;
             border: 4px solid;
@@ -39,8 +48,15 @@
             border-bottom-color: #555555;
             border-right-color: #555555;
             font-family: 'Courier New', Courier, monospace;
-            image-rendering: pixelated;
         }
+
+        .mc-panel-dark {
+            background-color: rgba(0, 0, 0, 0.65);
+            border: 2px solid #111;
+            box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.15);
+            padding: 16px;
+        }
+        
         .mc-btn {
             background-color: #c6c6c6;
             border: 4px solid;
@@ -52,25 +68,13 @@
             font-weight: bold;
             cursor: pointer;
         }
+        
         .mc-btn:active {
             border-top-color: #555555;
             border-left-color: #555555;
             border-bottom-color: #ffffff;
             border-right-color: #ffffff;
             background-color: #b0b0b0;
-        }
-        .mc-btn:disabled {
-            color: #7a7a7a;
-            cursor: not-allowed;
-            border-top-color: #a0a0a0;
-            border-left-color: #a0a0a0;
-            border-bottom-color: #a0a0a0;
-            border-right-color: #a0a0a0;
-        }
-        .mc-panel {
-            background-color: #8b8b8b;
-            border: 4px solid #373737;
-            padding: 10px;
         }
     </style>
 </head>
@@ -166,6 +170,34 @@
             );
         }
 
+        // --- 新用戶指引元件 ---
+        function TutorialOverlay({ onComplete }) {
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[70] p-4">
+                    <div className="bg-white p-8 w-full max-w-lg no-round shadow-2xl relative border-t-4 border-black animate-fade-in-up">
+                        <h2 className="text-2xl font-black mb-6 text-center tracking-wider">🎉 歡迎加入 JJay 線上測驗</h2>
+                        <div className="space-y-6 text-gray-700 mb-8">
+                            <div>
+                                <p className="font-bold border-l-4 border-black pl-3 text-lg">📖 我的題庫</p>
+                                <p className="pl-4 mt-1 text-sm text-gray-500 leading-relaxed">首創雙螢幕排版，貼上雲端題本或純文字，左邊看題、右邊畫卡，並支援資料夾歸檔你的專屬題庫。</p>
+                            </div>
+                            <div>
+                                <p className="font-bold border-l-4 border-blue-500 pl-3 text-lg">💬 社群交流</p>
+                                <p className="pl-4 mt-1 text-sm text-gray-500 leading-relaxed">不再是一個人讀書！新增好友即時對話，還能一鍵打包你的測驗卷分享給好友作答、互相炫耀成績。</p>
+                            </div>
+                            <div>
+                                <p className="font-bold border-l-4 border-orange-500 pl-3 text-lg">⛏️ 史蒂夫養成</p>
+                                <p className="pl-4 mt-1 text-sm text-gray-500 leading-relaxed">讀書也要有儀式感。只要首次批改好友分享的測驗就能賺取鑽石，佈置你的 Minecraft 家園並與好友競爭等級！</p>
+                            </div>
+                        </div>
+                        <button onClick={onComplete} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 text-lg transition-colors">
+                            🚀 開始體驗
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
         function AuthScreen({ showAlert }) {
             const [isSignUp, setIsSignUp] = useState(false);
             const [email, setEmail] = useState('');
@@ -182,8 +214,14 @@
                 request.then((cred) => {
                     if (isSignUp) {
                         const initMcData = { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
-                        return db.collection('users').doc(cred.user.uid).set({ email: email.toLowerCase(), friends: [], unreadChats: {}, folders: ['未分類'], mcData: initMcData })
-                          .catch(err => showAlert("註冊成功，但建立資料庫檔案失敗: " + err.message));
+                        return db.collection('users').doc(cred.user.uid).set({ 
+                            email: email.toLowerCase(), 
+                            friends: [], 
+                            unreadChats: {}, 
+                            folders: ['未分類'], 
+                            mcData: initMcData,
+                            hasSeenTutorial: false // 註冊時寫入 false
+                        }).catch(err => showAlert("註冊成功，但建立資料庫檔案失敗: " + err.message));
                     }
                 })
                 .catch(err => showAlert('認證失敗：' + err.message))
@@ -230,21 +268,17 @@
             const [leaderboard, setLeaderboard] = useState([]);
             const mcData = userProfile.mcData || { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
             
-            // 計算升級所需經驗
             const expToNextLevel = mcData.level * 20;
 
             useEffect(() => {
-                // 抓取好友排行榜資料
                 const fetchLeaderboard = async () => {
                     const friendUids = (userProfile.friends || []).map(f => f.uid);
                     if (friendUids.length === 0) {
                         setLeaderboard([{ name: userProfile.displayName, ...mcData, isMe: true }]);
                         return;
                     }
-
                     try {
                         const board = [{ name: userProfile.displayName, ...mcData, isMe: true }];
-                        // 分批抓取好友資料 (Firestore in 限制 10 個，此處簡化處理，逐一抓取)
                         const promises = friendUids.map(uid => db.collection('users').doc(uid).get());
                         const results = await Promise.all(promises);
                         
@@ -257,7 +291,6 @@
                             }
                         });
                         
-                        // 依照等級與經驗排序
                         board.sort((a, b) => {
                             if (b.level !== a.level) return b.level - a.level;
                             return b.exp - a.exp;
@@ -283,7 +316,7 @@
                     return showAlert("今日已經簽到過囉！");
                 }
                 
-                let newHunger = mcData.hunger - 2; // 每天扣飽食度
+                let newHunger = mcData.hunger - 2; 
                 if (newHunger < 0) newHunger = 0;
 
                 updateMcData({ 
@@ -327,25 +360,33 @@
                 updateMcData(updates);
             };
 
+            // 圖源庫 (Github MC assets API & Minotar)
+            const imgDiamond = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/item/diamond.png";
+            const imgApple = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/item/apple.png";
+            const imgMeat = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/item/cooked_beef.png";
+            const imgSword = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/item/diamond_sword.png";
+            const imgCatEgg = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/master/assets/minecraft/textures/item/cat_spawn_egg.png";
+            const imgSteve = "https://minotar.net/helm/Steve/64.png";
+
             return (
-                <div className="max-w-4xl mx-auto p-4 h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar">
-                    <div className="mc-ui p-6 flex flex-col space-y-6">
+                <div className="mc-bg h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar p-4">
+                    <div className="max-w-4xl mx-auto mc-ui p-6 flex flex-col space-y-6 bg-opacity-90">
                         
                         {/* 標題與狀態 */}
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
                             <div>
-                                <h1 className="text-2xl font-black mb-2 text-gray-800 shadow-sm">⛏️ 史蒂夫的養成天地</h1>
+                                <h1 className="text-2xl font-black mb-2 text-gray-800 tracking-wide">⛏️ 史蒂夫的養成天地</h1>
                                 <p className="text-sm font-bold text-gray-600">完成好友分享的測驗可獲取大量鑽石！</p>
                             </div>
-                            <div className="mc-panel w-full md:w-auto text-white">
-                                <div className="flex space-x-6 text-sm">
-                                    <div>
-                                        <p className="text-yellow-400">Lv. {mcData.level}</p>
+                            <div className="mc-panel-dark w-full md:w-auto text-white">
+                                <div className="flex space-x-6 text-sm items-center font-bold">
+                                    <div className="text-center">
+                                        <p className="text-green-400 text-lg">Lv. {mcData.level}</p>
                                         <p className="text-xs text-gray-300">EXP: {mcData.exp}/{expToNextLevel}</p>
                                     </div>
-                                    <div>
-                                        <p className="text-blue-300">💎 {mcData.diamonds}</p>
-                                        <p className="text-orange-300">🍖 {mcData.hunger}/10</p>
+                                    <div className="space-y-1">
+                                        <p className="flex items-center text-blue-300"><img src={imgDiamond} className="w-4 h-4 mr-1 pixelated" /> {mcData.diamonds}</p>
+                                        <p className="flex items-center text-orange-300"><img src={imgMeat} className="w-4 h-4 mr-1 pixelated" /> {mcData.hunger}/10</p>
                                     </div>
                                 </div>
                             </div>
@@ -356,52 +397,52 @@
                             
                             {/* 互動區 */}
                             <div className="space-y-6">
-                                <div className="mc-panel text-white">
-                                    <h2 className="border-b-2 border-gray-500 pb-2 mb-4 font-bold">🏡 你的家</h2>
-                                    <div className="text-center p-6 bg-black bg-opacity-30 border-2 border-gray-600 mb-4 h-32 flex flex-col items-center justify-center relative overflow-hidden">
-                                        <div className="text-4xl mb-2">🧍‍♂️</div>
-                                        <div className="flex space-x-2 text-2xl absolute bottom-2">
-                                            {Array.from({ length: mcData.cats || 0 }).map((_, i) => <span key={i} title="鼻子有斑點的貓">🐱</span>)}
-                                            {(mcData.items || []).includes('鑽石劍') && <span>🗡️</span>}
+                                <div className="mc-panel-dark text-white">
+                                    <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300">🏡 你的家</h2>
+                                    <div className="text-center p-6 mc-bg border-4 border-gray-800 mb-4 h-36 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
+                                        <img src={imgSteve} alt="Steve" className="w-16 h-16 pixelated shadow-lg border border-black" />
+                                        <div className="flex space-x-2 text-2xl absolute bottom-2 right-2">
+                                            {Array.from({ length: mcData.cats || 0 }).map((_, i) => <span key={i} title="斑點貓">🐱</span>)}
+                                            {(mcData.items || []).includes('鑽石劍') && <img src={imgSword} className="w-8 h-8 pixelated drop-shadow-md" />}
                                         </div>
                                     </div>
-                                    <button onClick={handleCheckIn} className="mc-btn w-full py-2">
-                                        📅 每日簽到 (+20 💎)
+                                    <button onClick={handleCheckIn} className="mc-btn w-full py-2 flex justify-center items-center">
+                                        📅 每日簽到 (+20 <img src={imgDiamond} className="w-4 h-4 mx-1 pixelated"/>)
                                     </button>
                                 </div>
 
-                                <div className="mc-panel text-white">
-                                    <h2 className="border-b-2 border-gray-500 pb-2 mb-4 font-bold">🛒 商店</h2>
+                                <div className="mc-panel-dark text-white">
+                                    <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300">🛒 商店</h2>
                                     <div className="space-y-3">
-                                        <button onClick={() => handleBuy('apple', 10, 'food')} className="mc-btn w-full py-2 flex justify-between px-4">
-                                            <span>🍎 買蘋果 (+3 飽食)</span>
-                                            <span className="text-blue-800">10 💎</span>
+                                        <button onClick={() => handleBuy('apple', 10, 'food')} className="mc-btn w-full py-2 flex justify-between px-4 items-center">
+                                            <span className="flex items-center"><img src={imgApple} className="w-5 h-5 mr-2 pixelated"/> 買蘋果 (+3 飽食)</span>
+                                            <span className="text-blue-800 flex items-center">10 <img src={imgDiamond} className="w-4 h-4 ml-1 pixelated"/></span>
                                         </button>
-                                        <button onClick={() => handleBuy('cat', 100, 'cat')} className="mc-btn w-full py-2 flex justify-between px-4">
-                                            <span>🐱 領養斑點貓咪</span>
-                                            <span className="text-blue-800">100 💎</span>
+                                        <button onClick={() => handleBuy('cat', 100, 'cat')} className="mc-btn w-full py-2 flex justify-between px-4 items-center">
+                                            <span className="flex items-center"><img src={imgCatEgg} className="w-5 h-5 mr-2 pixelated"/> 領養斑點貓咪</span>
+                                            <span className="text-blue-800 flex items-center">100 <img src={imgDiamond} className="w-4 h-4 ml-1 pixelated"/></span>
                                         </button>
-                                        <button onClick={() => handleBuy('sword', 300, 'sword')} className="mc-btn w-full py-2 flex justify-between px-4">
-                                            <span>🗡️ 鑽石劍 (+50 EXP)</span>
-                                            <span className="text-blue-800">300 💎</span>
+                                        <button onClick={() => handleBuy('sword', 300, 'sword')} className="mc-btn w-full py-2 flex justify-between px-4 items-center">
+                                            <span className="flex items-center"><img src={imgSword} className="w-5 h-5 mr-2 pixelated"/> 鑽石劍 (+50 EXP)</span>
+                                            <span className="text-blue-800 flex items-center">300 <img src={imgDiamond} className="w-4 h-4 ml-1 pixelated"/></span>
                                         </button>
                                     </div>
                                 </div>
                             </div>
 
                             {/* 排行榜 */}
-                            <div className="mc-panel text-white h-full">
-                                <h2 className="border-b-2 border-gray-500 pb-2 mb-4 font-bold text-yellow-300">🏆 好友等級排行榜</h2>
-                                <div className="space-y-2 overflow-y-auto max-h-80 custom-scrollbar pr-2">
+                            <div className="mc-panel-dark text-white h-full">
+                                <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-yellow-300">🏆 好友等級排行榜</h2>
+                                <div className="space-y-2 overflow-y-auto max-h-[22rem] custom-scrollbar pr-2">
                                     {leaderboard.map((lb, idx) => (
-                                        <div key={idx} className={`flex justify-between items-center p-2 border-b border-gray-600 ${lb.isMe ? 'bg-white bg-opacity-20' : ''}`}>
+                                        <div key={idx} className={`flex justify-between items-center p-3 border-b border-gray-700 ${lb.isMe ? 'bg-white bg-opacity-10 rounded' : ''}`}>
                                             <div className="flex items-center space-x-3">
                                                 <span className="font-bold w-6 text-center">{idx === 0 ? '👑' : idx + 1}</span>
                                                 <span className="truncate max-w-[120px]">{lb.name}</span>
                                             </div>
-                                            <div className="text-right">
-                                                <span className="text-yellow-400 font-bold mr-3">Lv.{lb.level}</span>
-                                                <span className="text-xs text-gray-300">💎 {lb.diamonds}</span>
+                                            <div className="text-right flex items-center space-x-4">
+                                                <span className="text-green-400 font-bold">Lv.{lb.level}</span>
+                                                <span className="text-xs text-gray-300 flex items-center w-12 justify-end"><img src={imgDiamond} className="w-3 h-3 mr-1 pixelated" /> {lb.diamonds}</span>
                                             </div>
                                         </div>
                                     ))}
@@ -1138,7 +1179,6 @@
                         results: newResults
                     });
                     
-                    // Minecraft 獎勵系統：首次完成好友的考卷給予鑽石
                     if (isShared && !initialRecord.results) {
                         const mcData = userProfile.mcData || { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0 };
                         let newExp = mcData.exp + 15;
@@ -1421,7 +1461,9 @@
 
             if (step === 'grading') return (
                 <div className="flex flex-col min-h-[100dvh] items-center justify-center p-4 relative py-10 overflow-y-auto">
-                    <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">← 返回作答</button>
+                    <button onClick={() => setStep(results ? 'results' : 'answering')} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold z-10">
+                        ← 返回{results ? '結果' : '作答'}
+                    </button>
                     <div className="bg-white p-8 shadow-md w-full max-w-lg no-round border border-gray-200 mt-10">
                         <h2 className="font-bold mb-4 text-lg">
                             {isShared ? '標準答案 (好友提供)' : '輸入標準答案'}
@@ -1622,9 +1664,11 @@
                             if (doc.exists) {
                                 const data = doc.data();
                                 const updates = {};
-                                // 修正找不到未分類的問題 (向下相容)
+                                
                                 if (!data.folders || data.folders.length === 0) updates.folders = ['未分類'];
                                 if (data.mcData === undefined) updates.mcData = { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
+                                // 如果既有帳號沒有 hasSeenTutorial 欄位，就當作沒看過
+                                if (data.hasSeenTutorial === undefined) updates.hasSeenTutorial = false;
                                 
                                 if (Object.keys(updates).length > 0) {
                                     db.collection('users').doc(usr.uid).update(updates);
@@ -1634,7 +1678,7 @@
                                 }
                             } else {
                                 const initMcData = { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
-                                const newProfile = { email: usr.email, friends: [], unreadChats: {}, folders: ['未分類'], mcData: initMcData };
+                                const newProfile = { email: usr.email, friends: [], unreadChats: {}, folders: ['未分類'], mcData: initMcData, hasSeenTutorial: false };
                                 db.collection('users').doc(usr.uid).set(newProfile)
                                   .then(() => setUserProfile(newProfile));
                             }
@@ -1699,6 +1743,15 @@
             return (
                 <div className="h-[100dvh] flex flex-col overflow-hidden">
                     <DialogOverlay dialog={dialog} onClose={closeDialog} />
+                    
+                    {/* 新用戶指引 */}
+                    {userProfile && userProfile.hasSeenTutorial === false && (
+                        <TutorialOverlay onComplete={() => {
+                            db.collection('users').doc(user.uid).update({ hasSeenTutorial: true })
+                              .catch(e => console.error("無法更新指引狀態", e));
+                            setUserProfile(prev => ({ ...prev, hasSeenTutorial: true }));
+                        }} />
+                    )}
                     
                     {activeTab !== 'activeQuiz' && <TopNav />}
                     
