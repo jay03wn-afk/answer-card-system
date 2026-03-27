@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>雲端虛擬答案卡與紀錄系統</title>
+    <title>JJay線上測驗 - 雲端答案卡</title>
     
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -28,27 +28,17 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- !!! 這裡請填入你的 Firebase Config !!! ---
-        // Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+        // 你的專屬 Firebase 設定檔
+        const firebaseConfig = {
+            apiKey: "AIzaSyBAGM92NBQnUlI1gnLRK-mufM6YtDq5sHk",
+            authDomain: "anser-card.firebaseapp.com",
+            projectId: "anser-card",
+            storageBucket: "anser-card.firebasestorage.app",
+            messagingSenderId: "224666683961",
+            appId: "1:224666683961:web:351991d6cbc8543b181be8"
+        };
 
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyBAGM92NBQnUlI1gnLRK-mufM6YtDq5sHk",
-  authDomain: "anser-card.firebaseapp.com",
-  projectId: "anser-card",
-  storageBucket: "anser-card.firebasestorage.app",
-  messagingSenderId: "224666683961",
-  appId: "1:224666683961:web:351991d6cbc8543b181be8"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-        // ------------------------------------------------
-
-        // 初始化 Firebase (使用 compat 模式以在單一 HTML 中簡化)
+        // 初始化 Firebase
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
@@ -84,9 +74,9 @@ const app = initializeApp(firebaseConfig);
                 <div className="flex h-screen items-center justify-center p-4">
                     <form onSubmit={handleAuth} className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200">
                         <div className="w-16 h-16 bg-black text-white rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-300">
-                            <span className="text-3xl font-black">☁️</span>
+                            <span className="text-3xl font-black">📝</span>
                         </div>
-                        <h1 className="text-xl font-bold mb-6 tracking-tight text-center">雲端答案卡系統</h1>
+                        <h1 className="text-xl font-bold mb-6 tracking-tight text-center">JJay線上測驗</h1>
                         <input type="email" placeholder="電子郵件" className="w-full mb-3 p-3 border border-gray-300 no-round outline-none focus:border-black" value={email} onChange={e => setEmail(e.target.value)} required />
                         <input type="password" placeholder="密碼" className="w-full mb-6 p-3 border border-gray-300 no-round outline-none focus:border-black" value={password} onChange={e => setPassword(e.target.value)} required />
                         <button type="submit" className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 transition-colors" disabled={loading}>{loading ? '處理中...' : (isSignUp ? '註冊' : '登入')}</button>
@@ -102,7 +92,6 @@ const app = initializeApp(firebaseConfig);
             const [loading, setLoading] = useState(true);
 
             useEffect(() => {
-                // 實時監聽該使用者的測驗紀錄列表
                 const unsubscribe = db.collection('users').doc(user.uid).collection('quizzes')
                     .orderBy('createdAt', 'desc')
                     .onSnapshot(snapshot => {
@@ -116,9 +105,7 @@ const app = initializeApp(firebaseConfig);
             const handleDelete = async (id, fileUrl) => {
                 if(!confirm("確定要刪除這筆紀錄嗎？資料將無法恢復！")) return;
                 try {
-                    // 1. 刪除資料庫紀錄
                     await db.collection('users').doc(user.uid).collection('quizzes').doc(id).delete();
-                    // 2. 如果有試題文件，也從 Storage 刪除
                     if (fileUrl) {
                         try {
                             const fileRef = storage.refFromURL(fileUrl);
@@ -128,12 +115,11 @@ const app = initializeApp(firebaseConfig);
                 } catch(error) { alert('刪除失敗：' + error.message); }
             }
 
-            // 共用的頂部導覽列
             const HeaderBar = () => (
-                <div className="bg-white border-b border-gray-200 px-4 py-3 flex justify-between items-center mb-6">
+                <div className="bg-white border-b border-gray-200 px-4 py-3 flex justify-between items-center mb-6 shadow-sm">
                     <div className="flex items-center space-x-2">
-                        <span className="bg-black text-white px-2 py-1 text-xs font-bold no-round">Cloud</span>
-                        <span className="font-bold text-gray-700">{user.email}</span>
+                        <span className="bg-black text-white px-3 py-1 text-sm font-bold no-round tracking-widest">JJay</span>
+                        <span className="font-bold text-gray-700 text-sm hidden sm:inline">{user.email}</span>
                     </div>
                     <button onClick={onLogout} className="text-sm text-gray-500 hover:text-black font-bold">登出</button>
                 </div>
@@ -145,13 +131,13 @@ const app = initializeApp(firebaseConfig);
                     <div className="max-w-6xl mx-auto p-4 pt-0">
                         <div className="flex justify-between items-center mb-6 border-b-2 border-black pb-2">
                             <h1 className="text-2xl font-black">測驗紀錄</h1>
-                            <button onClick={onStartNew} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800">建立新測驗</button>
+                            <button onClick={onStartNew} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800 transition-colors shadow-sm">+ 新測驗</button>
                         </div>
 
                         {loading ? (
-                            <div className="text-center text-gray-500 py-10">讀取中...</div>
+                            <div className="text-center text-gray-500 py-10 font-bold animate-pulse">讀取雲端資料中...</div>
                         ) : records.length === 0 ? (
-                            <div className="bg-white text-center text-gray-500 py-16 border border-gray-200 no-round">尚無測驗紀錄，點擊右上方按鈕開始！</div>
+                            <div className="bg-white text-center text-gray-500 py-16 border border-gray-200 no-round shadow-sm">尚無測驗紀錄，點擊右上方按鈕開始！</div>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                                 {records.map(rec => (
@@ -172,13 +158,13 @@ const app = initializeApp(firebaseConfig);
                                                     <p className="text-orange-600 font-bold">狀態：📝 作答中 (已填 {rec.userAnswers.filter(a=>a).length})</p>
                                                 )}
                                                 {rec.questionFileUrl && (
-                                                    <p>試題：<a href={rec.questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-xs">查看上傳的文件</a></p>
+                                                    <p>附件：<a href={rec.questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-xs hover:text-blue-800">查看試卷</a></p>
                                                 )}
                                             </div>
                                         </div>
                                         <div className="flex justify-between space-x-2 border-t pt-4 border-gray-100">
-                                            <button onClick={() => handleDelete(rec.id, rec.questionFileUrl)} className="text-xs text-gray-400 hover:text-red-600 hover:underline">刪除</button>
-                                            <button onClick={() => onContinueQuiz(rec)} className="bg-gray-100 px-5 py-2 no-round font-bold border border-gray-200 hover:bg-gray-200 text-sm">{rec.results ? '查看詳情' : '繼續作答'}</button>
+                                            <button onClick={() => handleDelete(rec.id, rec.questionFileUrl)} className="text-xs text-gray-400 hover:text-red-600 hover:underline">刪除紀錄</button>
+                                            <button onClick={() => onContinueQuiz(rec)} className="bg-gray-100 px-5 py-2 no-round font-bold border border-gray-200 hover:bg-gray-200 text-sm transition-colors">{rec.results ? '查看詳情' : '繼續作答'}</button>
                                         </div>
                                     </div>
                                 ))}
@@ -189,9 +175,8 @@ const app = initializeApp(firebaseConfig);
             );
         }
 
-        // --- 測驗主程式 (接收 currentUser 作為屬性) ---
+        // --- 測驗主程式 ---
         function QuizApp({ currentUser, activeQuizRecord, onBackToDashboard }) {
-            // 如果是繼續作答，直接使用舊資料；否則設定空狀態
             const [quizId, setQuizId] = useState(activeQuizRecord?.id || null);
             const [step, setStep] = useState(activeQuizRecord?.results ? 'results' : (quizId ? 'answering' : 'setup'));
             const [testName, setTestName] = useState(activeQuizRecord?.testName || '');
@@ -206,10 +191,8 @@ const app = initializeApp(firebaseConfig);
             const fileInputRef = useRef(null);
             const [uploading, setUploading] = useState(false);
 
-            // 自動儲存狀態到雲端 (Firestore) (只有在作答或設定階段才自動存)
             useEffect(() => {
                 if (currentUser && quizId && (step === 'answering' || step === 'setup' || step === 'results')) {
-                    // 防止空陣列在初始化前存入
                     if (userAnswers.length === 0 && numQuestions > 0 && step === 'answering') return;
                     
                     const stateToSave = { 
@@ -224,13 +207,11 @@ const app = initializeApp(firebaseConfig);
             const handleStartTest = async () => {
                 if (numQuestions < 1 || numQuestions > 100) return alert('題數限 1-100');
                 
-                // 初始化答案與星號陣列
                 const initialAnswers = Array(Number(numQuestions)).fill('');
                 const initialStarred = Array(Number(numQuestions)).fill(false);
                 setUserAnswers(initialAnswers);
                 setStarred(initialStarred);
 
-                // 在雲端建立一筆新的測驗紀錄
                 try {
                     const docRef = await db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                         testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
@@ -244,22 +225,17 @@ const app = initializeApp(firebaseConfig);
             const handleUploadFile = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                if (!quizId) return alert('需先建立紀錄後才可上傳，請先按開始作答'); // 防呆
-
-                // 限制大小 10MB
+                if (!quizId) return alert('需先建立紀錄後才可上傳');
                 if (file.size > 10 * 1024 * 1024) return alert('檔案需小於 10MB');
 
                 setUploading(true);
                 const fileRef = storage.ref(`users/${currentUser.uid}/quizzes/${quizId}/${file.name}`);
                 
                 try {
-                    // 1. 上傳檔案到 Storage
                     const snapshot = await fileRef.put(file);
-                    // 2. 獲取下載 URL
                     const url = await snapshot.ref.getDownloadURL();
-                    // 3. 更新狀態，useEffect 會自動將其存入 Firestore
                     setQuestionFileUrl(url);
-                    alert('文件上傳成功！');
+                    alert('附件上傳成功！');
                 } catch(error) {
                     alert('上傳失敗：' + error.message);
                 } finally {
@@ -293,7 +269,7 @@ const app = initializeApp(firebaseConfig);
 
                 const res = { score: Math.round((correctCount/numQuestions)*100), correctCount, total: numQuestions, data };
                 setResults(res);
-                setStep('results'); // 自動儲存 useEffect 會把 results 存入資料庫
+                setStep('results');
             };
 
             const exportFile = () => {
@@ -309,51 +285,44 @@ const app = initializeApp(firebaseConfig);
                 a.click();
             };
 
-            // 手動清除作答進度回到設定頁面 (這會刪除雲端該筆紀錄！)
             const handleResetProgress = async () => {
-                 if(confirm("確定要放棄目前進度並回到首頁嗎？這會刪除這筆紀錄！")) {
+                 if(confirm("確定要放棄目前進度並回到首頁嗎？這會刪除這筆雲端紀錄！")) {
                     await db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).delete();
                     onBackToDashboard();
                  }
             }
 
-            // --- 畫面渲染 ---
-
             if (step === 'setup') return (
-                <div className="flex flex-col items-center justify-center p-4 min-h-screen">
-                    <button onClick={onBackToDashboard} className="absolute top-4 left-4 text-sm text-gray-500 hover:text-black">← 返回列表</button>
+                <div className="flex flex-col items-center justify-center p-4 min-h-screen relative">
+                    <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold">← 返回列表</button>
                     <div className="bg-white p-8 shadow-md w-full max-w-sm no-round border border-gray-200">
-                        <h1 className="text-xl font-bold mb-6 border-b pb-2 tracking-tight">建立雲端新測驗</h1>
-                        <input type="text" placeholder="測驗名稱 (例如: 英文期中考)" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black" value={testName} onChange={e => setTestName(e.target.value)} />
+                        <h1 className="text-xl font-bold mb-6 border-b pb-2 tracking-tight">新增測驗</h1>
+                        <input type="text" placeholder="測驗名稱 (例: 112年專技高考)" className="w-full mb-4 p-2 border border-gray-300 no-round outline-none focus:border-black" value={testName} onChange={e => setTestName(e.target.value)} />
                         <input type="number" placeholder="題數 (1-100)" className="w-full mb-6 p-2 border border-gray-300 no-round outline-none focus:border-black" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} />
-                        
-                        {/* 上傳文件區域 (尚未建立 quizId 時不能上傳，畫面隱藏) */}
-                        
                         <button onClick={handleStartTest} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 transition-colors">開始作答</button>
                     </div>
                 </div>
             );
 
             if (step === 'answering') return (
-                <div className="max-w-5xl mx-auto p-4">
-                    <div className="bg-white p-4 shadow-sm border border-gray-200 sticky top-0 z-10 flex justify-between items-center mb-4 no-round">
+                <div className="max-w-5xl mx-auto p-4 pt-6">
+                    <div className="bg-white p-4 shadow-sm border border-gray-200 sticky top-4 z-10 flex justify-between items-center mb-6 no-round">
                         <div className="flex-grow mr-2">
                             <h2 className="font-bold truncate">{testName || '作答中'}</h2>
-                            <p className="text-xs text-gray-500">進度: {userAnswers.filter(a=>a).length}/{numQuestions}</p>
+                            <p className="text-xs text-gray-500 mt-1">進度: <span className="font-bold text-black">{userAnswers.filter(a=>a).length}</span> / {numQuestions}</p>
                         </div>
                         <div className="flex items-center space-x-2 flex-shrink-0">
-                            {/* 文件上傳按鈕 (移到作答區，以便隨時上傳試題) */}
                             {questionFileUrl ? (
-                                <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="bg-gray-100 text-black px-4 py-2 no-round font-bold border border-gray-200 text-xs truncate max-w-[120px]">查看試題</a>
+                                <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="bg-gray-100 text-black px-4 py-2 no-round font-bold border border-gray-200 text-xs truncate max-w-[120px] hover:bg-gray-200">📎 檢視試卷</a>
                             ) : (
-                                <button onClick={() => fileInputRef.current.click()} className="bg-orange-50 text-orange-800 border border-orange-200 px-4 py-2 no-round font-bold text-sm disabled:opacity-50" disabled={uploading}>
-                                    {uploading ? '上傳中...' : '📎 上傳試題'}
+                                <button onClick={() => fileInputRef.current.click()} className="bg-orange-50 text-orange-800 border border-orange-200 px-4 py-2 no-round font-bold text-sm disabled:opacity-50 hover:bg-orange-100" disabled={uploading}>
+                                    {uploading ? '上傳中...' : '📎 附上試卷'}
                                 </button>
                             )}
                             <input type="file" ref={fileInputRef} onChange={handleUploadFile} className="hidden" accept="image/*,.pdf,.doc,.docx" />
                             
-                            <button onClick={handleResetProgress} className="bg-gray-200 text-gray-700 px-4 py-2 no-round font-bold hover:bg-gray-300 text-sm hidden md:block">放棄紀錄</button>
-                            <button onClick={() => setStep('grading')} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800">交卷</button>
+                            <button onClick={handleResetProgress} className="bg-gray-100 text-gray-500 px-4 py-2 no-round font-bold hover:bg-gray-200 hover:text-red-600 text-sm hidden md:block border border-gray-200">放棄作答</button>
+                            <button onClick={() => setStep('grading')} className="bg-black text-white px-6 py-2 no-round font-bold hover:bg-gray-800 shadow-sm">對答案</button>
                         </div>
                     </div>
                     <div className="bg-white p-6 border border-gray-200 shadow-sm no-round columns-custom">
@@ -361,11 +330,11 @@ const app = initializeApp(firebaseConfig);
                             <div key={i} className="break-avoid flex items-center justify-between py-2 border-b border-gray-50 hover:bg-gray-50">
                                 <div className="flex items-center space-x-2">
                                     <span className="font-mono text-sm font-bold w-6 text-gray-400">{i+1}.</span>
-                                    <button onClick={() => toggleStar(i)} className={`text-sm ${starred[i] ? 'text-orange-500' : 'text-gray-200'}`}>★</button>
+                                    <button onClick={() => toggleStar(i)} className={`text-sm ${starred[i] ? 'text-orange-500' : 'text-gray-200 hover:text-gray-300'}`}>★</button>
                                 </div>
                                 <div className="flex space-x-1">
                                     {['A','B','C','D'].map(o => (
-                                        <button key={o} onClick={() => handleAnswerSelect(i, o)} className={`w-7 h-7 text-xs font-bold border-2 no-round transition-all ${ans === o ? 'bg-black border-black text-white' : 'bg-white border-gray-300 text-gray-400 hover:border-gray-500'}`}>{o}</button>
+                                        <button key={o} onClick={() => handleAnswerSelect(i, o)} className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all ${ans === o ? 'bg-black border-black text-white scale-105' : 'bg-white border-gray-300 text-gray-400 hover:border-gray-500'}`}>{o}</button>
                                     ))}
                                 </div>
                             </div>
@@ -375,51 +344,51 @@ const app = initializeApp(firebaseConfig);
             );
 
             if (step === 'grading') return (
-                <div className="flex flex-col h-screen items-center justify-center p-4">
+                <div className="flex flex-col h-screen items-center justify-center p-4 relative">
+                    <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 hover:text-black font-bold">← 繼續作答</button>
                      {questionFileUrl && (
-                        <div className="w-full max-w-lg mb-4 text-right">
-                             <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="bg-white border border-gray-200 px-4 py-2 text-xs no-round font-bold">查看已上傳試題</a>
+                        <div className="w-full max-w-lg mb-2 text-right">
+                             <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm font-bold">📎 開啟試卷對照</a>
                         </div>
                     )}
                     <div className="bg-white p-8 shadow-md w-full max-w-lg no-round border border-gray-200">
-                        <h2 className="font-bold mb-4">貼上正確答案</h2>
-                        <textarea className="w-full h-40 p-3 border border-gray-300 no-round font-mono mb-4 focus:border-black outline-none" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
-                        <button onClick={handleGrade} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 transition-colors">開始批改</button>
-                        <button onClick={() => setStep('answering')} className="w-full mt-2 text-gray-500 text-sm py-2 hover:text-black">返回作答區</button>
+                        <h2 className="font-bold mb-4 text-lg">輸入標準答案</h2>
+                        <textarea className="w-full h-40 p-3 border border-gray-300 no-round font-mono mb-4 focus:border-black outline-none tracking-widest text-lg uppercase" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
+                        <button onClick={handleGrade} className="w-full bg-black text-white p-3 font-bold no-round hover:bg-gray-800 transition-colors text-lg">開始批改</button>
                     </div>
                 </div>
             );
 
             if (step === 'results') return (
-                <div className="max-w-4xl mx-auto p-4 pt-0">
-                    <div className="bg-gray-50 p-4 border-b border-gray-100 flex justify-between items-center mb-6">
-                        <h2 className="font-bold text-gray-600">測驗結果詳情：{testName || '未命名'}</h2>
-                        <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-1 no-round hover:bg-gray-800">← 返回列表</button>
+                <div className="max-w-4xl mx-auto p-4 pt-6">
+                    <div className="bg-white p-4 border border-gray-200 shadow-sm flex justify-between items-center mb-6 no-round">
+                        <h2 className="font-bold text-gray-800 truncate pr-4">{testName || '未命名'}</h2>
+                        <button onClick={onBackToDashboard} className="text-sm font-bold bg-black text-white px-4 py-2 no-round hover:bg-gray-800 whitespace-nowrap">返回列表</button>
                     </div>
-                    <div className="bg-white p-8 shadow-md border-t-4 border-black text-center mb-6 no-round">
-                        <h2 className={`text-4xl font-black mb-2 ${results.score >= 60 ? 'text-green-600' : 'text-red-600'}`}>{results.score} 分</h2>
-                        <p className="text-gray-500 mb-6">答對 {results.correctCount} / {results.total} 題</p>
-                        <div className="flex justify-center space-x-3 items-center">
+                    <div className="bg-white p-10 shadow-md border-t-8 border-black text-center mb-6 no-round relative overflow-hidden">
+                        <h2 className={`text-6xl font-black mb-4 ${results.score >= 60 ? 'text-green-600' : 'text-red-600'}`}>{results.score}</h2>
+                        <p className="text-gray-500 mb-8 font-bold tracking-widest">答對 {results.correctCount} / {results.total} 題</p>
+                        <div className="flex justify-center space-x-3 items-center relative z-10">
                             {questionFileUrl && (
-                                <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-sm bg-gray-100 text-black px-4 py-2 no-round border border-gray-200 font-bold hover:bg-gray-200">📎 原始試題</a>
+                                <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-sm bg-gray-100 text-black px-6 py-3 no-round border border-gray-200 font-bold hover:bg-gray-200 transition-colors">📎 檢視原卷</a>
                             )}
-                            <button onClick={exportFile} className="bg-gray-100 text-black px-4 py-2 no-round font-bold border border-gray-200 hover:bg-gray-200 text-sm">匯出 txt 成績單</button>
+                            <button onClick={exportFile} className="bg-white text-black px-6 py-3 no-round font-bold border-2 border-black hover:bg-black hover:text-white text-sm transition-colors">匯出 TXT 檔</button>
                         </div>
                     </div>
-                    <div className="bg-white p-6 border border-gray-200 no-round">
-                        <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
-                            <h3 className="font-bold">答案與解析</h3>
-                            <button onClick={() => setShowOnlyWrong(!showOnlyWrong)} className="text-sm underline text-gray-500 hover:text-black">{showOnlyWrong ? '顯示全部' : '只看錯題'}</button>
+                    <div className="bg-white p-6 border border-gray-200 no-round shadow-sm">
+                        <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-3">
+                            <h3 className="font-bold text-lg">答案解析</h3>
+                            <button onClick={() => setShowOnlyWrong(!showOnlyWrong)} className="text-sm font-bold text-gray-500 hover:text-black bg-gray-100 px-3 py-1 no-round border border-gray-200">{showOnlyWrong ? '顯示全部' : '只看錯題'}</button>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
                             {results.data.filter(q => showOnlyWrong ? !q.isCorrect : true).map(q => (
-                                <div key={q.number} className={`p-2 border no-round flex justify-between items-center ${q.isCorrect ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
-                                    <span className={`font-bold text-xs ${q.isCorrect ? 'text-green-800' : 'text-red-800'}`}>{q.number}.</span>
-                                    <div className="text-xs">
-                                        <span className={q.isCorrect ? 'text-gray-700' : 'text-red-600 font-bold'}>{q.userAns}</span>
-                                        <span className="mx-1 text-gray-400">→</span>
-                                        <span className="text-green-700 font-bold">{q.correctAns}</span>
-                                        {q.isStarred && <span className="ml-1 text-orange-500">★</span>}
+                                <div key={q.number} className={`p-3 border no-round flex justify-between items-center ${q.isCorrect ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-200'}`}>
+                                    <span className={`font-black text-sm ${q.isCorrect ? 'text-green-800' : 'text-red-800'}`}>{q.number}.</span>
+                                    <div className="text-sm font-bold">
+                                        <span className={q.isCorrect ? 'text-gray-700' : 'text-red-600 line-through'}>{q.userAns}</span>
+                                        <span className="mx-2 text-gray-300">→</span>
+                                        <span className="text-green-700">{q.correctAns}</span>
+                                        {q.isStarred && <span className="ml-2 text-orange-500 text-xs">★</span>}
                                     </div>
                                 </div>
                             ))}
@@ -433,11 +402,10 @@ const app = initializeApp(firebaseConfig);
         function Main() {
             const [user, setUser] = useState(null);
             const [loadingUser, setLoadingUser] = useState(true);
-            const [appStep, setAppStep] = useState('dashboard'); // dashboard | activeQuiz
+            const [appStep, setAppStep] = useState('dashboard');
             const [activeQuizRecord, setActiveQuizRecord] = useState(null);
 
             useEffect(() => {
-                // 監聽 Firebase 登入狀態變化
                 const unsubscribe = auth.onAuthStateChanged(usr => {
                     setUser(usr);
                     setLoadingUser(false);
@@ -467,7 +435,7 @@ const app = initializeApp(firebaseConfig);
             }
 
             if (loadingUser) {
-                return <div className="flex h-screen items-center justify-center text-gray-500">雲端讀取中...</div>;
+                return <div className="flex h-screen items-center justify-center text-gray-500 font-bold tracking-widest animate-pulse">連線中...</div>;
             }
 
             if (!user) {
@@ -475,23 +443,10 @@ const app = initializeApp(firebaseConfig);
             }
 
             if (appStep === 'dashboard') {
-                return (
-                    <Dashboard 
-                        user={user} 
-                        onStartNew={handleStartNew} 
-                        onContinueQuiz={handleContinueQuiz}
-                        onLogout={handleLogout} 
-                    />
-                );
+                return <Dashboard user={user} onStartNew={handleStartNew} onContinueQuiz={handleContinueQuiz} onLogout={handleLogout} />;
             }
 
-            return (
-                <QuizApp 
-                    currentUser={user} 
-                    activeQuizRecord={activeQuizRecord}
-                    onBackToDashboard={handleBackToDashboard}
-                />
-            );
+            return <QuizApp currentUser={user} activeQuizRecord={activeQuizRecord} onBackToDashboard={handleBackToDashboard} />;
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
