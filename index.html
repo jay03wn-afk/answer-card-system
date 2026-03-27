@@ -283,11 +283,11 @@
                 player: { x: 50, y: 0, w: 40, h: 40, dy: 0, jumps: 0 },
                 obstacles: [],
                 diamonds: [],
-                speed: 6,      // 初始速度提升
+                speed: 6,
                 score: 0,
                 frames: 0,
                 lastSpawnFrame: 0,
-                groundY: 250   // 地面高度
+                groundY: 250
             });
 
             const images = useRef({ 
@@ -298,13 +298,11 @@
             });
 
             useEffect(() => {
-                // 載入貼圖
                 images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
                 images.current.stone.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png";
                 images.current.diamond.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png";
                 images.current.zombie.src = "https://minotar.net/helm/Zombie/64.png";
                 
-                // 載入 BGM (開源 8-bit 配樂)
                 bgmRef.current = new Audio("https://raw.githubusercontent.com/libgdx/libgdx-demo-superjumper/master/android/assets/data/music.mp3");
                 bgmRef.current.loop = true;
                 bgmRef.current.volume = 0.4;
@@ -344,7 +342,7 @@
             const jump = () => {
                 const p = gameRef.current.player;
                 if (p.jumps < 2) {
-                    p.dy = -11.5; // 增強跳躍力度
+                    p.dy = -11.5; 
                     p.jumps++;
                 }
             };
@@ -355,35 +353,43 @@
                 const ctx = cvs.getContext('2d');
                 const state = gameRef.current;
                 
-                // 物理與位移
-                let prevBottom = state.player.y + state.player.h; // 紀錄位移前的底部位置
-                state.player.dy += 0.7; // 重力加速度
+                // 記錄位移前的底部位置 (為了精準判斷是降落還是撞牆)
+                let prevBottom = state.player.y + state.player.h; 
+                
+                state.player.dy += 0.7; // 重力
                 state.player.y += state.player.dy;
 
                 let inPit = false;
+                let dead = false;
+                let landedOnPlatform = false;
 
-                // 清除畫面外的物件
                 state.obstacles = state.obstacles.filter(o => o.x + o.w > -50);
                 state.diamonds = state.diamonds.filter(d => d.x + d.w > -50 && !d.collected);
 
-                // 檢查坑洞
+                // 檢查坑洞 (中心點稍微寬鬆一點)
                 state.obstacles.forEach(obs => {
                     if (obs.type === 'pit') {
                         let pCenter = state.player.x + state.player.w / 2;
-                        if (pCenter > obs.x + 10 && pCenter < obs.x + obs.w - 10) {
+                        if (pCenter > obs.x + 5 && pCenter < obs.x + obs.w - 5) {
                             inPit = true;
                         }
                     }
                 });
 
-                let dead = false;
-                let landedOnPlatform = false;
-
                 // 地面碰撞 (若不在坑洞上方)
-                if (state.player.y + state.player.h >= state.groundY && !inPit) {
-                    state.player.y = state.groundY - state.player.h;
-                    state.player.dy = 0;
-                    state.player.jumps = 0;
+                if (state.player.y + state.player.h >= state.groundY) {
+                    if (!inPit) {
+                        // 【關鍵修正】檢查前一幀是不是在地面之上
+                        // 如果前一幀在地上或空中，代表是安全降落
+                        if (prevBottom <= state.groundY + 10) {
+                            state.player.y = state.groundY - state.player.h;
+                            state.player.dy = 0;
+                            state.player.jumps = 0;
+                        } else {
+                            // 前一幀已經在地面之下，代表撞到了坑洞側面的牆壁！
+                            dead = true;
+                        }
+                    }
                 }
 
                 // 掉出畫面死亡
@@ -402,12 +408,11 @@
                     }
 
                     if (obs.type === 'zombie') {
-                        obs.x -= (state.speed + 1.5); // 殭屍會往左邊走，比畫面退後速度更快
+                        obs.x -= (state.speed + 1.5); 
                     } else {
                         obs.x -= state.speed;
                     }
 
-                    // AABB 碰撞箱判定 (略微縮小判定範圍讓手感更好)
                     if (
                         state.player.x + 8 < obs.x + obs.w - 8 &&
                         state.player.x + state.player.w - 8 > obs.x + 8 &&
@@ -415,17 +420,16 @@
                         state.player.y + state.player.h > obs.y + 5
                     ) {
                         if (obs.type === 'stone') {
-                            // 判斷是否為從上方踩下
                             if (state.player.dy > 0 && prevBottom <= obs.y + 15) {
                                 state.player.y = obs.y - state.player.h;
                                 state.player.dy = 0;
-                                state.player.jumps = 0; // 重置跳躍
+                                state.player.jumps = 0; 
                                 landedOnPlatform = true;
                             } else {
-                                dead = true; // 撞到側面或下方
+                                dead = true; 
                             }
                         } else if (obs.type === 'zombie') {
-                            dead = true; // 碰到殭屍必死
+                            dead = true; 
                         }
                     }
                 }
@@ -452,33 +456,27 @@
 
                 state.frames++;
                 
-                // 逐漸加速提升難度
                 if (state.frames % 100 === 0 && state.speed < 15) {
                     state.speed += 0.2;
                 }
 
-                // 隨機生成地形與障礙 (隨著速度變快，生成間隔變短)
+                // 隨機生成地形與障礙
                 let spawnInterval = Math.max(40, 100 - state.speed * 4);
                 if (state.frames - state.lastSpawnFrame > spawnInterval) {
                     if (Math.random() < 0.55) { 
                         state.lastSpawnFrame = state.frames;
                         let rand = Math.random();
                         if (rand < 0.4) {
-                            // 產生石頭
                             state.obstacles.push({ type: 'stone', x: cvs.width, y: state.groundY - 40, w: 40, h: 40 });
                         } else if (rand < 0.75) {
-                            // 產生坑洞 (坑洞寬度變得更隨機 60~130)
-                            state.obstacles.push({ type: 'pit', x: cvs.width, y: state.groundY, w: Math.random() * 70 + 120, h: 100 });
+                            state.obstacles.push({ type: 'pit', x: cvs.width, y: state.groundY, w: Math.random() * 70 + 60, h: 100 });
                         } else {
-                            // 產生殭屍
                             state.obstacles.push({ type: 'zombie', x: cvs.width, y: state.groundY - 40, w: 40, h: 40 });
                         }
                     }
                 }
                 
-                // 隨機生成鑽石
-                if (state.frames % Math.floor(Math.random() * 100 + 200) === 0) {
-                    // 有可能生成在較高的地方，鼓勵玩家踩石頭二段跳
+                if (state.frames % Math.floor(Math.random() * 40 + 30) === 0) {
                     let dY = state.groundY - 50 - Math.random() * 100;
                     state.diamonds.push({ x: cvs.width, y: dY, w: 24, h: 24, collected: false });
                 }
@@ -486,20 +484,17 @@
                 // --- 渲染畫面 ---
                 ctx.clearRect(0, 0, cvs.width, cvs.height);
                 
-                // 畫地面
                 ctx.fillStyle = '#5A5A5A';
                 ctx.fillRect(0, state.groundY, cvs.width, cvs.height - state.groundY);
-                ctx.fillStyle = '#4A4A4A'; // 地面裝飾線
+                ctx.fillStyle = '#4A4A4A'; 
                 ctx.fillRect(0, state.groundY, cvs.width, 8);
                 
-                // 畫坑洞 (挖空地面)
                 state.obstacles.forEach(obs => {
                     if (obs.type === 'pit') {
                         ctx.clearRect(obs.x, state.groundY, obs.w, cvs.height - state.groundY);
                     }
                 });
 
-                // 畫石頭與殭屍
                 state.obstacles.forEach(obs => {
                     if (obs.type === 'stone') {
                         if (images.current.stone.complete) ctx.drawImage(images.current.stone, obs.x, obs.y, obs.w, obs.h);
@@ -510,7 +505,6 @@
                     }
                 });
 
-                // 畫鑽石
                 state.diamonds.forEach(d => {
                     if (!d.collected) {
                         if (images.current.diamond.complete) ctx.drawImage(images.current.diamond, d.x, d.y, d.w, d.h);
@@ -518,7 +512,6 @@
                     }
                 });
 
-                // 畫史蒂夫
                 if (images.current.steve.complete) {
                     ctx.drawImage(images.current.steve, state.player.x, state.player.y, state.player.w, state.player.h);
                 } else {
@@ -526,7 +519,6 @@
                     ctx.fillRect(state.player.x, state.player.y, state.player.w, state.player.h);
                 }
                 
-                // 畫滑板
                 ctx.fillStyle = '#8b4513'; 
                 ctx.fillRect(state.player.x - 4, state.player.y + state.player.h - 2, state.player.w + 8, 6);
                 ctx.fillStyle = '#111'; 
@@ -579,7 +571,7 @@
                             )}
                         </div>
                         <p className="text-center text-gray-400 text-sm mt-3 font-bold tracking-widest">
-                            點擊/觸控以跳躍 (可二段跳) <br/> <span className="text-xs text-gray-500">避開坑洞與殭屍，你可以踩在石頭上！</span>
+                            點擊/觸控以跳躍 (可二段跳) <br/> <span className="text-xs text-gray-500">避開坑洞與殭屍，撞到牆壁會死！</span>
                         </p>
                     </div>
                 </div>
