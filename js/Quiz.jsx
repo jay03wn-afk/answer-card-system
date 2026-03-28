@@ -1,18 +1,21 @@
 // --- 新增：任務牆看板組件 ---
+// --- 新增：任務牆看板組件 ---
 function TaskWallDashboard({ user, showAlert, onContinueQuiz }) {
     const [tasks, setTasks] = useState({});
     const [loading, setLoading] = useState(true);
 
-    const categories = [
+    // 定義子分類與其他分類
+    const subCategories = [
         '1. 藥物分析學', '2. 生藥學', '3. 中藥學', 
-        '4. 藥物化學與藥理學', '5. 藥劑學', '6. 生物藥劑學', '模擬試題 (其他)'
+        '4. 藥物化學與藥理學', '5. 藥劑學', '6. 生物藥劑學'
     ];
+    const allCategories = [...subCategories, '模擬試題 (其他)'];
 
     useEffect(() => {
         const unsub = window.db.collection('publicTasks')
             .orderBy('createdAt', 'desc')
             .onSnapshot(snap => {
-                const grouped = categories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
+                const grouped = allCategories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
                 
                 snap.docs.forEach(doc => {
                     const data = { id: doc.id, ...doc.data() };
@@ -87,29 +90,72 @@ function TaskWallDashboard({ user, showAlert, onContinueQuiz }) {
                 <div className="text-center text-gray-500 py-10 font-bold animate-pulse">正在載入公開任務...</div>
             ) : (
                 <div className="space-y-8 pb-10">
-                    {categories.map(cat => (
-                        tasks[cat] && tasks[cat].length > 0 && (
-                            <div key={cat} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5">
-                                <h2 className="text-xl font-black mb-4 dark:text-white border-b border-gray-100 dark:border-gray-700 pb-2 text-blue-600 dark:text-blue-400">{cat}</h2>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {tasks[cat].map(task => (
-                                        <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-4 bg-gray-50 dark:bg-gray-900 flex flex-col justify-between">
-                                            <div>
-                                                <h3 className="font-bold text-md mb-2 dark:text-white truncate">{task.testName.replace('[#mnst]', '')}</h3>
-                                                <p className="text-xs text-gray-500 mb-4 flex gap-2">
-                                                    <span>題數: {task.numQuestions}</span>
-                                                    {task.hasTimer && <span className="text-red-500 font-bold">限時: {task.timeLimit}m</span>}
-                                                </p>
-                                            </div>
-                                            <button onClick={() => handleAcceptTask(task)} className="bg-black dark:bg-gray-200 text-white dark:text-black py-2 no-round font-bold text-sm hover:bg-gray-800 transition-colors w-full">
-                                                ⚔️ 接受挑戰
-                                            </button>
+                    
+                    {/* --- 主分類：模擬試題 --- */}
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5 md:p-6">
+                        <h2 className="text-2xl font-black mb-6 dark:text-white border-b-2 border-indigo-200 dark:border-indigo-900 pb-2 text-indigo-700 dark:text-indigo-400 flex items-center">
+                            📚 模擬試題
+                        </h2>
+                        
+                        <div className="space-y-8">
+                            {subCategories.map(cat => (
+                                tasks[cat] && tasks[cat].length > 0 && (
+                                    <div key={cat} className="pl-4 border-l-4 border-indigo-300 dark:border-indigo-600">
+                                        <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {tasks[cat].map(task => (
+                                                <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-4 bg-gray-50 dark:bg-gray-900 flex flex-col justify-between hover:shadow-md transition-shadow">
+                                                    <div>
+                                                        <h3 className="font-bold text-md mb-2 dark:text-white truncate" title={task.testName}>
+                                                            {task.testName.replace('[#mnst]', '')}
+                                                        </h3>
+                                                        <p className="text-xs text-gray-500 mb-4 flex gap-2">
+                                                            <span>題數: {task.numQuestions}</span>
+                                                            {task.hasTimer && <span className="text-red-500 font-bold">限時: {task.timeLimit}m</span>}
+                                                        </p>
+                                                    </div>
+                                                    <button onClick={() => handleAcceptTask(task)} className="bg-black dark:bg-gray-200 text-white dark:text-black py-2 no-round font-bold text-sm hover:bg-gray-800 transition-colors w-full">
+                                                        ⚔️ 接受挑戰
+                                                    </button>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))}
-                                </div>
+                                    </div>
+                                )
+                            ))}
+                            {/* 如果模擬試題底下全部沒任務 */}
+                            {subCategories.every(cat => !tasks[cat] || tasks[cat].length === 0) && (
+                                <p className="text-gray-500 text-sm pl-4">此分類尚無任務！</p>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* --- 其他任務 --- */}
+                    {tasks['模擬試題 (其他)'] && tasks['模擬試題 (其他)'].length > 0 && (
+                        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5 md:p-6">
+                            <h2 className="text-xl font-black mb-4 dark:text-white border-b-2 border-gray-200 dark:border-gray-700 pb-2 text-gray-600 dark:text-gray-400">
+                                🏷️ 其他任務
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {tasks['模擬試題 (其他)'].map(task => (
+                                    <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-4 bg-gray-50 dark:bg-gray-900 flex flex-col justify-between hover:shadow-md transition-shadow">
+                                        <div>
+                                            <h3 className="font-bold text-md mb-2 dark:text-white truncate" title={task.testName}>
+                                                {task.testName.replace('[#mnst]', '')}
+                                            </h3>
+                                            <p className="text-xs text-gray-500 mb-4 flex gap-2">
+                                                <span>題數: {task.numQuestions}</span>
+                                                {task.hasTimer && <span className="text-red-500 font-bold">限時: {task.timeLimit}m</span>}
+                                            </p>
+                                        </div>
+                                        <button onClick={() => handleAcceptTask(task)} className="bg-black dark:bg-gray-200 text-white dark:text-black py-2 no-round font-bold text-sm hover:bg-gray-800 transition-colors w-full">
+                                            ⚔️ 接受挑戰
+                                        </button>
+                                    </div>
+                                ))}
                             </div>
-                        )
-                    ))}
+                        </div>
+                    )}
                     
                     {Object.values(tasks).every(arr => arr.length === 0) && (
                         <div className="text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
