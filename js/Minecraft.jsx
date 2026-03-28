@@ -1534,13 +1534,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </button>
                 )}
 
-                {/* 左側：庫存箱子按鈕 */}
-                {isViewingSelf && (
-                    <button onClick={() => { playChestOpenSound(); setIsChestOpen(true); }} className="absolute left-0 top-1/2 transform -translate-y-1/2 -ml-2 md:ml-0 bg-[#8b5a2b] border-4 border-[#3e2723] p-2 rounded-r-lg shadow-2xl z-50 hover:scale-105 transition-transform flex flex-col items-center">
-                        <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/chest_front.png" className="w-10 h-10 pixelated drop-shadow-lg" />
-                        <span className="block text-white text-[10px] font-bold mt-1 bg-black bg-opacity-70 px-1 rounded">庫存箱子</span>
-                    </button>
-                )}
 
                 {/* 👇 新增：未儲存退出警告視窗 */}
             {showQuitConfirm && (
@@ -1668,21 +1661,26 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 </div>
 
                 {/* 右側：方塊商店與工具列 */}
-                
-                {/* 加入 h-1/3 與 overflow-hidden 確保手機版高度受限進而啟用滑動軸 */}
-                <div className="w-full h-1/3 md:h-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 overflow-hidden">
-                    <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
-                        <span>💰 方塊商店</span>
-                        <span className="text-sm bg-black bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>
-                    </h3>
+{/* 上次加的 h-1/3 md:h-full 不要漏掉，這才是能滑動的關鍵 */}
+<div className="w-full h-1/3 md:h-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 overflow-hidden">
+    <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
+        <span>💰 方塊商店</span>
+        <span className="text-sm bg-black bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>
+    </h3>
 
-                    {/* 新增：將箱子改放到商店的最上方，好看又不會擋住畫面 */}
-                    {isViewingSelf && (
-                        <button onClick={() => { playChestOpenSound(); setIsChestOpen(true); }} className="w-full bg-[#8b5a2b] hover:bg-[#a06830] border-2 border-[#3e2723] p-2 mb-2 rounded shadow-md flex items-center justify-center space-x-2 transition-colors shrink-0">
-                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/chest_front.png" className="w-6 h-6 pixelated drop-shadow-lg" fallback="📦" />
-                            <span className="text-white font-bold text-sm">打開我的庫存箱子</span>
-                        </button>
-                    )}
+    {/* 這裡就是新位置的箱子按鈕 */}
+    {isViewingSelf && (
+        <button onClick={() => { playChestOpenSound(); setIsChestOpen(true); }} className="w-full bg-[#8b5a2b] hover:bg-[#a06830] border-2 border-[#3e2723] p-2 mb-2 rounded shadow-md flex items-center justify-center space-x-2 transition-colors shrink-0">
+            {/* ✅ 1. 確保 src 使用這個 MINECRAFT 箱子貼圖路徑 */}
+            {/* ✅ 2. 確保 class 有 'pixelated' 保持點陣風 */}
+            <McImg 
+                src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" 
+                className="w-6 h-6 pixelated drop-shadow-lg" 
+                fallback="📦" 
+            />
+            <span className="text-white font-bold text-sm">打開我的庫存箱子</span>
+        </button>
+    )}
 
                     {/* 分類按鈕與參觀工具 */}
                     {isViewingSelf ? (
