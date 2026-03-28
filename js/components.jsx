@@ -150,8 +150,11 @@ function ProfileSetup({ user, onComplete, showAlert }) {
 }
 
 // 新增功能：個人檔案頁面與大頭照壓縮
+// 新增功能：個人檔案頁面與大頭照壓縮 (加入暱稱修改功能)
 function ProfilePage({ user, userProfile, showAlert }) {
     const [bio, setBio] = useState(userProfile.bio || "");
+    // 1. 新增 displayName 的 state
+    const [displayName, setDisplayName] = useState(userProfile.displayName || ""); 
     const [isSaving, setIsSaving] = useState(false);
     const fileInputRef = useRef(null);
 
@@ -181,10 +184,16 @@ function ProfilePage({ user, userProfile, showAlert }) {
         reader.readAsDataURL(file);
     };
 
-    const saveBio = () => {
+    // 2. 更新儲存邏輯，連同 displayName 一起存
+    const saveProfile = () => {
+        if (!displayName.trim()) return showAlert("社群暱稱不能為空！");
+        
         setIsSaving(true);
-        window.db.collection('users').doc(user.uid).update({ bio })
-          .then(() => showAlert("✅ 自我介紹已儲存！"))
+        window.db.collection('users').doc(user.uid).update({ 
+            bio: bio,
+            displayName: displayName.trim() 
+        })
+          .then(() => showAlert("✅ 個人檔案已儲存變更！"))
           .catch(e => showAlert("儲存失敗：" + e.message))
           .finally(() => setIsSaving(false));
     };
@@ -202,12 +211,19 @@ function ProfilePage({ user, userProfile, showAlert }) {
                 </div>
                 <div className="flex-grow w-full">
                     <label className="block text-sm font-bold text-gray-500 dark:text-gray-400 mb-2">社群暱稱</label>
-                    <div className="w-full mb-4 p-3 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400 cursor-not-allowed no-round">{userProfile.displayName}</div>
+                    {/* 3. 將原本鎖死的 div 換成可以編輯的 input */}
+                    <input 
+                        type="text" 
+                        value={displayName} 
+                        onChange={e => setDisplayName(e.target.value)} 
+                        className="w-full mb-4 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none no-round focus:border-black dark:focus:border-white" 
+                        placeholder="請輸入你的社群暱稱..."
+                    />
                     
                     <label className="block text-sm font-bold text-gray-500 dark:text-gray-400 mb-2">關於我 (自我介紹)</label>
                     <textarea value={bio} onChange={e => setBio(e.target.value)} className="w-full h-32 mb-4 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none resize-none no-round focus:border-black dark:focus:border-white" placeholder="寫點關於你自己的事吧..."></textarea>
                     
-                    <button onClick={saveBio} disabled={isSaving} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors">
+                    <button onClick={saveProfile} disabled={isSaving} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors">
                         {isSaving ? '儲存中...' : '儲存變更'}
                     </button>
                 </div>
