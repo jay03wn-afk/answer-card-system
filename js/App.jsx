@@ -100,9 +100,13 @@ function Main() {
         <AuthScreen showAlert={showAlert} />
     );
 
+    // 新增這段：如果登入成功，但發現沒設定過暱稱（避開預設的'載入中...'狀態），就要求設定
+    if (userProfile && userProfile.displayName !== '載入中...' && !userProfile.displayName) {
+        return <ProfileSetup user={user} onComplete={(name) => setUserProfile(prev => ({...prev, displayName: name}))} showAlert={showAlert} />;
+    }
+
     return (
-        <div className="h-[100dvh] flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-900 transition-colors relative">
-            
+        <div className="h-[100dvh] flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-900 transition-colors relative">       
             {modalConfig.isOpen && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black bg-opacity-70 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white dark:bg-gray-800 w-full max-w-sm border-2 border-black dark:border-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(255,255,255,0.2)] no-round p-6 transform transition-all">
