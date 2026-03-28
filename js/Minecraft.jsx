@@ -1014,7 +1014,11 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
 
     const BLOCK_TYPES = [
         // 工具
-        { id: 'erase', name: '橡皮擦 (拆除)', cat: '工具', img: null, price: 0, special: true },
+        {id: 'erase', 
+            name: '鐵鎬 (拆除)', 
+            cat: '工具', 
+            img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/iron_pickaxe.png', 
+            price: 0, special: true },
         { id: 'sign', name: '告示牌 (留言)', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png', price: 10, special: true, desc: '點擊空地留言(10💎/則)' },
         { id: 'poppy', name: '送小花 (拜訪專用)', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png', price: 0, special: true, desc: '參觀時送給好友' },
         { id: 'gift_box', name: '禮物盒 (送方塊)', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/chest.png', price: 0, special: true, desc: '打包方塊送給好友' },
