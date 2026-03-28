@@ -115,17 +115,48 @@ function AuthScreen({ showAlert }) {
     };
 
     return (
-        <div className="flex h-full items-center justify-center p-4 overflow-y-auto bg-gray-100 dark:bg-gray-900">
-            <form onSubmit={handleAuth} className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-sm no-round border border-gray-200 dark:border-gray-700">
-                <div className="w-16 h-16 bg-black dark:bg-gray-700 text-white rounded-full flex items-center justify-center mx-auto mb-4">
-                    <span className="text-3xl font-black">📝</span>
+        <div className="flex h-[100dvh] bg-gray-100 dark:bg-gray-900 overflow-hidden">
+            
+            {/* 左側：自訂圖片區塊 (只在平板 md 尺寸以上顯示) */}
+            <div className="hidden md:flex md:w-1/2 relative items-center justify-center bg-black">
+                <img 
+                    src="https://i.postimg.cc/024yhvHB/Gemini-Generated-Image-ln5ls1ln5ls1ln5l.png" 
+                    alt="登入背景" 
+                    className="absolute inset-0 w-full h-full object-cover opacity-60"
+                />
+                <div className="relative z-10 text-center text-white p-8">
+                    <h1 className="text-5xl font-black mb-4 tracking-widest drop-shadow-lg">JJay線上測驗</h1>
+                    <p className="text-xl font-bold text-gray-200 drop-shadow-md">專業雙螢幕版 • 任務導向學習</p>
                 </div>
-                <h1 className="text-xl font-bold mb-6 tracking-tight text-center dark:text-white">JJay線上測驗</h1>
-                <input type="email" placeholder="電子郵件" className="w-full mb-3 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white" value={email} onChange={e => setEmail(e.target.value)} onFocus={handleFocusScroll} required />
-                <input type="password" placeholder="密碼" className="w-full mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white" value={password} onChange={e => setPassword(e.target.value)} onFocus={handleFocusScroll} required />
-                <button type="submit" className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors" disabled={loading}>{loading ? '處理中...' : (isSignUp ? '註冊' : '登入')}</button>
-                <button type="button" onClick={() => setIsSignUp(!isSignUp)} className="w-full mt-4 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white transition-colors" disabled={loading}>{isSignUp ? '已有帳號？前往登入' : '沒有帳號？前往註冊'}</button>
-            </form>
+            </div>
+
+            {/* 右側：登入表單區塊 */}
+            <div className="flex w-full md:w-1/2 items-center justify-center p-4 overflow-y-auto">
+                <form onSubmit={handleAuth} className="bg-white dark:bg-gray-800 p-8 shadow-2xl w-full max-w-sm border-t-4 border-black dark:border-white no-round">
+                    
+                    {/* 如果你想把原本的 Emoji 換成 Logo 圖片，可以改這裡 */}
+                    <div className="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-6 border-2 border-gray-200 dark:border-gray-600 overflow-hidden">
+                        {/* 若有 Logo 圖片可解開下方註解替換 Emoji */}
+                        {/* <img src="你的Logo網址.png" className="w-full h-full object-cover" /> */}
+                        <span className="text-4xl font-black">📝</span>
+                    </div>
+                    
+                    <h2 className="text-2xl font-black mb-6 tracking-tight text-center dark:text-white">登入你的帳號</h2>
+                    
+                    <input type="email" placeholder="電子郵件" className="w-full mb-4 p-3 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white transition-colors" value={email} onChange={e => setEmail(e.target.value)} onFocus={handleFocusScroll} required />
+                    
+                    <input type="password" placeholder="密碼" className="w-full mb-8 p-3 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white transition-colors" value={password} onChange={e => setPassword(e.target.value)} onFocus={handleFocusScroll} required />
+                    
+                    <button type="submit" className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-black no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors shadow-md active:scale-95" disabled={loading}>
+                        {loading ? '處理中...' : (isSignUp ? '建立新帳號' : '登入')}
+                    </button>
+                    
+                    <button type="button" onClick={() => setIsSignUp(!isSignUp)} className="w-full mt-6 text-sm font-bold text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white transition-colors" disabled={loading}>
+                        {isSignUp ? '已有帳號？返回登入' : '還沒有帳號？立即註冊'}
+                    </button>
+                </form>
+            </div>
+            
         </div>
     );
 }
