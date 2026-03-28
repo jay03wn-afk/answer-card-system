@@ -974,7 +974,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     {userFolders.map(f => <option key={f} value={f}>{f}</option>)}
                 </select>
 
-                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗名稱 (標題包含 [#mnst] 可發布至任務牆)</label>
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗名稱</label>
                 <input type="text" placeholder="例如: 藥理學期中考" className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
                 
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">題數 (1-100)</label>
