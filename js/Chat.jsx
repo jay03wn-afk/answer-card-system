@@ -354,7 +354,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     const lastMyMsgId = (messages || []).slice().reverse().find(m => m.senderId === user.uid)?.id;
 
     return (
-        <div className="max-w-6xl mx-auto p-4 pt-0 grid grid-cols-1 md:grid-cols-3 gap-6 h-[calc(100dvh-100px)] relative">
+        <div className="max-w-6xl mx-auto p-4 pt-0 flex md:grid md:grid-cols-3 gap-6 h-full relative">
             
             {previewImg && (
                 <div onClick={() => setPreviewImg(null)} className="fixed inset-0 z-[200] bg-black bg-opacity-90 flex items-center justify-center p-4 cursor-zoom-out">
@@ -363,7 +363,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                 </div>
             )}
 
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round flex flex-col h-full overflow-hidden transition-colors">
+            <div className={`w-full md:w-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round flex-col h-full overflow-hidden transition-colors ${activeChat ? 'hidden md:flex' : 'flex'}`}>
                 <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0">
                     <h2 className="font-bold mb-3 dark:text-white">加入好友</h2>
                     <div className="flex space-x-2">
@@ -388,12 +388,13 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                 </div>
             </div>
 
-            <div className="md:col-span-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round flex flex-col h-full overflow-hidden transition-colors">
+            <div className={`w-full md:w-auto md:col-span-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round flex-col h-full overflow-hidden transition-colors ${activeChat ? 'flex' : 'hidden md:flex'}`}>
                 {activeChat ? (
                     <>
                         <div className="p-4 border-b border-gray-200 dark:border-gray-700 font-bold flex items-center space-x-2 shrink-0 bg-white dark:bg-gray-800 dark:text-white">
-                            <span className="text-xl">💬</span>
-                            <span>與 {activeChat.name} 的聊天室</span>
+                             <button onClick={() => setActiveChat(null)} className="md:hidden flex items-center justify-center w-8 h-8 mr-2 text-lg bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-gray-200 transition-colors">⬅️</button>
+                                <span className="text-xl">💬</span>
+                                <span className="truncate">與 {activeChat.name} 的聊天室</span>
                         </div>
                         <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900 custom-scrollbar">
                             
