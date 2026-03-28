@@ -1,3 +1,24 @@
+// --- 大頭照動態載入組件 ---
+const UserAvatar = ({ uid, name, className }) => {
+    const [avatar, setAvatar] = useState(null);
+    useEffect(() => {
+        // 從資料庫獲取大頭照
+        window.db.collection('users').doc(uid).get().then(doc => {
+            if (doc.exists && doc.data().avatar) {
+                setAvatar(doc.data().avatar);
+            }
+        }).catch(e => console.log(e));
+    }, [uid]);
+
+    if (avatar) {
+        return <img src={avatar} className={`${className} object-cover`} alt={name} />;
+    }
+    return (
+        <div className={`${className} flex items-center justify-center font-bold text-gray-500 dark:text-gray-300`}>
+            {name ? name.charAt(0) : '?'}
+        </div>
+    );
+};
 // --- 聊天室與系統 ---
 function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     const friends = userProfile.friends || [];
@@ -354,7 +375,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                     {friends.length === 0 ? <p className="text-center text-gray-400 text-sm mt-10">尚無好友，趕快新增吧！</p> : null}
                     {(friends || []).map(f => (
                         <div key={f.uid} onClick={() => { setActiveChat(f); setMessageLimit(5); }} className={`p-3 border-b border-gray-50 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center space-x-3 ${activeChat && activeChat.uid === f.uid ? 'bg-orange-50 dark:bg-gray-700 border-orange-100 dark:border-gray-600' : ''}`}>
-                            <div className="w-10 h-10 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center font-bold text-gray-500 dark:text-gray-300 shrink-0">{f.name.charAt(0)}</div>
+                            <UserAvatar uid={f.uid} name={f.name} className="w-10 h-10 bg-gray-200 dark:bg-gray-600 rounded-full shrink-0" />
                             <div className="flex-grow overflow-hidden">
                                 <div className="font-bold text-sm truncate dark:text-gray-200">{f.name}</div>
                                 <div className="text-xs text-gray-400 truncate">{f.email}</div>
