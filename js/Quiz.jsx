@@ -358,13 +358,18 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
         };
 
         if (task.hasTimer && (!localRec || !localRec.results)) {
-            let timeText = `${task.timeLimit} 分鐘`;
-            if (localRec && localRec.timeRemaining) {
-                timeText = `剩餘約 ${Math.max(1, Math.ceil(localRec.timeRemaining / 60))} 分鐘`;
-            }
-            showConfirm(`⏱ 此任務設有時間限制（${timeText}）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
+            // 判斷是否為全新任務（沒有本地紀錄，或者完全沒填答案）
+            const isNew = !localRec || !localRec.userAnswers || localRec.userAnswers.filter(a => a !== '').length === 0;
+            
+            if (isNew) {
+                // 全新任務，跳出確認提示
+                showConfirm(`⏱ 此任務設有時間限制（${task.timeLimit} 分鐘）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
+                    executeEnter();
+                });
+            } else {
+                // 已經作答到一半，直接進入不跳提示
                 executeEnter();
-            });
+            }
         } else {
             executeEnter();
         }
@@ -846,10 +851,15 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     const handleEnterQuiz = (rec) => {
         if (rec.hasTimer && !rec.results) {
             const isNew = !rec.userAnswers || rec.userAnswers.filter(a => a !== '').length === 0;
-            const timeText = isNew ? `${rec.timeLimit} 分鐘` : `剩餘約 ${Math.max(1, Math.ceil(rec.timeRemaining / 60))} 分鐘`;
-            showConfirm(`⏱ 此測驗設有時間限制（${timeText}）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
+            if (isNew) {
+                // 全新的測驗，跳出確認提示
+                showConfirm(`⏱ 此測驗設有時間限制（${rec.timeLimit} 分鐘）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
+                    onContinueQuiz(rec);
+                });
+            } else {
+                // 已經作答到一半，直接進入不跳提示
                 onContinueQuiz(rec);
-            });
+            }
         } else {
             onContinueQuiz(rec);
         }
@@ -922,15 +932,25 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                                 </div>
                                 <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">{rec.createdAt ? rec.createdAt.toDate().toLocaleString('zh-TW') : ''}</p>
                                 <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1 mb-6">
-                                    <p>題數：{rec.numQuestions || 0}</p>
-                                    {rec.results ? (
-                                        <p className="text-green-700 dark:text-green-400 font-bold">狀態：✅ 已完成 (答對 {rec.results.correctCount}/{rec.results.total})</p>
-                                    ) : (
-                                        rec.userAnswers && rec.userAnswers.filter(a=>a).length > 0 ? 
-                                        <p className="text-orange-600 dark:text-orange-400 font-bold">狀態：📝 進行中 (已填 {rec.userAnswers.filter(a=>a).length})</p> :
-                                        <p className="text-gray-500 dark:text-gray-400 font-bold">狀態：⏳ 尚未作答</p>
-                                    )}
-                                </div>
+    <p>題數：{rec.numQuestions || 0}</p>
+    {rec.results ? (
+        <p className="text-green-700 dark:text-green-400 font-bold">狀態：✅ 已完成 (答對 {rec.results.correctCount}/{rec.results.total})</p>
+    ) : (
+        rec.userAnswers && rec.userAnswers.filter(a=>a).length > 0 ? 
+        <p className="text-orange-600 dark:text-orange-400 font-bold">
+            狀態：📝 進行中 (已填 {rec.userAnswers.filter(a=>a).length})
+            {/* 新增：判斷是否有限時，且剩餘時間存在 */}
+            {rec.hasTimer && rec.timeRemaining !== undefined && (
+                <span className="text-red-500 ml-2 inline-block">
+                    ⏱ 剩 {Math.max(1, Math.ceil(rec.timeRemaining / 60))} 分鐘
+                </span>
+            )}
+        </p> :
+        <p className="text-gray-500 dark:text-gray-400 font-bold">
+            狀態：⏳ 尚未作答
+        </p>
+    )}
+</div>
                             </div>
                             <div className="flex justify-between items-center border-t border-gray-100 dark:border-gray-700 pt-4">
                                 <div className="space-x-2 flex flex-wrap gap-2">
@@ -1248,6 +1268,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             const finalQuestionText = inputType === 'text' ? questionText : '';
             
             const updates = {
+                testName: testName.trim() || '未命名測驗', // 新增這行：儲存修改後的測驗名稱
                 questionFileUrl: finalFileUrl,
                 questionText: finalQuestionText,
                 correctAnswersInput: cleanKey,
@@ -1600,6 +1621,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             <button onClick={handleBackFromEdit} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">← 返回</button>
             <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-2xl no-round border border-gray-200 dark:border-gray-700 mt-6 transition-colors">
                 <h2 className="font-bold mb-6 text-2xl dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">📝 編輯試題</h2>
+                
+                {/* 新增：測驗名稱編輯區塊 */}
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗名稱</label>
+                <input 
+                    type="text" 
+                    placeholder="請輸入測驗名稱..." 
+                    className="w-full mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" 
+                    value={testName} 
+                    onChange={e => setTestName(e.target.value)} 
+                />
                 
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源 (單選)</label>
                 <div className="flex space-x-4 mb-4 dark:text-white">
