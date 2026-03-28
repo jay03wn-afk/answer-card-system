@@ -661,7 +661,7 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                             </button>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-3 gap-2 w-full max-w-[300px] aspect-square bg-[#3a3a3a] p-2 border-4 border-[#1a1a1a]">
+                        <div className="grid grid-cols-3 sm:grid-cols-2 lg:grid-cols-3 gap-1 h-auto overflow-visible pr-1 content-start pb-40">
                             {board.map((block, i) => (
                                 <button 
                                     key={i} 
@@ -1529,8 +1529,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
     return (
         <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in">
 {/* ✅ 1. 將 h-[90dvh] 改為 h-full (手機版撐開)，並加上 overflow-y-auto 讓整個頁面可滑動 */}
-<div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row h-full md:h-[90dvh] overflow-y-auto custom-scrollbar" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>                
-                {/* 關閉與訪客紀錄按鈕 */}
+{/* ✅ 加入 overflow-x-hidden 禁止左右晃動，並確保 box-border 寬度計算正確 */}
+<div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row h-full md:h-[90dvh] overflow-y-auto overflow-x-hidden custom-scrollbar box-border" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>                {/* 關閉與訪客紀錄按鈕 */}
                 <button onClick={handleQuit} className="absolute -top-4 -right-4 bg-red-600 text-white w-10 h-10 border-2 border-white font-black hover:bg-red-500 z-50 transition-colors shadow-lg">✖</button>
                 {isViewingSelf && (
                     <button onClick={() => setVisitorLogOpen(true)} className="absolute -top-4 right-8 bg-blue-600 text-white px-4 h-10 border-2 border-white font-black hover:bg-blue-500 z-50 transition-colors shadow-lg">
@@ -1667,8 +1667,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 {/* 右側：方塊商店與工具列 */}
 {/* 上次加的 h-1/3 md:h-full 不要漏掉，這才是能滑動的關鍵 */}
 {/* ✅ 改用 h-[350px] 確保手機版有固定高度，md:h-full 保持電腦版滿版 */}
-<div className="w-full h-[350px] md:h-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 overflow-hidden">   
-    <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
+{/* ✅ 將 h-[350px] 改為 h-auto 與 min-h-[500px]，確保背景延伸不中斷 */}
+<div className="w-full h-auto min-h-[500px] md:h-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 overflow-visible">    <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
         <span>💰 方塊商店</span>
         <span className="text-sm bg-black bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>
     </h3>
