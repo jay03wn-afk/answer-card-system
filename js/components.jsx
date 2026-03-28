@@ -126,7 +126,7 @@ function AuthScreen({ showAlert }) {
                 />
                 <div className="relative z-10 text-center text-white p-8">
                     <h1 className="text-5xl font-black mb-4 tracking-widest drop-shadow-lg">JJay線上測驗</h1>
-                    <p className="text-xl font-bold text-gray-200 drop-shadow-md">專業雙螢幕版 • 任務導向學習</p>
+                    <p className="text-xl font-bold text-gray-200 drop-shadow-md">任務導向學習</p>
                 </div>
             </div>
 
