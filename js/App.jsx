@@ -96,73 +96,87 @@ function Main() {
         </div>
     );
 
-    if (!user) return (
-        <AuthScreen showAlert={showAlert} />
+    // ✅ 1. 將 Modal 的 UI 提出來變成一個獨立變數，讓他在哪裡都能顯示
+    const SharedModal = modalConfig.isOpen && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black bg-opacity-70 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-gray-800 w-full max-w-sm border-2 border-black dark:border-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(255,255,255,0.2)] no-round p-6 transform transition-all">
+                <h3 className="text-lg font-black mb-2 dark:text-white border-b-2 border-gray-100 dark:border-gray-700 pb-2 tracking-tighter">
+                    {modalConfig.title}
+                </h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-6 font-bold whitespace-pre-wrap leading-relaxed">
+                    {modalConfig.message}
+                </p>
+
+                {modalConfig.type === 'prompt' && (
+                    <input 
+                        autoFocus
+                        className="w-full p-2 mb-6 border-2 border-black dark:border-gray-600 bg-gray-50 dark:bg-gray-900 dark:text-white no-round outline-none focus:bg-white focus:border-blue-500 transition-colors"
+                        value={promptInput}
+                        onChange={(e) => setPromptInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if(e.key === 'Enter') {
+                                const currentInput = promptInput;
+                                const currentConfirm = modalConfig.onConfirm;
+                                closeModal();
+                                setTimeout(() => { if (currentConfirm) currentConfirm(currentInput); }, 50);
+                            }
+                        }}
+                    />
+                )}
+
+                <div className="flex justify-end space-x-3">
+                    {modalConfig.type !== 'alert' && (
+                        <button type="button" onClick={closeModal} className="px-4 py-2 font-bold text-gray-500 hover:text-red-500 transition-colors">
+                            取消
+                        </button>
+                    )}
+                    <button 
+                        type="button"
+                        onClick={() => {
+                            const currentType = modalConfig.type;
+                            const currentConfirm = modalConfig.onConfirm;
+                            const currentInput = promptInput;
+                            closeModal();
+                            setTimeout(() => {
+                                if (currentType === 'prompt' && currentConfirm) {
+                                    currentConfirm(currentInput);
+                                } else if (currentConfirm) {
+                                    currentConfirm();
+                                }
+                            }, 50);
+                        }}
+                        className="bg-black dark:bg-gray-200 text-white dark:text-black px-8 py-2 font-black no-round hover:bg-gray-800 dark:hover:bg-white transition-transform active:scale-95 shadow-md"
+                    >
+                        確定
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 
-    // 新增這段：如果登入成功，但發現沒設定過暱稱（避開預設的'載入中...'狀態），就要求設定
+    // ✅ 2. 修改未登入的判斷：加上 Fragment (<>...</>) 並把 SharedModal 塞進去
+    if (!user) return (
+        <>
+            {SharedModal}
+            <AuthScreen showAlert={showAlert} />
+        </>
+    );
+
+    // ✅ 3. 修改設定暱稱的判斷：一樣把 SharedModal 塞進去
     if (userProfile && userProfile.displayName !== '載入中...' && !userProfile.displayName) {
-        return <ProfileSetup user={user} onComplete={(name) => setUserProfile(prev => ({...prev, displayName: name}))} showAlert={showAlert} />;
+        return (
+            <>
+                {SharedModal}
+                <ProfileSetup user={user} onComplete={(name) => setUserProfile(prev => ({...prev, displayName: name}))} showAlert={showAlert} />
+            </>
+        );
     }
 
     return (
         <div className="h-[100dvh] flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-900 transition-colors relative">       
-            {modalConfig.isOpen && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black bg-opacity-70 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-gray-800 w-full max-w-sm border-2 border-black dark:border-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(255,255,255,0.2)] no-round p-6 transform transition-all">
-                        <h3 className="text-lg font-black mb-2 dark:text-white border-b-2 border-gray-100 dark:border-gray-700 pb-2 tracking-tighter">
-                            {modalConfig.title}
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-300 mb-6 font-bold whitespace-pre-wrap leading-relaxed">
-                            {modalConfig.message}
-                        </p>
-
-                        {modalConfig.type === 'prompt' && (
-                            <input 
-                                autoFocus
-                                className="w-full p-2 mb-6 border-2 border-black dark:border-gray-600 bg-gray-50 dark:bg-gray-900 dark:text-white no-round outline-none focus:bg-white focus:border-blue-500 transition-colors"
-                                value={promptInput}
-                                onChange={(e) => setPromptInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if(e.key === 'Enter') {
-                                        const currentInput = promptInput;
-                                        const currentConfirm = modalConfig.onConfirm;
-                                        closeModal();
-                                        setTimeout(() => { if (currentConfirm) currentConfirm(currentInput); }, 50);
-                                    }
-                                }}
-                            />
-                        )}
-
-                        <div className="flex justify-end space-x-3">
-                            {modalConfig.type !== 'alert' && (
-                                <button type="button" onClick={closeModal} className="px-4 py-2 font-bold text-gray-500 hover:text-red-500 transition-colors">
-                                    取消
-                                </button>
-                            )}
-                            <button 
-                                type="button"
-                                onClick={() => {
-                                    const currentType = modalConfig.type;
-                                    const currentConfirm = modalConfig.onConfirm;
-                                    const currentInput = promptInput;
-                                    closeModal();
-                                    setTimeout(() => {
-                                        if (currentType === 'prompt' && currentConfirm) {
-                                            currentConfirm(currentInput);
-                                        } else if (currentConfirm) {
-                                            currentConfirm();
-                                        }
-                                    }, 50);
-                                }}
-                                className="bg-black dark:bg-gray-200 text-white dark:text-black px-8 py-2 font-black no-round hover:bg-gray-800 dark:hover:bg-white transition-transform active:scale-95 shadow-md"
-                            >
-                                確定
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            
+            {/* ✅ 4. 主畫面這裡原本一大串的 modal 程式碼，現在只需要呼叫 SharedModal 就好了 */}
+            {SharedModal}
 
             {activeTab !== 'activeQuiz' && <TopNav />}
             
