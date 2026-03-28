@@ -870,7 +870,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     const ownedPets = storeItems.filter(i => (mcData.pets || []).includes(i.id));
 
     return (
-        <div className="mc-bg h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar p-4 relative">
+        <div className="mc-bg h-full overflow-y-auto custom-scrollbar p-4 relative">
             
             {showMiniGame && (
         <MinecartGame 
