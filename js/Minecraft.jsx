@@ -1528,8 +1528,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
 
     return (
         <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in">
-            <div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row h-[90dvh]" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>
-                
+{/* ✅ 1. 將 h-[90dvh] 改為 h-full (手機版撐開)，並加上 overflow-y-auto 讓整個頁面可滑動 */}
+<div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row h-full md:h-[90dvh] overflow-y-auto custom-scrollbar" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>                
                 {/* 關閉與訪客紀錄按鈕 */}
                 <button onClick={handleQuit} className="absolute -top-4 -right-4 bg-red-600 text-white w-10 h-10 border-2 border-white font-black hover:bg-red-500 z-50 transition-colors shadow-lg">✖</button>
                 {isViewingSelf && (
