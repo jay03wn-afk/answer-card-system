@@ -716,7 +716,8 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     const [leaderboard, setLeaderboard] = useState([]);
     const [showMiniGame, setShowMiniGame] = useState(false);
     const [showMiningGame, setShowMiningGame] = useState(false); 
-    
+    const [showSandbox, setShowSandbox] = useState(false);
+
     const mcData = userProfile.mcData || { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
     const expToNextLevel = mcData.level * 20;
     
@@ -890,6 +891,16 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                     onQuit={() => setShowMiningGame(false)}
                 />
             )}
+            {showSandbox && (
+                <SandboxGame 
+                  user={user}
+                 userProfile={userProfile}
+                    mcData={mcData}
+                 updateMcData={updateMcData}
+                    showAlert={showAlert}
+                    onQuit={() => setShowSandbox(false)}
+             />
+            )}
 
             <div className="max-w-5xl mx-auto mc-ui p-6 flex flex-col space-y-6 bg-opacity-90 dark:bg-opacity-80">
                 
@@ -917,16 +928,19 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                     <div className="space-y-6 lg:col-span-1">
                         <div className="mc-panel-dark text-white">
                             <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300 flex justify-between items-center">
-                                <span>🏡 你的家</span>
-                                <div className="flex space-x-2">
-                                    <button onClick={() => setShowMiningGame(true)} className="bg-yellow-600 hover:bg-yellow-500 text-white text-xs px-2 py-1 border-2 border-yellow-800 font-bold transition-colors">
-                                        ⛏️ 挖礦
-                                    </button>
-                                    <button onClick={() => setShowMiniGame(true)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-2 py-1 border-2 border-blue-800 font-bold transition-colors">
-                                    🛻 礦車(耗1🍖)
-                                </button>
-                                </div>
-                            </h2>
+    <span>🏡 你的家</span>
+    <div className="flex space-x-2">
+        <button onClick={() => setShowSandbox(true)} className="bg-green-600 hover:bg-green-500 text-white text-xs px-2 py-1 border-2 border-green-800 font-bold transition-colors">
+            🏗️ 蓋房子
+        </button>
+        <button onClick={() => setShowMiningGame(true)} className="bg-yellow-600 hover:bg-yellow-500 text-white text-xs px-2 py-1 border-2 border-yellow-800 font-bold transition-colors">
+            ⛏️ 挖礦
+        </button>
+        <button onClick={() => setShowMiniGame(true)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-2 py-1 border-2 border-blue-800 font-bold transition-colors">
+            🛻 礦車探險
+        </button>
+    </div>
+</h2>
                             <div className="p-4 mc-bg border-4 border-gray-800 mb-4 h-48 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
                                 <McImg src={imgSteve} fallback="🧍‍♂️" className="w-16 h-16 pixelated shadow-lg border border-black mb-2" />
                                 
@@ -983,6 +997,552 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
 
                 </div>
             </div>
+        </div>
+    );
+}
+// --- 2D 沙盒建築遊戲組件 ---
+// --- 2D 沙盒建築遊戲組件 ---
+// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
+function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQuit }) {
+    const COLS = 20;
+    const ROWS = 12;
+    const TOTAL_CELLS = COLS * ROWS;
+    const TODAY = new Date().toISOString().split('T')[0];
+
+    // --- 100+ 方塊資料庫 (依稀有度與維度定價) ---
+    const CATEGORIES = ['全部', '基礎與礦石', '原木與建材', '地獄(需解鎖)', '末地(需解鎖)', '裝飾與植物'];
+    const [activeCategory, setActiveCategory] = useState('全部');
+
+    const BLOCK_TYPES = [
+        // 工具
+        { id: 'erase', name: '橡皮擦 (拆除)', cat: '工具', img: null, price: 0 },
+        { id: 'sign', name: '告示牌 (留言)', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png', price: 10, special: true, desc: '點擊空地留言(10💎/則，上限5則)' },
+        { id: 'poppy', name: '送小花 (拜訪專用)', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png', price: 0, special: true, desc: '參觀時送給好友，雙方皆可得鑽石！' },
+        
+        // 基礎與礦石 (10-500💎)
+        { id: 'dirt', name: '泥土', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/dirt.png', price: 1 },
+        { id: 'grass_block_side', name: '草方塊', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/grass_block_side.png', price: 5 },
+        { id: 'stone', name: '石頭', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png', price: 5 },
+        { id: 'cobblestone', name: '鵝卵石', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/cobblestone.png', price: 2 },
+        { id: 'sand', name: '沙子', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/sand.png', price: 3 },
+        { id: 'gravel', name: '礫石', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/gravel.png', price: 3 },
+        { id: 'coal_block', name: '煤炭磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/coal_block.png', price: 20 },
+        { id: 'iron_block', name: '鐵磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/iron_block.png', price: 50 },
+        { id: 'gold_block', name: '金磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/gold_block.png', price: 100 },
+        { id: 'lapis_block', name: '青金石磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/lapis_block.png', price: 80 },
+        { id: 'emerald_block', name: '綠寶石磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/emerald_block.png', price: 300 },
+        { id: 'diamond_block', name: '鑽石磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/diamond_block.png', price: 500 },
+        { id: 'obsidian', name: '黑曜石', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/obsidian.png', price: 150 },
+
+        // 原木與建材 (10-80💎)
+        ...['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak'].flatMap(wood => [
+            { id: `${wood}_log`, name: `${wood}原木`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood}_log.png`, price: 10 },
+            { id: `${wood}_planks`, name: `${wood}木板`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood}_planks.png`, price: 5 }
+        ]),
+        { id: 'glass', name: '玻璃', cat: '原木與建材', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/glass.png', price: 15 },
+        { id: 'bricks', name: '磚塊', cat: '原木與建材', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/bricks.png', price: 20 },
+        { id: 'bookshelf', name: '書架', cat: '原木與建材', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/bookshelf.png', price: 30 },
+        { id: 'quartz_block', name: '石英磚', cat: '原木與建材', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/quartz_block.png', price: 40 },
+
+        // 地獄 (30-100💎)
+        { id: 'netherrack', name: '地獄石', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/netherrack.png', price: 10 },
+        { id: 'soul_sand', name: '靈魂沙', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/soul_sand.png', price: 20 },
+        { id: 'glowstone', name: '螢光石', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/glowstone.png', price: 50 },
+        { id: 'magma_block', name: '岩漿塊', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/magma_block.png', price: 40 },
+        { id: 'nether_bricks', name: '地獄磚', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_bricks.png', price: 30 },
+        { id: 'crimson_nylium', name: '緋紅菌絲體', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/crimson_nylium.png', price: 40 },
+        { id: 'warped_nylium', name: '扭曲菌絲體', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/warped_nylium.png', price: 40 },
+
+        // 末地 (50-200💎)
+        { id: 'end_stone', name: '末地石', cat: '末地(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/end_stone.png', price: 50 },
+        { id: 'purpur_block', name: '紫珀塊', cat: '末地(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/purpur_block.png', price: 80 },
+        { id: 'end_stone_bricks', name: '末地石磚', cat: '末地(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/end_stone_bricks.png', price: 60 },
+        { id: 'chorus_flower', name: '紫頌花', cat: '末地(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/chorus_flower.png', price: 100 },
+
+        // 裝飾與植物
+        { id: 'crafting_table', name: '工作台', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/crafting_table_front.png', price: 15 },
+        { id: 'furnace', name: '熔爐', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/furnace_front.png', price: 20 },
+        { id: 'tnt', name: 'TNT', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/tnt_side.png', price: 100 },
+        { id: 'oak_leaves', name: '橡木樹葉', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/oak_leaves.png', price: 5 },
+        { id: 'cactus', name: '仙人掌', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/cactus_side.png', price: 15 },
+        { id: 'pumpkin', name: '南瓜', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/pumpkin_side.png', price: 20 },
+        { id: 'melon_side', name: '西瓜', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/melon_side.png', price: 20 }
+    ];
+
+    const DIMENSIONS = {
+        overworld: { id: 'overworld', name: '主世界', bg: '#87CEEB', cost: 0, requireStr: '' },
+        nether: { id: 'nether', name: '地獄', bg: '#2b0000', cost: 1000, requireStr: 'unlockedNether' },
+        end: { id: 'end', name: '末地', bg: '#10002b', cost: 2000, requireStr: 'unlockedEnd' }
+    };
+
+    // --- 狀態初始化 ---
+    const [currentDimension, setCurrentDimension] = useState('overworld');
+    const [localInventory, setLocalInventory] = useState(() => mcData.inventory || { dirt: 50 });
+    const [grids, setGrids] = useState({
+        overworld: mcData.sandbox_overworld || mcData.sandboxGrid || Array(TOTAL_CELLS).fill(null),
+        nether: mcData.sandbox_nether || Array(TOTAL_CELLS).fill(null),
+        end: mcData.sandbox_end || Array(TOTAL_CELLS).fill(null)
+    });
+    const [specials, setSpecials] = useState({
+        overworld: mcData.specials_overworld || {},
+        nether: mcData.specials_nether || {},
+        end: mcData.specials_end || {}
+    });
+
+    const [selectedBlock, setSelectedBlock] = useState('dirt');
+    const [viewingFriend, setViewingFriend] = useState(null); 
+    const [friendGrids, setFriendGrids] = useState({});
+    const [friendSpecials, setFriendSpecials] = useState({});
+    
+    const [buyModal, setBuyModal] = useState(null); // { block, amount }
+    const [signModal, setSignModal] = useState(null); // { index }
+    const [visitorLogOpen, setVisitorLogOpen] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const isViewingSelf = viewingFriend === null;
+    const activeGrid = isViewingSelf ? grids[currentDimension] : (friendGrids[currentDimension] || Array(TOTAL_CELLS).fill(null));
+    const activeSpecials = isViewingSelf ? specials[currentDimension] : (friendSpecials[currentDimension] || {});
+
+    // --- 切換參觀好友與紀錄到訪 ---
+    const handleViewChange = async (e) => {
+        const targetUid = e.target.value;
+        if (targetUid === 'self') {
+            setViewingFriend(null);
+            return;
+        }
+        
+        const friend = (userProfile.friends || []).find(f => f.uid === targetUid);
+        if (friend) {
+            setViewingFriend(friend);
+            setCurrentDimension('overworld'); // 預設看主世界
+            try {
+                const doc = await window.db.collection('users').doc(targetUid).get();
+                if (doc.exists) {
+                    const data = doc.data().mcData || {};
+                    setFriendGrids({
+                        overworld: data.sandbox_overworld || data.sandboxGrid || Array(TOTAL_CELLS).fill(null),
+                        nether: data.sandbox_nether || Array(TOTAL_CELLS).fill(null),
+                        end: data.sandbox_end || Array(TOTAL_CELLS).fill(null)
+                    });
+                    setFriendSpecials({
+                        overworld: data.specials_overworld || {},
+                        nether: data.specials_nether || {},
+                        end: data.specials_end || {}
+                    });
+
+                    // 記錄到訪 (添加至對方的 visitorLog)
+                    const newLog = { uid: user.uid, name: userProfile.displayName, time: Date.now() };
+                    let currentLog = data.visitorLog || [];
+                    if (currentLog.length === 0 || currentLog[0].uid !== user.uid || (Date.now() - currentLog[0].time > 3600000)) {
+                        window.db.collection('users').doc(targetUid).update({
+                            'mcData.visitorLog': [newLog, ...currentLog].slice(0, 20)
+                        }).catch(err => console.log("寫入拜訪紀錄失敗", err));
+                    }
+                }
+            } catch(err) {
+                showAlert("無法讀取好友的房子！");
+            }
+        }
+    };
+
+    // --- 網格點擊邏輯 (建築、送花、留言) ---
+    const handleCellClick = async (index) => {
+        const hasSpecial = activeSpecials[index];
+
+        if (isViewingSelf) {
+            // [自己家] 點擊小花：收成鑽石
+            if (hasSpecial && hasSpecial.type === 'poppy') {
+                const newSpecials = { ...specials };
+                delete newSpecials[currentDimension][index];
+                setSpecials(newSpecials);
+                updateMcData({ diamonds: mcData.diamonds + 3 }, true);
+                return showAlert(`🌺 你收起了 ${hasSpecial.fromName} 送的小花！\n獲得 3 💎 獎勵！`);
+            }
+            // [自己家] 點擊告示牌：閱讀
+            if (hasSpecial && hasSpecial.type === 'sign') {
+                if (selectedBlock === 'erase') {
+                    // 拆除告示牌
+                    const newSpecials = { ...specials };
+                    delete newSpecials[currentDimension][index];
+                    setSpecials(newSpecials);
+                } else {
+                    return showAlert(`📜 告示牌留言：\n\n「${hasSpecial.text}」`);
+                }
+                return;
+            }
+
+            // [自己家] 放置告示牌
+            if (selectedBlock === 'sign') {
+                if (activeGrid[index]) return showAlert('❌ 告示牌只能插在空地上！');
+                const signCount = Object.values(specials[currentDimension]).filter(s => s.type === 'sign').length;
+                if (signCount >= 5) return showAlert('❌ 每個維度最多只能放置 5 個告示牌！');
+                if (mcData.diamonds < 10) return showAlert('💎 放置告示牌需要 10 鑽石！');
+                return setSignModal(index);
+            }
+
+            // [自己家] 建築與拆除 (包含庫存計算)
+            const currentBlock = grids[currentDimension][index];
+            if (currentBlock === selectedBlock && selectedBlock !== 'erase') return; 
+
+            const newGrid = [...grids[currentDimension]];
+            const newInv = { ...localInventory };
+
+            if (selectedBlock !== 'erase' && selectedBlock !== 'sign' && selectedBlock !== 'poppy') {
+                if ((newInv[selectedBlock] || 0) <= 0) return showAlert(`❌ 庫存不足，請先至右側商店購買！`);
+                newInv[selectedBlock] -= 1; 
+            }
+
+            if (currentBlock && currentBlock !== 'erase') {
+                newInv[currentBlock] = (newInv[currentBlock] || 0) + 1; // 退還
+            }
+
+            newGrid[index] = selectedBlock === 'erase' ? null : selectedBlock;
+            setGrids({ ...grids, [currentDimension]: newGrid });
+            setLocalInventory(newInv);
+
+        } else {
+            // [好友家] 閱讀告示牌
+            if (hasSpecial && hasSpecial.type === 'sign') {
+                return showAlert(`📜 ${viewingFriend.name} 的告示牌：\n\n「${hasSpecial.text}」`);
+            }
+            
+            // [好友家] 送花邏輯
+            if (selectedBlock === 'poppy') {
+                if (activeGrid[index] || hasSpecial) return showAlert('❌ 小花只能種在空地上喔！');
+                
+                let dailyData = mcData.dailyFlowers || { date: '', sentTo: [] };
+                if (dailyData.date !== TODAY) dailyData = { date: TODAY, sentTo: [] };
+
+                if (dailyData.sentTo.length >= 5) return showAlert('⚠️ 今日送花次數已達上限 (5/5)！');
+                if (dailyData.sentTo.includes(viewingFriend.uid)) return showAlert('⚠️ 你今天已經送過花給這位好友了！');
+
+                try {
+                    // 更新對方資料
+                    await window.db.collection('users').doc(viewingFriend.uid).update({
+                        [`mcData.specials_${currentDimension}.${index}`]: { type: 'poppy', fromUid: user.uid, fromName: userProfile.displayName }
+                    });
+                    
+                    // 更新自己畫面上的 FriendSpecials 以即時顯示
+                    setFriendSpecials(prev => ({
+                        ...prev,
+                        [currentDimension]: { ...prev[currentDimension], [index]: { type: 'poppy', fromUid: user.uid, fromName: userProfile.displayName } }
+                    }));
+
+                    // 扣除次數與發送獎勵給自己
+                    dailyData.sentTo.push(viewingFriend.uid);
+                    updateMcData({ dailyFlowers: dailyData, diamonds: mcData.diamonds + 1 }, true);
+                    showAlert('🌺 送花成功！對方收到後可獲得 3 💎，你也獲得了 1 💎 的熱心獎勵！');
+                } catch(e) {
+                    showAlert('送花失敗：' + e.message);
+                }
+            }
+        }
+    };
+
+    // --- 放置告示牌 ---
+    const submitSign = () => {
+        const text = document.getElementById('signInput').value.trim();
+        if (!text) return setSignModal(null);
+        if (text.length > 30) return showAlert('❌ 留言太長了，最多 30 個字！');
+        
+        updateMcData({ diamonds: mcData.diamonds - 10 }, true);
+        setSpecials(prev => ({
+            ...prev,
+            [currentDimension]: { ...prev[currentDimension], [signModal]: { type: 'sign', text } }
+        }));
+        setSignModal(null);
+    };
+
+    // --- 解鎖維度 ---
+    const handleUnlockDimension = (dimKey) => {
+        const dim = DIMENSIONS[dimKey];
+        if (mcData.diamonds < dim.cost) return showAlert(`💎 鑽石不足！解鎖需要 ${dim.cost} 💎`);
+        updateMcData({
+            diamonds: mcData.diamonds - dim.cost,
+            [dim.requireStr]: true
+        }, true);
+        showAlert(`🎉 恭喜！成功解鎖【${dim.name}】維度！`);
+    };
+
+    // --- 儲存自己的房子與庫存 ---
+    const handleSave = () => {
+        setIsSaving(true);
+        window.db.collection('users').doc(user.uid).update({
+            'mcData.sandbox_overworld': grids.overworld,
+            'mcData.sandbox_nether': grids.nether,
+            'mcData.sandbox_end': grids.end,
+            'mcData.specials_overworld': specials.overworld,
+            'mcData.specials_nether': specials.nether,
+            'mcData.specials_end': specials.end,
+            'mcData.inventory': localInventory
+        }).then(() => {
+            showAlert("✅ 所有維度的建築與庫存皆已儲存！");
+            updateMcData({ 
+                sandbox_overworld: grids.overworld, sandbox_nether: grids.nether, sandbox_end: grids.end,
+                specials_overworld: specials.overworld, specials_nether: specials.nether, specials_end: specials.end,
+                inventory: localInventory 
+            }, true); 
+        }).catch(e => showAlert('儲存失敗：' + e.message))
+          .finally(() => setIsSaving(false));
+    };
+
+    // --- 購買方塊邏輯 ---
+    const handleConfirmBuy = () => {
+        const amt = parseInt(buyModal.amount);
+        if (isNaN(amt) || amt <= 0) return showAlert("數量無效！");
+        
+        const totalCost = buyModal.block.price * amt;
+        if (mcData.diamonds < totalCost) return showAlert("💎 鑽石不足！");
+
+        const newInv = { ...localInventory, [buyModal.block.id]: (localInventory[buyModal.block.id] || 0) + amt };
+        setLocalInventory(newInv);
+        updateMcData({ diamonds: mcData.diamonds - totalCost, inventory: newInv }, true);
+        
+        showAlert(`✅ 成功購買 ${amt} 個 ${buyModal.block.name}！`);
+        setBuyModal(null);
+    };
+
+    // --- UI 過濾 ---
+    const displayedBlocks = BLOCK_TYPES.filter(b => {
+        if (activeCategory === '全部') return !b.special;
+        if (activeCategory === '地獄(需解鎖)') return b.cat === '地獄(需解鎖)' && mcData.unlockedNether;
+        if (activeCategory === '末地(需解鎖)') return b.cat === '末地(需解鎖)' && mcData.unlockedEnd;
+        return b.cat === activeCategory;
+    });
+
+    return (
+        <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in">
+            <div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row h-[90dvh]" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>
+                
+                {/* 關閉與訪客紀錄按鈕 */}
+                <button onClick={onQuit} className="absolute -top-4 -right-4 bg-red-600 text-white w-10 h-10 border-2 border-white font-black hover:bg-red-500 z-50 transition-colors shadow-lg">✖</button>
+                {isViewingSelf && (
+                    <button onClick={() => setVisitorLogOpen(true)} className="absolute -top-4 right-8 bg-blue-600 text-white px-4 h-10 border-2 border-white font-black hover:bg-blue-500 z-50 transition-colors shadow-lg">
+                        👣 到訪紀錄
+                    </button>
+                )}
+
+                {/* 左側：畫布區 */}
+                <div className="flex-grow flex flex-col items-center justify-center p-2 relative w-full md:w-3/4">
+                    
+                    {/* 頂部控制列 */}
+                    <div className="w-full flex flex-col sm:flex-row justify-between items-center mb-2 bg-black bg-opacity-60 p-2 text-white font-bold gap-2">
+                        <div className="flex items-center space-x-2">
+                            <span>{isViewingSelf ? `🏠 我的基地` : `👀 ${viewingFriend.name} 的家`}</span>
+                            
+                            <select onChange={(e) => setCurrentDimension(e.target.value)} value={currentDimension} className="bg-gray-800 text-white border border-gray-500 px-2 py-1 outline-none text-sm font-bold">
+                                <option value="overworld">🌍 主世界</option>
+                                {(isViewingSelf ? mcData.unlockedNether : (viewingFriend?.mcData?.unlockedNether)) && <option value="nether">🔥 地獄</option>}
+                                {(isViewingSelf ? mcData.unlockedEnd : (viewingFriend?.mcData?.unlockedEnd)) && <option value="end">🌌 末地</option>}
+                            </select>
+                        </div>
+
+                        <select onChange={handleViewChange} className="bg-blue-900 text-white border border-blue-500 px-2 py-1 outline-none text-sm font-bold w-full sm:w-auto">
+                            <option value="self">🏠 回到我的家</option>
+                            {(userProfile.friends || []).map(f => <option key={f.uid} value={f.uid}>👀 去 {f.name} 家</option>)}
+                        </select>
+                    </div>
+
+                    {/* 2D 網格容器 */}
+                    <div className="w-full flex-grow flex items-center justify-center overflow-hidden bg-black bg-opacity-30 p-1 border-2 border-black shadow-inner">
+                        <div 
+                            className="grid w-full max-h-full" 
+                            style={{ 
+                                backgroundColor: DIMENSIONS[currentDimension].bg,
+                                gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
+                                maxWidth: `calc((100vh - 180px) * (${COLS}/${ROWS}))` 
+                            }}
+                        >
+                            {activeGrid.map((cellId, i) => {
+                                const blockInfo = BLOCK_TYPES.find(b => b.id === cellId);
+                                const specialInfo = activeSpecials[i];
+                                const isSpecialSign = specialInfo?.type === 'sign';
+                                const isSpecialPoppy = specialInfo?.type === 'poppy';
+
+                                return (
+                                    <div 
+                                        key={i} 
+                                        onPointerDown={(e) => { e.preventDefault(); handleCellClick(i); }}
+                                        onPointerEnter={(e) => { if (e.buttons === 1) handleCellClick(i); }} 
+                                        className={`w-full aspect-square border-[0.5px] border-black border-opacity-20 relative cursor-crosshair ${!cellId && !specialInfo ? 'hover:bg-white hover:bg-opacity-30' : ''}`}
+                                        style={{ touchAction: 'none' }}
+                                    >
+                                        {blockInfo && blockInfo.img && <McImg src={blockInfo.img} className="w-full h-full object-cover pixelated" />}
+                                        
+                                        {/* 渲染告示牌或小花 */}
+                                        {isSpecialSign && (
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" />
+                                            </div>
+                                        )}
+                                        {isSpecialPoppy && (
+                                            <div className="absolute inset-0 flex flex-col items-center justify-end pb-1">
+                                                <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-bounce" />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {isViewingSelf && (
+                        <button onClick={handleSave} disabled={isSaving} className="mt-3 bg-green-600 hover:bg-green-500 text-white font-black px-8 py-2 border-2 border-black shadow-lg w-full sm:w-auto shrink-0">
+                            {isSaving ? '儲存中...' : '💾 儲存所有進度'}
+                        </button>
+                    )}
+                </div>
+
+                {/* 右側：商店與工具列 */}
+                <div className="w-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700">
+                    <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
+                        <span>📦 商店背包</span>
+                        <span className="text-sm bg-black bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>
+                    </h3>
+
+                    {/* 分類按鈕與維度解鎖 */}
+                    {isViewingSelf ? (
+                        <div className="flex flex-wrap gap-1 mb-2 shrink-0 border-b border-gray-600 pb-2">
+                            {CATEGORIES.map(cat => (
+                                <button key={cat} onClick={() => setActiveCategory(cat)} className={`text-[10px] px-2 py-1 font-bold ${activeCategory === cat ? 'bg-yellow-500 text-black' : 'bg-gray-600 text-white hover:bg-gray-500'}`}>
+                                    {cat.replace('(需解鎖)', '')}
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="bg-blue-900 bg-opacity-50 border border-blue-500 p-2 mb-2 shrink-0">
+                            <p className="text-xs text-blue-200 font-bold mb-2">參觀模式工具：</p>
+                            <button onClick={() => setSelectedBlock('poppy')} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'poppy' ? 'bg-pink-500 border-pink-700 text-white' : 'bg-gray-700 text-gray-300 border-gray-500 hover:bg-gray-600'}`}>
+                                🌺 送小花 (拿在手上)
+                            </button>
+                        </div>
+                    )}
+
+                    {/* 未解鎖提示 */}
+                    {isViewingSelf && activeCategory === '地獄(需解鎖)' && !mcData.unlockedNether && (
+                        <div className="flex flex-col items-center justify-center p-4 bg-red-900 bg-opacity-50 border border-red-500 mt-2">
+                            <p className="text-xs text-red-200 mb-2 font-bold text-center">解鎖地獄維度與專屬方塊</p>
+                            <button onClick={() => handleUnlockDimension('nether')} className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 border border-red-800">花費 1000 💎 解鎖</button>
+                        </div>
+                    )}
+                    {isViewingSelf && activeCategory === '末地(需解鎖)' && !mcData.unlockedEnd && (
+                        <div className="flex flex-col items-center justify-center p-4 bg-purple-900 bg-opacity-50 border border-purple-500 mt-2">
+                            <p className="text-xs text-purple-200 mb-2 font-bold text-center">解鎖末地維度與專屬方塊</p>
+                            <button onClick={() => handleUnlockDimension('end')} className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold px-4 py-2 border border-purple-800">花費 2000 💎 解鎖</button>
+                        </div>
+                    )}
+
+                    {/* 方塊列表 */}
+                    {isViewingSelf && (
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-1 overflow-y-auto custom-scrollbar pr-1 flex-grow content-start">
+                            
+                            {/* 工具列始終顯示在頂部 (如果是選全部) */}
+                            {activeCategory === '全部' && BLOCK_TYPES.filter(b => b.special || b.id === 'erase').map(block => {
+                                const isSelected = selectedBlock === block.id;
+                                return (
+                                    <div key={block.id} className={`flex flex-col items-center p-1 border transition-all ${isSelected ? 'border-yellow-400 bg-yellow-400 bg-opacity-20 scale-105 z-10' : 'border-gray-600 bg-gray-800'}`}>
+                                        {block.img ? <McImg src={block.img} className="w-6 h-6 pixelated mb-1 drop-shadow-md" fallback="🔧"/> : <span className="w-6 h-6 flex items-center justify-center text-lg mb-1">🧹</span>}
+                                        <span className="text-[9px] text-white font-bold mb-1 text-center w-full truncate">{block.name}</span>
+                                        <button onClick={() => setSelectedBlock(block.id)} className={`text-[9px] w-full py-0.5 font-bold border ${isSelected ? 'bg-yellow-500 text-black border-yellow-600' : 'bg-gray-600 text-white border-gray-500'}`}>
+                                            {isSelected ? '使用中' : '選擇'}
+                                        </button>
+                                    </div>
+                                );
+                            })}
+
+                            {displayedBlocks.map(block => {
+                                const count = localInventory[block.id] || 0;
+                                const isSelected = selectedBlock === block.id;
+                                return (
+                                    <div key={block.id} className={`flex flex-col items-center p-1 border transition-all ${isSelected ? 'border-yellow-400 bg-yellow-400 bg-opacity-20 scale-105 z-10' : 'border-gray-600 bg-gray-800'}`}>
+                                        <McImg src={block.img} className="w-6 h-6 pixelated mb-1 drop-shadow-md" fallback="📦"/>
+                                        <span className="text-[9px] text-white font-bold mb-1 text-center w-full truncate" title={block.name}>{block.name}</span>
+                                        <span className="text-[8px] text-orange-300 font-bold mb-1 bg-black bg-opacity-40 px-1 rounded-full w-full text-center">存: {count}</span>
+                                        
+                                        <div className="flex w-full space-x-0.5 mt-auto">
+                                            <button onClick={() => setSelectedBlock(block.id)} className={`text-[8px] flex-1 py-1 font-bold ${isSelected ? 'bg-yellow-500 text-black' : 'bg-gray-600 text-white hover:bg-gray-500'}`}>
+                                                {isSelected ? '拿' : '選'}
+                                            </button>
+                                            <button onClick={() => setBuyModal({ block, amount: 10 })} className="text-[8px] flex-1 py-1 font-bold bg-blue-600 hover:bg-blue-500 text-white truncate" title={`購買(${block.price}💎)`}>
+                                                買
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* --- 購買彈窗 (網頁內 Modal) --- */}
+            {buyModal && (
+                <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
+                    <div className="bg-[#333] border-4 border-gray-600 p-6 w-full max-w-xs shadow-2xl flex flex-col items-center">
+                        <h3 className="text-white font-bold mb-4 text-lg">購買 【{buyModal.block.name}】</h3>
+                        <McImg src={buyModal.block.img} className="w-16 h-16 pixelated mb-4 drop-shadow-lg" />
+                        <div className="flex items-center space-x-4 mb-4">
+                            <button onClick={() => setBuyModal({...buyModal, amount: Math.max(1, buyModal.amount - 10)})} className="bg-gray-700 text-white w-8 h-8 font-black border-2 border-gray-500">-</button>
+                            <input 
+                                type="number" 
+                                value={buyModal.amount} 
+                                onChange={(e) => setBuyModal({...buyModal, amount: Math.max(1, parseInt(e.target.value) || 1)})}
+                                className="w-16 text-center font-bold p-1 border-2 border-gray-500 bg-gray-900 text-white outline-none"
+                            />
+                            <button onClick={() => setBuyModal({...buyModal, amount: buyModal.amount + 10})} className="bg-gray-700 text-white w-8 h-8 font-black border-2 border-gray-500">+</button>
+                        </div>
+                        <p className="text-yellow-400 font-bold mb-6">總價：{buyModal.block.price * buyModal.amount} 💎</p>
+                        <div className="flex space-x-2 w-full">
+                            <button onClick={() => setBuyModal(null)} className="flex-1 bg-gray-500 hover:bg-gray-400 text-white font-bold py-2 border-2 border-black">取消</button>
+                            <button onClick={handleConfirmBuy} className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 border-2 border-black">確認購買</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- 告示牌留言彈窗 --- */}
+            {signModal !== null && (
+                <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
+                    <div className="bg-[#d4a373] border-8 border-[#8b5a2b] p-6 w-full max-w-sm shadow-2xl flex flex-col items-center pixelated-border">
+                        <h3 className="text-[#3e2723] font-black mb-4 text-lg">✏️ 留下告示牌訊息</h3>
+                        <textarea 
+                            id="signInput"
+                            placeholder="請輸入留言 (最多30字)..." 
+                            maxLength="30"
+                            className="w-full h-24 p-2 bg-[#faedcd] border-2 border-[#8b5a2b] text-[#3e2723] font-bold outline-none resize-none mb-4 custom-scrollbar"
+                        ></textarea>
+                        <p className="text-[#3e2723] font-bold text-xs mb-4">消耗：10 💎</p>
+                        <div className="flex space-x-2 w-full">
+                            <button onClick={() => setSignModal(null)} className="flex-1 bg-gray-500 hover:bg-gray-400 text-white font-bold py-2 border-2 border-black">取消</button>
+                            <button onClick={submitSign} className="flex-1 bg-green-700 hover:bg-green-600 text-white font-bold py-2 border-2 border-black">插上告示牌</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- 訪客紀錄彈窗 --- */}
+            {visitorLogOpen && (
+                <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
+                    <div className="bg-[#333] border-4 border-gray-600 p-4 w-full max-w-sm shadow-2xl flex flex-col h-[60dvh]">
+                        <div className="flex justify-between items-center mb-4 border-b-2 border-gray-600 pb-2">
+                            <h3 className="text-white font-bold text-lg">👣 基地到訪紀錄</h3>
+                            <button onClick={() => setVisitorLogOpen(false)} className="text-red-400 hover:text-red-300 font-bold">✖ 關閉</button>
+                        </div>
+                        <div className="flex-grow overflow-y-auto custom-scrollbar space-y-2">
+                            {(!mcData.visitorLog || mcData.visitorLog.length === 0) ? (
+                                <p className="text-gray-400 text-center text-sm mt-10">尚無訪客紀錄，多邀請好友來參觀吧！</p>
+                            ) : (
+                                mcData.visitorLog.map((log, i) => (
+                                    <div key={i} className="bg-gray-800 p-2 border-l-4 border-blue-500 flex justify-between items-center">
+                                        <span className="text-blue-300 font-bold text-sm">{log.name}</span>
+                                        <span className="text-gray-500 text-xs">{new Date(log.time).toLocaleString('zh-TW', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
