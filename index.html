@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JJay線上測驗 - 專業雙螢幕版</title>
+    
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: {} }
+        }
+    </script>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        .no-round { border-radius: 2px !important; }
+        .break-avoid { break-inside: avoid; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        input, textarea, button, select { font-size: 16px !important; }
+        .locked-btn { cursor: not-allowed; opacity: 0.5; filter: grayscale(100%); }
+        .pixelated { image-rendering: pixelated; }
+        
+        .mc-bg {
+            background-color: #7d7d7d;
+            background-image: url('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png');
+            background-size: 64px;
+            image-rendering: pixelated;
+        }
+        .mc-ui {
+            background-color: #c6c6c6;
+            border: 4px solid;
+            border-top-color: #ffffff;
+            border-left-color: #ffffff;
+            border-bottom-color: #555555;
+            border-right-color: #555555;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .mc-panel-dark {
+            background-color: rgba(0, 0, 0, 0.65);
+            border: 2px solid #111;
+            box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.15);
+            padding: 16px;
+        }
+        .mc-btn {
+            background-color: #c6c6c6;
+            border: 4px solid;
+            border-top-color: #ffffff;
+            border-left-color: #ffffff;
+            border-bottom-color: #555555;
+            border-right-color: #555555;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .mc-btn:active {
+            border-top-color: #555555;
+            border-left-color: #555555;
+            border-bottom-color: #ffffff;
+            border-right-color: #ffffff;
+            background-color: #b0b0b0;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100 font-sans h-[100dvh] overflow-hidden transition-colors duration-200">
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel" src="./js/firebase-config.js"></script>
+    <script type="text/babel" src="./js/components.jsx"></script>
+    <script type="text/babel" src="./js/Minecraft.jsx"></script>
+    <script type="text/babel" src="./js/Chat.jsx"></script>
+    <script type="text/babel" src="./js/Quiz.jsx"></script>
+    <script type="text/babel" src="./js/App.jsx"></script>
+</body>
+</html>

@@ -1,0 +1,2198 @@
+// --- 新增：富文本/圖片輸入組件 ---
+function RichInput({ label, text, setText, image, setImage, maxLength = 300, showAlert }) {
+    const handlePaste = (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                e.preventDefault();
+                const file = items[i].getAsFile();
+                handleImageUpload(file);
+                break;
+            }
+        }
+    };
+
+    const handleImageUpload = (file) => {
+        if (file.size > 10 * 1024 * 1024) {
+            return showAlert("❌ 圖片大小不能超過 10MB！");
+        }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let w = img.width, h = img.height;
+                const MAX_DIM = 800; // 壓縮圖片避免超過資料庫單筆1MB限制
+                if (w > h && w > MAX_DIM) { h *= MAX_DIM / w; w = MAX_DIM; }
+                else if (h > MAX_DIM) { w *= MAX_DIM / h; h = MAX_DIM; }
+                canvas.width = w; canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+                
+                if(compressedBase64.length > 800000) {
+                    return showAlert("❌ 圖片解析度過高，壓縮後仍過大，請裁切或選擇更小的圖片。");
+                }
+                setImage(compressedBase64);
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    };
+
+    return (
+        <div className="mb-4">
+            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">{label} (最多 {maxLength} 字)</label>
+            <div className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 relative no-round">
+                <textarea
+                    className="w-full p-3 outline-none bg-transparent text-black dark:text-white resize-none custom-scrollbar text-sm"
+                    rows="3"
+                    placeholder="輸入文字，或直接在這裡貼上圖片 (Ctrl+V)..."
+                    value={text}
+                    onChange={e => setText(e.target.value.slice(0, maxLength))}
+                    onPaste={handlePaste}
+                />
+                <div className="absolute bottom-1 right-2 text-xs text-gray-400 font-bold bg-white dark:bg-gray-700 px-1">
+                    {text.length}/{maxLength}
+                </div>
+            </div>
+            {image && (
+                <div className="mt-2 relative inline-block border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 p-1">
+                    <img src={image} className="max-h-40 object-contain" alt="附圖" />
+                    <button onClick={() => setImage(null)} className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold shadow-md transition-colors">✖</button>
+                </div>
+            )}
+            <div className="mt-1 flex justify-end">
+                <input type="file" accept="image/*" className="hidden" id={`file_${label}`} onChange={e => e.target.files[0] && handleImageUpload(e.target.files[0])} />
+                <label htmlFor={`file_${label}`} className="text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 px-3 py-1.5 no-round cursor-pointer font-bold transition-colors border border-gray-300 dark:border-gray-600">
+                    📎 選擇圖片上傳
+                </label>
+            </div>
+        </div>
+    );
+}
+
+// --- 新增：錯題編輯 Modal ---
+function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
+    const [qText, setQText] = useState(initialData?.qText || '');
+    const [qImage, setQImage] = useState(initialData?.qImage || null);
+    const [nText, setNText] = useState(initialData?.nText || '');
+    const [nImage, setNImage] = useState(initialData?.nImage || null);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        await onSave({ qText: qText.trim(), qImage, nText: nText.trim(), nImage });
+        setIsSaving(false);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100] p-4">
+            <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-lg no-round shadow-2xl transform transition-all max-h-[90dvh] overflow-y-auto custom-scrollbar border-t-4 border-black dark:border-gray-500">
+                <h3 className="font-black text-xl mb-4 flex justify-between items-center dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
+                    <span>{title}</span>
+                    <button onClick={onClose} className="text-gray-400 hover:text-red-500 font-bold transition-colors">✖</button>
+                </h3>
+                
+                <RichInput label="📝 題目內容" text={qText} setText={setQText} image={qImage} setImage={setQImage} maxLength={300} showAlert={showAlert} />
+                <RichInput label="💡 我的筆記 / 詳解" text={nText} setText={setNText} image={nImage} setImage={setNImage} maxLength={300} showAlert={showAlert} />
+                
+                <div className="flex justify-end space-x-3 mt-6 border-t border-gray-100 dark:border-gray-700 pt-4">
+                    <button onClick={onClose} className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 px-6 py-2 no-round font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">取消</button>
+                    <button onClick={handleSave} disabled={isSaving} className="bg-black dark:bg-gray-200 text-white dark:text-black px-8 py-2 no-round font-black text-sm hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors shadow-md">
+                        {isSaving ? '儲存中...' : '💾 儲存'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- 錯題整理組件 ---
+function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContinueQuiz }) {
+    const [wrongItems, setWrongItems] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [editingItem, setEditingItem] = useState(null);
+
+    useEffect(() => {
+        const unsub = window.db.collection('users').doc(user.uid).collection('wrongBook')
+            .orderBy('createdAt', 'desc')
+            .onSnapshot(snap => {
+                setWrongItems(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                setLoading(false);
+            });
+        return () => unsub();
+    }, [user.uid]);
+
+    const handleDelete = (id) => {
+        showConfirm("確定要刪除這筆錯題紀錄嗎？", () => {
+            window.db.collection('users').doc(user.uid).collection('wrongBook').doc(id).delete();
+        });
+    };
+
+    const handleGoToQuiz = async (quizId) => {
+        try {
+            const doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get();
+            if(doc.exists) {
+                onContinueQuiz({ id: doc.id, ...doc.data() });
+            } else {
+                showAlert('❌ 找不到原始試卷，可能已被刪除！');
+            }
+        } catch(e) {
+            showAlert('❌ 載入失敗：' + e.message);
+        }
+    };
+
+    return (
+        <div className="max-w-6xl mx-auto p-4 pt-0 h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 shrink-0">
+                <h1 className="text-2xl font-black dark:text-white flex items-center">
+                    📓 錯題整理
+                </h1>
+                <p className="text-sm font-bold text-gray-500 dark:text-gray-400">專屬你的弱點突破筆記本</p>
+            </div>
+            
+            {loading ? <div className="text-center text-gray-500 py-10 font-bold animate-pulse">載入錯題中...</div> : 
+             wrongItems.length === 0 ? <div className="text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">目前沒有收錄錯題。<br/>在測驗交卷後的檢視頁面，點擊「📓 收錄錯題」即可將題目加到這裡！</div> : 
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-10">
+                 {wrongItems.map(item => (
+                     <div key={item.id} className="bg-white dark:bg-gray-800 p-4 border border-gray-200 dark:border-gray-700 shadow-sm relative no-round hover:shadow-md transition-shadow">
+                         <button onClick={() => handleDelete(item.id)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 font-bold z-10">✖</button>
+                         <div className="text-xs text-blue-600 dark:text-blue-400 font-bold mb-2 pr-6 flex items-center justify-between">
+                            <span className="truncate">出自: {item.quizName.replace(/\[.*\]/g, '').trim()} - 第 {item.questionNum} 題</span>
+                            {item.quizId && (
+                                <button onClick={() => handleGoToQuiz(item.quizId)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline shrink-0 ml-2">
+                                    🔗 檢視試題
+                                </button>
+                            )}
+                         </div>
+                         <div className="flex space-x-4 mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
+                            <span className="text-sm font-bold text-red-500">你的答案: {item.userAns || '未填'}</span>
+                            <span className="text-sm font-bold text-green-600 dark:text-green-400">正確答案: {item.correctAns}</span>
+                         </div>
+                         
+                         {(item.qText || item.qImage) && (
+                             <div className="mb-3">
+                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">📝 題目</p>
+                                 <div className="bg-gray-50 dark:bg-gray-900 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap border-l-4 border-gray-400 font-bold">
+                                     {item.qText && <p>{item.qText}</p>}
+                                     {item.qImage && <img src={item.qImage} className="mt-2 max-h-40 object-contain border border-gray-200 dark:border-gray-700" alt="題目附圖" />}
+                                 </div>
+                             </div>
+                         )}
+
+                         {(item.nText || item.note || item.nImage) && (
+                             <div className="mb-3">
+                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">💡 筆記</p>
+                                 <div className="bg-yellow-50 dark:bg-gray-900 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap border-l-4 border-yellow-400 font-bold">
+                                     {(item.nText || item.note) && <p>{item.nText || item.note}</p>}
+                                     {item.nImage && <img src={item.nImage} className="mt-2 max-h-40 object-contain border border-gray-200 dark:border-gray-700" alt="筆記附圖" />}
+                                 </div>
+                             </div>
+                         )}
+
+                         <button onClick={() => setEditingItem(item)} className="text-xs font-bold text-gray-500 hover:text-black dark:hover:text-white transition-colors mt-2">✏️ 編輯內容</button>
+                     </div>
+                 ))}
+             </div>
+            }
+
+            {editingItem && (
+                <WrongBookModal
+                    title={`編輯錯題 - 第 ${editingItem.questionNum} 題`}
+                    initialData={{
+                        qText: editingItem.qText || '',
+                        qImage: editingItem.qImage || null,
+                        nText: editingItem.nText || editingItem.note || '',
+                        nImage: editingItem.nImage || null
+                    }}
+                    onClose={() => setEditingItem(null)}
+                    onSave={async (data) => {
+                        await window.db.collection('users').doc(user.uid).collection('wrongBook').doc(editingItem.id).update({
+                            qText: data.qText,
+                            qImage: data.qImage,
+                            nText: data.nText,
+                            nImage: data.nImage,
+                            note: window.firebase.firestore.FieldValue.delete()
+                        });
+                        showAlert('✅ 修改成功！');
+                        setEditingItem(null);
+                    }}
+                    showAlert={showAlert}
+                />
+            )}
+        </div>
+    );
+}
+
+// --- 任務牆看板組件 (含國考題金色分類與分析) ---
+function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
+    const [tasks, setTasks] = useState({});
+    const [officialTasks, setOfficialTasks] = useState({});
+    const [myTasks, setMyTasks] = useState({}); 
+    const [loading, setLoading] = useState(true);
+
+    const normalCategories = [
+        '1. 藥物分析學', '2. 生藥學', '3. 中藥學', 
+        '4. 藥物化學與藥理學', '5. 藥劑學', '6. 生物藥劑學', '模擬試題 (其他)'
+    ];
+    
+    const opCategories = [
+        '1. 藥理學與藥物化學', '2. 藥物分析學與生藥學(含中藥學)', '3. 藥劑學與生物藥劑學', '國考題 (其他)'
+    ];
+
+    useEffect(() => {
+        const unsubTasks = window.db.collection('publicTasks')
+            .orderBy('createdAt', 'desc')
+            .onSnapshot(snap => {
+                const groupedNormal = normalCategories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
+                const groupedOfficial = opCategories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
+                
+                snap.docs.forEach(doc => {
+                    const data = { id: doc.id, ...doc.data() };
+                    
+                    if (data.testName && data.testName.includes('[#op]')) {
+                        let cat = data.category || '國考題 (其他)';
+                        if (!opCategories.includes(cat)) {
+                            if (data.testName.includes('藥理') || data.testName.includes('藥物化學')) cat = '1. 藥理學與藥物化學';
+                            else if (data.testName.includes('藥物分析') || data.testName.includes('生藥') || data.testName.includes('中藥')) cat = '2. 藥物分析學與生藥學(含中藥學)';
+                            else if (data.testName.includes('藥劑') || data.testName.includes('生物藥劑')) cat = '3. 藥劑學與生物藥劑學';
+                            else cat = '國考題 (其他)';
+                        }
+                        if (groupedOfficial[cat] && groupedOfficial[cat].length < 10) groupedOfficial[cat].push(data);
+                    } else {
+                        const cat = data.category || '模擬試題 (其他)';
+                        if (groupedNormal[cat] && groupedNormal[cat].length < 5) groupedNormal[cat].push(data);
+                    }
+                });
+                
+                setTasks(groupedNormal);
+                setOfficialTasks(groupedOfficial);
+                setLoading(false);
+            }, err => {
+                console.error(err);
+                setLoading(false);
+            });
+
+        const unsubMyQuizzes = window.db.collection('users').doc(user.uid).collection('quizzes')
+            .where('isTask', '==', true)
+            .onSnapshot(snap => {
+                const myTaskMap = {};
+                snap.docs.forEach(doc => {
+                    const data = doc.data();
+                    if (data.taskId) {
+                        myTaskMap[data.taskId] = { id: doc.id, ...data };
+                    }
+                });
+                setMyTasks(myTaskMap);
+            });
+            
+        return () => {
+            unsubTasks();
+            unsubMyQuizzes();
+        };
+    }, [user.uid]);
+
+    // 計算國考題能力分析
+    const officialStats = { totalScore: 0, count: 0, categories: {} };
+    opCategories.forEach(c => officialStats.categories[c] = { score: 0, count: 0 });
+
+    Object.values(myTasks).forEach(localRec => {
+        if (localRec.testName && localRec.testName.includes('[#op]') && localRec.results) {
+            let cat = localRec.category;
+            if (!cat || !opCategories.includes(cat)) {
+                if (localRec.testName.includes('藥理') || localRec.testName.includes('藥物化學')) cat = '1. 藥理學與藥物化學';
+                else if (localRec.testName.includes('藥物分析') || localRec.testName.includes('生藥') || localRec.testName.includes('中藥')) cat = '2. 藥物分析學與生藥學(含中藥學)';
+                else if (localRec.testName.includes('藥劑') || localRec.testName.includes('生物藥劑')) cat = '3. 藥劑學與生物藥劑學';
+                else cat = '國考題 (其他)';
+            }
+            if (officialStats.categories[cat]) {
+                officialStats.totalScore += localRec.results.score;
+                officialStats.count += 1;
+                officialStats.categories[cat].score += localRec.results.score;
+                officialStats.categories[cat].count += 1;
+            }
+        }
+    });
+
+    const overallAvg = officialStats.count > 0 ? Math.round(officialStats.totalScore / officialStats.count) : 0;
+
+    const handlePlayTask = async (task, localRec) => {
+        const executeEnter = async () => {
+            if (localRec) {
+                onContinueQuiz(localRec);
+                return;
+            }
+
+            try {
+                const emptyAnswers = Array(Number(task.numQuestions)).fill('');
+                const emptyStarred = Array(Number(task.numQuestions)).fill(false);
+
+                const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
+                    testName: task.testName,
+                    numQuestions: task.numQuestions,
+                    questionFileUrl: task.questionFileUrl || '',
+                    questionText: task.questionText || '',
+                    correctAnswersInput: task.correctAnswersInput || '',
+                    publishAnswers: task.publishAnswers !== false,
+                    userAnswers: emptyAnswers,
+                    starred: emptyStarred,
+                    hasTimer: task.hasTimer || false,
+                    timeLimit: task.timeLimit || null,
+                    timeRemaining: task.hasTimer ? (task.timeLimit * 60) : null,
+                    isTask: true,
+                    taskId: task.id,
+                    creatorUid: task.creatorUid || '', 
+                    creatorQuizId: task.id,
+                    folder: '任務牆',
+                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                const newRec = await newDocRef.get();
+                onContinueQuiz({ id: newRec.id, ...newRec.data() });
+                
+            } catch (e) {
+                showAlert('啟動任務失敗：' + e.message);
+            }
+        };
+
+        if (task.hasTimer && (!localRec || !localRec.results)) {
+            let timeText = `${task.timeLimit} 分鐘`;
+            if (localRec && localRec.timeRemaining) {
+                timeText = `剩餘約 ${Math.max(1, Math.ceil(localRec.timeRemaining / 60))} 分鐘`;
+            }
+            showConfirm(`⏱ 此任務設有時間限制（${timeText}）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
+                executeEnter();
+            });
+        } else {
+            executeEnter();
+        }
+    };
+
+    return (
+        <div className="max-w-6xl mx-auto p-4 pt-0 h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 shrink-0">
+                <h1 className="text-2xl font-black dark:text-white flex items-center">
+                    🎯 公開任務牆
+                </h1>
+                <p className="text-sm font-bold text-gray-500 dark:text-gray-400">完成考驗獲取獎勵鑽石！</p>
+            </div>
+
+            {loading ? (
+                <div className="text-center text-gray-500 py-10 font-bold animate-pulse">正在載入公開任務...</div>
+            ) : (
+                <div className="space-y-8 pb-10">
+                    
+                    {/* --- 金色專屬：歷屆國考題 --- */}
+                    {(Object.values(officialTasks).some(arr => arr.length > 0) || officialStats.count > 0) && (
+                        <div className="bg-gradient-to-br from-yellow-50 to-white dark:from-gray-800 dark:to-gray-900 border border-yellow-400 dark:border-yellow-600 shadow-md no-round p-5 md:p-6">
+                            <h2 className="text-2xl font-black mb-4 dark:text-white border-b-2 border-yellow-400 dark:border-yellow-600 pb-2 text-yellow-700 dark:text-yellow-400 flex items-center">
+                                🏆 歷屆國考題
+                            </h2>
+                            
+                            {/* 國考能力分析圖表 */}
+                            {officialStats.count > 0 && (
+                                <div className="mb-6 bg-white dark:bg-gray-800 p-4 border border-yellow-200 dark:border-yellow-700 shadow-sm">
+                                    <h3 className="font-bold text-yellow-600 dark:text-yellow-400 mb-3">📊 國考能力分析 (平均分數)</h3>
+                                    <div className="space-y-3">
+                                        <div className="flex items-center text-sm font-bold">
+                                            <span className="w-1/3 text-gray-600 dark:text-gray-300">總平均 ({officialStats.count}次)</span>
+                                            <div className="w-2/3 bg-gray-200 dark:bg-gray-700 h-4 relative">
+                                                <div className="bg-yellow-400 h-4 transition-all duration-500" style={{ width: `${overallAvg}%` }}></div>
+                                                <span className="absolute inset-0 flex items-center justify-center text-[10px] text-black drop-shadow-md">{overallAvg} 分</span>
+                                            </div>
+                                        </div>
+                                        {opCategories.map(cat => {
+                                            const stat = officialStats.categories[cat];
+                                            const avg = stat.count > 0 ? Math.round(stat.score / stat.count) : 0;
+                                            if (stat.count === 0) return null;
+                                            return (
+                                                <div key={cat} className="flex items-center text-xs font-bold">
+                                                    <span className="w-1/3 text-gray-500 dark:text-gray-400 truncate pr-2" title={cat}>{cat.replace(/^[0-9]\.\s*/, '')}</span>
+                                                    <div className="w-2/3 bg-gray-200 dark:bg-gray-700 h-3 relative">
+                                                        <div className="bg-blue-400 h-3 transition-all duration-500" style={{ width: `${avg}%` }}></div>
+                                                        <span className="absolute inset-0 flex items-center justify-center text-[9px] text-black drop-shadow-md">{avg} 分</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="space-y-8">
+                                {opCategories.map(cat => (
+                                    officialTasks[cat] && officialTasks[cat].length > 0 && (
+                                        <div key={cat} className="pl-4 border-l-4 border-yellow-400 dark:border-yellow-600">
+                                            <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                {officialTasks[cat].map(task => {
+                                                    const localRec = myTasks[task.id];
+                                                    const isCompleted = localRec && localRec.results;
+                                                    const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
+
+                                                    return (
+                                                        <div key={task.id} className="border border-yellow-200 dark:border-yellow-700 p-4 bg-white dark:bg-gray-800 flex flex-col justify-between hover:shadow-md transition-shadow">
+                                                            <div>
+                                                                <h3 className="font-bold text-md mb-2 dark:text-white truncate" title={task.testName}>
+                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#op\]/g, '')}
+                                                                </h3>
+                                                                <div className="text-xs text-gray-500 mb-4 space-y-1">
+                                                                    <p className="flex gap-2">
+                                                                        <span>題數: {task.numQuestions}</span>
+                                                                        {task.hasTimer && <span className="text-red-500 font-bold">限時: {task.timeLimit}m</span>}
+                                                                    </p>
+                                                                    {isCompleted ? (
+                                                                        <p className="text-green-600 dark:text-green-400 font-bold">
+                                                                            ✅ 已完成 (分數: {localRec.results.score} 分)
+                                                                        </p>
+                                                                    ) : inProgress ? (
+                                                                        <p className="text-orange-500 dark:text-orange-400 font-bold">
+                                                                            📝 進行中 (已填: {localRec.userAnswers.filter(a => a).length})
+                                                                        </p>
+                                                                    ) : (
+                                                                        <p className="text-gray-400 font-bold">⏳ 尚未作答</p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => handlePlayTask(task, localRec)} 
+                                                                className={`py-2 no-round font-bold text-sm transition-colors w-full ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-yellow-500 text-black hover:bg-yellow-600'}`}
+                                                            >
+                                                                {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始測驗')}
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- 一般：模擬試題 --- */}
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5 md:p-6">
+                        <h2 className="text-2xl font-black mb-6 dark:text-white border-b-2 border-indigo-200 dark:border-indigo-900 pb-2 text-indigo-700 dark:text-indigo-400 flex items-center">
+                            📚 模擬試題
+                        </h2>
+                        
+                        <div className="space-y-8">
+                            {normalCategories.slice(0, 6).map(cat => (
+                                tasks[cat] && tasks[cat].length > 0 && (
+                                    <div key={cat} className="pl-4 border-l-4 border-indigo-300 dark:border-indigo-600">
+                                        <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {tasks[cat].map(task => {
+                                                const localRec = myTasks[task.id];
+                                                const isCompleted = localRec && localRec.results;
+                                                const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
+
+                                                return (
+                                                    <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-4 bg-gray-50 dark:bg-gray-900 flex flex-col justify-between hover:shadow-md transition-shadow">
+                                                        <div>
+                                                            <h3 className="font-bold text-md mb-2 dark:text-white truncate" title={task.testName}>
+                                                                {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#m?nm?st\]/g, '')}
+                                                            </h3>
+                                                            <div className="text-xs text-gray-500 mb-4 space-y-1">
+                                                                <p className="flex gap-2">
+                                                                    <span>題數: {task.numQuestions}</span>
+                                                                    {task.hasTimer && <span className="text-red-500 font-bold">限時: {task.timeLimit}m</span>}
+                                                                </p>
+                                                                
+                                                                {isCompleted ? (
+                                                                    <p className="text-green-600 dark:text-green-400 font-bold">
+                                                                        ✅ 已完成 (分數: {localRec.results.score} 分)
+                                                                    </p>
+                                                                ) : inProgress ? (
+                                                                    <p className="text-orange-500 dark:text-orange-400 font-bold">
+                                                                        📝 進行中 (已填: {localRec.userAnswers.filter(a => a).length})
+                                                                    </p>
+                                                                ) : (
+                                                                    <p className="text-gray-400 font-bold">⏳ 尚未作答</p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => handlePlayTask(task, localRec)} 
+                                                            className={`py-2 no-round font-bold text-sm transition-colors w-full ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-black dark:bg-gray-200 text-white dark:text-black hover:bg-gray-800'}`}
+                                                        >
+                                                            {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始測驗')}
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )
+                            ))}
+                        </div>
+                    </div>
+
+                    {tasks['模擬試題 (其他)'] && tasks['模擬試題 (其他)'].length > 0 && (
+                        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5 md:p-6">
+                            <h2 className="text-xl font-black mb-4 dark:text-white border-b-2 border-gray-200 dark:border-gray-700 pb-2 text-gray-600 dark:text-gray-400">
+                                🏷️ 其他任務
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {tasks['模擬試題 (其他)'].map(task => {
+                                    const localRec = myTasks[task.id];
+                                    const isCompleted = localRec && localRec.results;
+                                    const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
+
+                                    return (
+                                        <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-4 bg-gray-50 dark:bg-gray-900 flex flex-col justify-between hover:shadow-md transition-shadow">
+                                            <div>
+                                                <h3 className="font-bold text-md mb-2 dark:text-white truncate" title={task.testName}>
+                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#m?nm?st\]/g, '')}
+                                                </h3>
+                                                <div className="text-xs text-gray-500 mb-4 space-y-1">
+                                                    <p className="flex gap-2">
+                                                        <span>題數: {task.numQuestions}</span>
+                                                        {task.hasTimer && <span className="text-red-500 font-bold">限時: {task.timeLimit}m</span>}
+                                                    </p>
+                                                    
+                                                    {isCompleted ? (
+                                                        <p className="text-green-600 dark:text-green-400 font-bold">
+                                                            ✅ 已完成 (分數: {localRec.results.score} 分)
+                                                        </p>
+                                                    ) : inProgress ? (
+                                                        <p className="text-orange-500 dark:text-orange-400 font-bold">
+                                                            📝 進行中 (已填: {localRec.userAnswers.filter(a => a).length})
+                                                        </p>
+                                                    ) : (
+                                                        <p className="text-gray-400 font-bold">⏳ 尚未作答</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={() => handlePlayTask(task, localRec)} 
+                                                className={`py-2 no-round font-bold text-sm transition-colors w-full ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-black dark:bg-gray-200 text-white dark:text-black hover:bg-gray-800'}`}
+                                            >
+                                                {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始測驗')}
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                    
+                </div>
+            )}
+        </div>
+    );
+}
+
+// --- 我的題庫與測驗核心 ---
+function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm, showPrompt }) {
+    const [records, setRecords] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showShareModal, setShowShareModal] = useState(null);
+    const [showMoveModal, setShowMoveModal] = useState(null);
+    const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+
+    const specialFolders = ['我建立的試題', '未分類', '任務牆'];
+    const rawUserFolders = (userProfile.folders || []).filter(f => !specialFolders.includes(f));
+    const userFolders = [...specialFolders, ...rawUserFolders];
+    
+    const [currentFolder, setCurrentFolder] = useState('我建立的試題');
+    const [filters, setFilters] = useState({ todo: true, doing: true, done: true });
+
+    useEffect(() => {
+        let isMounted = true;
+        let fallbackTimer = setTimeout(() => {
+            if (isMounted) setLoading(false);
+        }, 3000);
+
+        const unsubscribe = window.db.collection('users').doc(user.uid).collection('quizzes')
+            .orderBy('createdAt', 'desc')
+            .onSnapshot(snapshot => {
+                if (isMounted) {
+                    setRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setLoading(false);
+                    clearTimeout(fallbackTimer);
+                }
+            }, err => {
+                console.error(err);
+                if (isMounted) setLoading(false);
+            });
+
+        return () => {
+            isMounted = false;
+            clearTimeout(fallbackTimer);
+            unsubscribe();
+        };
+    }, [user]);
+
+    const handleDelete = (id) => {
+        const rec = records.find(r => r.id === id);
+        showConfirm("確定要刪除這筆紀錄嗎？資料將無法恢復！", async () => {
+            try {
+                await window.db.collection('users').doc(user.uid).collection('quizzes').doc(id).delete();
+                if (rec && !rec.isShared && !rec.isTask) {
+                    await window.db.collection('publicTasks').doc(id).delete().catch(e => console.log("任務牆無此檔案", e));
+                }
+            } catch (error) {
+                showAlert('刪除失敗：' + error.message);
+            }
+        });
+    }
+
+    const handleCreateFolder = () => {
+        showPrompt("請輸入新資料夾名稱：", "", (name) => {
+            const cleanName = name?.trim();
+            if(cleanName && !userFolders.includes(cleanName)) {
+                window.db.collection('users').doc(user.uid).set({
+                    folders: window.firebase.firestore.FieldValue.arrayUnion(cleanName)
+                }, { merge: true }).then(() => {
+                    setCurrentFolder(cleanName);
+                    showAlert(`✅ 已建立資料夾「${cleanName}」`);
+                }).catch(e => showAlert('建立失敗：' + e.message));
+            } else if (userFolders.includes(cleanName)) {
+                showAlert('❌ 資料夾名稱已存在');
+            }
+        });
+    };
+
+    const moveQuizToFolder = (quiz, targetFolder) => {
+        if (targetFolder === '我建立的試題') return showAlert('此為自動分類，無法手動移入喔！');
+        window.db.collection('users').doc(user.uid).collection('quizzes').doc(quiz.id).update({ folder: targetFolder })
+        .then(() => {
+            showAlert(`✅ 已成功移動至 ${targetFolder}`);
+            setShowMoveModal(null);
+        })
+        .catch(e => showAlert('移動失敗：' + e.message));
+    };
+
+    const handleGenerateCode = async (quiz) => {
+        if (quiz.shortCode) {
+            navigator.clipboard.writeText(quiz.shortCode);
+            showAlert(`✅ 已複製代碼：${quiz.shortCode}`);
+            return;
+        }
+        setIsGeneratingCode(true);
+        const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        try {
+            await window.db.collection('shareCodes').doc(newCode).set({
+                ownerId: user.uid,
+                quizId: quiz.id
+            });
+            await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quiz.id).update({
+                shortCode: newCode
+            });
+            setShowShareModal(prev => ({...prev, shortCode: newCode}));
+            navigator.clipboard.writeText(newCode);
+            showAlert(`✅ 成功生成並複製代碼：${newCode}`);
+        } catch(e) {
+            showAlert('生成代碼失敗：' + e.message);
+        }
+        setIsGeneratingCode(false);
+    };
+
+    const handleImportCode = () => {
+        showPrompt("請輸入 6 碼測驗代碼：", "", async (code) => {
+            const cleanCode = code?.trim().toUpperCase();
+            if (!cleanCode) return;
+            
+            const codeRegex = /^[A-Z0-9]{6}$/;
+            if (!codeRegex.test(cleanCode)) {
+                return showAlert("⚠️ 代碼格式錯誤！\n請確認您輸入的是剛好「6 碼」的英數組合（不可包含符號或空白）。", "輸入錯誤");
+            }
+
+            try {
+                const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
+                if (isDuplicateCode) {
+                    return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
+                }
+
+                const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
+                if (!codeDoc.exists) {
+                    return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
+                }
+
+                const { ownerId, quizId: targetQuizId } = codeDoc.data();
+
+                if (ownerId === user.uid) {
+                    return showAlert("⚠️ 你已經擁有此試卷！", "重複擁有");
+                }
+
+                const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get();
+                if (!doc.exists) {
+                    return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除。", "載入失敗");
+                }
+                
+                const data = doc.data();
+
+                const isContentDuplicate = records.some(r => {
+                    const localName = (r.testName || '').split(' (來自')[0].trim();
+                    const incomingName = (data.testName || '').split(' (來自')[0].trim();
+                    return localName === incomingName && Number(r.numQuestions) === Number(data.numQuestions);
+                });
+
+                if (isContentDuplicate) {
+                    return showAlert(`⚠️ 你已經擁有此試卷！`, "內容重複");
+                }
+
+                const emptyAnswers = Array(Number(data.numQuestions)).fill('');
+                const emptyStarred = Array(Number(data.numQuestions)).fill(false);
+                
+                await window.db.collection('users').doc(user.uid).collection('quizzes').add({
+                    testName: data.testName + ' (來自代碼)',
+                    numQuestions: data.numQuestions,
+                    questionFileUrl: data.questionFileUrl || '',
+                    questionText: data.questionText || '',
+                    correctAnswersInput: data.correctAnswersInput || '', 
+                    publishAnswers: data.publishAnswers !== false,
+                    userAnswers: emptyAnswers,
+                    starred: emptyStarred,
+                    hasTimer: data.hasTimer || false,
+                    timeLimit: data.timeLimit || null,
+                    timeRemaining: data.hasTimer ? (data.timeLimit * 60) : null,
+                    isShared: true, 
+                    creatorUid: ownerId, 
+                    creatorQuizId: targetQuizId,
+                    folder: '未分類', 
+                    shortCode: cleanCode, 
+                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                showAlert(`✅ 成功匯入「${data.testName}」！\n試卷已加入「未分類」資料夾。`, "匯入成功");
+
+            } catch (e) {
+                console.error(e);
+                showAlert('❌ 發生非預期錯誤：' + e.message, "系統錯誤");
+            }
+        });
+    };
+
+    const shareToFriend = (friend) => {
+        const chatId = [user.uid, friend.uid].sort().join('_');
+        window.db.collection('chats').doc(chatId).collection('messages').add({
+            senderId: user.uid,
+            senderName: userProfile.displayName,
+            timestamp: window.firebase.firestore.FieldValue.serverTimestamp(),
+            type: 'quiz_share',
+            read: false,
+            quizData: {
+                ownerId: user.uid,
+                quizId: showShareModal.id,
+                testName: showShareModal.testName,
+                questionFileUrl: showShareModal.questionFileUrl || '',
+                questionText: showShareModal.questionText || '',
+                correctAnswersInput: showShareModal.correctAnswersInput || ''
+            }
+        }).then(() => {
+            window.db.collection('users').doc(friend.uid).set({
+                unreadChats: { [user.uid]: true }
+            }, { merge: true });
+            showAlert('✅ 已成功分享給 ' + friend.name + '！');
+            setShowShareModal(null);
+        }).catch(e => showAlert('分享失敗：' + e.message));
+    };
+
+    const handleEditQuiz = (rec) => {
+        if (rec.hasNewSuggestion) {
+            window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update({ hasNewSuggestion: false });
+        }
+        onContinueQuiz({ ...rec, forceStep: 'edit' });
+    };
+
+    const toggleFilter = (key) => setFilters(prev => ({ ...prev, [key]: !prev[key] }));
+
+    const displayedRecords = records.filter(rec => {
+        if (currentFolder === '我建立的試題') {
+            if (rec.isShared || rec.isTask) return false;
+        } else {
+            if ((rec.folder || '未分類') !== currentFolder) return false;
+        }
+        
+        const isCompleted = !!rec.results;
+        const answeredCount = rec.userAnswers ? rec.userAnswers.filter(a => a !== '').length : 0;
+        const hasStarted = answeredCount > 0;
+
+        if (isCompleted && filters.done) return true;
+        if (!isCompleted && hasStarted && filters.doing) return true;
+        if (!isCompleted && !hasStarted && filters.todo) return true;
+
+        return false;
+    });
+
+    const handleEnterQuiz = (rec) => {
+        if (rec.hasTimer && !rec.results) {
+            const isNew = !rec.userAnswers || rec.userAnswers.filter(a => a !== '').length === 0;
+            const timeText = isNew ? `${rec.timeLimit} 分鐘` : `剩餘約 ${Math.max(1, Math.ceil(rec.timeRemaining / 60))} 分鐘`;
+            showConfirm(`⏱ 此測驗設有時間限制（${timeText}）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
+                onContinueQuiz(rec);
+            });
+        } else {
+            onContinueQuiz(rec);
+        }
+    };
+
+    return (
+        <div className="max-w-6xl mx-auto p-4 pt-0 h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center mb-4 border-b-2 border-black dark:border-white pb-2 shrink-0">
+                <h1 className="text-2xl font-black dark:text-white">我的題庫</h1>
+                <button onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 shadow-sm transition-colors">+ 新測驗</button>
+            </div>
+
+            <div className="flex items-center space-x-2 mb-2 overflow-x-auto custom-scrollbar pb-2 shrink-0">
+                {userFolders.map(f => (
+                    <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
+                        {f === '我建立的試題' ? '⭐ ' : '📁 '} {f}
+                    </button>
+                ))}
+                <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors">
+                    + 新增資料夾
+                </button>
+                <button onClick={handleImportCode} className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors">
+                    📥 輸入代碼
+                </button>
+            </div>
+
+            <div className="flex items-center space-x-4 mb-6 shrink-0 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 no-round">
+                <span className="text-sm font-bold text-gray-500 dark:text-gray-400 border-r border-gray-300 dark:border-gray-600 pr-3">狀態篩選</span>
+                <label className="flex items-center space-x-1.5 text-sm cursor-pointer hover:text-black dark:hover:text-white dark:text-gray-300">
+                    <input type="checkbox" checked={filters.todo} onChange={() => toggleFilter('todo')} className="w-4 h-4 accent-black dark:accent-white" />
+                    <span className="font-bold">未作測驗</span>
+                </label>
+                <label className="flex items-center space-x-1.5 text-sm cursor-pointer hover:text-black dark:hover:text-white">
+                    <input type="checkbox" checked={filters.doing} onChange={() => toggleFilter('doing')} className="w-4 h-4 accent-black dark:accent-white" />
+                    <span className="font-bold text-orange-600 dark:text-orange-400">進行中</span>
+                </label>
+                <label className="flex items-center space-x-1.5 text-sm cursor-pointer hover:text-black dark:hover:text-white">
+                    <input type="checkbox" checked={filters.done} onChange={() => toggleFilter('done')} className="w-4 h-4 accent-black dark:accent-white" />
+                    <span className="font-bold text-green-600 dark:text-green-400">已完成</span>
+                </label>
+            </div>
+
+            {loading ? (
+                <div className="text-center text-gray-500 py-10 font-bold animate-pulse">讀取本地快取與雲端資料中...</div>
+            ) : displayedRecords.length === 0 ? (
+                <div className="bg-white dark:bg-gray-800 text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 no-round shadow-sm">此分類尚無符合篩選條件的測驗紀錄。</div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 pb-10">
+                    {displayedRecords.map(rec => (
+                        <div key={rec.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+                            <div>
+                                <div className="flex justify-between items-start mb-2">
+                                    <h2 className="font-bold text-lg leading-tight pr-2 flex flex-wrap items-center gap-1 dark:text-white">
+                                        <span className="truncate max-w-[150px]">{typeof renderTestName !== 'undefined' ? renderTestName(rec.testName, !!rec.results) : rec.testName}</span>
+                                        {rec.isTask && <span className="text-xs bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 no-round align-middle font-normal whitespace-nowrap">任務挑戰</span>}
+                                        {rec.isShared && !rec.isTask && <span className="text-xs bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 no-round align-middle font-normal whitespace-nowrap">好友分享</span>}
+                                        {rec.hasTimer && <span className="text-xs bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 no-round align-middle font-bold whitespace-nowrap">⏱ 限時 {rec.timeLimit}m</span>}
+                                    </h2>
+                                    {rec.results && (
+                                        <span className={`text-2xl font-black px-2 py-1 ml-2 shrink-0 ${rec.results.score >= 60 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{rec.results.score}</span>
+                                    )}
+                                </div>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">{rec.createdAt ? rec.createdAt.toDate().toLocaleString('zh-TW') : ''}</p>
+                                <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1 mb-6">
+                                    <p>題數：{rec.numQuestions || 0}</p>
+                                    {rec.results ? (
+                                        <p className="text-green-700 dark:text-green-400 font-bold">狀態：✅ 已完成 (答對 {rec.results.correctCount}/{rec.results.total})</p>
+                                    ) : (
+                                        rec.userAnswers && rec.userAnswers.filter(a=>a).length > 0 ? 
+                                        <p className="text-orange-600 dark:text-orange-400 font-bold">狀態：📝 進行中 (已填 {rec.userAnswers.filter(a=>a).length})</p> :
+                                        <p className="text-gray-500 dark:text-gray-400 font-bold">狀態：⏳ 尚未作答</p>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex justify-between items-center border-t border-gray-100 dark:border-gray-700 pt-4">
+                                <div className="space-x-2 flex flex-wrap gap-2">
+                                    <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:underline transition-colors">刪除</button>
+                                    <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 font-bold transition-colors">📁 移動</button>
+                                    
+                                    {!rec.isTask && (
+                                        <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-bold transition-colors">📤 分享</button>
+                                    )}
+                                    
+                                    {!rec.isShared && !rec.isTask && (
+                                        <button onClick={() => handleEditQuiz(rec)} className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-800 font-bold transition-colors relative">
+                                            📝 編輯試題
+                                            {rec.hasNewSuggestion && <span className="absolute -top-1 -right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
+                                        </button>
+                                    )}
+                                </div>
+                                <button onClick={() => handleEnterQuiz(rec)} className="bg-gray-100 dark:bg-gray-700 px-4 py-2 no-round font-bold border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 dark:text-white text-sm shrink-0 transition-colors ml-2">{rec.results ? '查看詳情' : '進入測驗'}</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {showShareModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-sm no-round shadow-xl">
+                        <h3 className="font-bold text-lg mb-4 flex justify-between items-center dark:text-white">
+                            <span>📤 分享試卷</span>
+                            <button onClick={() => setShowShareModal(null)} className="text-gray-400 hover:text-black dark:hover:text-white">✖</button>
+                        </h3>
+
+                        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+                            <p className="text-sm font-bold text-gray-600 dark:text-gray-400 mb-2">公開測驗代碼</p>
+                            {showShareModal.shortCode ? (
+                                <div className="flex items-center justify-between bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 p-2">
+                                    <span className="text-2xl font-mono font-black tracking-widest text-blue-600 dark:text-blue-400">{showShareModal.shortCode}</span>
+                                    <button onClick={() => {
+                                        navigator.clipboard.writeText(showShareModal.shortCode);
+                                        showAlert(`✅ 已複製代碼：${showShareModal.shortCode}`);
+                                    }} className="text-xs bg-black dark:bg-gray-200 text-white dark:text-black px-3 py-1.5 no-round font-bold hover:bg-gray-800">複製</button>
+                                </div>
+                            ) : (
+                                <button onClick={() => handleGenerateCode(showShareModal)} disabled={isGeneratingCode} className="text-sm bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-700 px-4 py-2 no-round font-bold hover:bg-blue-100 dark:hover:bg-blue-800 w-full transition-colors">
+                                    {isGeneratingCode ? '生成中...' : '🔑 生成 6 碼分享代碼'}
+                                </button>
+                            )}
+                        </div>
+
+                        <h4 className="font-bold text-sm mb-2 text-gray-600 dark:text-gray-400">傳送給好友</h4>
+                        <div className="max-h-40 overflow-y-auto mb-4 border border-gray-200 dark:border-gray-700 custom-scrollbar bg-white dark:bg-gray-700">
+                            {(userProfile.friends || []).length === 0 ? <p className="p-4 text-sm text-gray-400">目前還沒有好友喔</p> : null}
+                            {(userProfile.friends || []).map(f => (
+                                <button key={f.uid} onClick={() => shareToFriend(f)} className="w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-gray-600 border-b border-gray-100 dark:border-gray-600 font-bold text-sm transition-colors dark:text-white">
+                                    {f.name} <span className="text-gray-400 dark:text-gray-400 font-normal ml-2">{f.email}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showMoveModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-sm no-round shadow-xl">
+                        <h3 className="font-bold text-lg mb-4 dark:text-white">選擇目標資料夾</h3>
+                        <div className="max-h-60 overflow-y-auto mb-4 border border-gray-200 dark:border-gray-700 custom-scrollbar">
+                            {userFolders.filter(f => f !== '我建立的試題').map(f => (
+                                <button key={f} onClick={() => moveQuizToFolder(showMoveModal, f)} className="w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-600 font-bold text-sm transition-colors dark:text-white">
+                                    📁 {f}
+                                </button>
+                            ))}
+                        </div>
+                        <button onClick={() => setShowMoveModal(null)} className="w-full bg-gray-100 dark:bg-gray-700 text-black dark:text-white p-2 font-bold no-round hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">取消</button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard, showAlert, showConfirm, showPrompt }) {
+    const initialRecord = activeQuizRecord || {};
+    const userFolders = Array.from(new Set(['未分類', ...(userProfile.folders || [])]));
+    
+    const [quizId, setQuizId] = useState(initialRecord.id || null);
+    const [step, setStep] = useState(initialRecord.forceStep || (initialRecord.results ? 'results' : (initialRecord.id ? 'answering' : 'setup')));
+    const [testName, setTestName] = useState(initialRecord.testName || '');
+    const [numQuestions, setNumQuestions] = useState(initialRecord.numQuestions || 50);
+    const [userAnswers, setUserAnswers] = useState(initialRecord.userAnswers || []);
+    const [starred, setStarred] = useState(initialRecord.starred || []);
+    const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
+    const [results, setResults] = useState(initialRecord.results || null);
+    const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
+    const [questionText, setQuestionText] = useState(initialRecord.questionText || ''); 
+    const [folder, setFolder] = useState(initialRecord.folder || '未分類');
+    const [shortCode, setShortCode] = useState(initialRecord.shortCode || null);
+    const [pdfZoom, setPdfZoom] = useState(1); 
+    const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.publishAnswers !== false);
+    
+    const [taskScores, setTaskScores] = useState(null);
+    const [creatorSuggestions, setCreatorSuggestions] = useState([]); 
+
+    const [showDiscussion, setShowDiscussion] = useState(false);
+    const [discussions, setDiscussions] = useState([]);
+    const [commentInput, setCommentInput] = useState('');
+    const [commentQNum, setCommentQNum] = useState('0');
+    const [commentFile, setCommentFile] = useState(null);
+    const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+    const lastCommentTime = useRef(0);
+    const discussionRef = useRef(null);
+
+    const [inputType, setInputType] = useState((initialRecord.questionText && !initialRecord.questionFileUrl) ? 'text' : 'url');
+    const isShared = initialRecord.isShared === true;
+    const isTask = initialRecord.isTask === true;
+    
+    const [hasTimer, setHasTimer] = useState(initialRecord.hasTimer || false);
+    const [timeLimit, setTimeLimit] = useState(initialRecord.timeLimit || 60);
+    const timeRemainingRef = useRef(initialRecord.timeRemaining ?? (initialRecord.timeLimit ? initialRecord.timeLimit * 60 : null));
+    const [displayTime, setDisplayTime] = useState(timeRemainingRef.current);
+    const [isTimeUp, setIsTimeUp] = useState(hasTimer && timeRemainingRef.current <= 0);
+    const [syncTrigger, setSyncTrigger] = useState(0);
+
+    const [layoutMode, setLayoutMode] = useState('horizontal'); 
+    const [splitRatio, setSplitRatio] = useState(50);
+    const [isDragging, setIsDragging] = useState(false);
+    const [previewOpen, setPreviewOpen] = useState(true);
+    const splitContainerRef = useRef(null);
+
+    const [showOnlyWrong, setShowOnlyWrong] = useState(false);
+    const [showOnlyStarred, setShowOnlyStarred] = useState(false);
+    const [showShareScoreModal, setShowShareScoreModal] = useState(false);
+    
+    // 新增：用於控制加入錯題整理的狀態
+    const [wrongBookAddingItem, setWrongBookAddingItem] = useState(null);
+
+    const starredIndices = starred.map((s, i) => s ? i + 1 : null).filter(Boolean);
+    const canSeeAnswers = initialRecord.publishAnswers !== false;
+
+    useEffect(() => {
+        let timerId;
+        if (step === 'answering' && hasTimer && !isTimeUp) {
+            timerId = setInterval(() => {
+                if (timeRemainingRef.current > 0) {
+                    timeRemainingRef.current -= 1;
+                    setDisplayTime(timeRemainingRef.current);
+                    
+                    if (timeRemainingRef.current % 15 === 0) setSyncTrigger(s => s + 1);
+
+                    if (timeRemainingRef.current <= 0) {
+                        setIsTimeUp(true);
+                        setSyncTrigger(s => s + 1);
+                        showAlert("⏱ 時間到！\n\n您的作答時間已結束，答案卡已鎖定無法再做更改。\n請點擊上方「交卷」。");
+                    }
+                }
+            }, 1000);
+        }
+        return () => { if(timerId) clearInterval(timerId); };
+    }, [step, hasTimer, isTimeUp]);
+
+    useEffect(() => {
+        if (currentUser && quizId && (step === 'answering' || step === 'setup' || step === 'results')) {
+            if (userAnswers.length === 0 && numQuestions > 0 && step === 'answering') return;
+            
+            const stateToSave = { 
+                testName, numQuestions, userAnswers, starred, correctAnswersInput, results, 
+                questionFileUrl, questionText, hasTimer, timeLimit, folder,
+                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            };
+            if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
+
+            window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
+                .catch(e => console.error("自動儲存失敗", e));
+        }
+    }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, questionText, folder, currentUser, quizId, step, syncTrigger]);
+
+    useEffect(() => {
+        if (step === 'results' && isTask && initialRecord.taskId) {
+            window.db.collection('publicTasks').doc(initialRecord.taskId).collection('scores')
+                .orderBy('timestamp', 'desc').limit(20).get()
+                .then(snap => {
+                    setTaskScores(snap.docs.map(d => d.data().score));
+                }).catch(e => console.error(e));
+
+            const unsub = window.db.collection('publicTasks').doc(initialRecord.taskId).collection('discussions')
+                .orderBy('timestamp', 'asc')
+                .onSnapshot(snap => {
+                    setDiscussions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                });
+            return () => unsub();
+        }
+
+        if (step === 'edit' && quizId) {
+            const unsub = window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).collection('suggestions')
+                .orderBy('timestamp', 'desc').onSnapshot(snap => {
+                    setCreatorSuggestions(snap.docs.map(d => ({id: d.id, ...d.data()})));
+                });
+            return () => unsub();
+        }
+    }, [step, isTask, initialRecord.taskId, quizId, currentUser.uid]);
+
+    const handleDragStart = (e) => setIsDragging(true);
+
+    useEffect(() => {
+        const handleDragMove = (e) => {
+            if (!isDragging || !splitContainerRef.current) return;
+            const containerRect = splitContainerRef.current.getBoundingClientRect();
+            let newRatio;
+            
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            if (layoutMode === 'horizontal') {
+                const offsetX = clientX - containerRect.left;
+                newRatio = (offsetX / containerRect.width) * 100;
+            } else {
+                const offsetY = clientY - containerRect.top;
+                newRatio = (offsetY / containerRect.height) * 100;
+            }
+            
+            newRatio = Math.max(20, Math.min(newRatio, 80));
+            setSplitRatio(newRatio);
+        };
+
+        const handleDragEnd = () => setIsDragging(false);
+
+        if (isDragging) {
+            window.addEventListener('mousemove', handleDragMove);
+            window.addEventListener('touchmove', handleDragMove, { passive: false });
+            window.addEventListener('mouseup', handleDragEnd);
+            window.addEventListener('touchend', handleDragEnd);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleDragMove);
+            window.removeEventListener('touchmove', handleDragMove);
+            window.removeEventListener('mouseup', handleDragEnd);
+            window.removeEventListener('touchend', handleDragEnd);
+        };
+    }, [isDragging, layoutMode]);
+
+    const handleStartTest = () => {
+        if (numQuestions < 1 || numQuestions > 100) return showAlert('題數限制為 1-100 題！');
+        if (hasTimer && (timeLimit < 1 || timeLimit > 999)) return showAlert('計時時間請設定在 1 到 999 分鐘之間。');
+        
+        const initialAnswers = Array(Number(numQuestions)).fill('');
+        const initialStarred = Array(Number(numQuestions)).fill(false);
+        setUserAnswers(initialAnswers);
+        setStarred(initialStarred);
+
+        const finalFileUrl = inputType === 'url' ? questionFileUrl.trim() : '';
+        const finalQuestionText = inputType === 'text' ? questionText : '';
+        setQuestionFileUrl(finalFileUrl);
+        setQuestionText(finalQuestionText);
+
+        window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
+            testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
+            correctAnswersInput: '',
+            publishAnswers: true, 
+            questionFileUrl: finalFileUrl,
+            questionText: finalQuestionText,
+            hasTimer: hasTimer,
+            timeLimit: hasTimer ? Number(timeLimit) : null,
+            timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
+            folder: folder,
+            createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        }).then(docRef => {
+            setQuizId(docRef.id);
+            if (hasTimer) {
+                timeRemainingRef.current = Number(timeLimit) * 60;
+                setDisplayTime(timeRemainingRef.current);
+                setIsTimeUp(false);
+            }
+            setStep('answering');
+        }).catch(e => showAlert('建立紀錄失敗：' + e.message));
+    };
+
+    const handleRetake = () => {
+        showConfirm("確定要再做一次嗎？\n先前的分數將保留在您的歷史紀錄中，系統將為您清空目前答案，不會產生新的試卷檔案。", () => {
+            const initialAnswers = Array(Number(numQuestions)).fill('');
+            const initialStarred = Array(Number(numQuestions)).fill(false);
+            
+            const historyEntry = { 
+                score: results.score, 
+                correctCount: results.correctCount, 
+                total: results.total, 
+                date: new Date().toISOString() 
+            };
+            
+            window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
+                userAnswers: initialAnswers,
+                starred: initialStarred,
+                results: window.firebase.firestore.FieldValue.delete(),
+                history: window.firebase.firestore.FieldValue.arrayUnion(historyEntry)
+            }).then(() => {
+                setUserAnswers(initialAnswers);
+                setStarred(initialStarred);
+                setResults(null);
+                setStep('answering');
+                
+                if (hasTimer) {
+                    timeRemainingRef.current = Number(timeLimit) * 60;
+                    setDisplayTime(timeRemainingRef.current);
+                    setIsTimeUp(false);
+                }
+                showAlert("✅ 已重新開始測驗！你的歷史成績已妥善保存。");
+            }).catch(e => showAlert('重測設定失敗：' + e.message));
+        });
+    };
+
+    const handleSaveEdit = async () => {
+        const cleanKey = (correctAnswersInput || '').replace(/[^a-zA-Z]/g, '').toUpperCase();
+        try {
+            const finalFileUrl = inputType === 'url' ? questionFileUrl.trim() : '';
+            const finalQuestionText = inputType === 'text' ? questionText : '';
+            
+            const updates = {
+                questionFileUrl: finalFileUrl,
+                questionText: finalQuestionText,
+                correctAnswersInput: cleanKey,
+                publishAnswers: publishAnswersToggle
+            };
+            
+            await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(updates);
+            
+            if (testName.includes('[#mnst]') || testName.includes('[#nmst]') || testName.includes('[#op]')) {
+                updates.creatorUid = currentUser.uid;
+                await window.db.collection('publicTasks').doc(quizId).set(updates, { merge: true });
+            }
+
+            const myDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
+            const latestSharedTo = myDoc.data()?.sharedTo || [];
+            
+            if (latestSharedTo.length > 0) {
+                const promises = latestSharedTo.map(async (target) => {
+                    const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
+                    const doc = await targetRef.get();
+                    if (doc.exists) {
+                        const targetData = doc.data();
+                        const targetUpdates = { ...updates };
+                        if (targetData.results && targetData.userAnswers) {
+                            let tCorrectCount = 0;
+                            const tData = targetData.userAnswers.map((ans, idx) => {
+                                const key = cleanKey[idx] || '-';
+                                const isCorrect = ans === key && ans !== '';
+                                if (isCorrect) tCorrectCount++;
+                                return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
+                            });
+                            targetUpdates.results = { 
+                                score: Math.round((tCorrectCount/targetData.numQuestions)*100), 
+                                correctCount: tCorrectCount, 
+                                total: targetData.numQuestions, 
+                                data: tData 
+                            };
+                        }
+                        return targetRef.update(targetUpdates);
+                    }
+                });
+                await Promise.all(promises);
+            }
+
+            showAlert("✅ 編輯成功！已同步至所有下載者及任務牆。");
+            
+            if (results && userAnswers) {
+                let correctCount = 0;
+                const data = userAnswers.map((ans, idx) => {
+                    const key = cleanKey[idx] || '-';
+                    const isCorrect = ans === key && ans !== '';
+                    if (isCorrect) correctCount++;
+                    return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: starred[idx] };
+                });
+                setResults({ score: Math.round((correctCount/numQuestions)*100), correctCount, total: numQuestions, data });
+            }
+
+            setStep(results ? 'results' : 'answering');
+        } catch(e) {
+            showAlert("儲存失敗：" + e.message);
+        }
+    };
+
+    const handleAnswerSelect = (idx, opt) => {
+        if(isTimeUp) return;
+        const newAns = [...userAnswers];
+        newAns[idx] = newAns[idx] === opt ? '' : opt;
+        setUserAnswers(newAns);
+    };
+
+    const toggleStar = (idx) => {
+        if(isTimeUp) return;
+        const newStar = [...starred];
+        newStar[idx] = !newStar[idx];
+        setStarred(newStar);
+    };
+
+    const handleGrade = async () => {
+        const cleanKey = (correctAnswersInput || '').replace(/[^a-zA-Z]/g, '').toUpperCase();
+        if (!cleanKey && !isTask && !isShared) return showAlert('請輸入標準答案後再批改！');
+        
+        let correctCount = 0;
+        const data = userAnswers.map((ans, idx) => {
+            const key = cleanKey[idx] || '-';
+            const isCorrect = ans === key && ans !== '';
+            if (isCorrect) correctCount++;
+            return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: starred[idx] };
+        });
+
+        const scoreVal = Math.round((correctCount/numQuestions)*100);
+        const newResults = { score: scoreVal, correctCount, total: numQuestions, data };
+        setResults(newResults);
+        setStep('results');
+
+        try {
+            await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
+                correctAnswersInput: cleanKey,
+                results: newResults
+            });
+
+            const isOp = testName.includes('[#op]');
+            const isMnst = testName.includes('[#mnst]') || testName.includes('[#nmst]');
+            
+            if (!isShared && !isTask && (isMnst || isOp)) {
+                let category = '模擬試題 (其他)';
+                
+                if (isOp) {
+                    if (testName.includes('藥理') || testName.includes('藥物化學')) category = '1. 藥理學與藥物化學';
+                    else if (testName.includes('藥物分析') || testName.includes('生藥') || testName.includes('中藥')) category = '2. 藥物分析學與生藥學(含中藥學)';
+                    else if (testName.includes('藥劑') || testName.includes('生物藥劑')) category = '3. 藥劑學與生物藥劑學';
+                    else category = '國考題 (其他)';
+                } else {
+                    if (testName.includes('藥物分析')) category = '1. 藥物分析學';
+                    else if (testName.includes('生藥')) category = '2. 生藥學';
+                    else if (testName.includes('中藥')) category = '3. 中藥學';
+                    else if (testName.includes('藥物化學') || testName.includes('藥理')) category = '4. 藥物化學與藥理學';
+                    else if (testName.includes('生物藥劑')) category = '6. 生物藥劑學';
+                    else if (testName.includes('藥劑')) category = '5. 藥劑學';
+                }
+
+                await window.db.collection('publicTasks').doc(quizId).set({
+                    testName, numQuestions, questionFileUrl, questionText, 
+                    correctAnswersInput: cleanKey, hasTimer, timeLimit, category, creatorUid: currentUser.uid,
+                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+            }
+
+            if (isTask && !initialRecord.results) {
+                const mcData = userProfile.mcData || { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0 };
+                const rewardDiamonds = scoreVal >= 60 ? 200 : 30;
+
+                let newExp = (mcData.exp || 0) + (scoreVal >= 60 ? 30 : 10);
+                let newLevel = mcData.level || 1;
+                while (newExp >= newLevel * 20) {
+                    newExp -= newLevel * 20;
+                    newLevel += 1;
+                }
+
+                await window.db.collection('users').doc(currentUser.uid).update({
+                    mcData: { ...mcData, diamonds: (mcData.diamonds || 0) + rewardDiamonds, exp: newExp, level: newLevel }
+                });
+
+                if (initialRecord.taskId) {
+                    window.db.collection('publicTasks').doc(initialRecord.taskId).collection('scores').add({
+                        score: scoreVal,
+                        timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+
+                if (scoreVal >= 60) {
+                    showAlert(`🎉 恭喜任務挑戰成功 (及格)！\n獲得 ${rewardDiamonds} 💎 與經驗值！`);
+                } else {
+                    showAlert(`💪 任務完成！\n雖然不及格，但仍獲得安慰獎 ${rewardDiamonds} 💎，下次再接再厲！`);
+                }
+            } 
+            else if (isShared && !initialRecord.results && !isTask) {
+                const mcData = userProfile.mcData || { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0 };
+                const today = new Date().toISOString().split('T')[0];
+                let rewardData = mcData.rewardData || { date: '', count: 0 };
+                
+                if (rewardData.date !== today) {
+                    rewardData = { date: today, count: 0 };
+                }
+
+                if (rewardData.count < 2) {
+                    rewardData.count += 1;
+                    let newExp = (mcData.exp || 0) + 15;
+                    let newLevel = mcData.level || 1;
+                    if (newExp >= newLevel * 20) {
+                        newExp -= newLevel * 20;
+                        newLevel += 1;
+                    }
+                    await window.db.collection('users').doc(currentUser.uid).update({
+                        mcData: { ...mcData, diamonds: (mcData.diamonds || 0) + 50, exp: newExp, level: newLevel, rewardData }
+                    });
+                    showAlert(`🎉 批改完成！這是一份好友分享的試卷，你獲得了 50 💎 與 15 EXP 做為獎勵！\n(今日領取次數: ${rewardData.count}/2)`);
+                } else {
+                    showAlert(`🎉 批改完成！這是一份好友分享的試卷。\n(⚠️ 今日測驗鑽石獎勵已達上限 2/2，因此不再發放獎勵)`);
+                }
+            }
+        } catch(e) {
+            console.error("同步更新失敗", e);
+        }
+    };
+
+    const handleSubmitClick = () => {
+        const unansweredCount = userAnswers.filter(a => !a).length;
+        let warnMsg = unansweredCount > 0 ? `⚠️ 注意：你有 ${unansweredCount} 題尚未填寫！\n\n` : "";
+        
+        if (isShared || isTask || testName.includes('[#op]')) {
+            showConfirm(`${warnMsg}確定要交卷嗎？\n交卷後系統將直接批改並鎖定答案，你無法再返回修改作答內容！`, () => {
+                handleGrade();
+            });
+        } else {
+            if (unansweredCount > 0) {
+                showConfirm(`${warnMsg}確定要交卷對答案嗎？`, () => {
+                    setStep('grading');
+                });
+            } else {
+                setStep('grading');
+            }
+        }
+    };
+
+    const handleSendSuggestion = () => {
+        showPrompt("發現題目有錯或排版問題？\n請輸入建議，我們將傳送給試題建立者：", "", async (text) => {
+            const msg = text?.trim();
+            if (!msg) return;
+            
+            const targetUid = initialRecord.creatorUid;
+            const targetQuizId = initialRecord.creatorQuizId;
+            
+            if (!targetUid || !targetQuizId) {
+                return showAlert("❌ 找不到原始出題者資訊。");
+            }
+
+            try {
+                await window.db.collection('users').doc(targetUid).collection('quizzes').doc(targetQuizId).collection('suggestions').add({
+                    text: msg,
+                    senderName: userProfile.displayName || '匿名玩家',
+                    timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                await window.db.collection('users').doc(targetUid).collection('quizzes').doc(targetQuizId).update({
+                    hasNewSuggestion: true
+                });
+                
+                showAlert("✅ 建議已發送給出題者！感謝您的回饋。");
+            } catch(e) {
+                showAlert("發送失敗：" + e.message);
+            }
+        });
+    };
+
+    const handleUploadComment = async () => {
+        if (!commentInput.trim() && !commentFile) return showAlert('請輸入留言內容或上傳圖片！');
+        
+        const now = Date.now();
+        if (now - lastCommentTime.current < 15000) {
+            return showAlert('💬 說話太快了！請等待 15 秒後再發言 (防洗頻限制)。');
+        }
+
+        if (commentFile && commentFile.size > 5 * 1024 * 1024) {
+            return showAlert('❌ 檔案大小不可超過 5MB！');
+        }
+
+        setIsSubmittingComment(true);
+
+        try {
+            let base64File = null;
+            if (commentFile) {
+                if (!commentFile.type.startsWith('image/')) {
+                    setIsSubmittingComment(false);
+                    return showAlert('❌ 為了維持系統效能，討論區目前僅支援上傳「圖片」格式喔！');
+                }
+                base64File = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            let w = img.width; let h = img.height;
+                            const MAX_DIM = 800; 
+                            if (w > h && w > MAX_DIM) { h *= MAX_DIM / w; w = MAX_DIM; }
+                            else if (h > MAX_DIM) { w *= MAX_DIM / h; h = MAX_DIM; }
+                            canvas.width = w; canvas.height = h;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, w, h);
+                            resolve(canvas.toDataURL('image/jpeg', 0.6));
+                        };
+                        img.onerror = reject;
+                        img.src = e.target.result;
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(commentFile);
+                });
+            }
+
+            await window.db.collection('publicTasks').doc(initialRecord.taskId).collection('discussions').add({
+                userId: currentUser.uid,
+                userName: userProfile.displayName || '匿名玩家',
+                questionNum: commentQNum,
+                text: commentInput.trim(),
+                imageUrl: base64File,
+                timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            lastCommentTime.current = Date.now();
+            setCommentInput('');
+            setCommentFile(null);
+        } catch (e) {
+            showAlert('留言失敗：' + e.message);
+        }
+        setIsSubmittingComment(false);
+    };
+
+    const handleResetProgress = () => {
+        showConfirm("確定要刪除這份試卷嗎？此動作無法復原！", () => {
+            window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).delete()
+            .then(() => onBackToDashboard())
+            .catch(e => showAlert('刪除失敗：' + e.message));
+        });
+    };
+
+    const handleAddToWrongBook = (item) => {
+        setWrongBookAddingItem(item);
+    };
+
+    const shareScoreToFriend = (friend) => {
+        const chatId = [currentUser.uid, friend.uid].sort().join('_');
+        window.db.collection('chats').doc(chatId).collection('messages').add({
+            senderId: currentUser.uid,
+            senderName: userProfile.displayName,
+            timestamp: window.firebase.firestore.FieldValue.serverTimestamp(),
+            type: 'score_share', 
+            read: false,
+            scoreData: {
+                testName: testName,
+                score: results.score,
+                correctCount: results.correctCount,
+                total: results.total
+            },
+            quizData: {
+                ownerId: currentUser.uid,
+                quizId: quizId,
+                testName: testName,
+                questionFileUrl: questionFileUrl || '',
+                questionText: questionText || '',
+                correctAnswersInput: correctAnswersInput || ''
+            }
+        }).then(() => {
+            window.db.collection('users').doc(friend.uid).set({
+                unreadChats: { [currentUser.uid]: true }
+            }, { merge: true });
+            showAlert('✅ 已成功向 ' + friend.name + ' 炫耀戰績，對方可以直接下載試卷！');
+            setShowShareScoreModal(false);
+        }).catch(e => showAlert('炫耀失敗：' + e.message));
+    };
+
+    const handleBackFromEdit = () => {
+        if (initialRecord.forceStep === 'edit') {
+            onBackToDashboard();
+        } else {
+            setStep(results ? 'results' : 'answering');
+        }
+    };
+
+    if (step === 'edit') return (
+        <div className="flex flex-col min-h-[100dvh] items-center p-4 relative py-10 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors custom-scrollbar">
+            <button onClick={handleBackFromEdit} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">← 返回</button>
+            <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-2xl no-round border border-gray-200 dark:border-gray-700 mt-6 transition-colors">
+                <h2 className="font-bold mb-6 text-2xl dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">📝 編輯試題</h2>
+                
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源 (單選)</label>
+                <div className="flex space-x-4 mb-4 dark:text-white">
+                    <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
+                        <input type="radio" checked={inputType === 'url'} onChange={() => setInputType('url')} className="w-4 h-4 accent-black dark:accent-white" />
+                        <span>公開網址</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
+                        <input type="radio" checked={inputType === 'text'} onChange={() => setInputType('text')} className="w-4 h-4 accent-black dark:accent-white" />
+                        <span>純文字</span>
+                    </label>
+                </div>
+
+                {inputType === 'url' ? (
+                    <input type="text" placeholder="請貼上試卷網址 (例如: Google Drive 連結)" className="w-full mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} />
+                ) : (
+                    <textarea placeholder="請貼上試題純文字..." className="w-full h-32 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar" value={questionText} onChange={e => setQuestionText(e.target.value)}></textarea>
+                )}
+
+                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">標準答案</h3>
+                <textarea className="w-full h-24 mb-2 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
+
+                <div className="flex items-center mt-4 mb-8 bg-gray-50 dark:bg-gray-900 p-3 border border-gray-200 dark:border-gray-700">
+                    <label className="flex items-center space-x-2 cursor-pointer dark:text-white font-bold text-sm">
+                        <input type="checkbox" checked={publishAnswersToggle} onChange={e => setPublishAnswersToggle(e.target.checked)} className="w-4 h-4 accent-black" />
+                        <span>👁️ 允許玩家在交卷後查看「標準答案」與「錯題」</span>
+                    </label>
+                </div>
+
+                <button onClick={handleSaveEdit} className="w-full bg-blue-600 dark:bg-blue-700 text-white p-3 font-bold no-round hover:bg-blue-800 transition-colors shadow-md">
+                    💾 儲存並同步至所有玩家
+                </button>
+
+                <div className="mt-10 border-t border-gray-200 dark:border-gray-700 pt-6">
+                    <h3 className="font-bold text-lg mb-4 text-orange-600 dark:text-orange-400">💡 來自玩家的修正建議</h3>
+                    {creatorSuggestions.length === 0 ? (
+                        <p className="text-gray-500 text-sm font-bold">目前沒有收到建議。</p>
+                    ) : (
+                        <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                            {creatorSuggestions.map(s => (
+                                <div key={s.id} className="p-3 bg-orange-50 dark:bg-gray-700 border border-orange-200 dark:border-gray-600 no-round">
+                                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                                        <span className="font-bold text-orange-700 dark:text-orange-300">{s.senderName}</span>
+                                        <span>{s.timestamp ? s.timestamp.toDate().toLocaleString('zh-TW') : ''}</span>
+                                    </div>
+                                    <p className="text-sm dark:text-white whitespace-pre-wrap font-bold">{s.text}</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
+    if (step === 'setup') return (
+        <div className="flex flex-col items-center p-4 h-[100dvh] overflow-y-auto relative custom-scrollbar bg-gray-100 dark:bg-gray-900">
+            <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">← 返回列表</button>
+            <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-sm no-round border border-gray-200 dark:border-gray-700 mt-10 mb-10 transition-colors">
+                <h1 className="text-xl font-bold mb-6 border-b border-gray-200 dark:border-gray-700 pb-2 tracking-tight dark:text-white">新增測驗</h1>
+                
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">存放資料夾</label>
+                <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm cursor-pointer">
+                    {userFolders.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗名稱</label>
+                <input type="text" placeholder="例如: 藥理學期中考" className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
+                
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">題數 (1-100)</label>
+                <input type="number" placeholder="50" className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
+                
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源 (單選)</label>
+                <div className="flex space-x-4 mb-4 dark:text-white">
+                    <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
+                        <input type="radio" checked={inputType === 'url'} onChange={() => setInputType('url')} className="w-4 h-4 accent-black dark:accent-white" />
+                        <span>公開網址</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
+                        <input type="radio" checked={inputType === 'text'} onChange={() => setInputType('text')} className="w-4 h-4 accent-black dark:accent-white" />
+                        <span>純文字</span>
+                    </label>
+                </div>
+
+                {inputType === 'url' ? (
+                    <input type="text" placeholder="請貼上 Google Drive 等連結" className="w-full mb-6 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} onFocus={handleFocusScroll} />
+                ) : (
+                    <textarea placeholder="請貼上試題純文字..." className="w-full h-32 mb-6 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar" value={questionText} onChange={e => setQuestionText(e.target.value)} onFocus={handleFocusScroll} />
+                )}
+                
+                <div className="mb-6 border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-700 no-round">
+                    <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
+                        <input type="checkbox" checked={hasTimer} onChange={e => setHasTimer(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
+                        <span>⏱ 開啟測驗倒數計時</span>
+                    </label>
+                    {hasTimer && (
+                        <div className="flex items-center space-x-2 mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                            <span className="text-sm text-gray-600 dark:text-gray-300">測驗時間：</span>
+                            <input type="number" min="1" max="999" className="w-16 p-1.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-center text-sm" value={timeLimit} onChange={e => setTimeLimit(e.target.value)} onFocus={handleFocusScroll} />
+                            <span className="text-sm text-gray-600 dark:text-gray-300">分鐘</span>
+                        </div>
+                    )}
+                </div>
+
+                <button onClick={handleStartTest} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors">開始作答</button>
+            </div>
+        </div>
+    );
+
+    if (step === 'answering') return (
+        <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
+            <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10 transition-colors">
+                <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
+                    <button onClick={onBackToDashboard} className="mr-3 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">← 返回</button>
+                    <div className="overflow-hidden flex-grow flex flex-col justify-center">
+                        <div className="flex items-center space-x-2">
+                            <h2 className="font-bold truncate text-base dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(testName, false) : testName}</h2>
+                            {hasTimer && (
+                                <span className={`font-mono font-bold px-1.5 py-0.5 no-round border ${isTimeUp ? 'bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border-red-200 dark:border-red-700 animate-pulse' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600'} text-xs shrink-0`}>
+                                    {isTimeUp ? '時間到' : `⏱ ${formatTime(displayTime)}`}
+                                </span>
+                            )}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex flex-wrap items-center gap-2">
+                            <span>進度: <span className="font-bold text-black dark:text-white">{userAnswers.filter(a=>a).length}</span> / {numQuestions}</span>
+                            {starredIndices.length > 0 && (
+                                <span className="text-orange-500 dark:text-orange-400 font-bold flex items-center bg-orange-50 dark:bg-gray-700 px-1.5 py-0.5 rounded max-w-[150px] sm:max-w-xs overflow-hidden">
+                                    <span className="mr-1 shrink-0">★</span> 
+                                    <span className="truncate">{starredIndices.join(', ')}</span>
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
+                    {(questionFileUrl || questionText) && previewOpen && (
+                        <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 dark:bg-gray-700 text-black dark:text-white px-3 py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
+                        </button>
+                    )}
+
+                    {(questionFileUrl || questionText) && (
+                        <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 dark:bg-gray-700 text-black dark:text-white px-3 py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            {previewOpen ? '👀 關閉預覽' : '👀 開啟預覽'}
+                        </button>
+                    )}
+                    
+                    <button onClick={handleResetProgress} className="bg-gray-50 dark:bg-gray-700 text-red-400 dark:text-red-400 px-4 py-1.5 no-round font-bold hover:bg-red-50 dark:hover:bg-gray-600 hover:text-red-600 dark:hover:text-red-300 border border-transparent hover:border-red-100 dark:hover:border-gray-500 text-xs hidden md:block transition-colors">刪除</button>
+                    
+                    {!isShared && !isTask && (
+                        <button onClick={() => setStep('edit')} className="text-xs font-bold bg-purple-50 dark:bg-purple-900 text-purple-600 dark:text-purple-300 px-4 py-1.5 no-round border border-purple-200 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-800 whitespace-nowrap transition-colors">📝 編輯試題</button>
+                    )}
+
+                    <button onClick={handleSubmitClick} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-1.5 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 text-sm shadow-sm transition-colors">
+                        {isShared || isTask || testName.includes('[#op]') ? '直接交卷' : '交卷對答案'}
+                    </button>
+                </div>
+            </div>
+            
+            <div 
+                ref={splitContainerRef}
+                className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full mt-2 sm:mt-4`}
+            >
+                {isDragging && (
+                    <div className="absolute inset-0 z-50" style={{ cursor: layoutMode === 'horizontal' ? 'col-resize' : 'row-resize' }}></div>
+                )}
+
+                {(questionFileUrl || questionText) && previewOpen && (
+                    <div 
+                        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round flex flex-col shrink-0 transition-colors"
+                        style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
+                    >
+                        <div className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-3 py-2 flex justify-between items-center shrink-0 transition-colors">
+                            <span className="font-bold text-xs text-gray-600 dark:text-gray-300 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
+                            <div className="flex space-x-3 items-center">
+                                {questionFileUrl && (
+                                    <div className="flex space-x-1 items-center bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded">
+                                        <button onClick={() => setPdfZoom(z => Math.max(0.5, z - 0.2))} className="px-2 font-bold text-gray-600 dark:text-gray-200">-</button>
+                                        <span className="text-[10px] w-8 text-center font-bold dark:text-gray-200">{Math.round(pdfZoom * 100)}%</span>
+                                        <button onClick={() => setPdfZoom(z => Math.min(3, z + 0.2))} className="px-2 font-bold text-gray-600 dark:text-gray-200">+</button>
+                                    </div>
+                                )}
+                                {questionFileUrl && (
+                                    <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold underline">在新分頁開啟</a>
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex-grow w-full relative bg-gray-200 dark:bg-gray-800 flex flex-col overflow-auto">
+                            {questionFileUrl && (
+                                <div style={{ transform: `scale(${pdfZoom})`, transformOrigin: 'top left', width: `${100/pdfZoom}%`, height: `${100/pdfZoom}%` }} className={`relative shrink-0`}>
+                                    <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0 bg-white" allow="autoplay" allowFullScreen></iframe>
+                                </div>
+                            )}
+                            {questionText && (
+                                <div className={`w-full relative bg-white dark:bg-gray-800 flex flex-col flex-grow h-full`}>
+                                    <textarea 
+                                        className={`absolute inset-0 w-full h-full p-4 resize-none outline-none custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300' : 'bg-white dark:bg-gray-800 text-black dark:text-white focus:ring-2 focus:ring-inset focus:ring-black dark:focus:ring-white'}`}
+                                        style={{ whiteSpace: 'pre-wrap' }}
+                                        value={questionText}
+                                        onChange={e => setQuestionText(e.target.value)}
+                                        readOnly={isShared || isTask}
+                                        placeholder={isShared || isTask ? "沒有提供試題文字" : "在此輸入或貼上試題純文字..."}
+                                        onFocus={handleFocusScroll}
+                                    ></textarea>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {(questionFileUrl || questionText) && previewOpen && (
+                    <div 
+                        onMouseDown={handleDragStart}
+                        onTouchStart={handleDragStart}
+                        className={`${layoutMode === 'horizontal' ? 'w-4 h-full cursor-col-resize flex-col' : 'h-4 w-full cursor-row-resize flex-row'} bg-gray-100 dark:bg-gray-900 hover:bg-blue-200 dark:hover:bg-blue-800 flex items-center justify-center shrink-0 z-40 transition-colors active:bg-blue-300`}
+                    >
+                        <div className={`${layoutMode === 'horizontal' ? 'w-1 h-8' : 'h-1 w-8'} bg-gray-400 dark:bg-gray-600 rounded-full`}></div>
+                    </div>
+                )}
+
+                <div className={`flex-grow flex flex-col bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round overflow-hidden transition-colors`}>
+                    <div className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-2 shrink-0 flex justify-between items-center transition-colors">
+                        <span className="font-bold text-xs text-gray-600 dark:text-gray-300">✏️ 答案卡 {isTimeUp && <span className="text-red-500 ml-2">(已鎖定)</span>}</span>
+                    </div>
+                    <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white dark:bg-gray-800 transition-colors">
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px 16px' }}>
+                            {userAnswers.map((ans, i) => (
+                                <div key={i} className="break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 pr-2 transition-colors">
+                                    <div className="flex items-center space-x-2 shrink-0 w-14">
+                                        <span className="font-mono text-sm font-bold text-gray-400 dark:text-gray-500">{i+1}.</span>
+                                        <button 
+                                            disabled={isTimeUp}
+                                            onClick={() => toggleStar(i)} 
+                                            className={`text-sm focus:outline-none ${starred[i] ? 'text-orange-500' : 'text-gray-200 dark:text-gray-600'} ${isTimeUp ? 'cursor-not-allowed opacity-50' : 'hover:text-gray-300 dark:hover:text-gray-500'}`}
+                                        >★</button>
+                                    </div>
+                                    <div className="flex space-x-1 shrink-0">
+                                        {['A','B','C','D'].map(o => (
+                                            <button 
+                                                key={o} 
+                                                disabled={isTimeUp}
+                                                onClick={() => handleAnswerSelect(i, o)} 
+                                                className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all 
+                                                    ${ans === o ? 'bg-black dark:bg-gray-200 border-black dark:border-gray-200 text-white dark:text-black scale-105 shadow-sm' : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-400'}
+                                                    ${isTimeUp ? 'locked-btn' : 'hover:border-gray-500 dark:hover:border-gray-400'}`}
+                                            >{o}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    );
+
+    if (step === 'grading') return (
+        <div className="flex flex-col min-h-[100dvh] items-center justify-center p-4 relative py-10 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors">
+            <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">
+                ← 返回作答
+            </button>
+            <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-lg no-round border border-gray-200 dark:border-gray-700 mt-10 transition-colors">
+                <h2 className="font-bold mb-4 text-lg dark:text-white">輸入標準答案</h2>
+                <textarea 
+                    className={`w-full h-40 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono mb-4 outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white`} 
+                    placeholder="例如: ABCD..." 
+                    value={correctAnswersInput} 
+                    onChange={e => setCorrectAnswersInput(e.target.value)} 
+                    onFocus={handleFocusScroll}
+                ></textarea>
+                
+                <button onClick={handleGrade} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors">開始批改</button>
+            </div>
+        </div>
+    );
+
+    if (step === 'results') return (
+        <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
+            <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10 transition-colors">
+                <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
+                    <h2 className="font-bold truncate text-base pr-4 dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(testName, true) : testName} - 測驗結果</h2>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
+                    {!isShared && !isTask && (
+                        <button onClick={async () => {
+                            if (shortCode) {
+                                navigator.clipboard.writeText(shortCode);
+                                showAlert(`✅ 測驗代碼已複製！\n\n您的代碼：\n${shortCode}\n\n將此代碼傳給朋友，他們可在題庫點擊「📥 輸入代碼」直接下載。`);
+                            } else {
+                                const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                                try {
+                                    await window.db.collection('shareCodes').doc(newCode).set({ ownerId: currentUser.uid, quizId: quizId });
+                                    await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({ shortCode: newCode });
+                                    setShortCode(newCode);
+                                    navigator.clipboard.writeText(newCode);
+                                    showAlert(`✅ 測驗代碼已生成並複製！\n\n您的代碼：\n${newCode}\n\n將此代碼傳給朋友，他們可在題庫點擊「📥 輸入代碼」直接下載。`);
+                                } catch (e) {
+                                    showAlert('生成代碼失敗：' + e.message);
+                                }
+                            }
+                        }} className="text-sm font-bold bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-4 py-1.5 no-round border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-800 whitespace-nowrap transition-colors">🔑 複製代碼</button>
+                    )}
+
+                    {!isShared && !isTask && (
+                        <button onClick={() => setStep('edit')} className="text-sm font-bold bg-purple-50 dark:bg-purple-900 text-purple-600 dark:text-purple-300 px-4 py-1.5 no-round border border-purple-200 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-800 whitespace-nowrap transition-colors">📝 編輯試題</button>
+                    )}
+
+                    {(isShared || isTask || testName.includes('[#op]')) && (
+                        <button onClick={handleSendSuggestion} className="text-sm font-bold bg-purple-50 dark:bg-purple-900 text-purple-600 dark:text-purple-300 px-4 py-1.5 no-round border border-purple-200 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-800 whitespace-nowrap transition-colors">💡 修正建議</button>
+                    )}
+                    
+                    <button onClick={handleRetake} className="text-sm font-bold bg-orange-50 dark:bg-orange-900 text-orange-600 dark:text-orange-400 px-4 py-1.5 no-round border border-orange-200 dark:border-orange-700 hover:bg-orange-100 dark:hover:bg-orange-800 whitespace-nowrap transition-colors">再做一次</button>
+
+                    {(questionFileUrl || questionText) && previewOpen && (
+                        <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 dark:bg-gray-700 text-black dark:text-white px-3 py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
+                        </button>
+                    )}
+
+                    {(questionFileUrl || questionText) && (
+                        <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 dark:bg-gray-700 text-black dark:text-white px-3 py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            {previewOpen ? '👀 暫時關閉預覽' : '👀 開啟預覽'}
+                        </button>
+                    )}
+                    
+                    <button onClick={() => setShowShareScoreModal(true)} className="text-sm font-bold bg-yellow-50 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-400 px-4 py-1.5 no-round border border-yellow-200 dark:border-yellow-700 hover:bg-yellow-100 dark:hover:bg-yellow-800 whitespace-nowrap transition-colors">📢 炫耀並分享</button>
+                    <button onClick={onBackToDashboard} className="text-sm font-bold bg-black dark:bg-gray-200 text-white dark:text-black px-4 py-1.5 no-round hover:bg-gray-800 dark:hover:bg-gray-300 whitespace-nowrap transition-colors">返回列表</button>
+                </div>
+            </div>
+            
+            <div 
+                ref={splitContainerRef}
+                className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full mt-2 sm:mt-4`}
+            >
+                {isDragging && (
+                    <div className="absolute inset-0 z-50" style={{ cursor: layoutMode === 'horizontal' ? 'col-resize' : 'row-resize' }}></div>
+                )}
+
+                {(questionFileUrl || questionText) && previewOpen && (
+                    <div 
+                        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round flex flex-col shrink-0 transition-colors"
+                        style={{ [layoutMode === 'horizontal' ? 'width' : 'height']: `${splitRatio}%` }}
+                    >
+                        <div className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-3 py-2 flex justify-between items-center shrink-0 transition-colors">
+                            <span className="font-bold text-xs text-gray-600 dark:text-gray-300 flex items-center"><span className="text-sm mr-1">📄</span> 試卷預覽區</span>
+                            <div className="flex space-x-3 items-center">
+                                {questionFileUrl && (
+                                    <div className="flex space-x-1 items-center bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded">
+                                        <button onClick={() => setPdfZoom(z => Math.max(0.5, z - 0.2))} className="px-2 font-bold text-gray-600 dark:text-gray-200">-</button>
+                                        <span className="text-[10px] w-8 text-center font-bold dark:text-gray-200">{Math.round(pdfZoom * 100)}%</span>
+                                        <button onClick={() => setPdfZoom(z => Math.min(3, z + 0.2))} className="px-2 font-bold text-gray-600 dark:text-gray-200">+</button>
+                                    </div>
+                                )}
+                                {questionFileUrl && (
+                                    <a href={questionFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold underline">在新分頁開啟</a>
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex-grow w-full relative bg-gray-200 dark:bg-gray-800 flex flex-col overflow-auto">
+                            {questionFileUrl && (
+                                <div style={{ transform: `scale(${pdfZoom})`, transformOrigin: 'top left', width: `${100/pdfZoom}%`, height: `${100/pdfZoom}%` }} className={`relative shrink-0`}>
+                                    <iframe src={getEmbedUrl(questionFileUrl)} className="absolute inset-0 w-full h-full border-0 bg-white" allow="autoplay" allowFullScreen></iframe>
+                                </div>
+                            )}
+                            {questionText && (
+                                <div className={`w-full relative bg-white dark:bg-gray-800 flex flex-col flex-grow h-full`}>
+                                    <textarea 
+                                        className={`absolute inset-0 w-full h-full p-4 resize-none outline-none custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300' : 'bg-white dark:bg-gray-800 text-black dark:text-white focus:ring-2 focus:ring-inset focus:ring-black dark:focus:ring-white'}`}
+                                        style={{ whiteSpace: 'pre-wrap' }}
+                                        value={questionText}
+                                        onChange={e => setQuestionText(e.target.value)}
+                                        readOnly={isShared || isTask}
+                                        placeholder={isShared || isTask ? "沒有提供試題文字" : "在此輸入或貼上試題純文字..."}
+                                        onFocus={handleFocusScroll}
+                                    ></textarea>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {(questionFileUrl || questionText) && previewOpen && (
+                    <div 
+                        onMouseDown={handleDragStart}
+                        onTouchStart={handleDragStart}
+                        className={`${layoutMode === 'horizontal' ? 'w-4 h-full cursor-col-resize flex-col' : 'h-4 w-full cursor-row-resize flex-row'} bg-gray-100 dark:bg-gray-900 hover:bg-blue-200 dark:hover:bg-blue-800 flex items-center justify-center shrink-0 z-40 transition-colors active:bg-blue-300`}
+                    >
+                        <div className={`${layoutMode === 'horizontal' ? 'w-1 h-8' : 'h-1 w-8'} bg-gray-400 dark:bg-gray-600 rounded-full`}></div>
+                    </div>
+                )}
+
+                <div className={`flex-grow flex flex-col bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round overflow-hidden transition-colors`}>
+                    <div className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-2 shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 transition-colors">
+                        <div className="flex items-center space-x-3">
+                            <span className="font-bold text-xs text-gray-600 dark:text-gray-300 flex items-center whitespace-nowrap">
+                                <span className="text-sm mr-1">📝</span> 批改結果：
+                                <span className={`text-xl ml-2 font-black ${results.score >= 60 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{results.score} 分</span>
+                                <span className="text-xs font-normal text-gray-500 ml-2 mt-1">(答對 {results.correctCount}/{results.total} 題)</span>
+                            </span>
+                        </div>
+                        
+                        {canSeeAnswers && (
+                            <div className="flex items-center space-x-4 text-xs shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+                                <label className="flex items-center space-x-1.5 cursor-pointer hover:text-black dark:hover:text-white dark:text-gray-300">
+                                    <input type="checkbox" checked={showOnlyWrong} onChange={e => setShowOnlyWrong(e.target.checked)} className="w-3.5 h-3.5 accent-black dark:accent-white" />
+                                    <span className="font-bold">只看錯題</span>
+                                </label>
+                                <label className="flex items-center space-x-1.5 cursor-pointer hover:text-black dark:hover:text-white dark:text-gray-300">
+                                    <input type="checkbox" checked={showOnlyStarred} onChange={e => setShowOnlyStarred(e.target.checked)} className="w-3.5 h-3.5 accent-black dark:accent-white" />
+                                    <span className="font-bold text-orange-600 dark:text-orange-400">只看星號</span>
+                                </label>
+                                {isTask && initialRecord.taskId && (
+                                    <label className="flex items-center space-x-1.5 cursor-pointer hover:text-black dark:hover:text-white dark:text-gray-300 ml-2 sm:ml-4 pl-2 sm:pl-4 border-l border-gray-300 dark:border-gray-600">
+                                        <input type="checkbox" checked={showDiscussion} onChange={e => setShowDiscussion(e.target.checked)} className="w-3.5 h-3.5 accent-black dark:accent-white" />
+                                        <span className="font-bold text-blue-600 dark:text-blue-400">開啟討論區</span>
+                                    </label>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {isTask && taskScores && (
+                        <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-gray-900 shrink-0">
+                            <h3 className="font-bold text-xs text-blue-600 dark:text-blue-400 mb-2">📊 其他挑戰者成績 (匿名)</h3>
+                            <div className="flex flex-wrap gap-2">
+                                {taskScores.length > 0 ? taskScores.map((s, i) => (
+                                    <span key={i} className={`px-1.5 py-0.5 text-xs font-bold border rounded ${s >= 60 ? 'bg-green-100 text-green-700 border-green-300 dark:bg-green-900 dark:text-green-300 dark:border-green-700' : 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900 dark:text-red-300 dark:border-red-700'}`}>{s} 分</span>
+                                )) : <span className="text-xs text-gray-500">尚無其他挑戰者成績</span>}
+                            </div>
+                        </div>
+                    )}
+
+                    {!canSeeAnswers ? (
+                        <div className="flex-grow flex flex-col items-center justify-center p-8 text-center bg-gray-50 dark:bg-gray-900 custom-scrollbar">
+                            <span className="text-5xl mb-4 block">🔒</span>
+                            <h3 className="font-black text-xl text-gray-700 dark:text-gray-300 mb-2">答案未公開</h3>
+                            <p className="text-gray-500 dark:text-gray-400 font-bold max-w-sm">出題者已將此試卷的標準答案隱藏。<br/>您的分數已記錄成功，您可以前往討論區與大家交流！</p>
+                        </div>
+                    ) : (
+                        <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white dark:bg-gray-800 transition-colors">
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px 16px' }}>
+                                {results.data.filter(item => {
+                                    if (showOnlyWrong && item.isCorrect) return false;
+                                    if (showOnlyStarred && !item.isStarred) return false;
+                                    return true;
+                                }).map((item, i) => (
+                                    <div 
+                                        key={i} 
+                                        onClick={() => {
+                                            if (isTask && initialRecord.taskId) {
+                                                setCommentQNum(item.number.toString());
+                                                setShowDiscussion(true);
+                                                setTimeout(() => {
+                                                    discussionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                }, 100);
+                                            }
+                                        }}
+                                        className={`break-avoid flex flex-col justify-between p-3 border border-gray-100 dark:border-gray-700 no-round transition-colors ${item.isCorrect ? 'bg-green-50 dark:bg-green-900' : 'bg-red-50 dark:bg-red-900'} ${isTask ? 'cursor-pointer hover:opacity-80 hover:ring-2 ring-blue-400' : ''}`}
+                                        title={isTask ? "點擊進入此題討論" : ""}
+                                    >
+                                        <div className="flex justify-between items-center w-full mb-2 border-b border-gray-200 dark:border-gray-600 pb-2">
+                                            <div className="flex items-center space-x-3 shrink-0">
+                                                <div className="flex items-center justify-center w-8">
+                                                    {item.isStarred && <span className="text-orange-500 text-xs mr-1">★</span>}
+                                                    <span className={`font-mono text-lg font-bold ${item.isCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>{item.number}.</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col items-end space-y-1">
+                                                <div className="flex items-center space-x-2 text-sm">
+                                                    <span className="text-gray-500 dark:text-gray-400 text-xs font-bold">你的答案</span>
+                                                    <span className={`font-black text-base w-6 text-center ${item.isCorrect ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{item.userAns}</span>
+                                                </div>
+                                                <div className="flex items-center space-x-2 text-sm">
+                                                    <span className="text-gray-500 dark:text-gray-400 text-xs font-bold">正確答案</span>
+                                                    <span className="font-black text-base w-6 text-center text-black dark:text-white">{item.correctAns}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-end w-full">
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleAddToWrongBook(item); }} 
+                                                className="text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                                            >
+                                                📓 收錄錯題
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {isTask && initialRecord.taskId && showDiscussion && (
+                        <div ref={discussionRef} className="h-[350px] flex flex-col border-t-4 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] transition-all">
+                            <div className="bg-gray-100 dark:bg-gray-900 p-2 px-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shrink-0">
+                                <h3 className="font-bold text-sm text-gray-700 dark:text-gray-300">💬 任務討論區 (限傳圖 & 5MB)</h3>
+                                <button onClick={() => setShowDiscussion(false)} className="text-gray-500 hover:text-red-500 font-bold">✖ 關閉</button>
+                            </div>
+                            
+                            <div className="flex-grow overflow-y-auto p-4 space-y-3 custom-scrollbar bg-gray-50 dark:bg-gray-800">
+                                {discussions.length === 0 ? (
+                                    <p className="text-gray-400 text-center text-sm mt-4 font-bold">還沒有人留言，來搶頭香吧！</p>
+                                ) : (
+                                    discussions.map(msg => (
+                                        <div key={msg.id} className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 p-3 no-round shadow-sm">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="flex items-center space-x-2">
+                                                    <span className="font-bold text-sm text-blue-600 dark:text-blue-400">{msg.userName}</span>
+                                                    <span className="text-[10px] font-bold bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 no-round border border-gray-200 dark:border-gray-500">
+                                                        {msg.questionNum === '0' ? '綜合討論' : `針對 第 ${msg.questionNum} 題`}
+                                                    </span>
+                                                </div>
+                                                <span className="text-[10px] text-gray-400 font-bold">
+                                                    {msg.timestamp ? msg.timestamp.toDate().toLocaleString('zh-TW') : ''}
+                                                </span>
+                                            </div>
+                                            {msg.text && <p className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap font-bold">{msg.text}</p>}
+                                            {msg.imageUrl && (
+                                                <img src={msg.imageUrl} alt="留言附圖" className="mt-2 max-w-[200px] max-h-[200px] object-contain border border-gray-200 dark:border-gray-600" />
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            <div className="p-3 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 shrink-0">
+                                <div className="flex space-x-2 mb-2">
+                                    <select 
+                                        value={commentQNum} 
+                                        onChange={e => setCommentQNum(e.target.value)}
+                                        className="p-1.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm no-round outline-none font-bold"
+                                    >
+                                        <option value="0">綜合討論</option>
+                                        {Array.from({ length: numQuestions }, (_, i) => (
+                                            <option key={i+1} value={i+1}>針對第 {i+1} 題</option>
+                                        ))}
+                                    </select>
+                                    <input 
+                                        type="file" 
+                                        accept="image/*"
+                                        id="commentFile"
+                                        className="hidden"
+                                        onChange={e => setCommentFile(e.target.files[0])}
+                                    />
+                                    <label 
+                                        htmlFor="commentFile" 
+                                        className="flex items-center justify-center px-3 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-bold transition-colors"
+                                        title="支援上傳圖片 (大小不超過 5MB)"
+                                    >
+                                        {commentFile ? '🖼️ 已選圖片' : '📎 附加圖片'}
+                                    </label>
+                                </div>
+                                <div className="flex space-x-2">
+                                    <textarea 
+                                        className="flex-grow p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm no-round outline-none resize-none h-10 custom-scrollbar font-bold"
+                                        placeholder="輸入留言內容..."
+                                        value={commentInput}
+                                        onChange={e => setCommentInput(e.target.value)}
+                                    />
+                                    <button 
+                                        onClick={handleUploadComment} 
+                                        disabled={isSubmittingComment}
+                                        className="bg-black dark:bg-gray-200 text-white dark:text-black px-4 py-2 font-black no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors whitespace-nowrap"
+                                    >
+                                        {isSubmittingComment ? '傳送中' : '送出留言'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+            </div>
+
+            {showShareScoreModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-sm no-round shadow-xl">
+                        <h3 className="font-bold text-lg mb-4 dark:text-white">🏆 選擇要炫耀並分享的好友</h3>
+                        <div className="max-h-60 overflow-y-auto mb-4 border border-gray-200 dark:border-gray-700 custom-scrollbar">
+                            {(userProfile.friends || []).length === 0 ? <p className="p-4 text-sm text-gray-400">目前還沒有好友喔</p> : null}
+                            {(userProfile.friends || []).map(f => (
+                                <button key={f.uid} onClick={() => shareScoreToFriend(f)} className="w-full text-left p-3 hover:bg-yellow-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-600 font-bold text-sm transition-colors dark:text-white">
+                                    {f.name} <span className="text-gray-400 dark:text-gray-400 font-normal ml-2">{f.email}</span>
+                                </button>
+                            ))}
+                        </div>
+                        <button onClick={() => setShowShareScoreModal(false)} className="w-full bg-gray-100 dark:bg-gray-700 text-black dark:text-white p-2 font-bold no-round hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">取消</button>
+                    </div>
+                </div>
+            )}
+            
+            {/* 新增：錯題收錄 Modal */}
+            {wrongBookAddingItem && (
+                <WrongBookModal
+                    title={`收錄第 ${wrongBookAddingItem.number} 題`}
+                    initialData={{ qText: '', nText: '' }}
+                    onClose={() => setWrongBookAddingItem(null)}
+                    onSave={async (data) => {
+                        try {
+                            await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').add({
+                                quizId: quizId,
+                                quizName: testName,
+                                questionNum: wrongBookAddingItem.number,
+                                userAns: wrongBookAddingItem.userAns || '未填寫',
+                                correctAns: wrongBookAddingItem.correctAns,
+                                qText: data.qText,
+                                qImage: data.qImage,
+                                nText: data.nText,
+                                nImage: data.nImage,
+                                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                            showAlert(`✅ 第 ${wrongBookAddingItem.number} 題已成功收錄至「錯題整理」！`);
+                            setWrongBookAddingItem(null);
+                        } catch(e) {
+                            showAlert("收錄失敗：" + e.message);
+                        }
+                    }}
+                    showAlert={showAlert}
+                />
+            )}
+        </div>
+    );
+}
