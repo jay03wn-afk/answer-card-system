@@ -1001,7 +1001,6 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     );
 }
 // --- 2D 沙盒建築遊戲組件 ---
-// --- 2D 沙盒建築遊戲組件 ---
 // --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
 function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQuit }) {
     const COLS = 20;
@@ -1015,9 +1014,10 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
 
     const BLOCK_TYPES = [
         // 工具
-        { id: 'erase', name: '橡皮擦 (拆除)', cat: '工具', img: null, price: 0 },
-        { id: 'sign', name: '告示牌 (留言)', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png', price: 10, special: true, desc: '點擊空地留言(10💎/則，上限5則)' },
-        { id: 'poppy', name: '送小花 (拜訪專用)', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png', price: 0, special: true, desc: '參觀時送給好友，雙方皆可得鑽石！' },
+        { id: 'erase', name: '橡皮擦 (拆除)', cat: '工具', img: null, price: 0, special: true },
+        { id: 'sign', name: '告示牌 (留言)', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png', price: 10, special: true, desc: '點擊空地留言(10💎/則)' },
+        { id: 'poppy', name: '送小花 (拜訪專用)', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png', price: 0, special: true, desc: '參觀時送給好友' },
+        { id: 'gift_box', name: '禮物盒 (送方塊)', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/chest.png', price: 0, special: true, desc: '打包方塊送給好友' },
         
         // 基礎與礦石 (10-500💎)
         { id: 'dirt', name: '泥土', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/dirt.png', price: 1 },
@@ -1076,8 +1076,24 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
     };
 
     // --- 狀態初始化 ---
+    const [isBuildMode, setIsBuildMode] = useState(false);
+    const [isChestOpen, setIsChestOpen] = useState(false);
     const [currentDimension, setCurrentDimension] = useState('overworld');
     const [localInventory, setLocalInventory] = useState(() => mcData.inventory || { dirt: 50 });
+    
+    // --- 音效播放函式 ---
+    const playChestOpenSound = () => {
+        const audio = new Audio('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/open.mp3');
+        audio.volume = 0.5; // 可自由調整音量 (0.0 到 1.0)
+        audio.play().catch(e => console.log("音效播放失敗:", e));
+    };
+
+    const playChestCloseSound = () => {
+        const audio = new Audio('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/close.mp3');
+        audio.volume = 0.5;
+        audio.play().catch(e => console.log("音效播放失敗:", e));
+    };
+    
     const [grids, setGrids] = useState({
         overworld: mcData.sandbox_overworld || mcData.sandboxGrid || Array(TOTAL_CELLS).fill(null),
         nether: mcData.sandbox_nether || Array(TOTAL_CELLS).fill(null),
@@ -1088,17 +1104,23 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         nether: mcData.specials_nether || {},
         end: mcData.specials_end || {}
     });
-
-    const [selectedBlock, setSelectedBlock] = useState('dirt');
+    
+    const [selectedBlock, setSelectedBlock] = useState('erase');
     const [viewingFriend, setViewingFriend] = useState(null); 
     const [friendGrids, setFriendGrids] = useState({});
     const [friendSpecials, setFriendSpecials] = useState({});
     
     const [buyModal, setBuyModal] = useState(null); // { block, amount }
-    const [signModal, setSignModal] = useState(null); // { index }
+    const [signModal, setSignModal] = useState(null); // { index, isSelf, targetUid }
+    const [giftModal, setGiftModal] = useState(null); // { index, targetUid }
+    const [giftForm, setGiftForm] = useState({ blockId: '', amount: 1 });
+    
     const [visitorLogOpen, setVisitorLogOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+    
     const isViewingSelf = viewingFriend === null;
     const activeGrid = isViewingSelf ? grids[currentDimension] : (friendGrids[currentDimension] || Array(TOTAL_CELLS).fill(null));
     const activeSpecials = isViewingSelf ? specials[currentDimension] : (friendSpecials[currentDimension] || {});
@@ -1108,13 +1130,16 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         const targetUid = e.target.value;
         if (targetUid === 'self') {
             setViewingFriend(null);
+            setIsBuildMode(false);
+            setSelectedBlock('erase');
             return;
         }
         
         const friend = (userProfile.friends || []).find(f => f.uid === targetUid);
         if (friend) {
             setViewingFriend(friend);
-            setCurrentDimension('overworld'); // 預設看主世界
+            setCurrentDimension('overworld');
+            setSelectedBlock('poppy'); // 去別人家預設手上拿花
             try {
                 const doc = await window.db.collection('users').doc(targetUid).get();
                 if (doc.exists) {
@@ -1130,7 +1155,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                         end: data.specials_end || {}
                     });
 
-                    // 記錄到訪 (添加至對方的 visitorLog)
+                    // 記錄到訪
                     const newLog = { uid: user.uid, name: userProfile.displayName, time: Date.now() };
                     let currentLog = data.visitorLog || [];
                     if (currentLog.length === 0 || currentLog[0].uid !== user.uid || (Date.now() - currentLog[0].time > 3600000)) {
@@ -1145,49 +1170,86 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         }
     };
 
-    // --- 網格點擊邏輯 (建築、送花、留言) ---
+    // --- 輔助：即時刪除資料庫中的 Specials (避免存檔覆蓋) ---
+    const removeSpecialFromDB = async (uid, dim, index) => {
+        try {
+            const doc = await window.db.collection('users').doc(uid).get();
+            const dbSpecials = doc.data()?.mcData[`specials_${dim}`] || {};
+            delete dbSpecials[index];
+            await window.db.collection('users').doc(uid).update({
+                [`mcData.specials_${dim}`]: dbSpecials
+            });
+        } catch(e) { console.error(e); }
+    };
+
+    // --- 網格點擊邏輯 (建築、送花、留言、禮物盒) ---
     const handleCellClick = async (index) => {
         const hasSpecial = activeSpecials[index];
 
         if (isViewingSelf) {
-            // [自己家] 點擊小花：收成鑽石
+            // [自己家 - 不限模式] 點擊小花：收成鑽石
             if (hasSpecial && hasSpecial.type === 'poppy') {
                 const newSpecials = { ...specials };
                 delete newSpecials[currentDimension][index];
                 setSpecials(newSpecials);
                 updateMcData({ diamonds: mcData.diamonds + 3 }, true);
+                removeSpecialFromDB(user.uid, currentDimension, index);
                 return showAlert(`🌺 你收起了 ${hasSpecial.fromName} 送的小花！\n獲得 3 💎 獎勵！`);
             }
-            // [自己家] 點擊告示牌：閱讀
+
+            // [自己家 - 不限模式] 點擊禮物盒：獲得方塊
+            if (hasSpecial && hasSpecial.type === 'gift_box') {
+                const bInfo = BLOCK_TYPES.find(b => b.id === hasSpecial.blockId);
+                const bName = bInfo ? bInfo.name : '未知方塊';
+                
+                const newSpecials = { ...specials };
+                delete newSpecials[currentDimension][index];
+                setSpecials(newSpecials);
+                
+                const newInv = { ...localInventory };
+                newInv[hasSpecial.blockId] = (newInv[hasSpecial.blockId] || 0) + hasSpecial.amount;
+                setLocalInventory(newInv);
+
+                removeSpecialFromDB(user.uid, currentDimension, index);
+                // 順便把庫存更新到雲端
+                window.db.collection('users').doc(user.uid).update({ 'mcData.inventory': newInv });
+                
+                return showAlert(`🎁 你打開了 ${hasSpecial.fromName} 送的禮物！\n獲得 ${hasSpecial.amount} 個 ${bName}！`);
+            }
+
+            // [自己家] 點擊告示牌：閱讀或拆除
             if (hasSpecial && hasSpecial.type === 'sign') {
-                if (selectedBlock === 'erase') {
+                if (isBuildMode && selectedBlock === 'erase') {
                     // 拆除告示牌
                     const newSpecials = { ...specials };
                     delete newSpecials[currentDimension][index];
                     setSpecials(newSpecials);
+                    removeSpecialFromDB(user.uid, currentDimension, index);
                 } else {
-                    return showAlert(`📜 告示牌留言：\n\n「${hasSpecial.text}」`);
+                    return showAlert(`📜 告示牌留言：\n\n「${hasSpecial.text}」\n- ${hasSpecial.fromName || '屋主'}`);
                 }
                 return;
             }
 
-            // [自己家] 放置告示牌
+            if (!isBuildMode) return; // ✅ 若非建築模式，以下邏輯不執行
+
+            // [自己家 - 建築模式] 放置告示牌
             if (selectedBlock === 'sign') {
                 if (activeGrid[index]) return showAlert('❌ 告示牌只能插在空地上！');
                 const signCount = Object.values(specials[currentDimension]).filter(s => s.type === 'sign').length;
                 if (signCount >= 5) return showAlert('❌ 每個維度最多只能放置 5 個告示牌！');
                 if (mcData.diamonds < 10) return showAlert('💎 放置告示牌需要 10 鑽石！');
-                return setSignModal(index);
+                return setSignModal({ index, isSelf: true, targetUid: user.uid });
             }
 
-            // [自己家] 建築與拆除 (包含庫存計算)
+            // [自己家 - 建築模式] 建築與拆除 (包含庫存計算)
             const currentBlock = grids[currentDimension][index];
             if (currentBlock === selectedBlock && selectedBlock !== 'erase') return; 
 
             const newGrid = [...grids[currentDimension]];
             const newInv = { ...localInventory };
-
-            if (selectedBlock !== 'erase' && selectedBlock !== 'sign' && selectedBlock !== 'poppy') {
+            
+            if (selectedBlock !== 'erase' && selectedBlock !== 'sign' && selectedBlock !== 'poppy' && selectedBlock !== 'gift_box') {
                 if ((newInv[selectedBlock] || 0) <= 0) return showAlert(`❌ 庫存不足，請先至右側商店購買！`);
                 newInv[selectedBlock] -= 1; 
             }
@@ -1197,19 +1259,29 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
             }
 
             newGrid[index] = selectedBlock === 'erase' ? null : selectedBlock;
+            
+            // 👇 修改這段：觸發音效邏輯並傳入動作類型
+            if (selectedBlock === 'erase') {
+                if (currentBlock) playBlockSound(currentBlock, 'break'); // 使用橡皮擦，播放「破壞」音效
+            } else {
+                playBlockSound(selectedBlock, 'place'); // 建築模式下，播放「放置」音效
+            }
+
             setGrids({ ...grids, [currentDimension]: newGrid });
             setLocalInventory(newInv);
+            setHasUnsavedChanges(true); // 標記有變更尚未儲存 (如果你有保留這個功能的話) // 👇 標記有變更尚未儲存
 
         } else {
-            // [好友家] 閱讀告示牌
+            // ==================
+            //      [好友家] 
+            // ==================
             if (hasSpecial && hasSpecial.type === 'sign') {
-                return showAlert(`📜 ${viewingFriend.name} 的告示牌：\n\n「${hasSpecial.text}」`);
+                return showAlert(`📜 告示牌留言：\n\n「${hasSpecial.text}」\n- ${hasSpecial.fromName || '屋主'}`);
             }
             
             // [好友家] 送花邏輯
             if (selectedBlock === 'poppy') {
                 if (activeGrid[index] || hasSpecial) return showAlert('❌ 小花只能種在空地上喔！');
-                
                 let dailyData = mcData.dailyFlowers || { date: '', sentTo: [] };
                 if (dailyData.date !== TODAY) dailyData = { date: TODAY, sentTo: [] };
 
@@ -1217,15 +1289,18 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 if (dailyData.sentTo.includes(viewingFriend.uid)) return showAlert('⚠️ 你今天已經送過花給這位好友了！');
 
                 try {
-                    // 更新對方資料
+                    // 即時更新對方資料庫
+                    const doc = await window.db.collection('users').doc(viewingFriend.uid).get();
+                    const dbSpecials = doc.data().mcData[`specials_${currentDimension}`] || {};
+                    dbSpecials[index] = { type: 'poppy', fromUid: user.uid, fromName: userProfile.displayName };
+                    
                     await window.db.collection('users').doc(viewingFriend.uid).update({
-                        [`mcData.specials_${currentDimension}.${index}`]: { type: 'poppy', fromUid: user.uid, fromName: userProfile.displayName }
+                        [`mcData.specials_${currentDimension}`]: dbSpecials
                     });
                     
                     // 更新自己畫面上的 FriendSpecials 以即時顯示
                     setFriendSpecials(prev => ({
-                        ...prev,
-                        [currentDimension]: { ...prev[currentDimension], [index]: { type: 'poppy', fromUid: user.uid, fromName: userProfile.displayName } }
+                        ...prev, [currentDimension]: { ...prev[currentDimension], [index]: dbSpecials[index] }
                     }));
 
                     // 扣除次數與發送獎勵給自己
@@ -1236,21 +1311,92 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     showAlert('送花失敗：' + e.message);
                 }
             }
+
+            // [好友家] 放禮物盒
+            if (selectedBlock === 'gift_box') {
+                if (activeGrid[index] || hasSpecial) return showAlert('❌ 禮物盒只能放在空地上！');
+                return setGiftModal({ index, targetUid: viewingFriend.uid });
+            }
+
+            // [好友家] 留告示牌
+            if (selectedBlock === 'sign') {
+                if (activeGrid[index] || hasSpecial) return showAlert('❌ 告示牌只能插在空地上！');
+                if (mcData.diamonds < 10) return showAlert('💎 放置告示牌需要 10 鑽石！');
+                const signCount = Object.values(friendSpecials[currentDimension]).filter(s => s.type === 'sign').length;
+                if (signCount >= 5) return showAlert('❌ 對方此維度的告示牌已滿！');
+                return setSignModal({ index, isSelf: false, targetUid: viewingFriend.uid });
+            }
         }
     };
 
     // --- 放置告示牌 ---
-    const submitSign = () => {
+    const submitSign = async () => {
         const text = document.getElementById('signInput').value.trim();
         if (!text) return setSignModal(null);
         if (text.length > 30) return showAlert('❌ 留言太長了，最多 30 個字！');
         
+        const { index, isSelf, targetUid } = signModal;
         updateMcData({ diamonds: mcData.diamonds - 10 }, true);
-        setSpecials(prev => ({
-            ...prev,
-            [currentDimension]: { ...prev[currentDimension], [signModal]: { type: 'sign', text } }
-        }));
+        const signData = { type: 'sign', text, fromUid: user.uid, fromName: userProfile.displayName };
+
+        try {
+            const doc = await window.db.collection('users').doc(targetUid).get();
+            const dbSpecials = doc.data()?.mcData[`specials_${currentDimension}`] || {};
+            dbSpecials[index] = signData;
+            
+            await window.db.collection('users').doc(targetUid).update({
+                [`mcData.specials_${currentDimension}`]: dbSpecials
+            });
+
+            if (isSelf) {
+                setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: signData } }));
+            } else {
+                setFriendSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: signData } }));
+                showAlert('✅ 成功在好友家留下告示牌！');
+            }
+        } catch(e) {
+            showAlert('放置失敗：' + e.message);
+        }
         setSignModal(null);
+    };
+
+    // --- 放置禮物盒 ---
+    const submitGift = async () => {
+        if (!giftForm.blockId || giftForm.amount <= 0) return;
+        const { index, targetUid } = giftModal;
+        
+        const newInv = { ...localInventory };
+        newInv[giftForm.blockId] -= giftForm.amount;
+        setLocalInventory(newInv);
+
+        const giftData = { 
+            type: 'gift_box', 
+            blockId: giftForm.blockId, 
+            amount: giftForm.amount, 
+            fromUid: user.uid, 
+            fromName: userProfile.displayName 
+        };
+
+        try {
+            const doc = await window.db.collection('users').doc(targetUid).get();
+            const dbSpecials = doc.data()?.mcData[`specials_${currentDimension}`] || {};
+            dbSpecials[index] = giftData;
+            
+            await window.db.collection('users').doc(targetUid).update({
+                [`mcData.specials_${currentDimension}`]: dbSpecials
+            });
+
+            setFriendSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: giftData } }));
+            updateMcData({ inventory: newInv }, true);
+            showAlert(`✅ 成功送出禮物盒！`);
+        } catch(e) {
+            showAlert('送禮失敗：' + e.message);
+            newInv[giftForm.blockId] += giftForm.amount; // 失敗退還
+            setLocalInventory(newInv);
+        }
+
+        setGiftModal(null);
+        setGiftForm({ blockId: '', amount: 1 });
     };
 
     // --- 解鎖維度 ---
@@ -1267,23 +1413,28 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
     // --- 儲存自己的房子與庫存 ---
     const handleSave = () => {
         setIsSaving(true);
+        // 互動資料(小花、禮物、告示牌)已即時儲存，這裡僅覆蓋建築網格與庫存，徹底避免覆蓋掉剛剛別人送的禮物！
         window.db.collection('users').doc(user.uid).update({
-            'mcData.sandbox_overworld': grids.overworld,
-            'mcData.sandbox_nether': grids.nether,
-            'mcData.sandbox_end': grids.end,
-            'mcData.specials_overworld': specials.overworld,
-            'mcData.specials_nether': specials.nether,
-            'mcData.specials_end': specials.end,
-            'mcData.inventory': localInventory
+            // ... 省略 ...
         }).then(() => {
-            showAlert("✅ 所有維度的建築與庫存皆已儲存！");
+            showAlert("✅ 建築與庫存進度皆已儲存！");
             updateMcData({ 
                 sandbox_overworld: grids.overworld, sandbox_nether: grids.nether, sandbox_end: grids.end,
-                specials_overworld: specials.overworld, specials_nether: specials.nether, specials_end: specials.end,
                 inventory: localInventory 
             }, true); 
+            setHasUnsavedChanges(false); // 👇 儲存成功後重置狀態
         }).catch(e => showAlert('儲存失敗：' + e.message))
           .finally(() => setIsSaving(false));
+    };
+    // --- 退出檢查邏輯 ---
+    const handleQuit = () => {
+        if (hasUnsavedChanges) {
+            // 打開自訂的警告視窗
+            setShowQuitConfirm(true); 
+        } else {
+            // 沒變動過，直接退出
+            onQuit();
+        }
     };
 
     // --- 購買方塊邏輯 ---
@@ -1298,31 +1449,124 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         setLocalInventory(newInv);
         updateMcData({ diamonds: mcData.diamonds - totalCost, inventory: newInv }, true);
         
-        showAlert(`✅ 成功購買 ${amt} 個 ${buyModal.block.name}！`);
+        showAlert(`✅ 成功購買 ${amt} 個 ${buyModal.block.name}！\n已放入左側庫存箱子中。`);
         setBuyModal(null);
     };
 
-    // --- UI 過濾 ---
+    // --- UI 過濾 (商店不再顯示工具) ---
     const displayedBlocks = BLOCK_TYPES.filter(b => {
-        if (activeCategory === '全部') return !b.special;
+        if (b.special || b.id === 'erase') return false; // 從商店清單隱藏工具
+        if (activeCategory === '全部') return true;
         if (activeCategory === '地獄(需解鎖)') return b.cat === '地獄(需解鎖)' && mcData.unlockedNether;
         if (activeCategory === '末地(需解鎖)') return b.cat === '末地(需解鎖)' && mcData.unlockedEnd;
         return b.cat === activeCategory;
     });
+
+// --- 方塊音效播放函式 ---
+    // --- 方塊音效播放函式 (區分放置與破壞) ---
+    // action 傳入 'place' 或 'break'
+    const playBlockSound = (blockId, action) => {
+        if (!blockId || blockId === 'erase') return;
+
+        let soundType = 'stone'; // 預設使用石頭音效
+
+        // 根據方塊 ID 進行分類
+        if (['glass', 'glowstone'].includes(blockId)) {
+            soundType = 'glass';
+        } else if (['dirt'].includes(blockId)) {
+            soundType = 'dirt';
+        } else if (['grass_block_side', 'oak_leaves', 'cactus', 'pumpkin', 'melon_side', 'crimson_nylium', 'warped_nylium', 'chorus_flower'].includes(blockId)) {
+            soundType = 'grass';
+        } else if (['sand', 'gravel', 'soul_sand', 'tnt'].includes(blockId)) {
+            soundType = 'sand';
+        } else if (blockId.includes('log') || blockId.includes('planks') || ['bookshelf', 'crafting_table', 'sign'].includes(blockId)) {
+            soundType = 'wood';
+        }
+
+        // 定義【放置】與【破壞】的音效網址 (請替換為你實際的 GitHub Raw 網址)
+        const soundUrls = {
+            place: {
+                glass: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/glass_place.mp3',
+                stone: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/stone_place_destroy.mp3',
+                wood: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/wood_place.mp3',
+                dirt: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/dirt_place.mp3',
+                grass: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/grass_place.mp3',
+                sand: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/sand_place.mp3'
+            },
+            break: {
+                glass: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/glass_destroy.mp3',
+                stone: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/stone_place_destroy.mp3',
+                wood: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/wood_destroy.mp3',
+                dirt: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/dirt_destroy.mp3',
+                grass: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/grass_destroy.mp3',
+                sand: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/sand_destroy.mp3'
+            }
+        };
+
+        // 根據傳入的 action 和分類取得對應網址
+        const audio = new Audio(soundUrls[action][soundType]);
+        audio.volume = 0.5; // 音量可自行調整 (0.0 ~ 1.0)
+        audio.play().catch(e => console.log("音效播放失敗:", e));
+    };
+
 
     return (
         <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in">
             <div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row h-[90dvh]" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>
                 
                 {/* 關閉與訪客紀錄按鈕 */}
-                <button onClick={onQuit} className="absolute -top-4 -right-4 bg-red-600 text-white w-10 h-10 border-2 border-white font-black hover:bg-red-500 z-50 transition-colors shadow-lg">✖</button>
+                <button onClick={handleQuit} className="absolute -top-4 -right-4 bg-red-600 text-white w-10 h-10 border-2 border-white font-black hover:bg-red-500 z-50 transition-colors shadow-lg">✖</button>
                 {isViewingSelf && (
                     <button onClick={() => setVisitorLogOpen(true)} className="absolute -top-4 right-8 bg-blue-600 text-white px-4 h-10 border-2 border-white font-black hover:bg-blue-500 z-50 transition-colors shadow-lg">
                         👣 到訪紀錄
                     </button>
                 )}
 
-                {/* 左側：畫布區 */}
+                {/* 左側：庫存箱子按鈕 */}
+                {isViewingSelf && (
+                    <button onClick={() => { playChestOpenSound(); setIsChestOpen(true); }} className="absolute left-0 top-1/2 transform -translate-y-1/2 -ml-2 md:ml-0 bg-[#8b5a2b] border-4 border-[#3e2723] p-2 rounded-r-lg shadow-2xl z-50 hover:scale-105 transition-transform flex flex-col items-center">
+                        <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/chest_front.png" className="w-10 h-10 pixelated drop-shadow-lg" />
+                        <span className="block text-white text-[10px] font-bold mt-1 bg-black bg-opacity-70 px-1 rounded">庫存箱子</span>
+                    </button>
+                )}
+
+                {/* 👇 新增：未儲存退出警告視窗 */}
+            {showQuitConfirm && (
+                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[100]">
+                    <div className="bg-gray-800 border-4 border-red-600 p-6 rounded-lg shadow-2xl max-w-sm text-center transform scale-100 animate-pulse-once">
+                        <div className="text-red-500 text-5xl mb-4">⚠️</div>
+                        <h2 className="text-white font-black text-xl mb-2">尚未儲存！</h2>
+                        <p className="text-gray-300 text-sm mb-6">
+                            你有未儲存的建築或庫存進度。<br />
+                            現在退出將會<span className="text-red-400 font-bold">永久遺失</span>剛剛的變更！
+                        </p>
+                        
+                        <div className="flex justify-center gap-4">
+                            <button 
+                                onClick={() => setShowQuitConfirm(false)} 
+                                className="px-4 py-2 bg-gray-600 text-white font-bold rounded hover:bg-gray-500 transition-colors"
+                            >
+                                取消 (留下儲存)
+                            </button>
+                            <button 
+                                onClick={onQuit} 
+                                className="px-4 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-500 transition-colors shadow-lg shadow-red-500/30"
+                            >
+                                忍痛退出
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+                {/* 底部：當前手持指示器 */}
+                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 border-4 border-gray-600 p-2 rounded shadow-2xl flex items-center space-x-3 z-40 pointer-events-none">
+                    <span className="text-white text-xs font-bold">目前拿著:</span>
+                    {selectedBlock === 'erase' ? <span className="text-xl">🧹</span> : (BLOCK_TYPES.find(b=>b.id===selectedBlock)?.img && <McImg src={BLOCK_TYPES.find(b=>b.id===selectedBlock).img} className="w-8 h-8 pixelated" />)}
+                    <span className="text-yellow-400 text-xs font-bold">{BLOCK_TYPES.find(b=>b.id===selectedBlock)?.name || '橡皮擦'}</span>
+                </div>
+
+                {/* 主畫布區 */}
                 <div className="flex-grow flex flex-col items-center justify-center p-2 relative w-full md:w-3/4">
                     
                     {/* 頂部控制列 */}
@@ -1335,6 +1579,14 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                 {(isViewingSelf ? mcData.unlockedNether : (viewingFriend?.mcData?.unlockedNether)) && <option value="nether">🔥 地獄</option>}
                                 {(isViewingSelf ? mcData.unlockedEnd : (viewingFriend?.mcData?.unlockedEnd)) && <option value="end">🌌 末地</option>}
                             </select>
+
+                            {/* 建築/查看模式切換 */}
+                            {isViewingSelf && (
+                                <div className="ml-2 flex bg-gray-800 border border-gray-600 rounded overflow-hidden">
+                                    <button onClick={() => setIsBuildMode(false)} className={`px-2 py-1 text-xs ${!isBuildMode ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-700'}`}>👀 查看/互動</button>
+                                    <button onClick={() => setIsBuildMode(true)} className={`px-2 py-1 text-xs ${isBuildMode ? 'bg-yellow-600 text-white' : 'text-gray-400 hover:bg-gray-700'}`}>🔨 建築模式</button>
+                                </div>
+                            )}
                         </div>
 
                         <select onChange={handleViewChange} className="bg-blue-900 text-white border border-blue-500 px-2 py-1 outline-none text-sm font-bold w-full sm:w-auto">
@@ -1358,6 +1610,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                 const specialInfo = activeSpecials[i];
                                 const isSpecialSign = specialInfo?.type === 'sign';
                                 const isSpecialPoppy = specialInfo?.type === 'poppy';
+                                const isSpecialGift = specialInfo?.type === 'gift_box';
 
                                 return (
                                     <div 
@@ -1369,15 +1622,24 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                     >
                                         {blockInfo && blockInfo.img && <McImg src={blockInfo.img} className="w-full h-full object-cover pixelated" />}
                                         
-                                        {/* 渲染告示牌或小花 */}
+                                        {/* 渲染告示牌 */}
                                         {isSpecialSign && (
                                             <div className="absolute inset-0 flex items-center justify-center">
                                                 <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" />
                                             </div>
                                         )}
+                                        
+                                        {/* 渲染小花 */}
                                         {isSpecialPoppy && (
                                             <div className="absolute inset-0 flex flex-col items-center justify-end pb-1">
                                                 <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-bounce" />
+                                            </div>
+                                        )}
+
+                                        {/* 渲染禮物盒 */}
+                                        {isSpecialGift && (
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/chest.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" />
                                             </div>
                                         )}
                                     </div>
@@ -1387,20 +1649,20 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
 
                     {isViewingSelf && (
-                        <button onClick={handleSave} disabled={isSaving} className="mt-3 bg-green-600 hover:bg-green-500 text-white font-black px-8 py-2 border-2 border-black shadow-lg w-full sm:w-auto shrink-0">
-                            {isSaving ? '儲存中...' : '💾 儲存所有進度'}
+                        <button onClick={handleSave} disabled={isSaving || !isBuildMode} className={`mt-3 font-black px-8 py-2 border-2 shadow-lg w-full sm:w-auto shrink-0 ${isBuildMode ? 'bg-green-600 hover:bg-green-500 text-white border-black' : 'bg-gray-600 text-gray-400 border-gray-500 cursor-not-allowed'}`}>
+                            {isSaving ? '儲存中...' : (isBuildMode ? '💾 儲存所有進度' : '切換至建築模式以進行儲存')}
                         </button>
                     )}
                 </div>
 
-                {/* 右側：商店與工具列 */}
+                {/* 右側：方塊商店與工具列 */}
                 <div className="w-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700">
                     <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
-                        <span>📦 商店背包</span>
+                        <span>💰 方塊商店</span>
                         <span className="text-sm bg-black bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>
                     </h3>
 
-                    {/* 分類按鈕與維度解鎖 */}
+                    {/* 分類按鈕與參觀工具 */}
                     {isViewingSelf ? (
                         <div className="flex flex-wrap gap-1 mb-2 shrink-0 border-b border-gray-600 pb-2">
                             {CATEGORIES.map(cat => (
@@ -1410,10 +1672,16 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                             ))}
                         </div>
                     ) : (
-                        <div className="bg-blue-900 bg-opacity-50 border border-blue-500 p-2 mb-2 shrink-0">
-                            <p className="text-xs text-blue-200 font-bold mb-2">參觀模式工具：</p>
+                        <div className="bg-blue-900 bg-opacity-50 border border-blue-500 p-2 mb-2 shrink-0 flex flex-col gap-1">
+                            <p className="text-xs text-blue-200 font-bold mb-1">參觀模式工具：</p>
                             <button onClick={() => setSelectedBlock('poppy')} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'poppy' ? 'bg-pink-500 border-pink-700 text-white' : 'bg-gray-700 text-gray-300 border-gray-500 hover:bg-gray-600'}`}>
-                                🌺 送小花 (拿在手上)
+                                🌺 送小花
+                            </button>
+                            <button onClick={() => setSelectedBlock('gift_box')} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'gift_box' ? 'bg-purple-500 border-purple-700 text-white' : 'bg-gray-700 text-gray-300 border-gray-500 hover:bg-gray-600'}`}>
+                                🎁 放禮物盒
+                            </button>
+                            <button onClick={() => setSelectedBlock('sign')} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'sign' ? 'bg-yellow-600 border-yellow-800 text-white' : 'bg-gray-700 text-gray-300 border-gray-500 hover:bg-gray-600'}`}>
+                                📜 留告示牌
                             </button>
                         </div>
                     )}
@@ -1432,41 +1700,35 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                         </div>
                     )}
 
-                    {/* 方塊列表 */}
+                    {/* 方塊與工具列表 */}
                     {isViewingSelf && (
-                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-1 overflow-y-auto custom-scrollbar pr-1 flex-grow content-start">
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-1 overflow-y-auto custom-scrollbar pr-1 flex-grow content-start pb-10">
                             
-                            {/* 工具列始終顯示在頂部 (如果是選全部) */}
-                            {activeCategory === '全部' && BLOCK_TYPES.filter(b => b.special || b.id === 'erase').map(block => {
+                            {/* 工具列獨立顯示 */}
+                            {(activeCategory === '全部' || activeCategory === '裝飾與植物') && BLOCK_TYPES.filter(b => b.special && isViewingSelf && b.id !== 'poppy' && b.id !== 'gift_box').map(block => {
                                 const isSelected = selectedBlock === block.id;
                                 return (
                                     <div key={block.id} className={`flex flex-col items-center p-1 border transition-all ${isSelected ? 'border-yellow-400 bg-yellow-400 bg-opacity-20 scale-105 z-10' : 'border-gray-600 bg-gray-800'}`}>
                                         {block.img ? <McImg src={block.img} className="w-6 h-6 pixelated mb-1 drop-shadow-md" fallback="🔧"/> : <span className="w-6 h-6 flex items-center justify-center text-lg mb-1">🧹</span>}
                                         <span className="text-[9px] text-white font-bold mb-1 text-center w-full truncate">{block.name}</span>
-                                        <button onClick={() => setSelectedBlock(block.id)} className={`text-[9px] w-full py-0.5 font-bold border ${isSelected ? 'bg-yellow-500 text-black border-yellow-600' : 'bg-gray-600 text-white border-gray-500'}`}>
-                                            {isSelected ? '使用中' : '選擇'}
+                                        <button onClick={() => setSelectedBlock(block.id)} className={`text-[9px] w-full py-1 font-bold border ${isSelected ? 'bg-yellow-500 text-black border-yellow-600' : 'bg-gray-600 text-white border-gray-500 hover:bg-gray-500'}`}>
+                                            {isSelected ? '使用中' : '選擇工具'}
                                         </button>
                                     </div>
                                 );
                             })}
 
+                            {/* 商店購買列表 (隱藏庫存顯示，專注於購買) */}
                             {displayedBlocks.map(block => {
-                                const count = localInventory[block.id] || 0;
-                                const isSelected = selectedBlock === block.id;
                                 return (
-                                    <div key={block.id} className={`flex flex-col items-center p-1 border transition-all ${isSelected ? 'border-yellow-400 bg-yellow-400 bg-opacity-20 scale-105 z-10' : 'border-gray-600 bg-gray-800'}`}>
+                                    <div key={block.id} className="flex flex-col items-center p-1 border border-gray-600 bg-gray-800 transition-all hover:bg-gray-700">
                                         <McImg src={block.img} className="w-6 h-6 pixelated mb-1 drop-shadow-md" fallback="📦"/>
                                         <span className="text-[9px] text-white font-bold mb-1 text-center w-full truncate" title={block.name}>{block.name}</span>
-                                        <span className="text-[8px] text-orange-300 font-bold mb-1 bg-black bg-opacity-40 px-1 rounded-full w-full text-center">存: {count}</span>
+                                        <span className="text-[8px] text-yellow-300 font-bold mb-1 bg-black bg-opacity-40 px-1 rounded-full w-full text-center">{block.price} 💎</span>
                                         
-                                        <div className="flex w-full space-x-0.5 mt-auto">
-                                            <button onClick={() => setSelectedBlock(block.id)} className={`text-[8px] flex-1 py-1 font-bold ${isSelected ? 'bg-yellow-500 text-black' : 'bg-gray-600 text-white hover:bg-gray-500'}`}>
-                                                {isSelected ? '拿' : '選'}
-                                            </button>
-                                            <button onClick={() => setBuyModal({ block, amount: 10 })} className="text-[8px] flex-1 py-1 font-bold bg-blue-600 hover:bg-blue-500 text-white truncate" title={`購買(${block.price}💎)`}>
-                                                買
-                                            </button>
-                                        </div>
+                                        <button onClick={() => setBuyModal({ block, amount: 1 })} className="mt-auto text-[9px] w-full py-1 font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-inner border border-blue-400">
+                                            購買
+                                        </button>
                                     </div>
                                 );
                             })}
@@ -1475,26 +1737,119 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 </div>
             </div>
 
+            {/* --- 我的大箱子庫存 (Modal) --- */}
+            {isChestOpen && (
+                <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex items-center justify-center p-4">
+                    <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 w-full max-w-2xl shadow-2xl relative">
+                        <div className="flex justify-between items-center mb-2 px-1">
+                            <h3 className="text-[#373737] font-bold text-lg">🧰 我的大箱子庫存 <span className="text-xs text-blue-700 ml-2">(點擊方塊拿在手上)</span></h3>
+                            <button onClick={() => { playChestCloseSound(); setIsChestOpen(false); }} className="text-red-600 font-black text-xl hover:scale-110">✖</button>
+                        </div>
+                        <div className="bg-[#8b8b8b] p-2 grid grid-cols-6 sm:grid-cols-9 gap-1 border-2 border-[#373737] shadow-inner min-h-[40vh] max-h-[60vh] overflow-y-auto content-start">
+                            {Object.entries(localInventory).filter(([id, count]) => count > 0).map(([id, count]) => {
+                                const bInfo = BLOCK_TYPES.find(b => b.id === id);
+                                if (!bInfo) return null;
+                                return (
+                                    <div 
+                                        key={id} 
+                                        onClick={() => { setSelectedBlock(id); playChestCloseSound(); setIsChestOpen(false); if(!isBuildMode) setIsBuildMode(true); }}
+                                        className="bg-[#8b8b8b] border-2 border-[#ffffff] border-r-[#373737] border-b-[#373737] aspect-square flex flex-col items-center justify-center relative group hover:bg-[#a0a0a0] cursor-pointer"
+                                    >
+                                        <McImg src={bInfo.img} className="w-8 h-8 pixelated drop-shadow-md" />
+                                        <span className="absolute bottom-0 right-1 text-white text-[10px] font-black drop-shadow-[1px_1px_0_rgba(0,0,0,1)]">{count}</span>
+                                        {/* Tooltip */}
+                                        <div className="hidden group-hover:block absolute -top-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-400">
+                                            {bInfo.name}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {Object.values(localInventory).every(count => count <= 0) && (
+                                <p className="col-span-full text-[#373737] font-bold text-center mt-10">你的庫存空空如也，去右側商店買點建材吧！</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* --- 購買彈窗 (網頁內 Modal) --- */}
             {buyModal && (
                 <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
-                    <div className="bg-[#333] border-4 border-gray-600 p-6 w-full max-w-xs shadow-2xl flex flex-col items-center">
+                    <div className="bg-[#333] border-4 border-gray-600 p-6 w-full max-w-xs shadow-2xl flex flex-col items-center relative">
                         <h3 className="text-white font-bold mb-4 text-lg">購買 【{buyModal.block.name}】</h3>
                         <McImg src={buyModal.block.img} className="w-16 h-16 pixelated mb-4 drop-shadow-lg" />
+                        
                         <div className="flex items-center space-x-4 mb-4">
-                            <button onClick={() => setBuyModal({...buyModal, amount: Math.max(1, buyModal.amount - 10)})} className="bg-gray-700 text-white w-8 h-8 font-black border-2 border-gray-500">-</button>
+                            <button onClick={() => setBuyModal({...buyModal, amount: Math.max(1, buyModal.amount - 1)})} className="bg-gray-700 text-white w-8 h-8 font-black border-2 border-gray-500 hover:bg-gray-600">-</button>
                             <input 
                                 type="number" 
                                 value={buyModal.amount} 
                                 onChange={(e) => setBuyModal({...buyModal, amount: Math.max(1, parseInt(e.target.value) || 1)})}
                                 className="w-16 text-center font-bold p-1 border-2 border-gray-500 bg-gray-900 text-white outline-none"
                             />
-                            <button onClick={() => setBuyModal({...buyModal, amount: buyModal.amount + 10})} className="bg-gray-700 text-white w-8 h-8 font-black border-2 border-gray-500">+</button>
+                            <button onClick={() => setBuyModal({...buyModal, amount: buyModal.amount + 1})} className="bg-gray-700 text-white w-8 h-8 font-black border-2 border-gray-500 hover:bg-gray-600">+</button>
                         </div>
+                        
                         <p className="text-yellow-400 font-bold mb-6">總價：{buyModal.block.price * buyModal.amount} 💎</p>
+                        
                         <div className="flex space-x-2 w-full">
                             <button onClick={() => setBuyModal(null)} className="flex-1 bg-gray-500 hover:bg-gray-400 text-white font-bold py-2 border-2 border-black">取消</button>
                             <button onClick={handleConfirmBuy} className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 border-2 border-black">確認購買</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- 準備禮物盒彈窗 --- */}
+            {giftModal && (
+                <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
+                    <div className="bg-[#d4a373] border-8 border-[#8b5a2b] p-6 w-full max-w-sm shadow-2xl flex flex-col items-center pixelated-border">
+                        <h3 className="text-[#3e2723] font-black mb-2 text-lg">🎁 準備一份禮物</h3>
+                        <p className="text-[#3e2723] text-xs font-bold mb-4">請從你的庫存選擇要送給好友的方塊</p>
+                        
+                        <div className="w-full bg-[#faedcd] p-2 border-2 border-[#8b5a2b] mb-4 h-48 overflow-y-auto custom-scrollbar grid grid-cols-4 sm:grid-cols-5 gap-2 content-start shadow-inner">
+                            {Object.entries(localInventory).filter(([id, count]) => count > 0 && id !== 'gift_box').map(([id, count]) => {
+                                const bInfo = BLOCK_TYPES.find(b => b.id === id);
+                                if (!bInfo) return null;
+                                const isSel = giftForm.blockId === id;
+                                return (
+                                    <div 
+                                        key={id} 
+                                        onClick={() => setGiftForm({ blockId: id, amount: 1 })} 
+                                        className={`flex flex-col items-center cursor-pointer p-1 border-2 transition-all ${isSel ? 'border-blue-500 bg-blue-200 scale-105' : 'border-transparent hover:bg-[#e0d3b6]'}`}
+                                    >
+                                        <McImg src={bInfo.img} className="w-8 h-8 pixelated" />
+                                        <span className="text-[10px] text-center font-bold text-black mt-1">{count}</span>
+                                    </div>
+                                );
+                            })}
+                            {Object.values(localInventory).every(count => count <= 0) && (
+                                <p className="col-span-full text-center text-red-600 font-bold text-xs mt-4">你沒有任何可以送的方塊喔！</p>
+                            )}
+                        </div>
+
+                        {giftForm.blockId ? (
+                            <div className="flex items-center space-x-2 mb-4 bg-white p-2 border-2 border-[#8b5a2b]">
+                                <span className="text-black font-bold text-sm">打包數量:</span>
+                                <input 
+                                    type="number" 
+                                    value={giftForm.amount} 
+                                    onChange={e => {
+                                        const val = parseInt(e.target.value) || 1;
+                                        const max = localInventory[giftForm.blockId] || 1;
+                                        setGiftForm({ ...giftForm, amount: Math.min(Math.max(1, val), max) });
+                                    }} 
+                                    className="w-16 p-1 border-2 border-gray-400 bg-gray-100 text-center font-bold outline-none" 
+                                />
+                                <span className="text-gray-600 text-xs font-bold">/ {localInventory[giftForm.blockId]}</span>
+                            </div>
+                        ) : (
+                            <p className="text-red-600 font-bold mb-4 text-sm bg-red-100 px-4 py-1 rounded">請點擊上方選擇方塊</p>
+                        )}
+                        
+                        <div className="flex space-x-2 w-full">
+                            <button onClick={() => { setGiftModal(null); setGiftForm({ blockId: '', amount: 1}); }} className="flex-1 bg-gray-500 hover:bg-gray-400 text-white font-bold py-2 border-2 border-black shadow-md">取消</button>
+                            <button onClick={submitGift} disabled={!giftForm.blockId} className="flex-1 bg-green-700 hover:bg-green-600 text-white font-bold py-2 border-2 border-black shadow-md disabled:opacity-50 disabled:cursor-not-allowed">打包送出</button>
                         </div>
                     </div>
                 </div>
@@ -1511,7 +1866,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                             maxLength="30"
                             className="w-full h-24 p-2 bg-[#faedcd] border-2 border-[#8b5a2b] text-[#3e2723] font-bold outline-none resize-none mb-4 custom-scrollbar"
                         ></textarea>
-                        <p className="text-[#3e2723] font-bold text-xs mb-4">消耗：10 💎</p>
+                        <p className="text-[#3e2723] font-bold text-xs mb-4">放置消耗：10 💎</p>
                         <div className="flex space-x-2 w-full">
                             <button onClick={() => setSignModal(null)} className="flex-1 bg-gray-500 hover:bg-gray-400 text-white font-bold py-2 border-2 border-black">取消</button>
                             <button onClick={submitSign} className="flex-1 bg-green-700 hover:bg-green-600 text-white font-bold py-2 border-2 border-black">插上告示牌</button>
