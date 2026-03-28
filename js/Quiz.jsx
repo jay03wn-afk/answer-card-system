@@ -145,7 +145,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     };
 
     return (
-        <div className="max-w-6xl mx-auto p-4 pt-0 h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar">
+        <div className="max-w-6xl mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 shrink-0">
                 <h1 className="text-2xl font-black dark:text-white flex items-center">
                     📓 錯題整理
@@ -376,7 +376,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     };
 
     return (
-        <div className="max-w-6xl mx-auto p-4 pt-0 h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar">
+        <div className="max-w-6xl mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 shrink-0">
                 <h1 className="text-2xl font-black dark:text-white flex items-center">
                     🎯 公開任務牆
@@ -866,7 +866,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     };
 
     return (
-        <div className="max-w-6xl mx-auto p-4 pt-0 h-[calc(100dvh-100px)] overflow-y-auto custom-scrollbar">
+        <div className="max-w-6xl mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-4 border-b-2 border-black dark:border-white pb-2 shrink-0">
                 <h1 className="text-2xl font-black dark:text-white">我的題庫</h1>
                 <button onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 shadow-sm transition-colors">+ 新測驗</button>
