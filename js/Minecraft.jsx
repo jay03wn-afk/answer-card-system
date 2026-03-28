@@ -661,7 +661,7 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                             </button>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-3 sm:grid-cols-2 lg:grid-cols-3 gap-1 h-auto overflow-visible pr-1 content-start pb-40">
+                        <div className="grid grid-cols-3 gap-2 w-full max-w-[300px] aspect-square bg-[#3a3a3a] p-2 border-4 border-[#1a1a1a]">
                             {board.map((block, i) => (
                                 <button 
                                     key={i} 
@@ -1006,23 +1006,30 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
 }
 // --- 2D 沙盒建築遊戲組件 ---
 // --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
+// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
+// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
 function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQuit }) {
     const COLS = 20;
     const ROWS = 12;
     const TOTAL_CELLS = COLS * ROWS;
     const TODAY = new Date().toISOString().split('T')[0];
 
-    // --- 100+ 方塊資料庫 (依稀有度與維度定價) ---
+    // --- 方塊資料庫 (新增多種木頭、半磚、樓梯、門、地獄與末地解鎖) ---
     const CATEGORIES = ['全部', '基礎與礦石', '原木與建材', '地獄(需解鎖)', '末地(需解鎖)', '裝飾與植物'];
     const [activeCategory, setActiveCategory] = useState('全部');
 
+    const WOOD_TYPES = [
+        { id: 'oak', name: '橡木' },
+        { id: 'spruce', name: '杉木' },
+        { id: 'birch', name: '白樺木' },
+        { id: 'jungle', name: '叢林木' },
+        { id: 'acacia', name: '金合歡木' },
+        { id: 'dark_oak', name: '深色橡木' }
+    ];
+
     const BLOCK_TYPES = [
         // 工具
-        {id: 'erase', 
-            name: '鐵鎬 (拆除)', 
-            cat: '工具', 
-            img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/iron_pickaxe.png', 
-            price: 0, special: true },
+        { id: 'erase', name: '鐵鎬 (拆除)', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/iron_pickaxe.png', price: 0, special: true },
         { id: 'sign', name: '告示牌 (留言)', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png', price: 10, special: true, desc: '點擊空地留言(10💎/則)' },
         { id: 'poppy', name: '送小花 (拜訪專用)', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png', price: 0, special: true, desc: '參觀時送給好友' },
         { id: 'gift_box', name: '禮物盒 (送方塊)', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/chest.png', price: 0, special: true, desc: '打包方塊送給好友' },
@@ -1034,6 +1041,9 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         { id: 'cobblestone', name: '鵝卵石', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/cobblestone.png', price: 2 },
         { id: 'sand', name: '沙子', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/sand.png', price: 3 },
         { id: 'gravel', name: '礫石', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/gravel.png', price: 3 },
+        { id: 'stone_slab', name: '石頭半磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png', price: 2, storeStyle: { clipPath: 'polygon(0 50%, 100% 50%, 100% 100%, 0 100%)' } },
+        { id: 'cobblestone_stairs', name: '石磚樓梯', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/cobblestone.png', price: 5, storeStyle: { clipPath: 'polygon(0 50%, 50% 50%, 50% 0, 100% 0, 100% 100%, 0 100%)' } },
+        { id: 'iron_door', name: '鐵門', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/iron_door.png', price: 30 },
         { id: 'coal_block', name: '煤炭磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/coal_block.png', price: 20 },
         { id: 'iron_block', name: '鐵磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/iron_block.png', price: 50 },
         { id: 'gold_block', name: '金磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/gold_block.png', price: 100 },
@@ -1042,11 +1052,16 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         { id: 'diamond_block', name: '鑽石磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/diamond_block.png', price: 500 },
         { id: 'obsidian', name: '黑曜石', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/obsidian.png', price: 150 },
 
-        // 原木與建材 (10-80💎)
-        ...['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak'].flatMap(wood => [
-            { id: `${wood}_log`, name: `${wood}原木`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood}_log.png`, price: 10 },
-            { id: `${wood}_planks`, name: `${wood}木板`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood}_planks.png`, price: 5 }
+        // 原木與所有衍生建材
+        ...WOOD_TYPES.flatMap(wood => [
+            { id: `${wood.id}_log`, name: `${wood.name}原木`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood.id}_log.png`, price: 10 },
+            { id: `${wood.id}_planks`, name: `${wood.name}木板`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood.id}_planks.png`, price: 5 },
+            { id: `${wood.id}_slab`, name: `${wood.name}半磚`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood.id}_planks.png`, price: 2, storeStyle: { clipPath: 'polygon(0 50%, 100% 50%, 100% 100%, 0 100%)' } },
+            { id: `${wood.id}_stairs`, name: `${wood.name}樓梯`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood.id}_planks.png`, price: 5, storeStyle: { clipPath: 'polygon(0 50%, 50% 50%, 50% 0, 100% 0, 100% 100%, 0 100%)' } },
+            { id: `${wood.id}_door`, name: `${wood.name}門`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/${wood.id}_door.png`, price: 10 },
+            { id: `${wood.id}_trapdoor`, name: `${wood.name}地板門`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood.id}_trapdoor.png`, price: 10, storeStyle: { clipPath: 'polygon(0 80%, 100% 80%, 100% 100%, 0 100%)'} }
         ]),
+        { id: 'chest_block', name: '儲物箱', cat: '原木與建材', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/chest_front.png', price: 20 },
         { id: 'glass', name: '玻璃', cat: '原木與建材', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/glass.png', price: 15 },
         { id: 'bricks', name: '磚塊', cat: '原木與建材', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/bricks.png', price: 20 },
         { id: 'bookshelf', name: '書架', cat: '原木與建材', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/bookshelf.png', price: 30 },
@@ -1056,7 +1071,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         { id: 'netherrack', name: '地獄石', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/netherrack.png', price: 10 },
         { id: 'soul_sand', name: '靈魂沙', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/soul_sand.png', price: 20 },
         { id: 'glowstone', name: '螢光石', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/glowstone.png', price: 50 },
-        { id: 'magma_block', name: '岩漿塊', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/magma_block.png', price: 40 },
+        { id: 'magma_block', name: '岩漿塊', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/magma.png', price: 40 },
         { id: 'nether_bricks', name: '地獄磚', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_bricks.png', price: 30 },
         { id: 'crimson_nylium', name: '緋紅菌絲體', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/crimson_nylium.png', price: 40 },
         { id: 'warped_nylium', name: '扭曲菌絲體', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/warped_nylium.png', price: 40 },
@@ -1083,423 +1098,50 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         end: { id: 'end', name: '末地', bg: '#10002b', cost: 2000, requireStr: 'unlockedEnd' }
     };
 
-    // --- 狀態初始化 ---
     const [isBuildMode, setIsBuildMode] = useState(false);
-    const lastActionRef = useRef({ index: -1, time: 0 }); // 新增：用於防止手機版觸控雙重觸發
+    const lastActionRef = useRef({ index: -1, time: 0 });
     const [isChestOpen, setIsChestOpen] = useState(false);
     const [currentDimension, setCurrentDimension] = useState('overworld');
     const [localInventory, setLocalInventory] = useState(() => mcData.inventory || { dirt: 50 });
-    
+    const sandboxBgmRef = useRef(null);
 
-    
-    // --- 音效播放函式 ---
+    // --- 音效與 BGM ---
+    useEffect(() => {
+        sandboxBgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3");
+        sandboxBgmRef.current.loop = true;
+        sandboxBgmRef.current.volume = 0.3;
+        sandboxBgmRef.current.play().catch(e => console.log("BGM 播放阻擋", e));
+        
+        return () => {
+            if (sandboxBgmRef.current) {
+                sandboxBgmRef.current.pause();
+                sandboxBgmRef.current.currentTime = 0;
+            }
+        };
+    }, []);
+
     const playChestOpenSound = () => {
         const audio = new Audio('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/open.mp3');
-        audio.volume = 0.5; // 可自由調整音量 (0.0 到 1.0)
-        audio.play().catch(e => console.log("音效播放失敗:", e));
+        audio.volume = 0.5;
+        audio.play().catch(e => console.log(e));
     };
 
     const playChestCloseSound = () => {
         const audio = new Audio('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/close.mp3');
         audio.volume = 0.5;
-        audio.play().catch(e => console.log("音效播放失敗:", e));
+        audio.play().catch(e => console.log(e));
     };
     
-    const [grids, setGrids] = useState({
-        overworld: mcData.sandbox_overworld || mcData.sandboxGrid || Array(TOTAL_CELLS).fill(null),
-        nether: mcData.sandbox_nether || Array(TOTAL_CELLS).fill(null),
-        end: mcData.sandbox_end || Array(TOTAL_CELLS).fill(null)
-    });
-    const [specials, setSpecials] = useState({
-        overworld: mcData.specials_overworld || {},
-        nether: mcData.specials_nether || {},
-        end: mcData.specials_end || {}
-    });
-    
-    const [selectedBlock, setSelectedBlock] = useState('erase');
-    const [viewingFriend, setViewingFriend] = useState(null); 
-    const [friendGrids, setFriendGrids] = useState({});
-    const [friendSpecials, setFriendSpecials] = useState({});
-    
-    const [buyModal, setBuyModal] = useState(null); // { block, amount }
-    const [signModal, setSignModal] = useState(null); // { index, isSelf, targetUid }
-    const [giftModal, setGiftModal] = useState(null); // { index, targetUid }
-    const [giftForm, setGiftForm] = useState({ blockId: '', amount: 1 });
-    
-    const [visitorLogOpen, setVisitorLogOpen] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-
-    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-    const [showQuitConfirm, setShowQuitConfirm] = useState(false);
-    
-    const isViewingSelf = viewingFriend === null;
-    const activeGrid = isViewingSelf ? grids[currentDimension] : (friendGrids[currentDimension] || Array(TOTAL_CELLS).fill(null));
-    const activeSpecials = isViewingSelf ? specials[currentDimension] : (friendSpecials[currentDimension] || {});
-
-    // --- 切換參觀好友與紀錄到訪 ---
-    const handleViewChange = async (e) => {
-        const targetUid = e.target.value;
-        if (targetUid === 'self') {
-            setViewingFriend(null);
-            setIsBuildMode(false);
-            setSelectedBlock('erase');
-            return;
-        }
-        
-        const friend = (userProfile.friends || []).find(f => f.uid === targetUid);
-        if (friend) {
-            setViewingFriend(friend);
-            setCurrentDimension('overworld');
-            setSelectedBlock('poppy'); // 去別人家預設手上拿花
-            try {
-                const doc = await window.db.collection('users').doc(targetUid).get();
-                if (doc.exists) {
-                    const data = doc.data().mcData || {};
-                    setFriendGrids({
-                        overworld: data.sandbox_overworld || data.sandboxGrid || Array(TOTAL_CELLS).fill(null),
-                        nether: data.sandbox_nether || Array(TOTAL_CELLS).fill(null),
-                        end: data.sandbox_end || Array(TOTAL_CELLS).fill(null)
-                    });
-                    setFriendSpecials({
-                        overworld: data.specials_overworld || {},
-                        nether: data.specials_nether || {},
-                        end: data.specials_end || {}
-                    });
-
-                    // 記錄到訪
-                    const newLog = { uid: user.uid, name: userProfile.displayName, time: Date.now() };
-                    let currentLog = data.visitorLog || [];
-                    if (currentLog.length === 0 || currentLog[0].uid !== user.uid || (Date.now() - currentLog[0].time > 3600000)) {
-                        window.db.collection('users').doc(targetUid).update({
-                            'mcData.visitorLog': [newLog, ...currentLog].slice(0, 20)
-                        }).catch(err => console.log("寫入拜訪紀錄失敗", err));
-                    }
-                }
-            } catch(err) {
-                showAlert("無法讀取好友的房子！");
-            }
-        }
-    };
-
-    // --- 輔助：即時刪除資料庫中的 Specials (避免存檔覆蓋) ---
-    const removeSpecialFromDB = async (uid, dim, index) => {
-        try {
-            const doc = await window.db.collection('users').doc(uid).get();
-            const dbSpecials = doc.data()?.mcData[`specials_${dim}`] || {};
-            delete dbSpecials[index];
-            await window.db.collection('users').doc(uid).update({
-                [`mcData.specials_${dim}`]: dbSpecials
-            });
-        } catch(e) { console.error(e); }
-    };
-
-   // --- 網格點擊邏輯 (建築、送花、留言、禮物盒) ---
-    const handleCellClick = async (index) => {
-        // 新增防連點判定：如果同一個方塊在 200 毫秒內被觸發兩次，就擋掉第二次
-        const now = Date.now();
-        if (lastActionRef.current.index === index && now - lastActionRef.current.time < 200) return;
-        lastActionRef.current = { index, time: now };
-
-        const hasSpecial = activeSpecials[index];
-
-        if (isViewingSelf) {
-            // [自己家 - 不限模式] 點擊小花：收成鑽石
-            if (hasSpecial && hasSpecial.type === 'poppy') {
-                const newSpecials = { ...specials };
-                delete newSpecials[currentDimension][index];
-                setSpecials(newSpecials);
-                updateMcData({ diamonds: mcData.diamonds + 3 }, true);
-                removeSpecialFromDB(user.uid, currentDimension, index);
-                return showAlert(`🌺 你收起了 ${hasSpecial.fromName} 送的小花！\n獲得 3 💎 獎勵！`);
-            }
-
-            // [自己家 - 不限模式] 點擊禮物盒：獲得方塊
-            if (hasSpecial && hasSpecial.type === 'gift_box') {
-                const bInfo = BLOCK_TYPES.find(b => b.id === hasSpecial.blockId);
-                const bName = bInfo ? bInfo.name : '未知方塊';
-                
-                const newSpecials = { ...specials };
-                delete newSpecials[currentDimension][index];
-                setSpecials(newSpecials);
-                
-                const newInv = { ...localInventory };
-                newInv[hasSpecial.blockId] = (newInv[hasSpecial.blockId] || 0) + hasSpecial.amount;
-                setLocalInventory(newInv);
-
-                removeSpecialFromDB(user.uid, currentDimension, index);
-                // 順便把庫存更新到雲端
-                window.db.collection('users').doc(user.uid).update({ 'mcData.inventory': newInv });
-                
-                return showAlert(`🎁 你打開了 ${hasSpecial.fromName} 送的禮物！\n獲得 ${hasSpecial.amount} 個 ${bName}！`);
-            }
-
-            // [自己家] 點擊告示牌：閱讀或拆除
-            if (hasSpecial && hasSpecial.type === 'sign') {
-                if (isBuildMode && selectedBlock === 'erase') {
-                    // 拆除告示牌
-                    const newSpecials = { ...specials };
-                    delete newSpecials[currentDimension][index];
-                    setSpecials(newSpecials);
-                    removeSpecialFromDB(user.uid, currentDimension, index);
-                } else {
-                    return showAlert(`📜 告示牌留言：\n\n「${hasSpecial.text}」\n- ${hasSpecial.fromName || '屋主'}`);
-                }
-                return;
-            }
-
-            if (!isBuildMode) return; // ✅ 若非建築模式，以下邏輯不執行
-
-            // [自己家 - 建築模式] 放置告示牌
-            if (selectedBlock === 'sign') {
-                if (activeGrid[index]) return showAlert('❌ 告示牌只能插在空地上！');
-                const signCount = Object.values(specials[currentDimension]).filter(s => s.type === 'sign').length;
-                if (signCount >= 5) return showAlert('❌ 每個維度最多只能放置 5 個告示牌！');
-                if (mcData.diamonds < 10) return showAlert('💎 放置告示牌需要 10 鑽石！');
-                return setSignModal({ index, isSelf: true, targetUid: user.uid });
-            }
-
-            // [自己家 - 建築模式] 建築與拆除 (包含庫存計算)
-            const currentBlock = grids[currentDimension][index];
-            if (currentBlock === selectedBlock && selectedBlock !== 'erase') return; 
-
-            const newGrid = [...grids[currentDimension]];
-            const newInv = { ...localInventory };
-            
-            if (selectedBlock !== 'erase' && selectedBlock !== 'sign' && selectedBlock !== 'poppy' && selectedBlock !== 'gift_box') {
-                if ((newInv[selectedBlock] || 0) <= 0) return showAlert(`❌ 庫存不足，請先至右側商店購買！`);
-                newInv[selectedBlock] -= 1; 
-            }
-
-            if (currentBlock && currentBlock !== 'erase') {
-                newInv[currentBlock] = (newInv[currentBlock] || 0) + 1; // 退還
-            }
-
-            newGrid[index] = selectedBlock === 'erase' ? null : selectedBlock;
-            
-            // 👇 修改這段：觸發音效邏輯並傳入動作類型
-            if (selectedBlock === 'erase') {
-                if (currentBlock) playBlockSound(currentBlock, 'break'); // 使用橡皮擦，播放「破壞」音效
-            } else {
-                playBlockSound(selectedBlock, 'place'); // 建築模式下，播放「放置」音效
-            }
-
-            setGrids({ ...grids, [currentDimension]: newGrid });
-            setLocalInventory(newInv);
-            setHasUnsavedChanges(true); // 標記有變更尚未儲存 (如果你有保留這個功能的話) // 👇 標記有變更尚未儲存
-
-        } else {
-            // ==================
-            //      [好友家] 
-            // ==================
-            if (hasSpecial && hasSpecial.type === 'sign') {
-                return showAlert(`📜 告示牌留言：\n\n「${hasSpecial.text}」\n- ${hasSpecial.fromName || '屋主'}`);
-            }
-            
-            // [好友家] 送花邏輯
-            if (selectedBlock === 'poppy') {
-                if (activeGrid[index] || hasSpecial) return showAlert('❌ 小花只能種在空地上喔！');
-                let dailyData = mcData.dailyFlowers || { date: '', sentTo: [] };
-                if (dailyData.date !== TODAY) dailyData = { date: TODAY, sentTo: [] };
-
-                if (dailyData.sentTo.length >= 5) return showAlert('⚠️ 今日送花次數已達上限 (5/5)！');
-                if (dailyData.sentTo.includes(viewingFriend.uid)) return showAlert('⚠️ 你今天已經送過花給這位好友了！');
-
-                try {
-                    // 即時更新對方資料庫
-                    const doc = await window.db.collection('users').doc(viewingFriend.uid).get();
-                    const dbSpecials = doc.data().mcData[`specials_${currentDimension}`] || {};
-                    dbSpecials[index] = { type: 'poppy', fromUid: user.uid, fromName: userProfile.displayName };
-                    
-                    await window.db.collection('users').doc(viewingFriend.uid).update({
-                        [`mcData.specials_${currentDimension}`]: dbSpecials
-                    });
-                    
-                    // 更新自己畫面上的 FriendSpecials 以即時顯示
-                    setFriendSpecials(prev => ({
-                        ...prev, [currentDimension]: { ...prev[currentDimension], [index]: dbSpecials[index] }
-                    }));
-
-                    // 扣除次數與發送獎勵給自己
-                    dailyData.sentTo.push(viewingFriend.uid);
-                    updateMcData({ dailyFlowers: dailyData, diamonds: mcData.diamonds + 1 }, true);
-                    showAlert('🌺 送花成功！對方收到後可獲得 3 💎，你也獲得了 1 💎 的熱心獎勵！');
-                } catch(e) {
-                    showAlert('送花失敗：' + e.message);
-                }
-            }
-
-            // [好友家] 放禮物盒
-            if (selectedBlock === 'gift_box') {
-                if (activeGrid[index] || hasSpecial) return showAlert('❌ 禮物盒只能放在空地上！');
-                return setGiftModal({ index, targetUid: viewingFriend.uid });
-            }
-
-            // [好友家] 留告示牌
-            if (selectedBlock === 'sign') {
-                if (activeGrid[index] || hasSpecial) return showAlert('❌ 告示牌只能插在空地上！');
-                if (mcData.diamonds < 10) return showAlert('💎 放置告示牌需要 10 鑽石！');
-                const signCount = Object.values(friendSpecials[currentDimension]).filter(s => s.type === 'sign').length;
-                if (signCount >= 5) return showAlert('❌ 對方此維度的告示牌已滿！');
-                return setSignModal({ index, isSelf: false, targetUid: viewingFriend.uid });
-            }
-        }
-    };
-
-    // --- 放置告示牌 ---
-    const submitSign = async () => {
-        const text = document.getElementById('signInput').value.trim();
-        if (!text) return setSignModal(null);
-        if (text.length > 30) return showAlert('❌ 留言太長了，最多 30 個字！');
-        
-        const { index, isSelf, targetUid } = signModal;
-        updateMcData({ diamonds: mcData.diamonds - 10 }, true);
-        const signData = { type: 'sign', text, fromUid: user.uid, fromName: userProfile.displayName };
-
-        try {
-            const doc = await window.db.collection('users').doc(targetUid).get();
-            const dbSpecials = doc.data()?.mcData[`specials_${currentDimension}`] || {};
-            dbSpecials[index] = signData;
-            
-            await window.db.collection('users').doc(targetUid).update({
-                [`mcData.specials_${currentDimension}`]: dbSpecials
-            });
-
-            if (isSelf) {
-                setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: signData } }));
-            } else {
-                setFriendSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: signData } }));
-                showAlert('✅ 成功在好友家留下告示牌！');
-            }
-        } catch(e) {
-            showAlert('放置失敗：' + e.message);
-        }
-        setSignModal(null);
-    };
-
-    // --- 放置禮物盒 ---
-    const submitGift = async () => {
-        if (!giftForm.blockId || giftForm.amount <= 0) return;
-        const { index, targetUid } = giftModal;
-        
-        const newInv = { ...localInventory };
-        newInv[giftForm.blockId] -= giftForm.amount;
-        setLocalInventory(newInv);
-
-        const giftData = { 
-            type: 'gift_box', 
-            blockId: giftForm.blockId, 
-            amount: giftForm.amount, 
-            fromUid: user.uid, 
-            fromName: userProfile.displayName 
-        };
-
-        try {
-            const doc = await window.db.collection('users').doc(targetUid).get();
-            const dbSpecials = doc.data()?.mcData[`specials_${currentDimension}`] || {};
-            dbSpecials[index] = giftData;
-            
-            await window.db.collection('users').doc(targetUid).update({
-                [`mcData.specials_${currentDimension}`]: dbSpecials
-            });
-
-            setFriendSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: giftData } }));
-            updateMcData({ inventory: newInv }, true);
-            showAlert(`✅ 成功送出禮物盒！`);
-        } catch(e) {
-            showAlert('送禮失敗：' + e.message);
-            newInv[giftForm.blockId] += giftForm.amount; // 失敗退還
-            setLocalInventory(newInv);
-        }
-
-        setGiftModal(null);
-        setGiftForm({ blockId: '', amount: 1 });
-    };
-
-    // --- 解鎖維度 ---
-    const handleUnlockDimension = (dimKey) => {
-        const dim = DIMENSIONS[dimKey];
-        if (mcData.diamonds < dim.cost) return showAlert(`💎 鑽石不足！解鎖需要 ${dim.cost} 💎`);
-        updateMcData({
-            diamonds: mcData.diamonds - dim.cost,
-            [dim.requireStr]: true
-        }, true);
-        showAlert(`🎉 恭喜！成功解鎖【${dim.name}】維度！`);
-    };
-
-    // --- 儲存自己的房子與庫存 ---
-    const handleSave = () => {
-        setIsSaving(true);
-        // 互動資料(小花、禮物、告示牌)已即時儲存，這裡僅覆蓋建築網格與庫存，徹底避免覆蓋掉剛剛別人送的禮物！
-        window.db.collection('users').doc(user.uid).update({
-            // ... 省略 ...
-        }).then(() => {
-            showAlert("✅ 建築與庫存進度皆已儲存！");
-            updateMcData({ 
-                sandbox_overworld: grids.overworld, sandbox_nether: grids.nether, sandbox_end: grids.end,
-                inventory: localInventory 
-            }, true); 
-            setHasUnsavedChanges(false); // 👇 儲存成功後重置狀態
-        }).catch(e => showAlert('儲存失敗：' + e.message))
-          .finally(() => setIsSaving(false));
-    };
-    // --- 退出檢查邏輯 ---
-    const handleQuit = () => {
-        if (hasUnsavedChanges) {
-            // 打開自訂的警告視窗
-            setShowQuitConfirm(true); 
-        } else {
-            // 沒變動過，直接退出
-            onQuit();
-        }
-    };
-
-    // --- 購買方塊邏輯 ---
-    const handleConfirmBuy = () => {
-        const amt = parseInt(buyModal.amount);
-        if (isNaN(amt) || amt <= 0) return showAlert("數量無效！");
-        
-        const totalCost = buyModal.block.price * amt;
-        if (mcData.diamonds < totalCost) return showAlert("💎 鑽石不足！");
-
-        const newInv = { ...localInventory, [buyModal.block.id]: (localInventory[buyModal.block.id] || 0) + amt };
-        setLocalInventory(newInv);
-        updateMcData({ diamonds: mcData.diamonds - totalCost, inventory: newInv }, true);
-        
-        showAlert(`✅ 成功購買 ${amt} 個 ${buyModal.block.name}！\n已放入左側庫存箱子中。`);
-        setBuyModal(null);
-    };
-
-    // --- UI 過濾 (商店不再顯示工具) ---
-    const displayedBlocks = BLOCK_TYPES.filter(b => {
-        if (b.special || b.id === 'erase') return false; // 從商店清單隱藏工具
-        if (activeCategory === '全部') return true;
-        if (activeCategory === '地獄(需解鎖)') return b.cat === '地獄(需解鎖)' && mcData.unlockedNether;
-        if (activeCategory === '末地(需解鎖)') return b.cat === '末地(需解鎖)' && mcData.unlockedEnd;
-        return b.cat === activeCategory;
-    });
-
-// --- 方塊音效播放函式 ---
-    // --- 方塊音效播放函式 (區分放置與破壞) ---
-    // action 傳入 'place' 或 'break'
     const playBlockSound = (blockId, action) => {
         if (!blockId || blockId === 'erase') return;
+        let soundType = 'stone';
 
-        let soundType = 'stone'; // 預設使用石頭音效
+        if (['glass', 'glowstone'].includes(blockId)) soundType = 'glass';
+        else if (['dirt'].includes(blockId)) soundType = 'dirt';
+        else if (['grass_block_side', 'oak_leaves', 'cactus', 'pumpkin', 'melon_side', 'crimson_nylium', 'warped_nylium', 'chorus_flower', 'poppy', 'tnt'].includes(blockId)) soundType = 'grass';
+        else if (['sand', 'gravel', 'soul_sand'].includes(blockId)) soundType = 'sand';
+        else if (blockId.includes('log') || blockId.includes('planks') || blockId.includes('door') || ['bookshelf', 'crafting_table', 'sign', 'chest_block'].includes(blockId)) soundType = 'wood';
 
-        // 根據方塊 ID 進行分類
-        if (['glass', 'glowstone'].includes(blockId)) {
-            soundType = 'glass';
-        } else if (['dirt'].includes(blockId)) {
-            soundType = 'dirt';
-        } else if (['grass_block_side', 'oak_leaves', 'cactus', 'pumpkin', 'melon_side', 'crimson_nylium', 'warped_nylium', 'chorus_flower'].includes(blockId)) {
-            soundType = 'grass';
-        } else if (['sand', 'gravel', 'soul_sand', 'tnt'].includes(blockId)) {
-            soundType = 'sand';
-        } else if (blockId.includes('log') || blockId.includes('planks') || ['bookshelf', 'crafting_table', 'sign'].includes(blockId)) {
-            soundType = 'wood';
-        }
-
-        // 定義【放置】與【破壞】的音效網址 (請替換為你實際的 GitHub Raw 網址)
         const soundUrls = {
             place: {
                 glass: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/glass_place.mp3',
@@ -1519,68 +1161,369 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
             }
         };
 
-        // 根據傳入的 action 和分類取得對應網址
         const audio = new Audio(soundUrls[action][soundType]);
-        audio.volume = 0.5; // 音量可自行調整 (0.0 ~ 1.0)
-        audio.play().catch(e => console.log("音效播放失敗:", e));
+        audio.volume = 0.5;
+        audio.play().catch(e => console.log(e));
     };
 
+    const [grids, setGrids] = useState({
+        overworld: mcData.sandbox_overworld || Array(TOTAL_CELLS).fill(null),
+        nether: mcData.sandbox_nether || Array(TOTAL_CELLS).fill(null),
+        end: mcData.sandbox_end || Array(TOTAL_CELLS).fill(null)
+    });
+    const [specials, setSpecials] = useState({
+        overworld: mcData.specials_overworld || {},
+        nether: mcData.specials_nether || {},
+        end: mcData.specials_end || {}
+    });
+    
+    const [selectedBlock, setSelectedBlock] = useState('erase');
+    const [viewingFriend, setViewingFriend] = useState(null); 
+    const [friendGrids, setFriendGrids] = useState({});
+    const [friendSpecials, setFriendSpecials] = useState({});
+    
+    const [buyModal, setBuyModal] = useState(null);
+    const [signModal, setSignModal] = useState(null);
+    const [chestUi, setChestUi] = useState(null);
+    
+    const [visitorLogOpen, setVisitorLogOpen] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+    
+    const isViewingSelf = viewingFriend === null;
+    const activeGrid = isViewingSelf ? grids[currentDimension] : (friendGrids[currentDimension] || Array(TOTAL_CELLS).fill(null));
+    const activeSpecials = isViewingSelf ? specials[currentDimension] : (friendSpecials[currentDimension] || {});
+
+    const handleViewChange = async (e) => {
+        const targetUid = e.target.value;
+        if (targetUid === 'self') {
+            setViewingFriend(null);
+            setIsBuildMode(false);
+            setSelectedBlock('erase');
+            return;
+        }
+        const friend = (userProfile.friends || []).find(f => f.uid === targetUid);
+        if (friend) {
+            setViewingFriend(friend);
+            setCurrentDimension('overworld');
+            setSelectedBlock('poppy'); 
+            try {
+                const doc = await window.db.collection('users').doc(targetUid).get();
+                if (doc.exists) {
+                    const data = doc.data().mcData || {};
+                    setFriendGrids({
+                        overworld: data.sandbox_overworld || Array(TOTAL_CELLS).fill(null),
+                        nether: data.sandbox_nether || Array(TOTAL_CELLS).fill(null),
+                        end: data.sandbox_end || Array(TOTAL_CELLS).fill(null)
+                    });
+                    setFriendSpecials({
+                        overworld: data.specials_overworld || {},
+                        nether: data.specials_nether || {},
+                        end: data.specials_end || {}
+                    });
+
+                    const newLog = { uid: user.uid, name: userProfile.displayName, time: Date.now() };
+                    let currentLog = data.visitorLog || [];
+                    if (currentLog.length === 0 || currentLog[0].uid !== user.uid || (Date.now() - currentLog[0].time > 3600000)) {
+                        window.db.collection('users').doc(targetUid).update({
+                            'mcData.visitorLog': [newLog, ...currentLog].slice(0, 20)
+                        });
+                    }
+                }
+            } catch(err) {
+                showAlert("無法讀取好友的房子！");
+            }
+        }
+    };
+
+    const removeSpecialFromDB = async (uid, dim, index) => {
+        try {
+            const doc = await window.db.collection('users').doc(uid).get();
+            const dbSpecials = doc.data()?.mcData[`specials_${dim}`] || {};
+            delete dbSpecials[index];
+            await window.db.collection('users').doc(uid).update({
+                [`mcData.specials_${dim}`]: dbSpecials
+            });
+        } catch(e) { console.error(e); }
+    };
+
+    const handleCellClick = async (index) => {
+        const now = Date.now();
+        if (lastActionRef.current.index === index && now - lastActionRef.current.time < 200) return;
+        lastActionRef.current = { index, time: now };
+
+        const hasSpecial = activeSpecials[index];
+        const currentBlock = activeGrid[index];
+
+        // --- 查看/互動模式邏輯 ---
+        if (!isBuildMode) {
+            if (isViewingSelf && hasSpecial) {
+                if (hasSpecial.type === 'poppy') {
+                    const newSpecials = { ...specials };
+                    delete newSpecials[currentDimension][index];
+                    setSpecials(newSpecials);
+                    updateMcData({ diamonds: mcData.diamonds + 3 }, true);
+                    removeSpecialFromDB(user.uid, currentDimension, index);
+                    return showAlert(`🌺 你收起了 ${hasSpecial.fromName} 送的小花！\n獲得 3 💎 獎勵！`);
+                }
+                if (hasSpecial.type === 'gift_box') {
+                    const bInfo = BLOCK_TYPES.find(b => b.id === hasSpecial.blockId);
+                    const newSpecials = { ...specials };
+                    delete newSpecials[currentDimension][index];
+                    setSpecials(newSpecials);
+                    
+                    const newInv = { ...localInventory };
+                    newInv[hasSpecial.blockId] = (newInv[hasSpecial.blockId] || 0) + hasSpecial.amount;
+                    setLocalInventory(newInv);
+                    removeSpecialFromDB(user.uid, currentDimension, index);
+                    window.db.collection('users').doc(user.uid).update({ 'mcData.inventory': newInv });
+                    return showAlert(`🎁 你打開了 ${hasSpecial.fromName} 送的禮物！\n獲得 ${hasSpecial.amount} 個 ${bInfo ? bInfo.name : '未知方塊'}！`);
+                }
+            }
+
+            if (hasSpecial && hasSpecial.type === 'sign') {
+                return showAlert(`📜 告示牌留言：\n\n「${hasSpecial.text}」\n- ${hasSpecial.fromName || '屋主'}`);
+            }
+
+            if (currentBlock && (currentBlock.includes('_door') || currentBlock.includes('_trapdoor'))) {
+                const currentOpen = hasSpecial?.open || false;
+                if (isViewingSelf) {
+                    setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: { ...prev[currentDimension][index], type: 'door', open: !currentOpen } } }));
+                    setHasUnsavedChanges(true);
+                } else {
+                    setFriendSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: { ...prev[currentDimension][index], open: !currentOpen } } }));
+                }
+                playBlockSound(currentBlock, 'place');
+                return;
+            }
+
+            if (currentBlock === 'chest_block') {
+                if (isViewingSelf) {
+                    setChestUi({ index, inventory: hasSpecial?.items || {} });
+                    playChestOpenSound();
+                } else {
+                    showAlert('🔒 這是私人的儲物箱，上了鎖你打不開！');
+                }
+                return;
+            }
+            return;
+        }
+
+        // --- 建築模式邏輯 (僅自己家) ---
+        if (!isViewingSelf) return;
+
+        // 旋轉方塊系統
+        if (currentBlock && selectedBlock === currentBlock) {
+            if (currentBlock.includes('_log')) {
+                const curRot = hasSpecial?.rotation || 0;
+                setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: { type: 'rotation', rotation: curRot === 0 ? 90 : 0 } } }));
+                playBlockSound(selectedBlock, 'place');
+                setHasUnsavedChanges(true);
+                return;
+            }
+            if (currentBlock.includes('_slab')) {
+                const curPos = hasSpecial?.position || 'bottom';
+                setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: { type: 'rotation', position: curPos === 'bottom' ? 'top' : 'bottom' } } }));
+                playBlockSound(selectedBlock, 'place');
+                setHasUnsavedChanges(true);
+                return;
+            }
+            if (currentBlock.includes('_stairs')) {
+                const seq = ['bottom-right', 'bottom-left', 'top-left', 'top-right'];
+                const curPos = hasSpecial?.rotation || 'bottom-right';
+                const nextPos = seq[(seq.indexOf(curPos) + 1) % 4];
+                setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: { type: 'rotation', rotation: nextPos } } }));
+                playBlockSound(selectedBlock, 'place');
+                setHasUnsavedChanges(true);
+                return;
+            }
+        }
+
+        if (selectedBlock === 'erase' && currentBlock === 'chest_block') {
+            const items = hasSpecial?.items || {};
+            const hasItems = Object.values(items).some(c => c > 0);
+            if (hasItems) return showAlert('❌ 請先切換至「👀互動模式」將箱子裡的東西清空，才能拆除！');
+        }
+
+        if (selectedBlock === 'sign') {
+            if (activeGrid[index]) return showAlert('❌ 告示牌只能插在空地上！');
+            const signCount = Object.values(specials[currentDimension]).filter(s => s.type === 'sign').length;
+            if (signCount >= 5) return showAlert('❌ 每個維度最多只能放置 5 個告示牌！');
+            if (mcData.diamonds < 10) return showAlert('💎 放置告示牌需要 10 鑽石！');
+            return setSignModal({ index, isSelf: true, targetUid: user.uid });
+        }
+
+        if (currentBlock === selectedBlock && selectedBlock !== 'erase') return; 
+
+        const newGrid = [...grids[currentDimension]];
+        const newInv = { ...localInventory };
+        
+        if (selectedBlock !== 'erase' && selectedBlock !== 'sign' && selectedBlock !== 'poppy' && selectedBlock !== 'gift_box') {
+            if ((newInv[selectedBlock] || 0) <= 0) return showAlert(`❌ 庫存不足，請先至右側商店購買！`);
+            newInv[selectedBlock] -= 1; 
+        }
+
+        if (currentBlock && currentBlock !== 'erase') {
+            newInv[currentBlock] = (newInv[currentBlock] || 0) + 1;
+        }
+
+        newGrid[index] = selectedBlock === 'erase' ? null : selectedBlock;
+        const newSpecials = { ...specials };
+
+        if (selectedBlock === 'chest_block') {
+            newSpecials[currentDimension][index] = { type: 'chest', items: {} };
+        } else if (selectedBlock === 'erase') {
+            delete newSpecials[currentDimension][index];
+            if (hasSpecial?.type === 'sign') removeSpecialFromDB(user.uid, currentDimension, index);
+        } else {
+            delete newSpecials[currentDimension][index];
+        }
+
+        if (selectedBlock === 'erase') {
+            if (currentBlock) playBlockSound(currentBlock, 'break');
+        } else {
+            playBlockSound(selectedBlock, 'place');
+        }
+
+        setGrids({ ...grids, [currentDimension]: newGrid });
+        setSpecials(newSpecials);
+        setLocalInventory(newInv);
+        setHasUnsavedChanges(true); 
+    };
+
+    const handleChestItemTransfer = (blockId, direction) => {
+        const { index } = chestUi;
+        const chestItems = { ...(specials[currentDimension][index]?.items || {}) };
+        const currentLocal = { ...localInventory };
+
+        if (direction === 'toChest') {
+            if (!currentLocal[blockId] || currentLocal[blockId] <= 0) return;
+            currentLocal[blockId] -= 1;
+            chestItems[blockId] = (chestItems[blockId] || 0) + 1;
+        } else {
+            if (!chestItems[blockId] || chestItems[blockId] <= 0) return;
+            chestItems[blockId] -= 1;
+            currentLocal[blockId] = (currentLocal[blockId] || 0) + 1;
+        }
+
+        setLocalInventory(currentLocal);
+        setSpecials(prev => ({
+            ...prev,
+            [currentDimension]: {
+                ...prev[currentDimension],
+                [index]: { ...prev[currentDimension][index], type: 'chest', items: chestItems }
+            }
+        }));
+        setHasUnsavedChanges(true);
+    };
+
+    const submitSign = async () => {
+        const text = document.getElementById('signInput').value.trim();
+        if (!text) return setSignModal(null);
+        if (text.length > 30) return showAlert('❌ 留言太長了，最多 30 個字！');
+        
+        const { index, isSelf, targetUid } = signModal;
+        updateMcData({ diamonds: mcData.diamonds - 10 }, true);
+        const signData = { type: 'sign', text, fromUid: user.uid, fromName: userProfile.displayName };
+
+        try {
+            const doc = await window.db.collection('users').doc(targetUid).get();
+            const dbSpecials = doc.data()?.mcData[`specials_${currentDimension}`] || {};
+            dbSpecials[index] = signData;
+            await window.db.collection('users').doc(targetUid).update({ [`mcData.specials_${currentDimension}`]: dbSpecials });
+
+            if (isSelf) {
+                setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: signData } }));
+                setHasUnsavedChanges(true);
+            } else {
+                setFriendSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: signData } }));
+                showAlert('✅ 成功在好友家留下告示牌！');
+            }
+        } catch(e) { showAlert('放置失敗：' + e.message); }
+        setSignModal(null);
+    };
+
+    const handleUnlockDimension = (dimKey) => {
+        const dim = DIMENSIONS[dimKey];
+        if (mcData.diamonds < dim.cost) return showAlert(`💎 鑽石不足！解鎖需要 ${dim.cost} 💎`);
+        updateMcData({ diamonds: mcData.diamonds - dim.cost, [dim.requireStr]: true }, true);
+        showAlert(`🎉 恭喜！成功解鎖【${dim.name}】維度！`);
+    };
+
+    const handleSave = () => {
+        setIsSaving(true);
+        window.db.collection('users').doc(user.uid).update({
+            'mcData.sandbox_overworld': grids.overworld,
+            'mcData.sandbox_nether': grids.nether,
+            'mcData.sandbox_end': grids.end,
+            'mcData.specials_overworld': specials.overworld,
+            'mcData.specials_nether': specials.nether,
+            'mcData.specials_end': specials.end,
+            'mcData.inventory': localInventory
+        }).then(() => {
+            showAlert("✅ 建築、機關狀態與庫存進度皆已儲存！");
+            updateMcData({ 
+                sandbox_overworld: grids.overworld, sandbox_nether: grids.nether, sandbox_end: grids.end,
+                specials_overworld: specials.overworld, specials_nether: specials.nether, specials_end: specials.end,
+                inventory: localInventory 
+            }, true); 
+            setHasUnsavedChanges(false);
+        }).catch(e => showAlert('儲存失敗：' + e.message)).finally(() => setIsSaving(false));
+    };
+
+    const handleQuit = () => {
+        if (hasUnsavedChanges) setShowQuitConfirm(true); 
+        else onQuit();
+    };
+
+    const handleConfirmBuy = () => {
+        const amt = parseInt(buyModal.amount);
+        if (isNaN(amt) || amt <= 0) return showAlert("數量無效！");
+        const totalCost = buyModal.block.price * amt;
+        if (mcData.diamonds < totalCost) return showAlert("💎 鑽石不足！");
+
+        const newInv = { ...localInventory, [buyModal.block.id]: (localInventory[buyModal.block.id] || 0) + amt };
+        setLocalInventory(newInv);
+        updateMcData({ diamonds: mcData.diamonds - totalCost, inventory: newInv }, true);
+        showAlert(`✅ 成功購買 ${amt} 個 ${buyModal.block.name}！\n已放入左側庫存箱子中。`);
+        setBuyModal(null);
+    };
+
+    const displayedBlocks = BLOCK_TYPES.filter(b => {
+        if (b.special || b.id === 'erase') return false; 
+        if (activeCategory === '全部') return true;
+        if (activeCategory === '地獄(需解鎖)') return b.cat === '地獄(需解鎖)' && mcData.unlockedNether;
+        if (activeCategory === '末地(需解鎖)') return b.cat === '末地(需解鎖)' && mcData.unlockedEnd;
+        return b.cat === activeCategory;
+    });
 
     return (
         <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in">
-{/* ✅ 1. 將 h-[90dvh] 改為 h-full (手機版撐開)，並加上 overflow-y-auto 讓整個頁面可滑動 */}
-{/* ✅ 加入 overflow-x-hidden 禁止左右晃動，並確保 box-border 寬度計算正確 */}
-<div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row h-full md:h-[90dvh] overflow-y-auto overflow-x-hidden custom-scrollbar box-border" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>                {/* 關閉與訪客紀錄按鈕 */}
-                <button onClick={handleQuit} className="absolute -top-4 -right-4 bg-red-600 text-white w-10 h-10 border-2 border-white font-black hover:bg-red-500 z-50 transition-colors shadow-lg">✖</button>
-                {isViewingSelf && (
-                    <button onClick={() => setVisitorLogOpen(true)} className="absolute -top-4 right-8 bg-blue-600 text-white px-4 h-10 border-2 border-white font-black hover:bg-blue-500 z-50 transition-colors shadow-lg">
-                        👣 到訪紀錄
-                    </button>
-                )}
-
-
-                {/* 👇 新增：未儲存退出警告視窗 */}
-            {showQuitConfirm && (
-                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[100]">
-                    <div className="bg-gray-800 border-4 border-red-600 p-6 rounded-lg shadow-2xl max-w-sm text-center transform scale-100 animate-pulse-once">
-                        <div className="text-red-500 text-5xl mb-4">⚠️</div>
-                        <h2 className="text-white font-black text-xl mb-2">尚未儲存！</h2>
-                        <p className="text-gray-300 text-sm mb-6">
-                            你有未儲存的建築或庫存進度。<br />
-                            現在退出將會<span className="text-red-400 font-bold">永久遺失</span>剛剛的變更！
-                        </p>
-                        
-                        <div className="flex justify-center gap-4">
-                            <button 
-                                onClick={() => setShowQuitConfirm(false)} 
-                                className="px-4 py-2 bg-gray-600 text-white font-bold rounded hover:bg-gray-500 transition-colors"
-                            >
-                                取消 (留下儲存)
-                            </button>
-                            <button 
-                                onClick={onQuit} 
-                                className="px-4 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-500 transition-colors shadow-lg shadow-red-500/30"
-                            >
-                                忍痛退出
-                            </button>
+            <div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row h-[90dvh]" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>
+                
+                {/* 防裁切機制：將獨立退出按鈕移至 Header 中，不再用 Absolute 定位導致重疊 */}
+                
+                {showQuitConfirm && (
+                    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[100]">
+                        <div className="bg-gray-800 border-4 border-red-600 p-6 rounded-lg shadow-2xl max-w-sm text-center transform scale-100 animate-pulse-once">
+                            <div className="text-red-500 text-5xl mb-4">⚠️</div>
+                            <h2 className="text-white font-black text-xl mb-2">尚未儲存！</h2>
+                            <p className="text-gray-300 text-sm mb-6">你有未儲存的建築或庫存進度。<br />現在退出將會<span className="text-red-400 font-bold">永久遺失</span>剛剛的變更！</p>
+                            <div className="flex justify-center gap-4">
+                                <button onClick={() => setShowQuitConfirm(false)} className="px-4 py-2 bg-gray-600 text-white font-bold rounded hover:bg-gray-500 transition-colors">取消 (留下儲存)</button>
+                                <button onClick={onQuit} className="px-4 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-500 transition-colors shadow-lg shadow-red-500/30">忍痛退出</button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
-                {/* 底部：當前手持指示器 */}
-                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900 border-4 border-gray-600 p-2 rounded shadow-2xl flex items-center space-x-3 z-40 pointer-events-none">
-                    <span className="text-white text-xs font-bold">目前拿著:</span>
-                    {selectedBlock === 'erase' ? <span className="text-xl">🧹</span> : (BLOCK_TYPES.find(b=>b.id===selectedBlock)?.img && <McImg src={BLOCK_TYPES.find(b=>b.id===selectedBlock).img} className="w-8 h-8 pixelated" />)}
-                    <span className="text-yellow-400 text-xs font-bold">{BLOCK_TYPES.find(b=>b.id===selectedBlock)?.name || '橡皮擦'}</span>
-                </div>
-
-                {/* 主畫布區 */}
-                <div className="flex-grow flex flex-col items-center justify-center p-2 relative w-full md:w-3/4">
+                {/* 左側主要建築與控制區 */}
+                <div className="flex-grow flex flex-col items-center p-2 w-full md:w-3/4 relative">
                     
-                    {/* 頂部控制列 */}
-                    <div className="w-full flex flex-col sm:flex-row justify-between items-center mb-2 bg-black bg-opacity-60 p-2 text-white font-bold gap-2">
-                        <div className="flex items-center space-x-2">
+                    {/* Header: 將控制項全放進來，避免擋到介面 */}
+                    <div className="w-full flex flex-col xl:flex-row justify-between items-start xl:items-center mb-2 bg-black bg-opacity-60 p-2 text-white font-bold gap-2 z-10">
+                        <div className="flex flex-wrap items-center gap-2">
                             <span>{isViewingSelf ? `🏠 我的基地` : `👀 ${viewingFriend.name} 的家`}</span>
                             
                             <select onChange={(e) => setCurrentDimension(e.target.value)} value={currentDimension} className="bg-gray-800 text-white border border-gray-500 px-2 py-1 outline-none text-sm font-bold">
@@ -1589,105 +1532,113 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                 {(isViewingSelf ? mcData.unlockedEnd : (viewingFriend?.mcData?.unlockedEnd)) && <option value="end">🌌 末地</option>}
                             </select>
 
-                            {/* 建築/查看模式切換 */}
+                            {/* 解鎖按鈕直接放入維度選單旁 */}
+                            {isViewingSelf && !mcData.unlockedNether && (
+                                <button onClick={() => handleUnlockDimension('nether')} className="bg-red-800 hover:bg-red-700 text-white text-[10px] px-2 py-1 border border-red-400">🔓解鎖地獄(1000💎)</button>
+                            )}
+                            {isViewingSelf && !mcData.unlockedEnd && (
+                                <button onClick={() => handleUnlockDimension('end')} className="bg-purple-800 hover:bg-purple-700 text-white text-[10px] px-2 py-1 border border-purple-400">🔓解鎖末地(2000💎)</button>
+                            )}
+
                             {isViewingSelf && (
-                                <div className="ml-2 flex bg-gray-800 border border-gray-600 rounded overflow-hidden">
+                                <div className="flex bg-gray-800 border border-gray-600 rounded overflow-hidden">
                                     <button onClick={() => setIsBuildMode(false)} className={`px-2 py-1 text-xs ${!isBuildMode ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-700'}`}>👀 查看/互動</button>
                                     <button onClick={() => setIsBuildMode(true)} className={`px-2 py-1 text-xs ${isBuildMode ? 'bg-yellow-600 text-white' : 'text-gray-400 hover:bg-gray-700'}`}>🔨 建築模式</button>
                                 </div>
                             )}
                         </div>
 
-                        <select onChange={handleViewChange} className="bg-blue-900 text-white border border-blue-500 px-2 py-1 outline-none text-sm font-bold w-full sm:w-auto">
-                            <option value="self">🏠 回到我的家</option>
-                            {(userProfile.friends || []).map(f => <option key={f.uid} value={f.uid}>👀 去 {f.name} 家</option>)}
-                        </select>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <select onChange={handleViewChange} className="bg-blue-900 text-white border border-blue-500 px-2 py-1 outline-none text-sm font-bold">
+                                <option value="self">🏠 回到我的家</option>
+                                {(userProfile.friends || []).map(f => <option key={f.uid} value={f.uid}>👀 去 {f.name} 家</option>)}
+                            </select>
+                            {/* 將紀錄按鈕和退出按鈕併入上方功能列 */}
+                            {isViewingSelf && (
+                                <button onClick={() => setVisitorLogOpen(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 border border-white font-bold text-sm transition-colors">👣 紀錄</button>
+                            )}
+                            <button onClick={handleQuit} className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 border border-white font-black text-sm transition-colors">✖ 退出</button>
+                        </div>
                     </div>
 
-                    {/* 2D 網格容器 */}
                     <div className="w-full flex-grow flex items-center justify-center overflow-hidden bg-black bg-opacity-30 p-1 border-2 border-black shadow-inner">
-                        <div 
-                            className="grid w-full max-h-full" 
-                            style={{ 
-                                backgroundColor: DIMENSIONS[currentDimension].bg,
-                                gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
-                                maxWidth: `calc((100vh - 180px) * (${COLS}/${ROWS}))` 
-                            }}
-                        >
+                        <div className="grid w-full max-h-full" style={{ backgroundColor: DIMENSIONS[currentDimension].bg, gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`, maxWidth: `calc((100vh - 180px) * (${COLS}/${ROWS}))` }}>
                             {activeGrid.map((cellId, i) => {
                                 const blockInfo = BLOCK_TYPES.find(b => b.id === cellId);
                                 const specialInfo = activeSpecials[i];
-                                const isSpecialSign = specialInfo?.type === 'sign';
-                                const isSpecialPoppy = specialInfo?.type === 'poppy';
-                                const isSpecialGift = specialInfo?.type === 'gift_box';
+                                
+                                let wrapperStyle = { width: '100%', height: '100%' };
+                                
+                                if (cellId) {
+                                    if (cellId.includes('_log') && specialInfo?.rotation) {
+                                        wrapperStyle.transform = `rotate(${specialInfo.rotation}deg)`;
+                                    } else if (cellId.includes('_slab')) {
+                                        const pos = specialInfo?.position || 'bottom';
+                                        wrapperStyle.clipPath = pos === 'bottom' ? 'polygon(0 50%, 100% 50%, 100% 100%, 0 100%)' : 'polygon(0 0, 100% 0, 100% 50%, 0 50%)';
+                                    } else if (cellId.includes('_stairs')) {
+                                        const rot = specialInfo?.rotation || 'bottom-right';
+                                        if (rot === 'bottom-right') wrapperStyle.clipPath = 'polygon(0 50%, 50% 50%, 50% 0, 100% 0, 100% 100%, 0 100%)';
+                                        else if (rot === 'bottom-left') wrapperStyle.clipPath = 'polygon(0 0, 50% 0, 50% 50%, 100% 50%, 100% 100%, 0 100%)';
+                                        else if (rot === 'top-right') wrapperStyle.clipPath = 'polygon(0 0, 100% 0, 100% 100%, 50% 100%, 50% 50%, 0 50%)';
+                                        else if (rot === 'top-left') wrapperStyle.clipPath = 'polygon(0 0, 100% 0, 100% 50%, 50% 50%, 50% 100%, 0 100%)';
+                                    } else if (cellId.includes('_door')) {
+                                        wrapperStyle.transformOrigin = 'left';
+                                        if (specialInfo?.open) wrapperStyle.transform = 'scaleX(0.2)';
+                                    } else if (cellId.includes('_trapdoor')) {
+                                        wrapperStyle.clipPath = specialInfo?.open ? 'polygon(0 0, 20% 0, 20% 100%, 0 100%)' : 'polygon(0 80%, 100% 80%, 100% 100%, 0 100%)';
+                                    }
+                                }
 
                                 return (
                                     <div 
-                                        key={i} 
-                                        onPointerDown={(e) => { e.preventDefault(); handleCellClick(i); }}
-                                        onPointerEnter={(e) => { if (e.buttons === 1) handleCellClick(i); }} 
+                                        key={i} onPointerDown={(e) => { e.preventDefault(); handleCellClick(i); }} onPointerEnter={(e) => { if (e.buttons === 1) handleCellClick(i); }} 
                                         className={`w-full aspect-square border-[0.5px] border-black border-opacity-20 relative cursor-crosshair ${!cellId && !specialInfo ? 'hover:bg-white hover:bg-opacity-30' : ''}`}
                                         style={{ touchAction: 'none' }}
                                     >
-                                        {blockInfo && blockInfo.img && <McImg src={blockInfo.img} className="w-full h-full object-cover pixelated" />}
-                                        
-                                        {/* 渲染告示牌 */}
-                                        {isSpecialSign && (
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                                <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" />
+                                        {blockInfo && blockInfo.img && (
+                                            <div className="absolute inset-0 transition-all duration-200" style={wrapperStyle}>
+                                                <McImg src={blockInfo.img} className="w-full h-full object-cover pixelated" />
                                             </div>
                                         )}
-                                        
-                                        {/* 渲染小花 */}
-                                        {isSpecialPoppy && (
-                                            <div className="absolute inset-0 flex flex-col items-center justify-end pb-1">
-                                                <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-bounce" />
-                                            </div>
-                                        )}
-
-                                        {/* 渲染禮物盒 */}
-                                        {isSpecialGift && (
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                                <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/chest.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" />
-                                            </div>
-                                        )}
+                                        {specialInfo?.type === 'sign' && <div className="absolute inset-0 flex items-center justify-center"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" /></div>}
+                                        {specialInfo?.type === 'poppy' && <div className="absolute inset-0 flex flex-col items-center justify-end pb-1"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-bounce" /></div>}
+                                        {specialInfo?.type === 'gift_box' && <div className="absolute inset-0 flex items-center justify-center"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/chest.png" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" /></div>}
                                     </div>
                                 );
                             })}
                         </div>
                     </div>
 
-                    {isViewingSelf && (
-                        <button onClick={handleSave} disabled={isSaving || !isBuildMode} className={`mt-3 font-black px-8 py-2 border-2 shadow-lg w-full sm:w-auto shrink-0 ${isBuildMode ? 'bg-green-600 hover:bg-green-500 text-white border-black' : 'bg-gray-600 text-gray-400 border-gray-500 cursor-not-allowed'}`}>
-                            {isSaving ? '儲存中...' : (isBuildMode ? '💾 儲存所有進度' : '切換至建築模式以進行儲存')}
-                        </button>
-                    )}
+                    {/* Footer：將儲存按鈕與目前拿著的圖示排在這裡，徹底解決遮擋 Bug */}
+                    <div className="w-full flex flex-col sm:flex-row justify-between items-center mt-3 gap-2 shrink-0">
+                        <div className="bg-gray-900 border-2 border-gray-600 p-2 flex items-center space-x-3 rounded shadow-lg pointer-events-none">
+                            <span className="text-white text-xs font-bold">目前拿著:</span>
+                            {selectedBlock === 'erase' ? <span className="text-xl drop-shadow-md">🧹</span> : (BLOCK_TYPES.find(b=>b.id===selectedBlock)?.img && <McImg src={BLOCK_TYPES.find(b=>b.id===selectedBlock).img} className="w-6 h-6 pixelated drop-shadow-md" style={BLOCK_TYPES.find(b=>b.id===selectedBlock)?.storeStyle} />)}
+                            <span className="text-yellow-400 text-xs font-bold">{BLOCK_TYPES.find(b=>b.id===selectedBlock)?.name || '橡皮擦'}</span>
+                        </div>
+                        
+                        {isViewingSelf && (
+                            <button onClick={handleSave} disabled={isSaving || !isBuildMode} className={`font-black px-6 py-2 border-2 shadow-lg w-full sm:w-auto ${isBuildMode ? 'bg-green-600 hover:bg-green-500 text-white border-black' : 'bg-gray-600 text-gray-400 border-gray-500 cursor-not-allowed'}`}>
+                                {isSaving ? '儲存中...' : (isBuildMode ? '💾 儲存所有進度' : '切換至建築模式以進行儲存')}
+                            </button>
+                        )}
+                    </div>
                 </div>
 
-                {/* 右側：方塊商店與工具列 */}
-{/* 上次加的 h-1/3 md:h-full 不要漏掉，這才是能滑動的關鍵 */}
-{/* ✅ 改用 h-[350px] 確保手機版有固定高度，md:h-full 保持電腦版滿版 */}
-{/* ✅ 將 h-[350px] 改為 h-auto 與 min-h-[500px]，確保背景延伸不中斷 */}
-<div className="w-full h-auto min-h-[500px] md:h-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 overflow-visible">    <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
-        <span>💰 方塊商店</span>
-        <span className="text-sm bg-black bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>
-    </h3>
+                {/* 右側商店庫存區 */}
+                <div className="w-full h-[350px] md:h-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 overflow-hidden relative">   
+                    <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
+                        <span>💰 方塊商店</span>
+                        <span className="text-sm bg-black bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>
+                    </h3>
 
-    {/* 這裡就是新位置的箱子按鈕 */}
-    {isViewingSelf && (
-        <button onClick={() => { playChestOpenSound(); setIsChestOpen(true); }} className="w-full bg-[#8b5a2b] hover:bg-[#a06830] border-2 border-[#3e2723] p-2 mb-2 rounded shadow-md flex items-center justify-center space-x-2 transition-colors shrink-0">
-            {/* ✅ 1. 確保 src 使用這個 MINECRAFT 箱子貼圖路徑 */}
-            {/* ✅ 2. 確保 class 有 'pixelated' 保持點陣風 */}
-            <McImg 
-                src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" 
-                className="w-6 h-6 pixelated drop-shadow-lg" 
-                fallback="📦" 
-            />
-            <span className="text-white font-bold text-sm">打開我的庫存箱子</span>
-        </button>
-    )}
+                    {isViewingSelf && (
+                        <button onClick={() => { playChestOpenSound(); setIsChestOpen(true); }} className="w-full bg-[#8b5a2b] hover:bg-[#a06830] border-2 border-[#3e2723] p-2 mb-2 rounded shadow-md flex items-center justify-center space-x-2 transition-colors shrink-0">
+                            <McImg src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" className="w-6 h-6 pixelated drop-shadow-lg" fallback="📦" />
+                            <span className="text-white font-bold text-sm">打開我的庫存</span>
+                        </button>
+                    )}
 
-                    {/* 分類按鈕與參觀工具 */}
                     {isViewingSelf ? (
                         <div className="flex flex-wrap gap-1 mb-2 shrink-0 border-b border-gray-600 pb-2">
                             {CATEGORIES.map(cat => (
@@ -1699,75 +1650,82 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     ) : (
                         <div className="bg-blue-900 bg-opacity-50 border border-blue-500 p-2 mb-2 shrink-0 flex flex-col gap-1">
                             <p className="text-xs text-blue-200 font-bold mb-1">參觀模式工具：</p>
-                            <button onClick={() => setSelectedBlock('poppy')} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'poppy' ? 'bg-pink-500 border-pink-700 text-white' : 'bg-gray-700 text-gray-300 border-gray-500 hover:bg-gray-600'}`}>
-                                🌺 送小花
-                            </button>
-                            <button onClick={() => setSelectedBlock('gift_box')} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'gift_box' ? 'bg-purple-500 border-purple-700 text-white' : 'bg-gray-700 text-gray-300 border-gray-500 hover:bg-gray-600'}`}>
-                                🎁 放禮物盒
-                            </button>
-                            <button onClick={() => setSelectedBlock('sign')} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'sign' ? 'bg-yellow-600 border-yellow-800 text-white' : 'bg-gray-700 text-gray-300 border-gray-500 hover:bg-gray-600'}`}>
-                                📜 留告示牌
-                            </button>
+                            <button onClick={() => setSelectedBlock('poppy')} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'poppy' ? 'bg-pink-500 border-pink-700 text-white' : 'bg-gray-700 text-gray-300 border-gray-500 hover:bg-gray-600'}`}>🌺 送小花</button>
+                            <button onClick={() => setSelectedBlock('sign')} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'sign' ? 'bg-yellow-600 border-yellow-800 text-white' : 'bg-gray-700 text-gray-300 border-gray-500 hover:bg-gray-600'}`}>📜 留告示牌</button>
                         </div>
                     )}
 
-                    {/* 未解鎖提示 */}
-                    {isViewingSelf && activeCategory === '地獄(需解鎖)' && !mcData.unlockedNether && (
-                        <div className="flex flex-col items-center justify-center p-4 bg-red-900 bg-opacity-50 border border-red-500 mt-2">
-                            <p className="text-xs text-red-200 mb-2 font-bold text-center">解鎖地獄維度與專屬方塊</p>
-                            <button onClick={() => handleUnlockDimension('nether')} className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 border border-red-800">花費 1000 💎 解鎖</button>
-                        </div>
-                    )}
-                    {isViewingSelf && activeCategory === '末地(需解鎖)' && !mcData.unlockedEnd && (
-                        <div className="flex flex-col items-center justify-center p-4 bg-purple-900 bg-opacity-50 border border-purple-500 mt-2">
-                            <p className="text-xs text-purple-200 mb-2 font-bold text-center">解鎖末地維度與專屬方塊</p>
-                            <button onClick={() => handleUnlockDimension('end')} className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold px-4 py-2 border border-purple-800">花費 2000 💎 解鎖</button>
-                        </div>
-                    )}
-
-                    {/* 方塊與工具列表 */}
                     {isViewingSelf && (
                         <div className="grid grid-cols-2 lg:grid-cols-3 gap-1 overflow-y-auto custom-scrollbar pr-1 flex-grow content-start pb-10">
-                            
-                            {/* 工具列獨立顯示 */}
                             {(activeCategory === '全部' || activeCategory === '裝飾與植物') && BLOCK_TYPES.filter(b => b.special && isViewingSelf && b.id !== 'poppy' && b.id !== 'gift_box').map(block => {
                                 const isSelected = selectedBlock === block.id;
                                 return (
                                     <div key={block.id} className={`flex flex-col items-center p-1 border transition-all ${isSelected ? 'border-yellow-400 bg-yellow-400 bg-opacity-20 scale-105 z-10' : 'border-gray-600 bg-gray-800'}`}>
-                                        {block.img ? <McImg src={block.img} className="w-6 h-6 pixelated mb-1 drop-shadow-md" fallback="🔧"/> : <span className="w-6 h-6 flex items-center justify-center text-lg mb-1">🧹</span>}
+                                        {block.img ? <McImg src={block.img} className="w-6 h-6 pixelated mb-1 drop-shadow-md" style={block.storeStyle} fallback="🔧"/> : <span className="w-6 h-6 flex items-center justify-center text-lg mb-1">🧹</span>}
                                         <span className="text-[9px] text-white font-bold mb-1 text-center w-full truncate">{block.name}</span>
-                                        <button onClick={() => setSelectedBlock(block.id)} className={`text-[9px] w-full py-1 font-bold border ${isSelected ? 'bg-yellow-500 text-black border-yellow-600' : 'bg-gray-600 text-white border-gray-500 hover:bg-gray-500'}`}>
-                                            {isSelected ? '使用中' : '選擇工具'}
-                                        </button>
+                                        <button onClick={() => setSelectedBlock(block.id)} className={`text-[9px] w-full py-1 font-bold border ${isSelected ? 'bg-yellow-500 text-black border-yellow-600' : 'bg-gray-600 text-white border-gray-500 hover:bg-gray-500'}`}>{isSelected ? '使用中' : '選擇工具'}</button>
                                     </div>
                                 );
                             })}
-
-                            {/* 商店購買列表 (隱藏庫存顯示，專注於購買) */}
-                            {displayedBlocks.map(block => {
-                                return (
-                                    <div key={block.id} className="flex flex-col items-center p-1 border border-gray-600 bg-gray-800 transition-all hover:bg-gray-700">
-                                        <McImg src={block.img} className="w-6 h-6 pixelated mb-1 drop-shadow-md" fallback="📦"/>
-                                        <span className="text-[9px] text-white font-bold mb-1 text-center w-full truncate" title={block.name}>{block.name}</span>
-                                        <span className="text-[8px] text-yellow-300 font-bold mb-1 bg-black bg-opacity-40 px-1 rounded-full w-full text-center">{block.price} 💎</span>
-                                        
-                                        <button onClick={() => setBuyModal({ block, amount: 1 })} className="mt-auto text-[9px] w-full py-1 font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-inner border border-blue-400">
-                                            購買
-                                        </button>
-                                    </div>
-                                );
-                            })}
+                            {displayedBlocks.map(block => (
+                                <div key={block.id} className="flex flex-col items-center p-1 border border-gray-600 bg-gray-800 transition-all hover:bg-gray-700">
+                                    <McImg src={block.img} className="w-6 h-6 pixelated mb-1 drop-shadow-md" style={block.storeStyle} fallback="📦"/>
+                                    <span className="text-[9px] text-white font-bold mb-1 text-center w-full truncate" title={block.name}>{block.name}</span>
+                                    <span className="text-[8px] text-yellow-300 font-bold mb-1 bg-black bg-opacity-40 px-1 rounded-full w-full text-center">{block.price} 💎</span>
+                                    <button onClick={() => setBuyModal({ block, amount: 1 })} className="mt-auto text-[9px] w-full py-1 font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-inner border border-blue-400">購買</button>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* --- 我的大箱子庫存 (Modal) --- */}
+            {/* --- 儲物箱互動 UI --- */}
+            {chestUi && (
+                <div className="absolute inset-0 z-[110] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
+                    <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 w-full max-w-2xl shadow-2xl relative">
+                        <div className="flex justify-between items-center mb-2 px-1">
+                            <h3 className="text-[#373737] font-bold text-lg">📦 實體儲物箱</h3>
+                            <button onClick={() => { playChestCloseSound(); setChestUi(null); }} className="text-red-600 font-black text-xl hover:scale-110">✖</button>
+                        </div>
+
+                        <p className="text-[#373737] font-bold mb-1">箱子內部 (點擊取出)</p>
+                        <div className="bg-[#8b8b8b] p-2 grid grid-cols-6 sm:grid-cols-9 gap-1 border-2 border-[#373737] shadow-inner h-32 overflow-y-auto mb-4 content-start">
+                            {Object.entries(specials[currentDimension][chestUi.index]?.items || {}).filter(([id, count]) => count > 0).map(([id, count]) => {
+                                const bInfo = BLOCK_TYPES.find(b => b.id === id);
+                                if (!bInfo) return null;
+                                return (
+                                    <div key={`chest-${id}`} onClick={() => handleChestItemTransfer(id, 'toLocal')} className="bg-[#8b8b8b] border-2 border-[#ffffff] border-r-[#373737] border-b-[#373737] aspect-square flex flex-col items-center justify-center relative hover:bg-[#a0a0a0] cursor-pointer">
+                                        <McImg src={bInfo.img} className="w-8 h-8 pixelated drop-shadow-md" style={bInfo.storeStyle} />
+                                        <span className="absolute bottom-0 right-1 text-white text-[10px] font-black drop-shadow-[1px_1px_0_rgba(0,0,0,1)]">{count}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <p className="text-[#373737] font-bold mb-1">我的庫存 (點擊放入)</p>
+                        <div className="bg-[#8b8b8b] p-2 grid grid-cols-6 sm:grid-cols-9 gap-1 border-2 border-[#373737] shadow-inner h-32 overflow-y-auto content-start">
+                            {Object.entries(localInventory).filter(([id, count]) => count > 0).map(([id, count]) => {
+                                const bInfo = BLOCK_TYPES.find(b => b.id === id);
+                                if (!bInfo) return null;
+                                return (
+                                    <div key={`inv-${id}`} onClick={() => handleChestItemTransfer(id, 'toChest')} className="bg-[#8b8b8b] border-2 border-[#ffffff] border-r-[#373737] border-b-[#373737] aspect-square flex flex-col items-center justify-center relative hover:bg-[#a0a0a0] cursor-pointer">
+                                        <McImg src={bInfo.img} className="w-8 h-8 pixelated drop-shadow-md" style={bInfo.storeStyle} />
+                                        <span className="absolute bottom-0 right-1 text-white text-[10px] font-black drop-shadow-[1px_1px_0_rgba(0,0,0,1)]">{count}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- 我的大箱子庫存 (原本的大背包) --- */}
             {isChestOpen && (
                 <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex items-center justify-center p-4">
                     <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 w-full max-w-2xl shadow-2xl relative">
                         <div className="flex justify-between items-center mb-2 px-1">
-                            <h3 className="text-[#373737] font-bold text-lg">🧰 我的大箱子庫存 <span className="text-xs text-blue-700 ml-2">(點擊方塊拿在手上)</span></h3>
+                            <h3 className="text-[#373737] font-bold text-lg">🧰 我的庫存 <span className="text-xs text-blue-700 ml-2">(點擊方塊拿在手上)</span></h3>
                             <button onClick={() => { playChestCloseSound(); setIsChestOpen(false); }} className="text-red-600 font-black text-xl hover:scale-110">✖</button>
                         </div>
                         <div className="bg-[#8b8b8b] p-2 grid grid-cols-6 sm:grid-cols-9 gap-1 border-2 border-[#373737] shadow-inner min-h-[40vh] max-h-[60vh] overflow-y-auto content-start">
@@ -1775,48 +1733,29 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                 const bInfo = BLOCK_TYPES.find(b => b.id === id);
                                 if (!bInfo) return null;
                                 return (
-                                    <div 
-                                        key={id} 
-                                        onClick={() => { setSelectedBlock(id); playChestCloseSound(); setIsChestOpen(false); if(!isBuildMode) setIsBuildMode(true); }}
-                                        className="bg-[#8b8b8b] border-2 border-[#ffffff] border-r-[#373737] border-b-[#373737] aspect-square flex flex-col items-center justify-center relative group hover:bg-[#a0a0a0] cursor-pointer"
-                                    >
-                                        <McImg src={bInfo.img} className="w-8 h-8 pixelated drop-shadow-md" />
+                                    <div key={id} onClick={() => { setSelectedBlock(id); playChestCloseSound(); setIsChestOpen(false); if(!isBuildMode) setIsBuildMode(true); }} className="bg-[#8b8b8b] border-2 border-[#ffffff] border-r-[#373737] border-b-[#373737] aspect-square flex flex-col items-center justify-center relative group hover:bg-[#a0a0a0] cursor-pointer">
+                                        <McImg src={bInfo.img} className="w-8 h-8 pixelated drop-shadow-md" style={bInfo.storeStyle} />
                                         <span className="absolute bottom-0 right-1 text-white text-[10px] font-black drop-shadow-[1px_1px_0_rgba(0,0,0,1)]">{count}</span>
-                                        {/* Tooltip */}
-                                        <div className="hidden group-hover:block absolute -top-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-400">
-                                            {bInfo.name}
-                                        </div>
+                                        <div className="hidden group-hover:block absolute -top-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-400">{bInfo.name}</div>
                                     </div>
                                 );
                             })}
-                            {Object.values(localInventory).every(count => count <= 0) && (
-                                <p className="col-span-full text-[#373737] font-bold text-center mt-10">你的庫存空空如也，去右側商店買點建材吧！</p>
-                            )}
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* --- 購買彈窗 (網頁內 Modal) --- */}
             {buyModal && (
                 <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
                     <div className="bg-[#333] border-4 border-gray-600 p-6 w-full max-w-xs shadow-2xl flex flex-col items-center relative">
                         <h3 className="text-white font-bold mb-4 text-lg">購買 【{buyModal.block.name}】</h3>
-                        <McImg src={buyModal.block.img} className="w-16 h-16 pixelated mb-4 drop-shadow-lg" />
-                        
+                        <McImg src={buyModal.block.img} className="w-16 h-16 pixelated mb-4 drop-shadow-lg" style={buyModal.block.storeStyle} />
                         <div className="flex items-center space-x-4 mb-4">
                             <button onClick={() => setBuyModal({...buyModal, amount: Math.max(1, buyModal.amount - 1)})} className="bg-gray-700 text-white w-8 h-8 font-black border-2 border-gray-500 hover:bg-gray-600">-</button>
-                            <input 
-                                type="number" 
-                                value={buyModal.amount} 
-                                onChange={(e) => setBuyModal({...buyModal, amount: Math.max(1, parseInt(e.target.value) || 1)})}
-                                className="w-16 text-center font-bold p-1 border-2 border-gray-500 bg-gray-900 text-white outline-none"
-                            />
+                            <input type="number" value={buyModal.amount} onChange={(e) => setBuyModal({...buyModal, amount: Math.max(1, parseInt(e.target.value) || 1)})} className="w-16 text-center font-bold p-1 border-2 border-gray-500 bg-gray-900 text-white outline-none"/>
                             <button onClick={() => setBuyModal({...buyModal, amount: buyModal.amount + 1})} className="bg-gray-700 text-white w-8 h-8 font-black border-2 border-gray-500 hover:bg-gray-600">+</button>
                         </div>
-                        
                         <p className="text-yellow-400 font-bold mb-6">總價：{buyModal.block.price * buyModal.amount} 💎</p>
-                        
                         <div className="flex space-x-2 w-full">
                             <button onClick={() => setBuyModal(null)} className="flex-1 bg-gray-500 hover:bg-gray-400 text-white font-bold py-2 border-2 border-black">取消</button>
                             <button onClick={handleConfirmBuy} className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 border-2 border-black">確認購買</button>
@@ -1825,82 +1764,20 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 </div>
             )}
 
-            {/* --- 準備禮物盒彈窗 --- */}
-            {giftModal && (
-                <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
-                    <div className="bg-[#d4a373] border-8 border-[#8b5a2b] p-6 w-full max-w-sm shadow-2xl flex flex-col items-center pixelated-border">
-                        <h3 className="text-[#3e2723] font-black mb-2 text-lg">🎁 準備一份禮物</h3>
-                        <p className="text-[#3e2723] text-xs font-bold mb-4">請從你的庫存選擇要送給好友的方塊</p>
-                        
-                        <div className="w-full bg-[#faedcd] p-2 border-2 border-[#8b5a2b] mb-4 h-48 overflow-y-auto custom-scrollbar grid grid-cols-4 sm:grid-cols-5 gap-2 content-start shadow-inner">
-                            {Object.entries(localInventory).filter(([id, count]) => count > 0 && id !== 'gift_box').map(([id, count]) => {
-                                const bInfo = BLOCK_TYPES.find(b => b.id === id);
-                                if (!bInfo) return null;
-                                const isSel = giftForm.blockId === id;
-                                return (
-                                    <div 
-                                        key={id} 
-                                        onClick={() => setGiftForm({ blockId: id, amount: 1 })} 
-                                        className={`flex flex-col items-center cursor-pointer p-1 border-2 transition-all ${isSel ? 'border-blue-500 bg-blue-200 scale-105' : 'border-transparent hover:bg-[#e0d3b6]'}`}
-                                    >
-                                        <McImg src={bInfo.img} className="w-8 h-8 pixelated" />
-                                        <span className="text-[10px] text-center font-bold text-black mt-1">{count}</span>
-                                    </div>
-                                );
-                            })}
-                            {Object.values(localInventory).every(count => count <= 0) && (
-                                <p className="col-span-full text-center text-red-600 font-bold text-xs mt-4">你沒有任何可以送的方塊喔！</p>
-                            )}
-                        </div>
-
-                        {giftForm.blockId ? (
-                            <div className="flex items-center space-x-2 mb-4 bg-white p-2 border-2 border-[#8b5a2b]">
-                                <span className="text-black font-bold text-sm">打包數量:</span>
-                                <input 
-                                    type="number" 
-                                    value={giftForm.amount} 
-                                    onChange={e => {
-                                        const val = parseInt(e.target.value) || 1;
-                                        const max = localInventory[giftForm.blockId] || 1;
-                                        setGiftForm({ ...giftForm, amount: Math.min(Math.max(1, val), max) });
-                                    }} 
-                                    className="w-16 p-1 border-2 border-gray-400 bg-gray-100 text-center font-bold outline-none" 
-                                />
-                                <span className="text-gray-600 text-xs font-bold">/ {localInventory[giftForm.blockId]}</span>
-                            </div>
-                        ) : (
-                            <p className="text-red-600 font-bold mb-4 text-sm bg-red-100 px-4 py-1 rounded">請點擊上方選擇方塊</p>
-                        )}
-                        
-                        <div className="flex space-x-2 w-full">
-                            <button onClick={() => { setGiftModal(null); setGiftForm({ blockId: '', amount: 1}); }} className="flex-1 bg-gray-500 hover:bg-gray-400 text-white font-bold py-2 border-2 border-black shadow-md">取消</button>
-                            <button onClick={submitGift} disabled={!giftForm.blockId} className="flex-1 bg-green-700 hover:bg-green-600 text-white font-bold py-2 border-2 border-black shadow-md disabled:opacity-50 disabled:cursor-not-allowed">打包送出</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* --- 告示牌留言彈窗 --- */}
             {signModal !== null && (
                 <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
                     <div className="bg-[#d4a373] border-8 border-[#8b5a2b] p-6 w-full max-w-sm shadow-2xl flex flex-col items-center pixelated-border">
                         <h3 className="text-[#3e2723] font-black mb-4 text-lg">✏️ 留下告示牌訊息</h3>
-                        <textarea 
-                            id="signInput"
-                            placeholder="請輸入留言 (最多30字)..." 
-                            maxLength="30"
-                            className="w-full h-24 p-2 bg-[#faedcd] border-2 border-[#8b5a2b] text-[#3e2723] font-bold outline-none resize-none mb-4 custom-scrollbar"
-                        ></textarea>
+                        <textarea id="signInput" placeholder="請輸入留言 (最多30字)..." maxLength="30" className="w-full h-24 p-2 bg-[#faedcd] border-2 border-[#8b5a2b] text-[#3e2723] font-bold outline-none resize-none mb-4 custom-scrollbar"></textarea>
                         <p className="text-[#3e2723] font-bold text-xs mb-4">放置消耗：10 💎</p>
                         <div className="flex space-x-2 w-full">
                             <button onClick={() => setSignModal(null)} className="flex-1 bg-gray-500 hover:bg-gray-400 text-white font-bold py-2 border-2 border-black">取消</button>
-                            <button onClick={submitSign} className="flex-1 bg-green-700 hover:bg-green-600 text-white font-bold py-2 border-2 border-black">插上告示牌</button>
+                            <button onClick={submitSign} className="flex-1 bg-green-700 hover:bg-green-600 text-white font-bold py-2 border-2 border-black">插上</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* --- 訪客紀錄彈窗 --- */}
             {visitorLogOpen && (
                 <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
                     <div className="bg-[#333] border-4 border-gray-600 p-4 w-full max-w-sm shadow-2xl flex flex-col h-[60dvh]">
