@@ -63,7 +63,44 @@ function Main() {
         return () => unsubscribe();
     }, []);
 
-    const TopNav = () => (
+
+    // --- 新增：國考倒數計時器組件 ---
+    const ExamCountdown = () => {
+        const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, totalHours: 0 });
+
+        useEffect(() => {
+            // 設定目標時間：2026-07-19 09:00:00 (台灣時間 GMT+8)
+            const targetDate = new Date('2026-07-18T09:00:00+08:00').getTime();
+
+            const updateTimer = () => {
+                const now = new Date().getTime();
+                const diff = targetDate - now;
+
+                if (diff > 0) {
+                    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const totalHours = Math.floor(diff / (1000 * 60 * 60));
+                    setTimeLeft({ days, hours, totalHours });
+                } else {
+                    setTimeLeft({ days: 0, hours: 0, totalHours: 0 });
+                }
+            };
+
+            updateTimer(); // 初始執行一次
+            const intervalId = setInterval(updateTimer, 60000); // 每分鐘更新一次
+            return () => clearInterval(intervalId);
+        }, []);
+
+        return (
+            <div className="hidden md:flex flex-col items-end justify-center mr-2 text-xs font-bold tracking-widest">
+                <span className="text-yellow-400 drop-shadow">距國考剩 {timeLeft.days} 天 {timeLeft.hours} 小時</span>
+                <span className="text-[10px] text-yellow-500">(相當於 {timeLeft.totalHours} 小時)</span>
+            </div>
+        );
+    };
+    // ---------------------------------
+
+    const topNavContent = (
         <div className="bg-black dark:bg-gray-950 text-white px-4 flex justify-between items-center shadow-md h-14 shrink-0 relative z-20 overflow-x-auto custom-scrollbar transition-colors">
             <div className="flex space-x-6 items-center h-full whitespace-nowrap">
                 <span className="font-black text-lg tracking-widest mr-4">JJay</span>
@@ -77,6 +114,9 @@ function Main() {
             </div>
             {user && (
                 <div className="flex items-center space-x-4">
+                    {/* ✅ 將倒數計時器放在這裡 */}
+                    <ExamCountdown />
+                    
                     <button onClick={() => setIsDark(!isDark)} className="text-xl hover:scale-110 transition-transform" title="切換日/夜間模式">
                         {isDark ? '☀️' : '🌙'}
                     </button>
@@ -178,10 +218,10 @@ function Main() {
             {/* ✅ 4. 主畫面這裡原本一大串的 modal 程式碼，現在只需要呼叫 SharedModal 就好了 */}
             {SharedModal}
 
-            {activeTab !== 'activeQuiz' && <TopNav />}
+            {activeTab !== 'activeQuiz' && topNavContent}
             
             {activeTab !== 'activeQuiz' ? (
-                <div className="flex-grow pt-6 overflow-hidden bg-gray-50 dark:bg-gray-900 transition-colors">
+                <div className="flex-grow pt-4 md:pt-6 overflow-hidden flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
                     {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={(folderName) => { setActiveQuizRecord({ folder: folderName }); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
                     {activeTab === 'taskwall' && <TaskWallDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     
