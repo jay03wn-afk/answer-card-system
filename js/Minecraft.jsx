@@ -905,11 +905,25 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
             <div className="max-w-5xl mx-auto mc-ui p-6 flex flex-col space-y-6 bg-opacity-90 dark:bg-opacity-80">
                 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
-                    <div>
-                        <h1 className="text-2xl font-black mb-2 text-gray-800 dark:text-gray-100 tracking-wide drop-shadow-md">⛏️ 史蒂夫的養成天地</h1>
-                        <p className="text-sm font-bold text-gray-600 dark:text-gray-300">完成測驗或遊玩小遊戲來獲取鑽石！</p>
-                    </div>
-                    <div className="mc-panel-dark w-full md:w-auto text-white">
+    <div>
+        <h1 className="text-2xl font-black mb-2 text-gray-800 dark:text-gray-100 tracking-wide drop-shadow-md">⛏️ 史蒂夫的養成天地</h1>
+        <p className="text-sm font-bold text-gray-600 dark:text-gray-300">完成測驗或遊玩小遊戲來獲取鑽石！</p>
+    </div>
+
+    {/* ✅ 新增：將按鈕移動到這裡 (圖片中紅圈的位置) */}
+    <div className="flex flex-wrap gap-2 md:mx-4">
+        <button onClick={() => setShowSandbox(true)} className="bg-green-600 hover:bg-green-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-green-800 font-bold transition-colors whitespace-nowrap shadow-md">
+            🏗️ 蓋房子
+        </button>
+        <button onClick={() => setShowMiningGame(true)} className="bg-yellow-600 hover:bg-yellow-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-yellow-800 font-bold transition-colors whitespace-nowrap shadow-md">
+            ⛏️ 挖礦
+        </button>
+        <button onClick={() => setShowMiniGame(true)} className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-blue-800 font-bold transition-colors whitespace-nowrap shadow-md">
+            🛻 礦車探險
+        </button>
+    </div>
+
+    <div className="mc-panel-dark w-full md:w-auto text-white">
                         <div className="flex space-x-6 text-sm items-center font-bold">
                             <div className="text-center">
                                 <p className="text-green-400 text-lg">Lv. {mcData.level}</p>
@@ -927,20 +941,10 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                     
                     <div className="space-y-6 lg:col-span-1">
                         <div className="mc-panel-dark text-white">
+                          {/* ✅ 1. 將按鈕從這裡移除，將 h2 改回簡單的標題 */}
                             <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300 flex justify-between items-center">
-    <span>🏡 你的家</span>
-    <div className="flex space-x-2">
-        <button onClick={() => setShowSandbox(true)} className="bg-green-600 hover:bg-green-500 text-white text-xs px-2 py-1 border-2 border-green-800 font-bold transition-colors">
-            🏗️ 蓋房子
-        </button>
-        <button onClick={() => setShowMiningGame(true)} className="bg-yellow-600 hover:bg-yellow-500 text-white text-xs px-2 py-1 border-2 border-yellow-800 font-bold transition-colors">
-            ⛏️ 挖礦
-        </button>
-        <button onClick={() => setShowMiniGame(true)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-2 py-1 border-2 border-blue-800 font-bold transition-colors">
-            🛻 礦車探險
-        </button>
-    </div>
-</h2>
+                             <span>🏡 你的家</span>
+                            </h2>
                             <div className="p-4 mc-bg border-4 border-gray-800 mb-4 h-48 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
                                 <McImg src={imgSteve} fallback="🧍‍♂️" className="w-16 h-16 pixelated shadow-lg border border-black mb-2" />
                                 
@@ -1662,7 +1666,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
 
                 {/* 右側：方塊商店與工具列 */}
 {/* 上次加的 h-1/3 md:h-full 不要漏掉，這才是能滑動的關鍵 */}
-<div className="w-full h-1/3 md:h-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 overflow-hidden">
+{/* ✅ 改用 h-[350px] 確保手機版有固定高度，md:h-full 保持電腦版滿版 */}
+<div className="w-full h-[350px] md:h-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 overflow-hidden">   
     <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
         <span>💰 方塊商店</span>
         <span className="text-sm bg-black bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>
