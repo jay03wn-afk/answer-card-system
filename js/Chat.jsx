@@ -271,13 +271,19 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     };
 
     // 更新：防呆機制，下載好友試卷時檢查是否重複
+  // 更新：防呆機制，下載好友試卷時檢查是否重複，且原作者是否已刪除
     const downloadSharedQuiz = async (quizData) => {
         try {
             const myQuizzesSnap = await db.collection('users').doc(user.uid).collection('quizzes').get();
             const myQuizzes = myQuizzesSnap.docs.map(d => d.data());
 
+            // 抓取原作者的這份試卷
             const doc = await db.collection('users').doc(quizData.ownerId).collection('quizzes').doc(quizData.quizId).get();
-            if(!doc.exists) return showAlert('該試卷已失效或被擁有者刪除！');
+            
+            // 如果不存在，跳出對應提示
+            if(!doc.exists) {
+                return showAlert('❌ 該試卷已失效或被原作者刪除！', '下載失敗');
+            }
             
             const originalData = doc.data();
             const cleanIncomingName = originalData.testName.trim();
