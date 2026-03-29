@@ -510,9 +510,10 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
     const PRIZES = [
         { id: '711', name: '7-11 50元禮券', type: 'real', prob: 0.001, img: 'https://i.postimg.cc/pd20TjLs/638632987880299781.png', desc: '極巨獎！' },
         { id: 'diamond_jackpot', name: '鑽石礦 (+100 💎)', type: 'diamond', amount: 100, prob: 0.049, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/diamond_ore.png' },
-        { id: 'diamond_sword', name: '鑽石劍 (稀有裝備)', type: 'item', prob: 0.05, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond_sword.png' },
+        { id: 'pack_legendary', name: '終界寶箱 (禮包)', type: 'pack', prob: 0.02, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/ender_chest_front.png' },
+        { id: 'pack_rare', name: '廢棄礦井箱 (禮包)', type: 'pack', prob: 0.08, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/trapped_chest_front.png' },
         { id: 'gold_ore', name: '金礦 (+50 💎)', type: 'diamond', amount: 50, prob: 0.15, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/gold_ore.png' },
-        { id: 'iron_ore', name: '鐵礦 (+20 💎)', type: 'diamond', amount: 20, prob: 0.30, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/iron_ore.png' },
+        { id: 'iron_ore', name: '鐵礦 (+20 💎)', type: 'diamond', amount: 20, prob: 0.25, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/iron_ore.png' },
         { id: 'coal_ore', name: '煤礦 (+5 💎)', type: 'diamond', amount: 5, prob: 0.45, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/coal_ore.png' }
     ];
 
@@ -621,6 +622,10 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                updates.diamonds = mcData.diamonds + 30; 
                 msg += " \n(你已擁有此裝備，自動轉換為 30 💎)";
             }
+        } else if (prize.type === 'pack') {
+            updates.packs = { ...(mcData.packs || {}) };
+            updates.packs[prize.id] = (updates.packs[prize.id] || 0) + 1;
+            msg += "\n📦 (已自動存入養成頁面的「終界儲物箱」中)";
         } else if (prize.type === 'real') {
             msg += "\n\n🎫 請截圖此畫面並聯絡管理員領取獎品！";
             showAlert(msg); 
@@ -711,6 +716,11 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     const [showMiniGame, setShowMiniGame] = useState(false);
     const [showMiningGame, setShowMiningGame] = useState(false); 
     const [showSandbox, setShowSandbox] = useState(false);
+    
+    // ✨ 新增：村民狀態與終界儲物箱狀態
+    const [showEnderChest, setShowEnderChest] = useState(false);
+    const [villagerSpeech, setVillagerSpeech] = useState("哼嗯... 看看這些好東西！");
+    const [villagerAnim, setVillagerAnim] = useState("");
 
     // ✨ 修正：確保 mcData 的數值不為 NaN
     const rawMcData = userProfile.mcData || {};
@@ -728,7 +738,8 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         cats: safeNum(rawMcData.cats, 0),
         sandbox_cols: safeNum(rawMcData.sandbox_cols, 20),
         items: rawMcData.items || [],
-        lastCheckIn: rawMcData.lastCheckIn || null
+        lastCheckIn: rawMcData.lastCheckIn || null,
+        packs: rawMcData.packs || {}
     };
     
     const expToNextLevel = mcData.level * 20;
@@ -737,28 +748,19 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     const imgDiamond = `${mcBase}/diamond.png`;
     const imgSteve = "https://minotar.net/helm/Steve/64.png";
 
+    // ✨ 更新：精簡商品，加入方塊禮包
     const storeItems = [
         { id: 'apple', name: '蘋果 (+3 飽食)', type: 'food', cost: 10, value: 3, img: `${mcBase}/apple.png`, icon: '🍎' },
         { id: 'bread', name: '麵包 (+5 飽食)', type: 'food', cost: 15, value: 5, img: `${mcBase}/bread.png`, icon: '🍞' },
         { id: 'beef', name: '烤牛肉 (+8 飽食)', type: 'food', cost: 25, value: 8, img: `${mcBase}/cooked_beef.png`, icon: '🥩' },
         { id: 'golden_apple', name: '金蘋果 (+10飽食/EXP)', type: 'food_exp', cost: 50, value: 10, exp: 10, img: `${mcBase}/golden_apple.png`, icon: '🍏' },
-        { id: 'cat', name: '斑點貓咪', type: 'pet', cost: 100, img: `${mcBase}/cat_spawn_egg.png`, icon: '🐱' },
-        { id: 'wolf', name: '忠心狗狗', type: 'pet', cost: 120, img: `${mcBase}/wolf_spawn_egg.png`, icon: '🐶' },
-        { id: 'parrot', name: '彩色鸚鵡', type: 'pet', cost: 150, img: `${mcBase}/parrot_spawn_egg.png`, icon: '🦜' },
-        { id: 'axolotl', name: '六角恐龍', type: 'pet', cost: 200, img: `${mcBase}/axolotl_spawn_egg.png`, icon: '🦎' },
-        { id: 'torch', name: '火把 (+5 EXP)', type: 'item', cost: 20, exp: 5, img: `${mcBase}/torch.png`, icon: '🔥' },
-        { id: 'wooden_sword', name: '木劍 (+10 EXP)', type: 'item', cost: 50, exp: 10, img: `${mcBase}/wooden_sword.png`, icon: '🗡️' },
-        { id: 'shield', name: '盾牌 (+15 EXP)', type: 'item', cost: 80, exp: 15, img: `${mcBase}/shield.png`, icon: '🛡️' },
-        { id: 'stone_sword', name: '石劍 (+20 EXP)', type: 'item', cost: 100, exp: 20, img: `${mcBase}/stone_sword.png`, icon: '🗡️' },
-        { id: 'bow', name: '弓箭 (+20 EXP)', type: 'item', cost: 100, exp: 20, img: `${mcBase}/bow.png`, icon: '🏹' },
-        { id: 'iron_pickaxe', name: '鐵鎬 (+25 EXP)', type: 'item', cost: 120, exp: 25, img: `${mcBase}/iron_pickaxe.png`, icon: '⛏️' },
-        { id: 'iron_sword', name: '鐵劍 (+30 EXP)', type: 'item', cost: 150, exp: 30, img: `${mcBase}/iron_sword.png`, icon: '🗡️' },
-        { id: 'iron_chestplate', name: '鐵胸甲 (+40 EXP)', type: 'item', cost: 200, exp: 40, img: `${mcBase}/iron_chestplate.png`, icon: '👕' },
-        { id: 'diamond_pickaxe', name: '鑽石鎬 (+45 EXP)', type: 'item', cost: 280, exp: 45, img: `${mcBase}/diamond_pickaxe.png`, icon: '⛏️' },
-        { id: 'diamond_sword', name: '鑽石劍 (+50 EXP)', type: 'item', cost: 300, exp: 50, img: `${mcBase}/diamond_sword.png`, icon: '🗡️' },
-        { id: 'diamond_chestplate', name: '鑽石胸甲 (+80 EXP)', type: 'item', cost: 500, exp: 80, img: `${mcBase}/diamond_chestplate.png`, icon: '💎' },
-        { id: 'netherite_sword', name: '獄髓劍 (+100 EXP)', type: 'item', cost: 800, exp: 100, img: `${mcBase}/netherite_sword.png`, icon: '⚔️' },
         { id: 'laxative', name: '瀉藥 (多拉2坨水便)', type: 'medicine', cost: 30, value: 2, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/ghast_tear.png', icon: '💊' },
+        { id: 'pack_basic', name: '村莊木箱 (隨機基礎方塊)', type: 'pack', cost: 100, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/chest_front.png', icon: '📦' },
+        { id: 'pack_rare', name: '廢棄礦井箱 (進階隨機方塊)', type: 'pack', cost: 300, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/trapped_chest_front.png', icon: '🎁' },
+        { id: 'pack_epic', name: '地獄遺跡箱 (珍稀隨機方塊)', type: 'pack', cost: 600, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_bricks.png', icon: '🔮' },
+        { id: 'pack_legendary', name: '終界寶箱 (極稀有隨機方塊)', type: 'pack', cost: 1000, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/ender_chest_front.png', icon: '🌟' },
+        // ✨ 新增簽到寶箱 (設定 hide: true 讓它不會出現在商店中)
+        { id: 'pack_checkin', name: '每日簽到箱 (普通隨機方塊)', type: 'pack', cost: 0, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/barrel_side.png', icon: '🛢️', hide: true }
     ];
 
     useEffect(() => {
@@ -812,22 +814,27 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         let newHunger = mcData.hunger - 2; 
         if (newHunger < 0) newHunger = 0;
 
+        // ✨ 簽到時發放一個每日簽到箱
+        const newPacks = { ...(mcData.packs || {}) };
+        newPacks['pack_checkin'] = (newPacks['pack_checkin'] || 0) + 1;
+
         updateMcData({ 
             diamonds: mcData.diamonds + 20, 
             exp: mcData.exp + 10,
             hunger: newHunger,
-            lastCheckIn: today 
+            lastCheckIn: today,
+            packs: newPacks
         });
-        showAlert("✅ 簽到成功！獲得 20 💎 與 10 EXP\n(史蒂夫消耗了 2 點飽食度)");
+        showAlert("✅ 簽到成功！獲得 20 💎 與 10 EXP\n(史蒂夫消耗了 2 點飽食度)\n🎁 額外獲得 1 個【每日簽到箱】，已放入終界儲物箱中！");
     };
 
     const handleBuy = (item) => {
         if (mcData.diamonds < item.cost) {
+            playVillagerSound('no');
+            setVillagerAnim('no');
+            setVillagerSpeech("哼... 你的鑽石好像不夠買這個。");
+            setTimeout(() => setVillagerAnim(""), 300);
             return showAlert(`鑽石不夠喔！需要 ${item.cost} 💎`);
-        }
-
-        if (item.type === 'item' && (mcData.items || []).includes(item.id)) {
-            return showAlert("這個裝備你已經擁有囉！無法重複購買。");
         }
 
         let updates = { diamonds: mcData.diamonds - item.cost };
@@ -835,6 +842,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
 
         if (item.type === 'food' || item.type === 'food_exp') {
             if (mcData.hunger >= 10) return showAlert("史蒂夫現在很飽了！不需要吃東西。");
+            playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/random/eat1.ogg');
             updates.hunger = Math.min(10, mcData.hunger + item.value);
             msg = `🤤 史蒂夫吃下了 ${item.name.split(' ')[0]}，飽食度大增！`;
             
@@ -850,28 +858,20 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                 updates.level = newLevel;
             }
             showAlert(msg);
-        } else if (item.type === 'pet') {
-            const petList = mcData.pets || [];
-            if(item.id === 'cat') updates.cats = (mcData.cats || 0) + 1; 
-            updates.pets = [...petList, item.id];
-            showAlert(`💕 成功收編！一隻可愛的 ${item.name} 加入了你的家！`);
-        } else if (item.type === 'item') {
-            let newExp = mcData.exp + item.exp;
-            let newLevel = mcData.level;
-            if (newExp >= newLevel * 20) {
-                newExp -= newLevel * 20;
-                newLevel += 1;
-                showAlert(`✨ 獲得 ${item.name.split(' ')[0]}！經驗大增，恭喜升級！`);
-            } else {
-                showAlert(`✨ 獲得 ${item.name.split(' ')[0]}！裝備後感覺變強了！`);
-            }
-            updates.exp = newExp;
-            updates.level = newLevel;
-            updates.items = [...(mcData.items || []), item.id];
         } else if (item.type === 'medicine') {
+            playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/random/drink.ogg');
             updates.laxativeBonus = (mcData.laxativeBonus || 0) + item.value;
-            showAlert(`🧪 史蒂夫吃了瀉藥...肚子開始有波浪感了！\n(額外獲得 ${item.value} 次噴水便機會)`);
+            showAlert(`🧪 史蒂夫一口乾了瀉藥... 肚子發出不妙的水聲！\n(額外獲得 ${item.value} 次噴水便機會)`);
+        } else if (item.type === 'pack') {
+            updates.packs = { ...(mcData.packs || {}) };
+            updates.packs[item.id] = (updates.packs[item.id] || 0) + 1;
+            showAlert(`📦 購買成功！【${item.name}】已為您存入「終界儲物箱」中！`);
         }
+
+        playVillagerSound('yes');
+        setVillagerAnim('yes');
+        setVillagerSpeech("哈！真是筆好交易，感謝惠顧！");
+        setTimeout(() => setVillagerAnim(""), 300);
 
         updateMcData(updates);
     };
@@ -881,7 +881,60 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
             updateMcData({ diamonds: mcData.diamonds + earnedDiamonds }, true); 
         }
     };
+    // ✨ 村民語音處理 (修正：閒置音效改為隨機播放 5 種不同的聲音)
+    const playVillagerSound = (type) => {
+        const urls = {
+            idle: [
+                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/ambient/1.ogg',
+                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/ambient/2.ogg',
+                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/ambient/3.ogg',
+                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/trade1.ogg'
+            ],
+            yes: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/yes1.ogg',
+            no: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/no1.ogg'
+        };
+        
+        if (type === 'idle' && Array.isArray(urls.idle)) {
+            const randomIdleUrl = urls.idle[Math.floor(Math.random() * urls.idle.length)];
+            playCachedSound(randomIdleUrl);
+        } else {
+            playCachedSound(urls[type]);
+        }
+    };
 
+    // ✨ 終界儲物箱開禮包邏輯
+    const handleOpenPack = (packId) => {
+        if (!mcData.packs || !mcData.packs[packId] || mcData.packs[packId] <= 0) return;
+        
+        const packData = storeItems.find(i => i.id === packId);
+        if (!packData) return;
+
+        let min, max, pools;
+        if (packId === 'pack_checkin') { min = 20; max = 20; pools = ['dirt', 'stone', 'cobblestone', 'sand', 'gravel', 'oak_planks']; }
+        if (packId === 'pack_basic') { min = 50; max = 100; pools = ['dirt', 'stone', 'cobblestone', 'sand', 'gravel', 'oak_log', 'oak_planks']; }
+        else if (packId === 'pack_rare') { min = 100; max = 200; pools = ['glass', 'bricks', 'iron_block', 'chest_block', 'oak_door']; }
+        else if (packId === 'pack_epic') { min = 150; max = 250; pools = ['gold_block', 'obsidian', 'netherrack', 'glowstone', 'magma_block']; }
+        else { min = 200; max = 300; pools = ['diamond_block', 'emerald_block', 'end_stone', 'purpur_block']; }
+
+        const totalAmount = Math.floor(Math.random() * (max - min + 1)) + min;
+        const newInv = { ...mcData.inventory };
+        
+        let resultText = `🎉 碰！打開了 ${packData.name}！\n\n獲得了總計 ${totalAmount} 個方塊 (隨機分配)：\n`;
+        
+        const gained = {};
+        for (let i = 0; i < totalAmount; i++) {
+            const b = pools[Math.floor(Math.random() * pools.length)];
+            newInv[b] = (newInv[b] || 0) + 1;
+            gained[b] = (gained[b] || 0) + 1;
+        }
+
+        const newPacks = { ...mcData.packs };
+        newPacks[packId] -= 1;
+
+        updateMcData({ packs: newPacks, inventory: newInv }, true);
+        playCachedSound('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/open.mp3');
+        showAlert(resultText + "方塊已全部安全存放至「沙盒左側的庫存清單」中！\n快去蓋房子吧！");
+    };
     const ownedItems = storeItems.filter(i => (mcData.items || []).includes(i.id) || (i.id === 'diamond_sword' && (mcData.items || []).includes('鑽石劍')));
     const ownedPets = storeItems.filter(i => (mcData.pets || []).includes(i.id));
 
@@ -972,8 +1025,16 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                                     ))}
                                 </div>
                             </div>
-                            <button onClick={handleCheckIn} className="mc-btn w-full py-2 flex justify-center items-center">
+                            <button onClick={handleCheckIn} className="mc-btn w-full py-2 flex justify-center items-center mb-2">
                                 📅 每日簽到 (+20 <McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mx-1 pixelated"/>)
+                            </button>
+                            {/* ✨ 修正：加入終界儲物箱開啟音效 */}
+                            <button onClick={() => {
+                                // ✨ 換成保證能播的開箱音效
+                                playCachedSound('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/open.mp3');
+                                setShowEnderChest(true);
+                            }} className="w-full py-2 flex justify-center items-center bg-purple-900 hover:bg-purple-800 text-white font-bold border-2 border-[#10002b] shadow-md transition-colors">
+                                🔮 終界儲物箱 ({Object.values(mcData.packs || {}).reduce((a, b) => a + b, 0)})
                             </button>
                         </div>
 
@@ -996,10 +1057,31 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                         </div>
                     </div>
 
-                    <div className="mc-panel-dark text-white lg:col-span-2">
-                        <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300">🛒 雜貨商賈</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[30rem] overflow-y-auto custom-scrollbar pr-2">
-                            {storeItems.map((item) => (
+                    <div className="mc-panel-dark text-white lg:col-span-2 flex flex-col">
+                        <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300">🛒 村民商賈</h2>
+                        
+                        <div className="flex items-center space-x-4 mb-4 bg-gray-800 p-3 border-4 border-gray-600 shadow-inner">
+                            <div className={`transition-transform duration-200 ${villagerAnim === 'yes' ? 'translate-y-2' : villagerAnim === 'no' ? '-translate-x-2' : ''}`}>
+                                <McImg 
+                                    src="https://minotar.net/helm/Villager/64.png" 
+                                    fallback="🧑‍🌾" 
+                                    className="w-16 h-16 pixelated border-2 border-black drop-shadow-lg cursor-pointer hover:brightness-110" 
+                                    onClick={() => {
+                                        playVillagerSound('idle');
+                                        setVillagerSpeech(Math.random() > 0.5 ? "呼嗯... 看看有沒有需要的？" : "哈啊... 這裡只有頂級好貨。");
+                                    }} 
+                                />
+                            </div>
+                            <div className="relative bg-white text-black p-3 flex-1 shadow-md font-bold text-sm border-2 border-black pixelated-border">
+                                <div className="absolute top-1/2 -left-[10px] transform -translate-y-1/2 w-0 h-0 border-t-8 border-t-transparent border-r-[10px] border-r-white border-b-8 border-b-transparent"></div>
+                                <div className="absolute top-1/2 -left-[13px] transform -translate-y-1/2 w-0 h-0 border-t-[9px] border-t-transparent border-r-[12px] border-r-black border-b-[9px] border-b-transparent -z-10"></div>
+                                {villagerSpeech}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[20rem] overflow-y-auto custom-scrollbar pr-2">
+                            {/* ✨ 過濾掉被標記為 hide 的商品 (例如簽到箱) */}
+                            {storeItems.filter(item => !item.hide).map((item) => (
                                 <button key={item.id} onClick={() => handleBuy(item)} className="mc-btn py-2 flex justify-between px-3 items-center hover:bg-[#b0b0b0]">
                                     <span className="flex items-center text-sm truncate pr-2">
                                         <McImg src={item.img} fallback={item.icon} className="w-5 h-5 mr-2 pixelated shrink-0"/> 
@@ -1015,6 +1097,45 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
 
                 </div>
             </div>
+
+            {/* ✨ 終界儲物箱 Modal */}
+            {showEnderChest && (
+                <div className="fixed inset-0 z-[150] bg-black bg-opacity-80 flex flex-col items-center justify-center p-4">
+                    <div className="bg-[#10002b] border-4 border-purple-800 p-4 w-full max-w-lg shadow-2xl flex flex-col h-[70dvh]">
+                        <div className="flex justify-between items-center mb-4 border-b-2 border-purple-500 pb-2">
+                            <h3 className="text-purple-300 font-bold text-lg flex items-center"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/ender_chest_front.png" className="w-6 h-6 mr-2 pixelated"/> 終界儲物箱 (我的禮包)</h3>
+                            <button onClick={() => {
+                                // ✨ 換成保證能播的關箱音效
+                                playCachedSound('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/close.mp3');
+                                setShowEnderChest(false);
+                            }} className="text-red-400 hover:text-red-300 font-bold">✖ 關閉</button>
+                        </div>
+                        <p className="text-gray-400 text-xs mb-3 font-bold">開啟禮包後，抽到的方塊會自動送到沙盒遊戲庫存中！</p>
+                        <div className="flex-grow overflow-y-auto custom-scrollbar space-y-2">
+                            {(!mcData.packs || Object.keys(mcData.packs).filter(k => mcData.packs[k] > 0).length === 0) ? (
+                                <p className="text-gray-500 text-center text-sm mt-10">你的儲物箱空空的，快去村民商賈那裡買點禮包吧！</p>
+                            ) : (
+                                Object.entries(mcData.packs).filter(([id, count]) => count > 0).map(([id, count]) => {
+                                    const packInfo = storeItems.find(i => i.id === id);
+                                    if(!packInfo) return null;
+                                    return (
+                                        <div key={id} className="bg-gray-800 p-3 border-l-4 border-purple-500 flex justify-between items-center">
+                                            <div className="flex items-center gap-3">
+                                                <McImg src={packInfo.img} className="w-10 h-10 pixelated drop-shadow-md"/>
+                                                <div>
+                                                    <p className="text-white font-bold text-sm">{packInfo.name}</p>
+                                                    <p className="text-gray-400 text-xs">擁有數量: <span className="text-yellow-400 font-black">{count}</span></p>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => handleOpenPack(id)} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 font-black border-2 border-black shadow-lg">打開</button>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
