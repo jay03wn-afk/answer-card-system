@@ -1841,13 +1841,22 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         });
     };
 
-    // ✨ 新增：平滑捲動至題目錨點，並加入黃色閃爍高亮效果
+    // ✨ 新增：平滑捲動至題目錨點與答案卡，並加入閃爍高亮效果
     const scrollToQuestion = (qNum) => {
+        // 1. 跳轉至左側(或上方)題目預覽區
         const el = document.getElementById(`q-marker-${qNum}`);
         if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             el.classList.add('ring-4', 'ring-yellow-400', 'bg-yellow-300', 'scale-110');
             setTimeout(() => el.classList.remove('ring-4', 'ring-yellow-400', 'bg-yellow-300', 'scale-110'), 1200);
+        }
+        
+        // 2. 同步跳轉至右側(或下方)作答答案卡
+        const cardEl = document.getElementById(`answer-card-${qNum}`);
+        if (cardEl) {
+            cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            cardEl.classList.add('bg-yellow-100', 'dark:bg-gray-600', 'transition-colors');
+            setTimeout(() => cardEl.classList.remove('bg-yellow-100', 'dark:bg-gray-600', 'transition-colors'), 1200);
         }
     };
 
@@ -2055,9 +2064,22 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex flex-wrap items-center gap-2">
                             <span>進度: <span className="font-bold text-black dark:text-white">{userAnswers.filter(a=>a).length}</span> / {numQuestions}</span>
                             {starredIndices.length > 0 && (
-                                <span className="text-orange-500 dark:text-orange-400 font-bold flex items-center bg-orange-50 dark:bg-gray-700 px-1.5 py-0.5 rounded max-w-[150px] sm:max-w-xs overflow-hidden">
+                                <span className="text-orange-500 dark:text-orange-400 font-bold flex items-center bg-orange-50 dark:bg-gray-700 px-1.5 py-0.5 rounded max-w-[150px] sm:max-w-xs overflow-x-auto custom-scrollbar whitespace-nowrap">
                                     <span className="mr-1 shrink-0">★</span> 
-                                    <span className="truncate">{starredIndices.join(', ')}</span>
+                                    <div className="flex items-center">
+                                        {starredIndices.map((num, idx) => (
+                                            <React.Fragment key={num}>
+                                                <button 
+                                                    onClick={() => scrollToQuestion(num)}
+                                                    className="hover:text-orange-700 dark:hover:text-orange-300 hover:underline cursor-pointer focus:outline-none"
+                                                    title={`跳轉至第 ${num} 題`}
+                                                >
+                                                    {num}
+                                                </button>
+                                                {idx < starredIndices.length - 1 && <span className="mx-1 text-orange-300 dark:text-gray-500">,</span>}
+                                            </React.Fragment>
+                                        ))}
+                                    </div>
                                 </span>
                             )}
                         </div>
@@ -2184,7 +2206,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white dark:bg-gray-800 transition-colors">
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px 16px' }}>
                             {userAnswers.map((ans, i) => (
-                                <div key={i} className="break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 pr-2 transition-colors">
+                                <div key={i} id={`answer-card-${i+1}`} className="break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 pr-2 transition-colors rounded">
                                     <div className="flex items-center space-x-2 shrink-0 w-14">
                                         {/* ✨ 修改：將 span 替換為可點擊跳轉的 button */}
                                         <button 
