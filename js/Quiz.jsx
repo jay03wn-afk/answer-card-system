@@ -920,7 +920,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 const emptyAnswers = Array(Number(data.numQuestions)).fill('');
                 const emptyStarred = Array(Number(data.numQuestions)).fill(false);
                 
-                await window.db.collection('users').doc(user.uid).collection('quizzes').add({
+                // ✨ 修改 1：取得新增文件的參照 (newDocRef)
+                const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
                     testName: cleanQuizName(data.testName) + ' (來自代碼)',
                     numQuestions: data.numQuestions,
                     questionFileUrl: data.questionFileUrl || '',
@@ -940,6 +941,14 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     shortCode: cleanCode, 
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
+
+                // ✨ 修改 2：將下載者的資訊寫回原作者的 sharedTo 陣列，這樣後續編輯才能同步！
+                await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).update({
+                    sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
+                        uid: user.uid, 
+                        quizId: newDocRef.id 
+                    })
+                }).catch(e => console.error("建立同步連結失敗", e));
 
                 showAlert(`✅ 成功匯入「${cleanQuizName(data.testName)}」！\n試卷已加入「未分類」資料夾。`, "匯入成功");
 
@@ -1564,11 +1573,11 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 data: tData 
                             };
                         }
-                        return targetRef.update(targetUpdates);
+                       return targetRef.update(targetUpdates);
                     }
                 });
-                // ✨ 修改 1：拿掉 await，讓它在背景執行不要卡住畫面
-                Promise.all(promises).catch(e => console.error("背景同步失敗:", e));
+                // ✨ 修正：必須加回 await！否則如果畫面立刻跳轉或關閉，背景同步的高併發請求可能會被瀏覽器中斷
+                await Promise.all(promises).catch(e => console.error("同步失敗:", e));
             }
 
             showAlert("✅ 編輯成功！已同步至所有下載者及任務牆。");
@@ -2138,11 +2147,19 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                             editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar overflow-y-auto leading-relaxed"
                                         />
                                     ) : (
-                                        <div 
-                                            className="absolute inset-0 w-full h-full p-4 custom-scrollbar text-sm leading-relaxed bg-gray-50 text-black overflow-y-auto"
-                                            style={{ wordBreak: 'break-word' }}
-                                            dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
-                                        />
+                                        <div className="absolute inset-0 w-full h-full p-4 custom-scrollbar bg-gray-50 text-black overflow-y-auto">
+                                            <style dangerouslySetInnerHTML={{__html: `
+                                                .preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.875rem; line-height: 1.625; }
+                                                .preview-rich-text p { margin-bottom: 0.75em !important; }
+                                                .preview-rich-text div { margin-bottom: 0.25em !important; }
+                                                .preview-rich-text ul { list-style-type: disc !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
+                                                .preview-rich-text ol { list-style-type: decimal !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
+                                            `}} />
+                                            <div 
+                                                className="preview-rich-text"
+                                                dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
+                                            />
+                                        </div>
                                     )}
                                 </div>
                             )}
@@ -2338,11 +2355,19 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                             editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar overflow-y-auto leading-relaxed"
                                         />
                                     ) : (
-                                        <div 
-                                            className="absolute inset-0 w-full h-full p-4 custom-scrollbar text-sm leading-relaxed bg-gray-50 text-black overflow-y-auto"
-                                            style={{ wordBreak: 'break-word' }}
-                                            dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
-                                        />
+                                        <div className="absolute inset-0 w-full h-full p-4 custom-scrollbar bg-gray-50 text-black overflow-y-auto">
+                                            <style dangerouslySetInnerHTML={{__html: `
+                                                .preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.875rem; line-height: 1.625; }
+                                                .preview-rich-text p { margin-bottom: 0.75em !important; }
+                                                .preview-rich-text div { margin-bottom: 0.25em !important; }
+                                                .preview-rich-text ul { list-style-type: disc !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
+                                                .preview-rich-text ol { list-style-type: decimal !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
+                                            `}} />
+                                            <div 
+                                                className="preview-rich-text"
+                                                dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
+                                            />
+                                        </div>
                                     )}
                                 </div>
                             )}
