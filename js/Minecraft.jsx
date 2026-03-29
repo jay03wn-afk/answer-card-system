@@ -2134,7 +2134,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
 
                     {/* --- Minecraft 捲動視窗 --- */}
                     {/* ✨ 修改：綁定 mapContainerRef 並確保容器為 block 模式以利縮放計算 */}
-<div ref={mapContainerRef} className="w-full flex-grow overflow-auto custom-scrollbar bg-black p-1 relative shadow-inner border-2 border-black block">
+<div ref={mapContainerRef} className="w-full flex-grow overflow-auto custom-scrollbar bg-black p-1 relative shadow-inner border-2 border-black flex">
                         {isViewingSelf && (
                             <button onClick={() => requestExpand('left')} className="sticky left-0 top-0 bottom-0 w-8 flex-shrink-0 bg-black bg-opacity-60 hover:bg-opacity-80 text-white font-black z-20 flex items-center justify-center border-r border-gray-600 transition-all">➕</button>
                         )}
