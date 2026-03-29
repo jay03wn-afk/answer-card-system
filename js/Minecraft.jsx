@@ -1931,7 +1931,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
     });
 
     return (
-       {/* ✨ 修改：加入 overflow-x-hidden 防止手機版左右晃動 */}
 <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center p-2 sm:p-4 animate-in fade-in select-none overflow-y-auto overflow-x-hidden custom-scrollbar">
     <div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row my-auto h-auto min-h-[90dvh] md:h-[90dvh] shrink-0" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>
                 
