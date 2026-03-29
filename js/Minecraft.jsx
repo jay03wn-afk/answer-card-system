@@ -881,24 +881,27 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
             updateMcData({ diamonds: mcData.diamonds + earnedDiamonds }, true); 
         }
     };
-    // ✨ 村民語音處理 (修正：閒置音效改為隨機播放 5 種不同的聲音)
+    // ✨ 村民語音處理 (修正：換成最穩定有效的 1.16.5 官方路徑)
     const playVillagerSound = (type) => {
         const urls = {
             idle: [
-                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/ambient/1.ogg',
-                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/ambient/2.ogg',
-                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/ambient/3.ogg',
-                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/trade1.ogg'
+                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/idle1.ogg',
+                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/idle2.ogg',
+                'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/idle3.ogg'
             ],
-            yes: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/yes1.ogg',
-            no: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/villager/no1.ogg'
+            yes: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/yes1.ogg',
+            no: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/no1.ogg'
         };
         
-        if (type === 'idle' && Array.isArray(urls.idle)) {
-            const randomIdleUrl = urls.idle[Math.floor(Math.random() * urls.idle.length)];
-            playCachedSound(randomIdleUrl);
-        } else {
-            playCachedSound(urls[type]);
+        try {
+            if (type === 'idle' && Array.isArray(urls.idle)) {
+                const randomIdleUrl = urls.idle[Math.floor(Math.random() * urls.idle.length)];
+                playCachedSound(randomIdleUrl);
+            } else {
+                playCachedSound(urls[type]);
+            }
+        } catch (e) {
+            console.log("村民音效播放失敗", e);
         }
     };
 
@@ -1028,10 +1031,9 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                             <button onClick={handleCheckIn} className="mc-btn w-full py-2 flex justify-center items-center mb-2">
                                 📅 每日簽到 (+20 <McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mx-1 pixelated"/>)
                             </button>
-                            {/* ✨ 修正：加入終界儲物箱開啟音效 */}
+                            {/* ✨ 修正：終界儲物箱專屬開啟音效 */}
                             <button onClick={() => {
-                                // ✨ 換成保證能播的開箱音效
-                                playCachedSound('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/open.mp3');
+                                playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/block/enderchest/open.ogg');
                                 setShowEnderChest(true);
                             }} className="w-full py-2 flex justify-center items-center bg-purple-900 hover:bg-purple-800 text-white font-bold border-2 border-[#10002b] shadow-md transition-colors">
                                 🔮 終界儲物箱 ({Object.values(mcData.packs || {}).reduce((a, b) => a + b, 0)})
@@ -1061,17 +1063,30 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                         <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300">🛒 村民商賈</h2>
                         
                         <div className="flex items-center space-x-4 mb-4 bg-gray-800 p-3 border-4 border-gray-600 shadow-inner">
-                            <div className={`transition-transform duration-200 ${villagerAnim === 'yes' ? 'translate-y-2' : villagerAnim === 'no' ? '-translate-x-2' : ''}`}>
+                            {/* ✨ 修正：將村民改為 button 增加點擊範圍與回饋，並擴充多種對話 */}
+                            <button 
+                                className={`shrink-0 transition-transform duration-200 focus:outline-none active:scale-90 ${villagerAnim === 'yes' ? 'translate-y-2' : villagerAnim === 'no' ? '-translate-x-2' : villagerAnim === 'idle' ? 'scale-110' : ''}`}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    playVillagerSound('idle');
+                                    const speeches = [
+                                        "呼嗯... 看看有沒有需要的？", 
+                                        "哈啊... 這裡只有頂級好貨。", 
+                                        "嗯哼，隨便看隨便挑。", 
+                                        "哈！買點什麼吧朋友！", 
+                                        "嗯嗯... 今天天氣真不錯。"
+                                    ];
+                                    setVillagerSpeech(speeches[Math.floor(Math.random() * speeches.length)]);
+                                    setVillagerAnim('idle');
+                                    setTimeout(() => setVillagerAnim(""), 200); 
+                                }}
+                            >
                                 <McImg 
                                     src="https://minotar.net/helm/Villager/64.png" 
                                     fallback="🧑‍🌾" 
                                     className="w-16 h-16 pixelated border-2 border-black drop-shadow-lg cursor-pointer hover:brightness-110" 
-                                    onClick={() => {
-                                        playVillagerSound('idle');
-                                        setVillagerSpeech(Math.random() > 0.5 ? "呼嗯... 看看有沒有需要的？" : "哈啊... 這裡只有頂級好貨。");
-                                    }} 
                                 />
-                            </div>
+                            </button>
                             <div className="relative bg-white text-black p-3 flex-1 shadow-md font-bold text-sm border-2 border-black pixelated-border">
                                 <div className="absolute top-1/2 -left-[10px] transform -translate-y-1/2 w-0 h-0 border-t-8 border-t-transparent border-r-[10px] border-r-white border-b-8 border-b-transparent"></div>
                                 <div className="absolute top-1/2 -left-[13px] transform -translate-y-1/2 w-0 h-0 border-t-[9px] border-t-transparent border-r-[12px] border-r-black border-b-[9px] border-b-transparent -z-10"></div>
@@ -1105,8 +1120,8 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                         <div className="flex justify-between items-center mb-4 border-b-2 border-purple-500 pb-2">
                             <h3 className="text-purple-300 font-bold text-lg flex items-center"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/ender_chest_front.png" className="w-6 h-6 mr-2 pixelated"/> 終界儲物箱 (我的禮包)</h3>
                             <button onClick={() => {
-                                // ✨ 換成保證能播的關箱音效
-                                playCachedSound('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/close.mp3');
+                                // ✨ 終界儲物箱專屬關閉音效
+                                playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/block/enderchest/close.ogg');
                                 setShowEnderChest(false);
                             }} className="text-red-400 hover:text-red-300 font-bold">✖ 關閉</button>
                         </div>
