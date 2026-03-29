@@ -1864,8 +1864,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
     });
 
     return (
-        <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in select-none">
-            <div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row h-[90dvh]" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>
+       <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center p-2 sm:p-4 animate-in fade-in select-none overflow-y-auto custom-scrollbar">
+    <div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row my-auto h-auto min-h-[90dvh] md:h-[90dvh] shrink-0" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>
                 
                 {showQuitConfirm && (
                     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[100]">
@@ -1989,8 +1989,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
                 )}
 
-               {/* 左側主要建築與控制區 */}
-<div className="flex-1 min-h-0 md:flex-none flex flex-col items-center p-1 md:p-2 w-full md:w-3/4 relative md:h-full">
+              {/* 左側主要建築與控制區 */}
+<div className="flex-none md:flex-1 flex flex-col items-center p-1 md:p-2 w-full md:w-3/4 relative h-[65vh] md:h-full shrink-0">
                     
                     {/* Header */}
                     <div className="w-full flex flex-col xl:flex-row justify-between items-start xl:items-center mb-2 bg-black bg-opacity-60 p-2 text-white font-bold gap-2 z-10 shrink-0">
@@ -2180,7 +2180,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 </div>
 
                {/* 右側商店區 */}
-                <div className="w-full h-[220px] shrink-0 md:h-full md:w-1/4 bg-[#333] p-2 md:p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 overflow-hidden relative">
+<div className="w-full h-auto md:h-full md:w-1/4 bg-[#333] p-2 md:p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 relative">
                     <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
                         <span>💰 方塊商店</span>
                         <span className="text-sm bg-black bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>
@@ -2237,7 +2237,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     )}
 
                     {isViewingSelf && (
-                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-1 overflow-y-auto custom-scrollbar pr-1 flex-grow content-start pb-10">
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-1 md:overflow-y-auto custom-scrollbar pr-1 flex-grow content-start pb-4">
                             {(activeCategory === '全部' || activeCategory === '裝飾與植物') && BLOCK_TYPES.filter(b => b.special && isViewingSelf && b.id !== 'poppy' && b.id !== 'gift_box').map(block => (
                                 <div key={block.id} className="flex flex-col items-center p-1 border border-gray-600 bg-gray-800 transition-all hover:bg-gray-700">
                                     {block.img && <McImg src={block.img} className="w-6 h-6 pixelated mb-1 drop-shadow-md" style={block.storeStyle} fallback="🔧"/>}
