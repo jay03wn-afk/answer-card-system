@@ -2282,7 +2282,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                 const h = [...hotbar]; 
                                 h[activeHotbarIndex] = null; // 清空當前選取的快捷列格子
                                 setHotbar(h); 
-                            }} className={`w-full py-1 text-xs font-bold border ${!selectedBlock ? 'bg-gray-200 border-white text-black shadow-inner' : 'bg-gray-700 text-gray-300 border-gray-500'}`}>🤚 空手 (防誤觸)</button>
+                            }} className={`w-full py-1 text-xs font-bold border ${!selectedBlock ? 'bg-gray-200 border-white text-black shadow-inner' : 'bg-gray-700 text-gray-300 border-gray-500'}`}>🤚 空手</button>
 
                             <button onClick={() => { 
                                 const h = [...hotbar]; 
