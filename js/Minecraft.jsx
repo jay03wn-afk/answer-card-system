@@ -5,7 +5,18 @@ const McImg = ({ src, fallback, className, ...props }) => {
     if (error) return <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{fallback}</span>;
     return <img src={src} className={className} onError={() => setError(true)} alt={fallback || "img"} {...props} />;
 };
-
+// ✨ 新增音效快取池
+const audioCache = {};
+const playCachedSound = (url) => {
+    if (!audioCache[url]) {
+        audioCache[url] = new Audio(url);
+        audioCache[url].preload = "auto";
+    }
+    // 使用 cloneNode 允許多個相同音效重疊播放
+    const audioClone = audioCache[url].cloneNode();
+    audioClone.volume = 0.6;
+    audioClone.play().catch(e => console.log("音效播放被阻擋", e));
+};
 // --- 礦車跑酷小遊戲組件 ---
 function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
     const canvasRef = useRef(null);
@@ -1123,7 +1134,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
     // --- Hotbar 系統 ---
     const [hotbar, setHotbar] = useState(() => mcData.sandbox_hotbar || ['erase', null, null, null, null, null, null, null, null]);
     const [activeHotbarIndex, setActiveHotbarIndex] = useState(0);
-    const selectedBlock = hotbar[activeHotbarIndex] || 'erase';
+    const selectedBlock = hotbar[activeHotbarIndex];
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -1201,7 +1212,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
             place: { glass: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/glass_place.mp3', stone: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/stone_place_destroy.mp3', wood: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/wood_place.mp3', dirt: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/dirt_place.mp3', grass: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/grass_place.mp3', sand: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/sand_place.mp3' },
             break: { glass: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/glass_destroy.mp3', stone: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/stone_place_destroy.mp3', wood: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/wood_destroy.mp3', dirt: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/dirt_destroy.mp3', grass: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/grass_destroy.mp3', sand: 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/sand_destroy.mp3' }
         };
-        new Audio(soundUrls[action][soundType]).play().catch(e => {});
+        playCachedSound(soundUrls[action][soundType]);
     };
 
     const padGrid = (arr, c) => arr ? [...arr] : Array(c * ROWS).fill(null);
@@ -1503,6 +1514,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         if (hasSpecial && ['poppy', 'gift_box', 'sign', 'chest'].includes(hasSpecial.type) && selectedBlock !== 'erase') {
              return showAlert("❌ 這裡有特殊物品，無法直接覆蓋！請先切換至「👀互動模式」處理。");
         }
+        // 加入這行：如果是空手，就直接中斷，不進行任何放置或破壞
+        if (!selectedBlock) return;
 
         const newInv = { ...localInventory };
         const newSpecials = { ...specials };
@@ -1990,9 +2003,41 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                 {(isViewingSelf ? mcData.unlockedEnd : (viewingFriend?.mcData?.unlockedEnd)) && <option value="end">🌌 末地</option>}
                             </select>
 
-                            {isViewingSelf && !mcData.unlockedNether && <button onClick={() => setConfirmDialog({ title: '🔥 解鎖地獄', desc: '確定要花費 1000 💎 解鎖充滿熔岩與危險的地獄維度嗎？', cost: 1000, action: () => { updateMcData({ diamonds: mcData.diamonds - 1000, unlockedNether: true }, true); showAlert('🎉 解鎖地獄！'); } })} className="bg-red-800 hover:bg-red-700 text-white text-[10px] px-2 py-1 border border-red-400">🔓解鎖地獄(1000💎)</button>}
-                            {isViewingSelf && !mcData.unlockedEnd && <button onClick={() => setConfirmDialog({ title: '🌌 解鎖末地', desc: '確定要花費 2000 💎 解鎖充滿紫頌花與神秘的末地維度嗎？', cost: 2000, action: () => { updateMcData({ diamonds: mcData.diamonds - 2000, unlockedEnd: true }, true); showAlert('🎉 解鎖末地！'); } })} className="bg-purple-800 hover:bg-purple-700 text-white text-[10px] px-2 py-1 border border-purple-400">🔓解鎖末地(2000💎)</button>}
+                            {isViewingSelf && !mcData.unlockedNether && (
+                                <button 
+                                    onClick={() => setConfirmDialog({ 
+                                        title: '🔥 解鎖地獄', 
+                                        desc: '確定要花費 1000 💎 解鎖充滿熔岩與危險的地獄維度嗎？', 
+                                        cost: 1000, 
+                                        action: () => { 
+                                            if (mcData.diamonds < 1000) return showAlert('💎 鑽石不足，無法解鎖地獄！');
+                                            updateMcData({ diamonds: mcData.diamonds - 1000, unlockedNether: true }, true); 
+                                            showAlert('🎉 解鎖地獄！'); 
+                                        } 
+                                    })} 
+                                    className="bg-red-800 hover:bg-red-700 text-white text-[10px] px-2 py-1 border border-red-400"
+                                >
+                                    🔓解鎖地獄(1000💎)
+                                </button>
+                            )}
 
+                            {isViewingSelf && !mcData.unlockedEnd && (
+                                <button 
+                                    onClick={() => setConfirmDialog({ 
+                                        title: '🌌 解鎖末地', 
+                                        desc: '確定要花費 2000 💎 解鎖充滿紫頌花與神秘的末地維度嗎？', 
+                                        cost: 2000, 
+                                        action: () => { 
+                                            if (mcData.diamonds < 2000) return showAlert('💎 鑽石不足，無法解鎖末地！');
+                                            updateMcData({ diamonds: mcData.diamonds - 2000, unlockedEnd: true }, true); 
+                                            showAlert('🎉 解鎖末地！'); 
+                                        } 
+                                    })} 
+                                    className="bg-purple-800 hover:bg-purple-700 text-white text-[10px] px-2 py-1 border border-purple-400"
+                                >
+                                    🔓解鎖末地(2000💎)
+                                </button>
+                            )}
                             {isViewingSelf && (
                                 <div className="flex items-center space-x-2">
                                     <div className="flex bg-gray-800 border border-gray-600 rounded overflow-hidden">
@@ -2021,7 +2066,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
 
                     {/* --- Minecraft 捲動視窗 --- */}
-                    <div className="w-full flex-grow overflow-x-auto overflow-y-hidden custom-scrollbar bg-black p-1 relative shadow-inner border-2 border-black flex">
+                    <div className="w-full flex-grow overflow-auto custom-scrollbar bg-black p-1 relative shadow-inner border-2 border-black flex">
                         {isViewingSelf && (
                             <button onClick={() => requestExpand('left')} className="sticky left-0 top-0 bottom-0 w-8 flex-shrink-0 bg-black bg-opacity-60 hover:bg-opacity-80 text-white font-black z-20 flex items-center justify-center border-r border-gray-600 transition-all">➕</button>
                         )}
@@ -2070,9 +2115,9 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
 
                                 return (
                                     <div 
-                                        key={i} onPointerDown={(e) => { e.preventDefault(); handleCellClick(i); }} onPointerEnter={(e) => { if (e.buttons === 1) handleCellClick(i); }} 
+                                        key={i} onPointerDown={(e) => { handleCellClick(i); }} onPointerEnter={(e) => { if (e.buttons === 1) handleCellClick(i); }} 
                                         className={`w-full aspect-square relative cursor-crosshair ${(!fgCellId && !bgCellId) ? 'border-[0.5px] border-black border-opacity-20 hover:bg-white hover:bg-opacity-30' : ''}`}
-                                        style={{ touchAction: 'none' }}
+                                        style={{ touchAction: 'pan-x pan-y' }}
                                     >
                                         {/* 渲染背景牆 */}
                                         {bgImgSrc && (
