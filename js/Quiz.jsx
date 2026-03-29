@@ -4,6 +4,35 @@ const cleanQuizName = (name) => {
     return name.replace(/\[#(op|m?nm?st)\]/gi, '').trim();
 };
 
+// --- 新增：特殊試卷名稱渲染輔助函式 ---
+const renderTestName = (rawName, isCompleted = false) => {
+    if (!rawName) return '';
+    const cleanName = cleanQuizName(rawName);
+    const isOp = /\[#op\]/i.test(rawName);
+    const isMnst = /\[#m?nm?st\]/i.test(rawName);
+
+    if (isOp) {
+        return (
+            <span className="inline-flex flex-wrap items-center gap-1.5">
+                <span className="bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-400 px-1.5 py-0.5 text-xs font-black shadow-sm no-round whitespace-nowrap">🏆 國考題</span>
+                <span className="text-yellow-700 dark:text-yellow-400 font-bold">{cleanName}</span>
+            </span>
+        );
+    }
+    if (isMnst) {
+        return (
+            <span className="inline-flex flex-wrap items-center gap-1.5">
+                <span className="bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 border border-blue-400 px-1.5 py-0.5 text-xs font-black shadow-sm no-round whitespace-nowrap">📘 模擬考</span>
+                <span className="text-blue-700 dark:text-blue-400 font-bold">{cleanName}</span>
+                {!isCompleted && <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-1 py-0.5 no-round whitespace-nowrap font-bold">💎 及格獎勵</span>}
+            </span>
+        );
+    }
+    return <span>{cleanName}</span>;
+};
+
+// --- 新增：富文本題目解析輔助函式 ---
+
 // --- 新增：富文本題目解析輔助函式 ---
 const processQuestionContent = (content, isHtml) => {
     if (!content) return content;
@@ -558,8 +587,8 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                         <div key={task.id} className="border border-yellow-200 dark:border-yellow-700 p-3 bg-white dark:bg-gray-800 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
                                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                                                 <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
-                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(task.testName), isCompleted) : cleanQuizName(task.testName)}
-                                                                </h3>
+    {renderTestName(task.testName, isCompleted)}
+</h3>
                                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
                                                                     {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
@@ -614,8 +643,8 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                         <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
                                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                                                 <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
-                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(task.testName), isCompleted) : cleanQuizName(task.testName)}
-                                                                </h3>
+    {renderTestName(task.testName, isCompleted)}
+</h3>
                                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
                                                                     {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
@@ -661,8 +690,8 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                         <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                                 <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
-                                                    {typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(task.testName), isCompleted) : cleanQuizName(task.testName)}
-                                                </h3>
+    {renderTestName(task.testName, isCompleted)}
+</h3>
                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
                                                     {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
@@ -1053,9 +1082,9 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                             {/* 左側：標題與狀態 */}
                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                 {/* ✨ 解除名稱限制：改為 break-words 自動折行顯示 */}
-                                <h2 className="font-bold text-sm sm:text-base dark:text-white flex flex-wrap items-center gap-2 leading-relaxed">
-                                    <span className="break-words whitespace-normal">{typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(rec.testName), !!rec.results) : cleanQuizName(rec.testName)}</span>
-                                    {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
+                               <h2 className="font-bold text-sm sm:text-base dark:text-white flex flex-wrap items-center gap-2 leading-relaxed">
+    <span className="break-words whitespace-normal">{renderTestName(rec.testName, !!rec.results)}</span>
+    {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
                                     {rec.isShared && !rec.isTask && <span className="text-[10px] bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
                                     {rec.hasTimer && <span className="text-[10px] bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0">⏱ {rec.timeLimit}m</span>}
                                 </h2>
@@ -1933,8 +1962,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     <button onClick={onBackToDashboard} className="mr-3 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">← 返回</button>
                     <div className="overflow-hidden flex-grow flex flex-col justify-center">
                         <div className="flex items-center space-x-2">
-                            <h2 className="font-bold truncate text-base dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(testName), false) : cleanQuizName(testName)}</h2>
-                            {hasTimer && (
+    <h2 className="font-bold truncate text-base dark:text-white">{renderTestName(testName, false)}</h2>
+    {hasTimer && (
                                 <span className={`font-mono font-bold px-1.5 py-0.5 no-round border ${isTimeUp ? 'bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border-red-200 dark:border-red-700 animate-pulse' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600'} text-xs shrink-0`}>
                                     {isTimeUp ? '時間到' : `⏱ ${formatTime(displayTime)}`}
                                 </span>
@@ -2115,8 +2144,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
             <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10 transition-colors">
                 <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
-                    <h2 className="font-bold truncate text-base pr-4 dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(testName), true) : cleanQuizName(testName)} - 測驗結果</h2>
-                </div>
+    <h2 className="font-bold truncate text-base pr-4 dark:text-white flex items-center gap-2">
+        {renderTestName(testName, true)} <span>- 測驗結果</span>
+    </h2>
+</div>
 
                 <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
                     {!isShared && !isTask && (
