@@ -247,22 +247,8 @@ function Main() {
             <div className={`h-[100dvh] overflow-y-auto custom-scrollbar flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-pink-50'}`}>
                 {SharedModal} 
                 <div className="w-full max-w-3xl z-10 pb-12">
-                    {/* 頂部引導註冊區塊 */}
-                    <div className="bg-white dark:bg-gray-800 p-6 mb-6 text-center border-4 border-pink-400 shadow-xl no-round animate-fade-in">
-                        <h1 className="text-2xl font-black text-pink-600 dark:text-pink-400 mb-2">👋 歡迎來到訪客試玩模式！</h1>
-                        <p className="text-gray-600 dark:text-gray-300 font-bold mb-5">
-                            登入後即可解鎖正確解答與「完整詳解」，還能領取專屬鑽石獎勵💎！
-                        </p>
-                        <button 
-                            onClick={() => setForceLoginScreen(true)} 
-                            className="bg-black dark:bg-white text-white dark:text-black px-8 py-3 font-black text-lg no-round hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors shadow-md w-full sm:w-auto"
-                        >
-                            🚀 立即登入 / 註冊解鎖
-                        </button>
-                    </div>
-
-                    {/* 直接載入快問快答，並傳遞觸發登入的函式 */}
-                    <FastQASection user={null} showAlert={showAlert} targetQaId={currentQaId} onRequireLogin={() => setForceLoginScreen(true)} />
+                    {/* 直接載入快問快答，並傳遞觸發登入的函式 (已隱藏頂部的登入引導) */}
+                    <FastQASection user={null} showAlert={showAlert} showConfirm={showConfirm} targetQaId={currentQaId} onRequireLogin={() => setForceLoginScreen(true)} />
                 </div>
             </div>
         );
@@ -292,8 +278,8 @@ function Main() {
     return (
         <div className="h-[100dvh] flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-900 transition-colors relative">       
             
-            {/* ✨ 新增：判斷如果尚未看過新手教學，就渲染已經寫好的教學視窗 */}
-            {userProfile && userProfile.hasSeenTutorial === false && (
+            {/* ✨ 新增：判斷如果尚未看過新手教學，就渲染已經寫好的教學視窗 (加入 !currentQaId 確保完成快問快答才顯示) */}
+            {userProfile && userProfile.hasSeenTutorial === false && !currentQaId && (
                 <TutorialOverlay onComplete={completeTutorial} />
             )}
 
@@ -308,7 +294,7 @@ function Main() {
                         <button onClick={closeFastQA} className="absolute top-4 right-4 text-3xl z-20 hover:scale-110 transition-transform bg-white dark:bg-gray-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md border border-gray-300 dark:border-gray-600">❌</button>
                         
                         <div className="p-4 sm:p-8 pt-16">
-                            <FastQASection user={user} showAlert={showAlert} targetQaId={currentQaId} onClose={closeFastQA} />
+                            <FastQASection user={user} showAlert={showAlert} showConfirm={showConfirm} targetQaId={currentQaId} onClose={closeFastQA} />
                         </div>
                     </div>
                 </div>
