@@ -1989,8 +1989,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
                 )}
 
-                {/* 左側主要建築與控制區 */}
-                <div className="flex-grow flex flex-col items-center p-2 w-full md:w-3/4 relative h-full">
+               {/* 左側主要建築與控制區 */}
+<div className="flex-1 min-h-0 md:flex-none flex flex-col items-center p-1 md:p-2 w-full md:w-3/4 relative md:h-full">
                     
                     {/* Header */}
                     <div className="w-full flex flex-col xl:flex-row justify-between items-start xl:items-center mb-2 bg-black bg-opacity-60 p-2 text-white font-bold gap-2 z-10 shrink-0">
