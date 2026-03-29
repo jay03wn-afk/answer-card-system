@@ -23,6 +23,9 @@ function Main() {
     // 夜間模式狀態 (從 localStorage 讀取記憶)
     const [isDark, setIsDark] = useState(localStorage.getItem('darkMode') === 'true');
 
+    // ✨ 新增：強制顯示登入畫面狀態 (用來打破死迴圈)
+    const [forceLoginScreen, setForceLoginScreen] = useState(false);
+
     // 監聽夜間模式切換並改變 HTML 標籤的 class
     useEffect(() => {
         if (isDark) {
@@ -239,7 +242,7 @@ function Main() {
     // ==========================================
     // ✨ 新增：訪客分享連結專屬通道 (必須放在 AuthScreen 擋板之前！)
     // ==========================================
-    if (!user && currentQaId) {
+    if (!user && currentQaId && !forceLoginScreen) {
         return (
             <div className={`h-[100dvh] overflow-y-auto custom-scrollbar flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-pink-50'}`}>
                 {SharedModal} 
@@ -248,18 +251,18 @@ function Main() {
                     <div className="bg-white dark:bg-gray-800 p-6 mb-6 text-center border-4 border-pink-400 shadow-xl no-round animate-fade-in">
                         <h1 className="text-2xl font-black text-pink-600 dark:text-pink-400 mb-2">👋 歡迎來到訪客試玩模式！</h1>
                         <p className="text-gray-600 dark:text-gray-300 font-bold mb-5">
-                            完成作答即可看見正確選項！登入後還能解鎖「完整詳解」並領取鑽石💎！
+                            登入後即可解鎖正確解答與「完整詳解」，還能領取專屬鑽石獎勵💎！
                         </p>
                         <button 
-                            onClick={() => window.location.href = window.location.pathname + '?qaId=' + currentQaId} 
+                            onClick={() => setForceLoginScreen(true)} 
                             className="bg-black dark:bg-white text-white dark:text-black px-8 py-3 font-black text-lg no-round hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors shadow-md w-full sm:w-auto"
                         >
                             🚀 立即登入 / 註冊解鎖
                         </button>
                     </div>
 
-                    {/* 直接載入快問快答，並傳入 targetQaId */}
-                    <FastQASection user={null} showAlert={showAlert} targetQaId={currentQaId} />
+                    {/* 直接載入快問快答，並傳遞觸發登入的函式 */}
+                    <FastQASection user={null} showAlert={showAlert} targetQaId={currentQaId} onRequireLogin={() => setForceLoginScreen(true)} />
                 </div>
             </div>
         );
