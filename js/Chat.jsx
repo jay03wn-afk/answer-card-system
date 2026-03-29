@@ -354,7 +354,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     const lastMyMsgId = (messages || []).slice().reverse().find(m => m.senderId === user.uid)?.id;
 
     return (
-        <div className="max-w-6xl mx-auto px-0 sm:px-4 pt-0 flex flex-col md:grid md:grid-cols-3 gap-0 md:gap-6 h-[calc(100dvh-80px)] min-h-[calc(100vh-80px)] md:h-full relative overflow-hidden">
+        <div className="max-w-4xl lg:max-w-5xl mx-auto px-2 sm:px-4 pt-0 flex flex-col md:grid md:grid-cols-3 gap-2 md:gap-4 h-[calc(100dvh-80px)] min-h-[calc(100vh-80px)] md:h-full relative overflow-hidden">
             
             {previewImg && (
                 <div onClick={() => setPreviewImg(null)} className="fixed inset-0 z-[200] bg-black bg-opacity-90 flex items-center justify-center p-4 cursor-zoom-out">
