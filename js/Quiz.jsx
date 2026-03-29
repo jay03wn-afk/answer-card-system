@@ -1251,8 +1251,18 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [isTimeUp, setIsTimeUp] = useState(hasTimer && timeRemainingRef.current <= 0);
     const [syncTrigger, setSyncTrigger] = useState(0);
 
-    const [layoutMode, setLayoutMode] = useState('horizontal'); 
+    // 根據螢幕寬度自動決定預設排版
+    const [layoutMode, setLayoutMode] = useState(window.innerWidth < 768 ? 'vertical' : 'horizontal'); 
     const [splitRatio, setSplitRatio] = useState(50);
+
+    // 監聽螢幕旋轉或大小改變，自動調整
+    useEffect(() => {
+        const handleResize = () => {
+            setLayoutMode(window.innerWidth < 768 ? 'vertical' : 'horizontal');
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
     const [isDragging, setIsDragging] = useState(false);
     const [previewOpen, setPreviewOpen] = useState(true);
     const splitContainerRef = useRef(null);
@@ -1381,13 +1391,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         const finalQuestionText = inputType === 'text' ? questionText : '';
         const finalQuestionHtml = inputType === 'richtext' ? questionHtml : '';
         
+        // ✨ 修改 3-1：先整理輸入的標準答案 (轉大寫並去除符號)
+        const cleanKey = (correctAnswersInput || '').replace(/[^a-zA-Z]/g, '').toUpperCase();
+        
         setQuestionFileUrl(finalFileUrl);
         setQuestionText(finalQuestionText);
         setQuestionHtml(finalQuestionHtml);
 
         window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
             testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
-            correctAnswersInput: '',
+            correctAnswersInput: cleanKey, // ✨ 改帶入整理好的答案
             publishAnswers: true, 
             questionFileUrl: finalFileUrl,
             questionText: finalQuestionText,
@@ -1397,8 +1410,44 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
             folder: folder,
             createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-        }).then(docRef => {
+        }).then(async docRef => {
             setQuizId(docRef.id);
+
+            // ✨ 新增：在建立測驗時，立刻檢查是否有任務標籤，有則同步發布至公開任務牆
+            const isOp = testName.includes('[#op]');
+            const isMnst = testName.includes('[#mnst]') || testName.includes('[#nmst]');
+            
+            if (isOp || isMnst) {
+                let category = '模擬試題 (其他)';
+                if (isOp) {
+                    if (testName.includes('藥理') || testName.includes('藥物化學')) category = '1. 藥理學與藥物化學';
+                    else if (testName.includes('藥物分析') || testName.includes('生藥') || testName.includes('中藥')) category = '2. 藥物分析學與生藥學(含中藥學)';
+                    else if (testName.includes('藥劑') || testName.includes('生物藥劑')) category = '3. 藥劑學與生物藥劑學';
+                    else category = '國考題 (其他)';
+                } else {
+                    if (testName.includes('藥物分析')) category = '1. 藥物分析學';
+                    else if (testName.includes('生藥')) category = '2. 生藥學';
+                    else if (testName.includes('中藥')) category = '3. 中藥學';
+                    else if (testName.includes('藥物化學') || testName.includes('藥理')) category = '4. 藥物化學與藥理學';
+                    else if (testName.includes('生物藥劑')) category = '6. 生物藥劑學';
+                    else if (testName.includes('藥劑')) category = '5. 藥劑學';
+                }
+
+                await window.db.collection('publicTasks').doc(docRef.id).set({
+                    testName, 
+                    numQuestions, 
+                    questionFileUrl: finalFileUrl, 
+                    questionText: finalQuestionText, 
+                    questionHtml: finalQuestionHtml,
+                    correctAnswersInput: cleanKey, // ✨ 改帶入整理好的答案
+                    hasTimer, 
+                    timeLimit: hasTimer ? Number(timeLimit) : null, 
+                    category, 
+                    creatorUid: currentUser.uid,
+                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+
             if (hasTimer) {
                 timeRemainingRef.current = Number(timeLimit) * 60;
                 setDisplayTime(timeRemainingRef.current);
@@ -1518,7 +1567,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         return targetRef.update(targetUpdates);
                     }
                 });
-                await Promise.all(promises);
+                // ✨ 修改 1：拿掉 await，讓它在背景執行不要卡住畫面
+                Promise.all(promises).catch(e => console.error("背景同步失敗:", e));
             }
 
             showAlert("✅ 編輯成功！已同步至所有下載者及任務牆。");
@@ -1534,7 +1584,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 setResults({ score: Math.round((correctCount/numQuestions)*100), correctCount, total: numQuestions, data });
             }
 
-            setStep(results ? 'results' : 'answering');
+            // ✨ 修改 2：不進入作答或結果頁，直接呼叫退回主頁的函式
+            onBackToDashboard();
         } catch(e) {
             showAlert("儲存失敗：" + e.message);
         }
@@ -1955,6 +2006,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." />
                 )}
                 
+                {/* ✨ 修改 3-2：在 UI 加入輸入框 */}
+                <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2">標準答案 (選填，交卷時會自動批改)</h3>
+                <textarea className="w-full h-24 mb-6 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
+
                 <div className="mb-6 border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-700 no-round">
                     <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
                         <input type="checkbox" checked={hasTimer} onChange={e => setHasTimer(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
