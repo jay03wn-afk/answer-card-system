@@ -1017,19 +1017,17 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
 }
 // --- 2D 沙盒建築遊戲組件 ---
 // --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
-// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
-// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
-// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
-// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
-// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
-// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
-// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
+
 function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQuit }) {
     // --- 動態地圖擴充設定 ---
     const ROWS = 12;
     const [cols, setCols] = useState(mcData.sandbox_cols || 20);
     const TOTAL_CELLS = cols * ROWS;
 
+    const [mapScale, setMapScale] = useState(1); // 目前的縮放比例
+    const mapScaleRef = useRef(mapScale); // 保持 Ref 同步以供事件監聽器使用
+    const initialPinchDist = useRef(0); // 記錄雙指剛接觸時的距離
+    const mapContainerRef = useRef(null); // 用於綁定監聽器的 Ref
     // --- 方塊資料庫 ---
     const CATEGORIES = ['全部', '基礎與礦石', '原木與建材', '羊毛與佈置', '地獄(需解鎖)', '末地(需解鎖)', '裝飾與植物'];
     const [activeCategory, setActiveCategory] = useState('全部');
@@ -1146,6 +1144,75 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
+    // ✨ 新增：處理雙指縮放的邏輯
+    useEffect(() => {
+        const mapNode = mapContainerRef.current;
+        if (!mapNode) return;
+
+        // 計算兩點間距離的輔助函式
+        const getDistance = (touches) => {
+            if (touches.length < 2) return 0;
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        };
+
+        const handleTouchStart = (e) => {
+            if (e.touches.length === 2) {
+                // 如果是雙指觸控，記錄初始距離並阻止預設滑動行為
+                initialPinchDist.current = getDistance(e.touches);
+                if (e.cancelable) e.preventDefault();
+            }
+        };
+
+        const handleTouchMove = (e) => {
+            if (e.touches.length === 2 && initialPinchDist.current > 0) {
+                // 阻止預設的頁面滑動/放大行為，我們自己接管
+                if (e.cancelable) e.preventDefault();
+
+                const currentDist = getDistance(e.touches);
+                const newScaleFactor = currentDist / initialPinchDist.current;
+                
+                // 計算新比例（基於上次的比例），並限制範圍在 0.5倍 到 3倍 之間
+                let newScale = mapScaleRef.current * newScaleFactor;
+                newScale = Math.min(Math.max(newScale, 0.5), 3); 
+                
+                // 為了讓縮放更平滑，我們不直接 setMapScale (那會觸發 React 頻繁重繪)，
+                // 而是直接操作 DOM 樣式 (硬體加速)。
+                const gridNode = mapNode.querySelector('.grid-origin');
+                if (gridNode) {
+                    gridNode.style.transform = `scale(${newScale})`;
+                    gridNode.style.transformOrigin = 'top left'; // 從左上角縮放
+                }
+                
+                // 記錄這次結束時的距離，作為下次 move 的基準點 (重要：這樣才能連續縮放)
+                initialPinchDist.current = currentDist;
+                
+                // 最後在事件結束時才同步回 React 狀態
+                mapScaleRef.current = newScale;
+            }
+        };
+
+        const handleTouchEnd = (e) => {
+            if (e.touches.length < 2) {
+                initialPinchDist.current = 0;
+                // 同步回 React 狀態以利其他組件判斷
+                setMapScale(mapScaleRef.current);
+            }
+        };
+
+        // 綁定原生事件監聽器 { passive: false } 這是必須的，才能 e.preventDefault()
+        mapNode.addEventListener('touchstart', handleTouchStart, { passive: false });
+        mapNode.addEventListener('touchmove', handleTouchMove, { passive: false });
+        mapNode.addEventListener('touchend', handleTouchEnd);
+
+        // 清除函數
+        return () => {
+            mapNode.removeEventListener('touchstart', handleTouchStart);
+            mapNode.removeEventListener('touchmove', handleTouchMove);
+            mapNode.removeEventListener('touchend', handleTouchEnd);
+        };
+    }, []); // 僅執行一次
     // --- 音效與 BGM ---
     useEffect(() => {
         sandboxBgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/sandbgm.mp3");
@@ -1864,7 +1931,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
     });
 
     return (
-       <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center p-2 sm:p-4 animate-in fade-in select-none overflow-y-auto custom-scrollbar">
+       {/* ✨ 修改：加入 overflow-x-hidden 防止手機版左右晃動 */}
+<div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center p-2 sm:p-4 animate-in fade-in select-none overflow-y-auto overflow-x-hidden custom-scrollbar">
     <div className="p-2 border-4 border-gray-600 no-round w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row my-auto h-auto min-h-[90dvh] md:h-[90dvh] shrink-0" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>
                 
                 {showQuitConfirm && (
@@ -2066,12 +2134,17 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
 
                     {/* --- Minecraft 捲動視窗 --- */}
-                    <div className="w-full flex-grow overflow-auto custom-scrollbar bg-black p-1 relative shadow-inner border-2 border-black flex">
+                    {/* ✨ 修改：綁定 mapContainerRef 並確保容器為 block 模式以利縮放計算 */}
+<div ref={mapContainerRef} className="w-full flex-grow overflow-auto custom-scrollbar bg-black p-1 relative shadow-inner border-2 border-black block">
                         {isViewingSelf && (
                             <button onClick={() => requestExpand('left')} className="sticky left-0 top-0 bottom-0 w-8 flex-shrink-0 bg-black bg-opacity-60 hover:bg-opacity-80 text-white font-black z-20 flex items-center justify-center border-r border-gray-600 transition-all">➕</button>
                         )}
                         
-                        <div className="grid h-max min-h-full mx-auto bg-opacity-90 w-full md:w-auto" style={{ backgroundColor: DIMENSIONS[currentDimension].bg, gridTemplateColumns: `repeat(${activeCols}, minmax(0, 1fr))`, minWidth: `calc((100vh - 240px) * (${activeCols}/${ROWS}))` }}>
+                        {/* ✨ 修改：加入 grid-origin 用於 DOM 操作縮放，並設定預設 transform */} 
+                    <div className="grid grid-origin h-max min-h-full bg-opacity-90 w-full md:w-auto" style={{      backgroundColor: DIMENSIONS[currentDimension].bg,      
+                                                                                                              gridTemplateColumns: `repeat(${activeCols}, minmax(0, 1fr))`,      
+                                                                                                              minWidth: `calc((100vh - 240px) * (${activeCols}/${ROWS}))`,     
+                                                                                                              transform: `scale(${mapScale})`, // 應用初始縮放     transformOrigin: 'top left',     // 縮放原點     willChange: 'transform'          // 提示瀏覽器硬體加速 }}>
                             {activeGrid.map((fgCellId, i) => {
                                 const bgCellId = activeBgGrid[i];
                                 const fgInfo = BLOCK_TYPES.find(b => b.id === fgCellId);
