@@ -232,6 +232,9 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     const [officialTasks, setOfficialTasks] = useState({});
     const [myTasks, setMyTasks] = useState({}); 
     const [loading, setLoading] = useState(true);
+    
+    // ✨ 新增搜尋狀態
+    const [searchQuery, setSearchQuery] = useState('');
 
     const normalCategories = [
         '1. 藥物分析學', '2. 生藥學', '3. 中藥學', 
@@ -358,22 +361,23 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
         };
 
         if (task.hasTimer && (!localRec || !localRec.results)) {
-            // 判斷是否為全新任務（沒有本地紀錄，或者完全沒填答案）
             const isNew = !localRec || !localRec.userAnswers || localRec.userAnswers.filter(a => a !== '').length === 0;
-            
             if (isNew) {
-                // 全新任務，跳出確認提示
                 showConfirm(`⏱ 此任務設有時間限制（${task.timeLimit} 分鐘）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
                     executeEnter();
                 });
             } else {
-                // 已經作答到一半，直接進入不跳提示
                 executeEnter();
             }
         } else {
             executeEnter();
         }
     };
+
+    // 判斷搜尋後是否有資料，用來隱藏空區塊
+    const hasAnyOfficial = opCategories.some(cat => officialTasks[cat] && officialTasks[cat].some(t => t.testName.toLowerCase().includes(searchQuery.toLowerCase())));
+    const hasAnyNormal = normalCategories.slice(0, 6).some(cat => tasks[cat] && tasks[cat].some(t => t.testName.toLowerCase().includes(searchQuery.toLowerCase())));
+    const otherTasksFiltered = tasks['模擬試題 (其他)'] ? tasks['模擬試題 (其他)'].filter(t => t.testName.toLowerCase().includes(searchQuery.toLowerCase())) : [];
 
     return (
         <div className="max-w-6xl mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar">
@@ -384,20 +388,35 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 <p className="text-sm font-bold text-gray-500 dark:text-gray-400">完成考驗獲取獎勵鑽石！</p>
             </div>
 
+            {/* ✨ 新增：搜尋任務列 */}
+            <div className="mb-6 flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 shadow-sm no-round shrink-0">
+                <span className="text-gray-500 mr-3 text-lg">🔍</span>
+                <input
+                    type="text"
+                    placeholder="搜尋任務或試題名稱..."
+                    className="flex-grow outline-none bg-transparent text-black dark:text-white text-sm font-bold min-w-0"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                    <button onClick={() => setSearchQuery('')} className="text-gray-400 hover:text-black dark:hover:text-white ml-2 font-bold px-2">✖</button>
+                )}
+            </div>
+
             {loading ? (
                 <div className="text-center text-gray-500 py-10 font-bold animate-pulse">正在載入公開任務...</div>
             ) : (
                 <div className="space-y-8 pb-10">
                     
                     {/* --- 金色專屬：歷屆國考題 --- */}
-                    {(Object.values(officialTasks).some(arr => arr.length > 0) || officialStats.count > 0) && (
+                    {hasAnyOfficial && (
                         <div className="bg-gradient-to-br from-yellow-50 to-white dark:from-gray-800 dark:to-gray-900 border border-yellow-400 dark:border-yellow-600 shadow-md no-round p-5 md:p-6">
                             <h2 className="text-2xl font-black mb-4 dark:text-white border-b-2 border-yellow-400 dark:border-yellow-600 pb-2 text-yellow-700 dark:text-yellow-400 flex items-center">
                                 🏆 歷屆國考題
                             </h2>
                             
-                            {/* 國考能力分析圖表 */}
-                            {officialStats.count > 0 && (
+                            {/* 國考能力分析圖表 (搜尋時隱藏以節省空間) */}
+                            {!searchQuery && officialStats.count > 0 && (
                                 <div className="mb-6 bg-white dark:bg-gray-800 p-4 border border-yellow-200 dark:border-yellow-700 shadow-sm">
                                     <h3 className="font-bold text-yellow-600 dark:text-yellow-400 mb-3">📊 國考能力分析 (平均分數)</h3>
                                     <div className="space-y-3">
@@ -427,23 +446,27 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                             )}
 
                             <div className="space-y-8">
-                                {opCategories.map(cat => (
-                                    officialTasks[cat] && officialTasks[cat].length > 0 && (
+                                {opCategories.map(cat => {
+                                    const filteredOpTasks = officialTasks[cat] ? officialTasks[cat].filter(t => t.testName.toLowerCase().includes(searchQuery.toLowerCase())) : [];
+                                    if (filteredOpTasks.length === 0) return null;
+                                    
+                                    return (
                                         <div key={cat} className="pl-4 border-l-4 border-yellow-400 dark:border-yellow-600">
                                             <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
                                             <div className="flex flex-col gap-2">
-                                                {officialTasks[cat].map(task => {
+                                                {filteredOpTasks.map(task => {
                                                     const localRec = myTasks[task.id];
                                                     const isCompleted = localRec && localRec.results;
                                                     const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
 
                                                     return (
-                                                        <div key={task.id} className="border border-yellow-200 dark:border-yellow-700 p-3 bg-white dark:bg-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:shadow-md transition-shadow no-round">
-                                                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0 flex-grow">
-                                                                <h3 className="font-bold text-sm truncate dark:text-white max-w-full sm:max-w-[250px] md:max-w-[400px]" title={task.testName}>
+                                                        <div key={task.id} className="border border-yellow-200 dark:border-yellow-700 p-3 bg-white dark:bg-gray-800 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
+                                                            <div className="flex flex-col gap-1 min-w-0 flex-grow">
+                                                                {/* ✨ 解除名稱限制：改為 break-words 自動折行顯示 */}
+                                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={task.testName}>
                                                                     {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#op\]/g, '')}
                                                                 </h3>
-                                                                <div className="flex items-center gap-3 text-xs shrink-0">
+                                                                <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
                                                                     {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
                                                                     {isCompleted ? (
@@ -457,7 +480,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                             </div>
                                                             <button 
                                                                 onClick={() => handlePlayTask(task, localRec)} 
-                                                                className={`py-1.5 px-4 no-round font-bold text-xs transition-colors shrink-0 w-full sm:w-auto ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-yellow-500 text-black hover:bg-yellow-600'}`}
+                                                                className={`py-1.5 px-4 no-round font-bold text-xs transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-yellow-500 text-black hover:bg-yellow-600'}`}
                                                             >
                                                                 {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
                                                             </button>
@@ -466,81 +489,86 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                 })}
                                             </div>
                                         </div>
-                                    )
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
 
                     {/* --- 一般：模擬試題 --- */}
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5 md:p-6">
-                        <h2 className="text-2xl font-black mb-6 dark:text-white border-b-2 border-indigo-200 dark:border-indigo-900 pb-2 text-indigo-700 dark:text-indigo-400 flex items-center">
-                            📚 模擬試題
-                        </h2>
-                        
-                        <div className="space-y-8">
-                            {normalCategories.slice(0, 6).map(cat => (
-                                tasks[cat] && tasks[cat].length > 0 && (
-                                    <div key={cat} className="pl-4 border-l-4 border-indigo-300 dark:border-indigo-600">
-                                        <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
-                                        <div className="flex flex-col gap-2">
-                                            {tasks[cat].map(task => {
-                                                const localRec = myTasks[task.id];
-                                                const isCompleted = localRec && localRec.results;
-                                                const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
+                    {hasAnyNormal && (
+                        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5 md:p-6">
+                            <h2 className="text-2xl font-black mb-6 dark:text-white border-b-2 border-indigo-200 dark:border-indigo-900 pb-2 text-indigo-700 dark:text-indigo-400 flex items-center">
+                                📚 模擬試題
+                            </h2>
+                            
+                            <div className="space-y-8">
+                                {normalCategories.slice(0, 6).map(cat => {
+                                    const filteredTasks = tasks[cat] ? tasks[cat].filter(t => t.testName.toLowerCase().includes(searchQuery.toLowerCase())) : [];
+                                    if (filteredTasks.length === 0) return null;
 
-                                                return (
-                                                    <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:shadow-md transition-shadow no-round">
-                                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0 flex-grow">
-                                                            <h3 className="font-bold text-sm truncate dark:text-white max-w-full sm:max-w-[250px] md:max-w-[400px]" title={task.testName}>
-                                                                {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#m?nm?st\]/g, '')}
-                                                            </h3>
-                                                            <div className="flex items-center gap-3 text-xs shrink-0">
-                                                                <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
-                                                                {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
-                                                                {isCompleted ? (
-                                                                    <span className="text-green-600 dark:text-green-400 font-bold">✅ {localRec.results.score} 分</span>
-                                                                ) : inProgress ? (
-                                                                    <span className="text-orange-500 dark:text-orange-400 font-bold">📝 已填: {localRec.userAnswers.filter(a => a).length}</span>
-                                                                ) : (
-                                                                    <span className="text-gray-400 font-bold">⏳ 未作答</span>
-                                                                )}
+                                    return (
+                                        <div key={cat} className="pl-4 border-l-4 border-indigo-300 dark:border-indigo-600">
+                                            <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
+                                            <div className="flex flex-col gap-2">
+                                                {filteredTasks.map(task => {
+                                                    const localRec = myTasks[task.id];
+                                                    const isCompleted = localRec && localRec.results;
+                                                    const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
+
+                                                    return (
+                                                        <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
+                                                            <div className="flex flex-col gap-1 min-w-0 flex-grow">
+                                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={task.testName}>
+                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#m?nm?st\]/g, '')}
+                                                                </h3>
+                                                                <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
+                                                                    <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
+                                                                    {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
+                                                                    {isCompleted ? (
+                                                                        <span className="text-green-600 dark:text-green-400 font-bold">✅ {localRec.results.score} 分</span>
+                                                                    ) : inProgress ? (
+                                                                        <span className="text-orange-500 dark:text-orange-400 font-bold">📝 已填: {localRec.userAnswers.filter(a => a).length}</span>
+                                                                    ) : (
+                                                                        <span className="text-gray-400 font-bold">⏳ 未作答</span>
+                                                                    )}
+                                                                </div>
                                                             </div>
+                                                            <button 
+                                                                onClick={() => handlePlayTask(task, localRec)} 
+                                                                className={`py-1.5 px-4 no-round font-bold text-xs transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-black dark:bg-gray-200 text-white dark:text-black hover:bg-gray-800'}`}
+                                                            >
+                                                                {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
+                                                            </button>
                                                         </div>
-                                                        <button 
-                                                            onClick={() => handlePlayTask(task, localRec)} 
-                                                            className={`py-1.5 px-4 no-round font-bold text-xs transition-colors shrink-0 w-full sm:w-auto ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-black dark:bg-gray-200 text-white dark:text-black hover:bg-gray-800'}`}
-                                                        >
-                                                            {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
-                                                        </button>
-                                                    </div>
-                                                );
-                                            })}
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
-                                )
-                            ))}
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
-                    {tasks['模擬試題 (其他)'] && tasks['模擬試題 (其他)'].length > 0 && (
+                    {otherTasksFiltered.length > 0 && (
                         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5 md:p-6">
                             <h2 className="text-xl font-black mb-4 dark:text-white border-b-2 border-gray-200 dark:border-gray-700 pb-2 text-gray-600 dark:text-gray-400">
                                 🏷️ 其他任務
                             </h2>
                             <div className="flex flex-col gap-2">
-                                {tasks['模擬試題 (其他)'].map(task => {
+                                {otherTasksFiltered.map(task => {
                                     const localRec = myTasks[task.id];
                                     const isCompleted = localRec && localRec.results;
                                     const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
 
                                     return (
-                                        <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:shadow-md transition-shadow no-round">
-                                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0 flex-grow">
-                                                <h3 className="font-bold text-sm truncate dark:text-white max-w-full sm:max-w-[250px] md:max-w-[400px]" title={task.testName}>
+                                        <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
+                                            <div className="flex flex-col gap-1 min-w-0 flex-grow">
+                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={task.testName}>
                                                     {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#m?nm?st\]/g, '')}
                                                 </h3>
-                                                <div className="flex items-center gap-3 text-xs shrink-0">
+                                                <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
                                                     {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
                                                     {isCompleted ? (
@@ -554,7 +582,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                             </div>
                                             <button 
                                                 onClick={() => handlePlayTask(task, localRec)} 
-                                                className={`py-1.5 px-4 no-round font-bold text-xs transition-colors shrink-0 w-full sm:w-auto ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-black dark:bg-gray-200 text-white dark:text-black hover:bg-gray-800'}`}
+                                                className={`py-1.5 px-4 no-round font-bold text-xs transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-black dark:bg-gray-200 text-white dark:text-black hover:bg-gray-800'}`}
                                             >
                                                 {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
                                             </button>
@@ -578,6 +606,9 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     const [showShareModal, setShowShareModal] = useState(null);
     const [showMoveModal, setShowMoveModal] = useState(null);
     const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+
+    // ✨ 新增搜尋狀態
+    const [searchQuery, setSearchQuery] = useState('');
 
     const specialFolders = ['我建立的試題', '未分類', '任務牆'];
     const rawUserFolders = (userProfile.folders || []).filter(f => !specialFolders.includes(f));
@@ -651,10 +682,10 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         })
         .catch(e => showAlert('移動失敗：' + e.message));
     };
+    
     const handleDeleteFolder = (folderName) => {
         showConfirm(`確定要刪除「${folderName}」資料夾嗎？\n裡面的測驗將會被自動移至「未分類」。`, async () => {
             try {
-                // 1. 找出該資料夾內的所有測驗，並移至「未分類」
                 const snapshot = await window.db.collection('users').doc(user.uid).collection('quizzes').where('folder', '==', folderName).get();
                 const batch = window.db.batch();
                 snapshot.docs.forEach(doc => {
@@ -662,12 +693,10 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 });
                 await batch.commit();
 
-                // 2. 從使用者的資料夾清單中移除
                 await window.db.collection('users').doc(user.uid).update({
                     folders: window.firebase.firestore.FieldValue.arrayRemove(folderName)
                 });
 
-                // 3. 切換畫面回未分類
                 setCurrentFolder('未分類');
                 showAlert(`✅ 已刪除「${folderName}」並將試卷移至未分類。`);
             } catch (error) {
@@ -675,6 +704,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             }
         });
     };
+    
     const handleGenerateCode = async (quiz) => {
         if (quiz.shortCode) {
             navigator.clipboard.writeText(quiz.shortCode);
@@ -811,16 +841,23 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     const toggleFilter = (key) => setFilters(prev => ({ ...prev, [key]: !prev[key] }));
 
     const displayedRecords = records.filter(rec => {
+        // 資料夾過濾
         if (currentFolder === '我建立的試題') {
             if (rec.isShared || rec.isTask) return false;
         } else {
             if ((rec.folder || '未分類') !== currentFolder) return false;
         }
         
+        // ✨ 新增搜尋過濾
+        if (searchQuery && !rec.testName.toLowerCase().includes(searchQuery.toLowerCase())) {
+            return false;
+        }
+        
         const isCompleted = !!rec.results;
         const answeredCount = rec.userAnswers ? rec.userAnswers.filter(a => a !== '').length : 0;
         const hasStarted = answeredCount > 0;
 
+        // 狀態過濾
         if (isCompleted && filters.done) return true;
         if (!isCompleted && hasStarted && filters.doing) return true;
         if (!isCompleted && !hasStarted && filters.todo) return true;
@@ -832,12 +869,10 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         if (rec.hasTimer && !rec.results) {
             const isNew = !rec.userAnswers || rec.userAnswers.filter(a => a !== '').length === 0;
             if (isNew) {
-                // 全新的測驗，跳出確認提示
                 showConfirm(`⏱ 此測驗設有時間限制（${rec.timeLimit} 分鐘）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
                     onContinueQuiz(rec);
                 });
             } else {
-                // 已經作答到一半，直接進入不跳提示
                 onContinueQuiz(rec);
             }
         } else {
@@ -874,40 +909,60 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 )}
             </div>
 
-            <div className="flex items-center space-x-4 mb-6 shrink-0 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 no-round">
-                <span className="text-sm font-bold text-gray-500 dark:text-gray-400 border-r border-gray-300 dark:border-gray-600 pr-3">狀態篩選</span>
-                <label className="flex items-center space-x-1.5 text-sm cursor-pointer hover:text-black dark:hover:text-white dark:text-gray-300">
-                    <input type="checkbox" checked={filters.todo} onChange={() => toggleFilter('todo')} className="w-4 h-4 accent-black dark:accent-white" />
-                    <span className="font-bold">未作測驗</span>
-                </label>
-                <label className="flex items-center space-x-1.5 text-sm cursor-pointer hover:text-black dark:hover:text-white">
-                    <input type="checkbox" checked={filters.doing} onChange={() => toggleFilter('doing')} className="w-4 h-4 accent-black dark:accent-white" />
-                    <span className="font-bold text-orange-600 dark:text-orange-400">進行中</span>
-                </label>
-                <label className="flex items-center space-x-1.5 text-sm cursor-pointer hover:text-black dark:hover:text-white">
-                    <input type="checkbox" checked={filters.done} onChange={() => toggleFilter('done')} className="w-4 h-4 accent-black dark:accent-white" />
-                    <span className="font-bold text-green-600 dark:text-green-400">已完成</span>
-                </label>
+            {/* ✨ 新增：過濾器與搜尋列整合排版 */}
+            <div className="flex flex-col md:flex-row md:items-center gap-3 mb-6 shrink-0 w-full">
+                <div className="flex items-center space-x-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 no-round shrink-0 w-full md:w-auto overflow-x-auto custom-scrollbar">
+                    <span className="text-sm font-bold text-gray-500 dark:text-gray-400 border-r border-gray-300 dark:border-gray-600 pr-3 shrink-0">狀態篩選</span>
+                    <label className="flex items-center space-x-1.5 text-sm cursor-pointer hover:text-black dark:hover:text-white dark:text-gray-300 shrink-0">
+                        <input type="checkbox" checked={filters.todo} onChange={() => toggleFilter('todo')} className="w-4 h-4 accent-black dark:accent-white" />
+                        <span className="font-bold">未作測驗</span>
+                    </label>
+                    <label className="flex items-center space-x-1.5 text-sm cursor-pointer hover:text-black dark:hover:text-white shrink-0">
+                        <input type="checkbox" checked={filters.doing} onChange={() => toggleFilter('doing')} className="w-4 h-4 accent-black dark:accent-white" />
+                        <span className="font-bold text-orange-600 dark:text-orange-400">進行中</span>
+                    </label>
+                    <label className="flex items-center space-x-1.5 text-sm cursor-pointer hover:text-black dark:hover:text-white shrink-0">
+                        <input type="checkbox" checked={filters.done} onChange={() => toggleFilter('done')} className="w-4 h-4 accent-black dark:accent-white" />
+                        <span className="font-bold text-green-600 dark:text-green-400">已完成</span>
+                    </label>
+                </div>
+
+                <div className="flex-grow flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-sm no-round w-full md:w-auto">
+                    <span className="text-gray-500 mr-2">🔍</span>
+                    <input
+                        type="text"
+                        placeholder="在此資料夾中搜尋試題..."
+                        className="flex-grow outline-none bg-transparent text-black dark:text-white text-sm font-bold min-w-0"
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                    />
+                    {searchQuery && (
+                        <button onClick={() => setSearchQuery('')} className="text-gray-400 hover:text-black dark:hover:text-white ml-2 font-bold px-1">✖</button>
+                    )}
+                </div>
             </div>
 
             {loading ? (
                 <div className="text-center text-gray-500 py-10 font-bold animate-pulse">讀取本地快取與雲端資料中...</div>
             ) : displayedRecords.length === 0 ? (
-                <div className="bg-white dark:bg-gray-800 text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 no-round shadow-sm">此分類尚無符合篩選條件的測驗紀錄。</div>
+                <div className="bg-white dark:bg-gray-800 text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 no-round shadow-sm">
+                    {searchQuery ? '找不到符合關鍵字的試卷。' : '此分類尚無符合篩選條件的測驗紀錄。'}
+                </div>
             ) : (
                 <div className="flex flex-col gap-2 pb-10">
                     {displayedRecords.map(rec => (
-                        <div key={rec.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 sm:p-4 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+                        <div key={rec.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 sm:p-4 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
                             {/* 左側：標題與狀態 */}
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0 flex-grow">
-                                <h2 className="font-bold text-sm sm:text-base truncate dark:text-white flex items-center gap-2 max-w-full sm:max-w-[250px] md:max-w-[350px]">
-                                    <span className="truncate">{typeof renderTestName !== 'undefined' ? renderTestName(rec.testName, !!rec.results) : rec.testName}</span>
+                            <div className="flex flex-col gap-1 min-w-0 flex-grow">
+                                {/* ✨ 解除名稱限制：改為 break-words 自動折行顯示 */}
+                                <h2 className="font-bold text-sm sm:text-base dark:text-white flex flex-wrap items-center gap-2 leading-relaxed">
+                                    <span className="break-words whitespace-normal">{typeof renderTestName !== 'undefined' ? renderTestName(rec.testName, !!rec.results) : rec.testName}</span>
                                     {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
                                     {rec.isShared && !rec.isTask && <span className="text-[10px] bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
                                     {rec.hasTimer && <span className="text-[10px] bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0">⏱ {rec.timeLimit}m</span>}
                                 </h2>
                                 
-                                <div className="flex items-center gap-3 text-xs shrink-0">
+                                <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                     <span className="text-gray-500 dark:text-gray-400">{rec.numQuestions}題</span>
                                     {rec.results ? (
                                         <span className="text-green-600 dark:text-green-400 font-bold">✅ {rec.results.score}分</span>
@@ -925,7 +980,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                             </div>
 
                             {/* 右側：操作按鈕 */}
-                            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 border-gray-100 dark:border-gray-700 pt-2 sm:pt-0">
+                            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 border-gray-100 dark:border-gray-700 pt-2 sm:pt-0 mt-2 sm:mt-0">
                                 <div className="flex items-center gap-3">
                                     <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 transition-colors">刪除</button>
                                     <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 font-bold transition-colors">📁移動</button>
