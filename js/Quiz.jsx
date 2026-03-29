@@ -2805,12 +2805,9 @@ function FastQASection({ user, showAlert, targetQaId, onClose, onRequireLogin })
     }, [user, isAdmin, targetQaId]);
 
     const getDiamonds = (diff) => {
-        if (diff.includes('10')) return 10;
-        if (diff.includes('30')) return 30;
-        if (diff.includes('50')) return 50;
-        if (diff.includes('70')) return 70;
-        if (diff.includes('100')) return 100;
-        return 10;
+        // ✨ 修正：直接從難度字串中精準抓出數字，避免 100 被誤判為 10
+        const match = diff.match(/\d+/);
+        return match ? parseInt(match[0], 10) : 10;
     };
 
     const handleAddQA = async () => {
@@ -2877,48 +2874,58 @@ function FastQASection({ user, showAlert, targetQaId, onClose, onRequireLogin })
     const handleSubmitAns = async () => {
         if (selectedAns === null) return showAlert('請選擇一個答案！');
         
-        // 未登入訪客直接讓他們看見簡答 (不存入資料庫，吸引註冊)
+        // 訪客模式：只讓他們看結果，不觸發鑽石邏輯（引導註冊）
         if (!user) {
             setShowResult(true);
             return;
         }
 
-        // 防呆 1：前端狀態檢查，避免重複送出
+        // 防重複領取檢查
         if (records[activeQA.id]) {
             return showAlert('⚠️ 您已經作答過此題，無法重複領取獎勵喔！');
         }
 
         setSubmitting(true);
         const isCorrect = selectedAns === activeQA.correctAns;
+        const rewardAmount = Number(activeQA.reward) || 10; // 強制轉換為數字，確保加法有效
         
         try {
-            // 防呆 2：資料庫二次確認，防止多開視窗或快速點擊造成重複領取
-            const recDoc = await window.db.collection('users').doc(user.uid).collection('fastQARecords').doc(activeQA.id).get();
+            // 資料庫端防呆：二次確認是否領取過
+            const recRef = window.db.collection('users').doc(user.uid).collection('fastQARecords').doc(activeQA.id);
+            const recDoc = await recRef.get();
+            
             if (recDoc.exists) {
                 setSubmitting(false);
                 return showAlert('⚠️ 您已經領取過此題的獎勵囉！');
             }
 
-            await window.db.collection('users').doc(user.uid).collection('fastQARecords').doc(activeQA.id).set({
+            // 1. 先寫入作答紀錄
+            await recRef.set({
                 isCorrect,
                 selectedAns,
                 answeredAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
             
+            // 2. 如果答對，發放鑽石
             if (isCorrect) {
-                await window.db.collection('users').doc(user.uid).update({
-                    diamonds: window.firebase.firestore.FieldValue.increment(activeQA.reward)
-                });
+                // ✨ 終極修復：改用 set 搭配 merge: true 
+                // 這樣即使新帳號還沒有 mcData 物件，系統也會自動建立，保證 100% 領得到鑽石
+                await window.db.collection('users').doc(user.uid).set({
+                    mcData: {
+                        diamonds: window.firebase.firestore.FieldValue.increment(rewardAmount)
+                    }
+                }, { merge: true });
             }
             
             setRecords(prev => ({...prev, [activeQA.id]: { isCorrect, selectedAns }}));
             setShowResult(true);
             
             if (isCorrect) {
-                showAlert(`🎉 答對了！恭喜獲得 ${activeQA.reward} 💎 鑽石！\n獎勵已發放至您的帳號。`);
+                showAlert(`🎉 答對了！恭喜獲得 ${rewardAmount} 💎 鑽石！\n獎勵已發放至您的史蒂夫帳號。`);
             }
         } catch (e) {
-            showAlert('送出失敗：' + e.message);
+            console.error("鑽石領取失敗:", e);
+            showAlert('領取失敗：' + e.message);
         }
         setSubmitting(false);
     };
