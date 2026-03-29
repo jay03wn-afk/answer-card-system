@@ -2729,7 +2729,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 // --- ✨ 新增：快問快答核心組件 ---
 // --- ✨ 新增：快問快答核心組件 (含分享與訪客模式) ---
 // --- ✨ 新增：快問快答核心組件 (含分享與訪客模式) ---
-function FastQASection({ user, showAlert, targetQaId, onClose }) {
+function FastQASection({ user, showAlert, targetQaId, onClose, onRequireLogin }) {
     const { useState, useEffect } = React;
     const [qaList, setQaList] = useState([]);
     const [records, setRecords] = useState({});
@@ -3093,11 +3093,18 @@ function FastQASection({ user, showAlert, targetQaId, onClose }) {
                             
                             let btnClass = "w-full text-left p-4 border-2 font-bold transition-all no-round text-lg flex items-center justify-between ";
                             
-                            if (showResult) {
+                            // ✨ 修正：判斷是否有登入，未登入者即使交卷也不顯示對錯顏色
+                            if (showResult && user) {
                                 if (isCorrectOpt) btnClass += "bg-green-100 border-green-500 text-green-800 dark:bg-green-900/40 dark:text-green-300 dark:border-green-600 ";
                                 else if (isSelected) btnClass += "bg-red-100 border-red-500 text-red-800 dark:bg-red-900/40 dark:text-red-300 dark:border-red-600 ";
                                 else btnClass += "bg-gray-50 border-gray-200 text-gray-500 opacity-60 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 ";
+                            } else if (showResult && !user) {
+                                // 訪客交卷後，只保留他選的選項高亮，其他稍微變灰，但不顯示正確答案
+                                btnClass += isSelected 
+                                    ? "border-pink-500 bg-pink-50 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300 " 
+                                    : "bg-gray-50 border-gray-200 text-gray-500 opacity-60 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 ";
                             } else {
+                                // 還沒交卷的狀態
                                 btnClass += isSelected 
                                     ? "border-pink-500 bg-pink-50 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300 " 
                                     : "border-gray-300 hover:border-pink-300 bg-white dark:bg-gray-800 dark:border-gray-600 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 ";
@@ -3111,8 +3118,9 @@ function FastQASection({ user, showAlert, targetQaId, onClose }) {
                                     className={btnClass}
                                 >
                                     <span><span className="mr-3 inline-block w-6 text-center font-black">{['A','B','C','D'][idx]}.</span> {opt}</span>
-                                    {showResult && isCorrectOpt && <span className="text-xl">✅</span>}
-                                    {showResult && isSelected && !isCorrectOpt && <span className="text-xl">❌</span>}
+                                    {/* ✨ 修正：只有登入用戶才顯示勾勾跟叉叉 */}
+                                    {showResult && user && isCorrectOpt && <span className="text-xl">✅</span>}
+                                    {showResult && user && isSelected && !isCorrectOpt && <span className="text-xl">❌</span>}
                                 </button>
                             );
                         })}
