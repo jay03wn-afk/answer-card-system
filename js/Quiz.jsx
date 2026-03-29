@@ -200,7 +200,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                      <div key={item.id} className="bg-white dark:bg-gray-800 p-4 border border-gray-200 dark:border-gray-700 shadow-sm relative no-round hover:shadow-md transition-shadow">
                          <button onClick={() => handleDelete(item.id)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 font-bold z-10">✖</button>
                          <div className="text-xs text-blue-600 dark:text-blue-400 font-bold mb-2 pr-6 flex items-center justify-between">
-                            <span className="truncate">出自: {item.quizName.replace(/\[.*\]/g, '').trim()} - 第 {item.questionNum} 題</span>
+                            <span className="truncate">出自: {(item.quizName || '').replace(/\[#(op|m?nm?st)\]/gi, '').trim()} - 第 {item.questionNum} 題</span>
                             {item.quizId && (
                                 <button onClick={() => handleGoToQuiz(item.quizId)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline shrink-0 ml-2">
                                     🔗 檢視試題
@@ -318,14 +318,18 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 setLoading(false);
             });
 
+        // ✨ 修改：取得包含出題者自己原稿的 quizzes，這樣出題者在任務牆上也能顯示作答進度與成績連動
         const unsubMyQuizzes = window.db.collection('users').doc(user.uid).collection('quizzes')
-            .where('isTask', '==', true)
             .onSnapshot(snap => {
                 const myTaskMap = {};
                 snap.docs.forEach(doc => {
                     const data = doc.data();
-                    if (data.taskId) {
+                    if (data.isTask && data.taskId) {
                         myTaskMap[data.taskId] = { id: doc.id, ...data };
+                    } else if (!data.isShared && !data.isTask) {
+                        // 若是出題者本人自己的考卷，任務ID 就是該考卷的 doc.id
+                        // 在此注入 isTask 與 taskId 以便讓後續 UI 可以判斷為任務模式 (如開放討論區)
+                        myTaskMap[doc.id] = { id: doc.id, ...data, isTask: true, taskId: doc.id };
                     }
                 });
                 setMyTasks(myTaskMap);
@@ -508,7 +512,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                                                 {/* ✨ 解除名稱限制：改為 break-words 自動折行顯示 */}
                                                                 <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={task.testName}>
-                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#op\]/g, '')}
+                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}
                                                                 </h3>
                                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
@@ -564,7 +568,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                         <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
                                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                                                 <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={task.testName}>
-                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#m?nm?st\]/g, '')}
+                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}
                                                                 </h3>
                                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
@@ -611,7 +615,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                         <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                                 <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={task.testName}>
-                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#m?nm?st\]/g, '')}
+                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}
                                                 </h3>
                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
@@ -823,7 +827,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 const emptyStarred = Array(Number(data.numQuestions)).fill(false);
                 
                 await window.db.collection('users').doc(user.uid).collection('quizzes').add({
-                    testName: data.testName + ' (來自代碼)',
+                    testName: data.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim() + ' (來自代碼)',
                     numQuestions: data.numQuestions,
                     questionFileUrl: data.questionFileUrl || '',
                     questionText: data.questionText || '',
@@ -843,7 +847,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
 
-                showAlert(`✅ 成功匯入「${data.testName}」！\n試卷已加入「未分類」資料夾。`, "匯入成功");
+                showAlert(`✅ 成功匯入「${data.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}」！\n試卷已加入「未分類」資料夾。`, "匯入成功");
 
             } catch (e) {
                 console.error(e);
@@ -853,6 +857,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     };
 
     const shareToFriend = (friend) => {
+        const cleanTestName = showShareModal.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim();
         const chatId = [user.uid, friend.uid].sort().join('_');
         window.db.collection('chats').doc(chatId).collection('messages').add({
             senderId: user.uid,
@@ -863,7 +868,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             quizData: {
                 ownerId: user.uid,
                 quizId: showShareModal.id,
-                testName: showShareModal.testName,
+                testName: cleanTestName,
                 questionFileUrl: showShareModal.questionFileUrl || '',
                 questionText: showShareModal.questionText || '',
                 questionHtml: showShareModal.questionHtml || '',
@@ -1003,7 +1008,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                 {/* ✨ 解除名稱限制：改為 break-words 自動折行顯示 */}
                                 <h2 className="font-bold text-sm sm:text-base dark:text-white flex flex-wrap items-center gap-2 leading-relaxed">
-                                    <span className="break-words whitespace-normal">{typeof renderTestName !== 'undefined' ? renderTestName(rec.testName, !!rec.results) : rec.testName}</span>
+                                    <span className="break-words whitespace-normal">{typeof renderTestName !== 'undefined' ? renderTestName(rec.testName, !!rec.results) : rec.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}</span>
                                     {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
                                     {rec.isShared && !rec.isTask && <span className="text-[10px] bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
                                     {rec.hasTimer && <span className="text-[10px] bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0">⏱ {rec.timeLimit}m</span>}
@@ -1687,6 +1692,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     };
 
     const shareScoreToFriend = (friend) => {
+        const cleanName = testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim();
         const chatId = [currentUser.uid, friend.uid].sort().join('_');
         window.db.collection('chats').doc(chatId).collection('messages').add({
             senderId: currentUser.uid,
@@ -1695,7 +1701,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             type: 'score_share', 
             read: false,
             scoreData: {
-                testName: testName,
+                testName: cleanName,
                 score: results.score,
                 correctCount: results.correctCount,
                 total: results.total
@@ -1703,7 +1709,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             quizData: {
                 ownerId: currentUser.uid,
                 quizId: quizId,
-                testName: testName,
+                testName: cleanName,
                 questionFileUrl: questionFileUrl || '',
                 questionText: questionText || '',
                 questionHtml: questionHtml || '',
@@ -1869,7 +1875,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     <button onClick={onBackToDashboard} className="mr-3 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">← 返回</button>
                     <div className="overflow-hidden flex-grow flex flex-col justify-center">
                         <div className="flex items-center space-x-2">
-                            <h2 className="font-bold truncate text-base dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(testName, false) : testName}</h2>
+                            <h2 className="font-bold truncate text-base dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(testName, false) : testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}</h2>
                             {hasTimer && (
                                 <span className={`font-mono font-bold px-1.5 py-0.5 no-round border ${isTimeUp ? 'bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border-red-200 dark:border-red-700 animate-pulse' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600'} text-xs shrink-0`}>
                                     {isTimeUp ? '時間到' : `⏱ ${formatTime(displayTime)}`}
@@ -2045,7 +2051,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
             <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10 transition-colors">
                 <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
-                    <h2 className="font-bold truncate text-base pr-4 dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(testName, true) : testName} - 測驗結果</h2>
+                    <h2 className="font-bold truncate text-base pr-4 dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(testName, true) : testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()} - 測驗結果</h2>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
@@ -2376,7 +2382,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         try {
                             await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').add({
                                 quizId: quizId,
-                                quizName: testName,
+                                quizName: testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim(),
                                 questionNum: wrongBookAddingItem.number,
                                 userAns: wrongBookAddingItem.userAns || '未填寫',
                                 correctAns: wrongBookAddingItem.correctAns,
