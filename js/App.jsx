@@ -3,6 +3,18 @@ function Main() {
 
     // --- 基礎 App 狀態 ---
     const [user, setUser] = useState(null);
+    
+    // ✨ 新增：一進來就檢查網址有沒有 qaId，存入狀態中
+    const [currentQaId, setCurrentQaId] = useState(() => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('qaId');
+    });
+
+    // ✨ 新增：用來關閉快問快答視窗並清理網址的方法
+    const closeFastQA = () => {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setCurrentQaId(null);
+    };
     const [userProfile, setUserProfile] = useState({ displayName: '載入中...', folders: [] });
     const [activeTab, setActiveTab] = useState('dashboard');
     const [activeQuizRecord, setActiveQuizRecord] = useState(null);
@@ -227,32 +239,27 @@ function Main() {
     // ==========================================
     // ✨ 新增：訪客分享連結專屬通道 (必須放在 AuthScreen 擋板之前！)
     // ==========================================
-    const urlParams = new URLSearchParams(window.location.search);
-    const isVisitorQA = urlParams.get('qaId') !== null;
-
-    if (!user && isVisitorQA) {
+    if (!user && currentQaId) {
         return (
             <div className={`min-h-[100dvh] flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-pink-50'}`}>
-                {/* 確保訪客模式下，彈出視窗(Alert)也能正常運作 */}
                 {SharedModal} 
-                
                 <div className="w-full max-w-3xl z-10">
                     {/* 頂部引導註冊區塊 */}
                     <div className="bg-white dark:bg-gray-800 p-6 mb-6 text-center border-4 border-pink-400 shadow-xl no-round animate-fade-in">
                         <h1 className="text-2xl font-black text-pink-600 dark:text-pink-400 mb-2">👋 歡迎來到訪客試玩模式！</h1>
                         <p className="text-gray-600 dark:text-gray-300 font-bold mb-5">
-                            登入後即可解鎖「詳解」、「正確答案」，並將鑽石獎勵收入囊中！💎
+                            完成作答即可看見正確選項！登入後還能解鎖「完整詳解」並領取鑽石💎！
                         </p>
                         <button 
-                            onClick={() => window.location.href = window.location.pathname} 
+                            onClick={() => window.location.href = window.location.pathname + '?qaId=' + currentQaId} 
                             className="bg-black dark:bg-white text-white dark:text-black px-8 py-3 font-black text-lg no-round hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors shadow-md w-full sm:w-auto"
                         >
-                            🚀 立即登入 / 註冊帳號
+                            🚀 立即登入 / 註冊解鎖
                         </button>
                     </div>
 
-                    {/* 直接載入快問快答組件 (傳入 null 代表訪客) */}
-                    <FastQASection user={null} showAlert={showAlert} />
+                    {/* 直接載入快問快答，並傳入 targetQaId */}
+                    <FastQASection user={null} showAlert={showAlert} targetQaId={currentQaId} />
                 </div>
             </div>
         );
@@ -289,6 +296,20 @@ function Main() {
 
             {/* ✅ 4. 主畫面這裡原本一大串的 modal 程式碼，現在只需要呼叫 SharedModal 就好了 */}
             {SharedModal}
+
+            {/* ✨ 新增：已經登入的玩家，如果網址有 qaId，直接蓋一個滿版視窗在最上層 */}
+            {user && currentQaId && (
+                <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-2 sm:p-4 animate-fade-in">
+                    <div className="bg-gray-100 dark:bg-gray-900 w-full max-w-4xl max-h-[95vh] overflow-y-auto no-round relative shadow-2xl border-4 border-pink-400">
+                        {/* 關閉按鈕 */}
+                        <button onClick={closeFastQA} className="absolute top-4 right-4 text-3xl z-20 hover:scale-110 transition-transform bg-white dark:bg-gray-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md border border-gray-300 dark:border-gray-600">❌</button>
+                        
+                        <div className="p-4 sm:p-8 pt-16">
+                            <FastQASection user={user} showAlert={showAlert} targetQaId={currentQaId} onClose={closeFastQA} />
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {activeTab !== 'activeQuiz' && topNavContent}
             
