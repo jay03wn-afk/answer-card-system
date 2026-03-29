@@ -2276,6 +2276,14 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     ) : (
                         <div className="bg-blue-900 bg-opacity-50 border border-blue-500 p-2 mb-2 shrink-0 flex flex-col gap-1">
                             <p className="text-xs text-blue-200 font-bold mb-1">參觀模式工具：</p>
+                            
+                            {/* ✨ 新增：空手 (防誤觸) 按鈕 */}
+                            <button onClick={() => { 
+                                const h = [...hotbar]; 
+                                h[activeHotbarIndex] = null; // 清空當前選取的快捷列格子
+                                setHotbar(h); 
+                            }} className={`w-full py-1 text-xs font-bold border ${!selectedBlock ? 'bg-gray-200 border-white text-black shadow-inner' : 'bg-gray-700 text-gray-300 border-gray-500'}`}>🤚 空手 (防誤觸)</button>
+
                             <button onClick={() => { 
                                 const h = [...hotbar]; 
                                 const existingIdx = h.indexOf('poppy');
