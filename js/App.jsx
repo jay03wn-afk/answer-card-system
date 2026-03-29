@@ -224,6 +224,43 @@ function Main() {
         </div>
     );
 
+    // ==========================================
+    // ✨ 新增：訪客分享連結專屬通道 (必須放在 AuthScreen 擋板之前！)
+    // ==========================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const isVisitorQA = urlParams.get('qaId') !== null;
+
+    if (!user && isVisitorQA) {
+        return (
+            <div className={`min-h-[100dvh] flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-pink-50'}`}>
+                {/* 確保訪客模式下，彈出視窗(Alert)也能正常運作 */}
+                {SharedModal} 
+                
+                <div className="w-full max-w-3xl z-10">
+                    {/* 頂部引導註冊區塊 */}
+                    <div className="bg-white dark:bg-gray-800 p-6 mb-6 text-center border-4 border-pink-400 shadow-xl no-round animate-fade-in">
+                        <h1 className="text-2xl font-black text-pink-600 dark:text-pink-400 mb-2">👋 歡迎來到訪客試玩模式！</h1>
+                        <p className="text-gray-600 dark:text-gray-300 font-bold mb-5">
+                            登入後即可解鎖「詳解」、「正確答案」，並將鑽石獎勵收入囊中！💎
+                        </p>
+                        <button 
+                            onClick={() => window.location.href = window.location.pathname} 
+                            className="bg-black dark:bg-white text-white dark:text-black px-8 py-3 font-black text-lg no-round hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors shadow-md w-full sm:w-auto"
+                        >
+                            🚀 立即登入 / 註冊帳號
+                        </button>
+                    </div>
+
+                    {/* 直接載入快問快答組件 (傳入 null 代表訪客) */}
+                    <FastQASection user={null} showAlert={showAlert} />
+                </div>
+            </div>
+        );
+    }
+    // ==========================================
+    // 訪客通道結束
+    // ==========================================
+
     // ✅ 2. 修改未登入的判斷：加上 Fragment (<>...</>) 並把 SharedModal 塞進去
     if (!user) return (
         <>
