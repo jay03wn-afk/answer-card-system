@@ -1581,8 +1581,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         if (hasSpecial && ['poppy', 'gift_box', 'sign', 'chest'].includes(hasSpecial.type) && selectedBlock !== 'erase') {
              return showAlert("❌ 這裡有特殊物品，無法直接覆蓋！請先切換至「👀互動模式」處理。");
         }
-        // 加入這行：如果是空手，就直接中斷，不進行任何放置或破壞
-        if (!selectedBlock) return;
 
         const newInv = { ...localInventory };
         const newSpecials = { ...specials };
@@ -1598,7 +1596,9 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         };
 
         // --- 處理背景牆模式 (Background) ---
+        // --- 處理背景牆模式 (Background) ---
         if (buildLayer === 'background') {
+            if (!selectedBlock) return; // 移至此處：背景模式若是空手直接中斷
             if (currentBg === selectedBlock && selectedBlock !== 'erase') return;
             const newBgGrid = [...bgGrids[currentDimension]];
 
@@ -1621,21 +1621,22 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         }
 
         // --- 處理前景實體模式 (Foreground) ---
-        if (currentFg && selectedBlock === currentFg) {
+        // 修改：只要有方塊，且目前手持不是拆除工具(erase)，就優先觸發互動
+        if (currentFg && selectedBlock !== 'erase') {
             if (currentFg.includes('_log')) {
                 setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: { type: 'rotation', rotation: (hasSpecial?.rotation || 0) === 0 ? 90 : 0 } } }));
-                playBlockSound(selectedBlock, 'place'); setHasUnsavedChanges(true); return;
+                playBlockSound(currentFg, 'place'); setHasUnsavedChanges(true); return;
             }
             if (currentFg.includes('_slab')) {
                 setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: { type: 'rotation', position: (hasSpecial?.position || 'bottom') === 'bottom' ? 'top' : 'bottom' } } }));
-                playBlockSound(selectedBlock, 'place'); setHasUnsavedChanges(true); return;
+                playBlockSound(currentFg, 'place'); setHasUnsavedChanges(true); return;
             }
             if (currentFg.includes('_stairs')) {
                 const seq = ['bottom-right', 'bottom-left', 'top-left', 'top-right'];
                 setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: { type: 'rotation', rotation: seq[(seq.indexOf(hasSpecial?.rotation || 'bottom-right') + 1) % 4] } } }));
-                playBlockSound(selectedBlock, 'place'); setHasUnsavedChanges(true); return;
+                playBlockSound(currentFg, 'place'); setHasUnsavedChanges(true); return;
             }
-            // 新增：門的方向切換 (向左開 / 向右開)
+            // 門的方向切換 (向左開 / 向右開)
             if (currentFg.endsWith('_door') && !currentFg.endsWith('_trapdoor')) {
                 const isTop = hasSpecial?.half === 'top';
                 const topIdx = isTop ? index : index - cols;
@@ -1648,11 +1649,14 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     if(topIdx >= 0 && topIdx < TOTAL_CELLS) newSpec[currentDimension][topIdx] = { ...newSpec[currentDimension][topIdx], hinge: newHinge };
                     return newSpec;
                 });
-                playBlockSound(selectedBlock, 'place'); 
+                playBlockSound(currentFg, 'place'); 
                 setHasUnsavedChanges(true); 
                 return;
             }
         }
+
+        // 移到這裡：如果沒有觸發上方互動，且此時是空手，就中斷不進行後續的取代或放置
+        if (!selectedBlock) return;
 
         if (selectedBlock === 'erase' && currentFg === 'chest_block') {
             if (Object.values(hasSpecial?.items || {}).some(c => c > 0)) return showAlert('❌ 請先至「👀互動模式」將箱子裡的東西清空才能拆除！');
