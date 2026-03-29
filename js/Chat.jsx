@@ -354,7 +354,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     const lastMyMsgId = (messages || []).slice().reverse().find(m => m.senderId === user.uid)?.id;
 
     return (
-        <div className="max-w-4xl lg:max-w-5xl mx-auto px-2 sm:px-4 pt-0 flex flex-col md:grid md:grid-cols-3 gap-2 md:gap-4 h-[calc(100dvh-80px)] min-h-[calc(100vh-80px)] md:h-full relative overflow-hidden">
+        <div className="w-full max-w-5xl mx-auto px-0 md:px-4 pt-0 flex flex-col md:grid md:grid-cols-3 gap-0 md:gap-4 h-[calc(100dvh-80px)] min-h-[calc(100vh-80px)] md:h-full relative overflow-hidden">
             
             {previewImg && (
                 <div onClick={() => setPreviewImg(null)} className="fixed inset-0 z-[200] bg-black bg-opacity-90 flex items-center justify-center p-4 cursor-zoom-out">
@@ -411,7 +411,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                                 const timeStr = msg.timestamp ? msg.timestamp.toDate().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) : '';
                                 return (
                                     <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} mb-4`}>
-                                        <div className={`max-w-[70%] p-3 text-sm no-round ${isMe ? 'bg-black text-white dark:bg-blue-600' : 'bg-white border border-gray-200 dark:border-gray-700 text-black dark:bg-gray-700 dark:text-white shadow-sm'}`}>
+                                        <div className={`max-w-[85%] md:max-w-[70%] p-3 text-sm no-round ${isMe ? 'bg-black text-white dark:bg-blue-600' : 'bg-white border border-gray-200 dark:border-gray-700 text-black dark:bg-gray-700 dark:text-white shadow-sm'}`}>
                                             {(() => {
                                                 if (msg.type === 'image') {
                                                     const minsLeft = Math.max(0, Math.ceil((msg.expiresAt - Date.now()) / 60000));
@@ -458,7 +458,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                                                         </div>
                                                     );
                                                 } else {
-    return <p className="break-words" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text || '未知訊息'}</p>;
+    return <p className="break-all sm:break-words whitespace-pre-wrap">{msg.text || '未知訊息'}</p>;
 }
                                             })()}
                                         </div>
@@ -471,18 +471,18 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                             })}
                             <div ref={messagesEndRef} />
                         </div>
-                        <form onSubmit={sendMessage} className="p-3 border-t border-gray-200 dark:border-gray-700 flex gap-2 bg-white dark:bg-gray-800 shrink-0 items-center overflow-hidden">
-    <button type="button" onMouseDown={e => e.preventDefault()} onClick={playRPS} className="bg-gray-100 dark:bg-gray-700 text-lg sm:text-xl px-2.5 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="猜拳">✌️</button>
+                        <form onSubmit={sendMessage} className="p-2 md:p-3 border-t border-gray-200 dark:border-gray-700 flex gap-1 sm:gap-2 bg-white dark:bg-gray-800 shrink-0 items-center overflow-hidden w-full box-border">
+    <button type="button" onMouseDown={e => e.preventDefault()} onClick={playRPS} className="bg-gray-100 dark:bg-gray-700 text-base sm:text-xl px-2 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="猜拳">✌️</button>
     
-    <button type="button" onMouseDown={e => e.preventDefault()} onClick={sendGift} className="bg-gray-100 dark:bg-gray-700 text-lg sm:text-xl px-2.5 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="贈送鑽石">🎁</button>
+    <button type="button" onMouseDown={e => e.preventDefault()} onClick={sendGift} className="bg-gray-100 dark:bg-gray-700 text-base sm:text-xl px-2 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="贈送鑽石">🎁</button>
     
-    <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => fileInputRef.current.click()} className="bg-gray-100 dark:bg-gray-700 text-lg sm:text-xl px-2.5 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="上傳圖片(閱後即焚)">🖼️</button>
+    <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => fileInputRef.current.click()} className="bg-gray-100 dark:bg-gray-700 text-base sm:text-xl px-2 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="上傳圖片(閱後即焚)">🖼️</button>
     <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
     
-    {/* ✨ 優化：在 input 上使用 p-1.5 縮小一點輸入框內的留白，換取按鈕間的間距 */}
-    <input type="text" ref={chatInputRef} placeholder="輸入訊息..." className="flex-grow min-w-0 p-1.5 sm:p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none" value={newMessage} onChange={e=>setNewMessage(e.target.value)} onFocus={handleFocusScroll} />
+    {/* ✨ 重要修正：強制加入 text-base (16px) 防止 iOS Safari 自動放大，並且給予 flex-1 w-full 完美佔據剩餘空間 */}
+    <input type="text" ref={chatInputRef} placeholder="輸入訊息..." className="flex-1 min-w-0 w-full p-2 text-base border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none" value={newMessage} onChange={e=>setNewMessage(e.target.value)} onFocus={handleFocusScroll} />
     
-    <button type="submit" onMouseDown={e => e.preventDefault()} className="bg-black dark:bg-gray-200 text-white dark:text-black px-2.5 sm:px-4 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors shrink-0 whitespace-nowrap">傳送</button>
+    <button type="submit" onMouseDown={e => e.preventDefault()} className="bg-black dark:bg-gray-200 text-white dark:text-black px-3 sm:px-4 py-2 no-round font-bold text-sm sm:text-base hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors shrink-0 whitespace-nowrap">傳送</button>
 </form>
                     </>
                 ) : (
