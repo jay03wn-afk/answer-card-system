@@ -34,6 +34,7 @@ const renderTestName = (rawName, isCompleted = false) => {
 // --- 新增：富文本題目解析輔助函式 ---
 
 // --- 新增：富文本題目解析輔助函式 ---
+// --- 新增：富文本題目解析輔助函式 ---
 const processQuestionContent = (content, isHtml) => {
     if (!content) return content;
     // 將 [Q.1], [Q.001] 等標記轉換為帶有 id 的 span，以便捲動定位與醒目標示
@@ -41,6 +42,18 @@ const processQuestionContent = (content, isHtml) => {
         return content.replace(/\[Q\.?0*(\d+)\]/gi, '<span id="q-marker-$1" class="q-marker inline-block font-black text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-blue-200 dark:border-blue-700 mx-1">[Q.$1]</span>');
     }
     return content;
+};
+
+// 新增：將帶有樣式的題號標籤還原回純文字，避免存入資料庫時越來越肥大
+const stripQuestionMarkers = (html) => {
+    if (!html) return html;
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    const markers = tempDiv.querySelectorAll('.q-marker');
+    markers.forEach(marker => {
+        marker.replaceWith(marker.textContent); // 剝除 span，只保留裡面的 [Q.x] 文字
+    });
+    return tempDiv.innerHTML;
 };
 
 const extractSpecificQuestion = (content, qNum, isHtml) => {
@@ -140,16 +153,16 @@ function RichInput({ label, text, setText, image, setImage, maxLength = 300, sho
 }
 
 // --- 新增：富文本編輯器 (支援 Word 貼上) ---
-// --- 新增：富文本編輯器 (支援 Word 貼上) ---
 function ContentEditableEditor({ value, onChange, placeholder, wrapperClassName = "relative w-full mb-6", editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto" }) {
     const editorRef = useRef(null);
     const [isFocused, setIsFocused] = useState(false);
 
     useEffect(() => {
-        if (editorRef.current && editorRef.current.innerHTML !== value) {
+        // 加入 !isFocused 判斷，避免在使用者打字輸入時重新賦值導致游標亂跳
+        if (editorRef.current && editorRef.current.innerHTML !== value && !isFocused) {
             editorRef.current.innerHTML = value || '';
         }
-    }, [value]);
+    }, [value, isFocused]);
 
     const handleInput = () => {
         if (editorRef.current) {
@@ -2058,8 +2071,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
                                     {!(isShared || isTask) ? (
                                         <ContentEditableEditor 
-                                            value={questionHtml} 
-                                            onChange={setQuestionHtml} 
+                                            value={processQuestionContent(questionHtml, true)} 
+                                            onChange={(html) => setQuestionHtml(stripQuestionMarkers(html))} 
                                             placeholder="在此輸入或貼上富文本試題內容..."
                                             wrapperClassName="relative w-full h-full flex flex-col flex-grow"
                                             editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar leading-relaxed"
@@ -2258,8 +2271,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
                                     {!(isShared || isTask) ? (
                                         <ContentEditableEditor 
-                                            value={questionHtml} 
-                                            onChange={setQuestionHtml} 
+                                            value={processQuestionContent(questionHtml, true)} 
+                                            onChange={(html) => setQuestionHtml(stripQuestionMarkers(html))} 
                                             placeholder="在此輸入或貼上富文本試題內容..."
                                             wrapperClassName="relative w-full h-full flex flex-col flex-grow"
                                             editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar leading-relaxed"
