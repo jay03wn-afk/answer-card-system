@@ -4,6 +4,37 @@ const cleanQuizName = (name) => {
     return name.replace(/\[#(op|m?nm?st)\]/gi, '').trim();
 };
 
+// --- 新增：富文本題目解析輔助函式 ---
+const processQuestionContent = (content, isHtml) => {
+    if (!content) return content;
+    // 將 [Q.1], [Q.001] 等標記轉換為帶有 id 的 span，以便捲動定位與醒目標示
+    if (isHtml) {
+        return content.replace(/\[Q\.?0*(\d+)\]/gi, '<span id="q-marker-$1" class="q-marker inline-block font-black text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-blue-200 dark:border-blue-700 mx-1">[Q.$1]</span>');
+    }
+    return content;
+};
+
+const extractSpecificQuestion = (content, qNum, isHtml) => {
+    if (!content) return '';
+    // 匹配 [Q.xxx] 到 下一個 [Q.xxx] 或 [End] 之間的內容
+    const regexStr = `\\[Q\\.?0*${qNum}\\]([\\s\\S]*?)(?=\\[Q\\.?\\d+\\]|\\[End\\]|$)`;
+    const regex = new RegExp(regexStr, 'i');
+    const match = content.match(regex);
+    if (match) {
+        const raw = match[1];
+        if (isHtml) {
+            // 將 HTML 轉為純文字以放入錯題本
+            const tmp = document.createElement('DIV');
+            tmp.innerHTML = raw;
+            return (tmp.textContent || tmp.innerText || '').trim();
+        }
+        return raw.trim();
+    }
+    return '';
+};
+
+// --- 新增：富文本/圖片輸入組件 ---
+
 // --- 新增：富文本/圖片輸入組件 ---
 function RichInput({ label, text, setText, image, setImage, maxLength = 300, showAlert }) {
     const handlePaste = (e) => {
@@ -1702,8 +1733,20 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         });
     };
 
+    // ✨ 新增：平滑捲動至題目錨點，並加入黃色閃爍高亮效果
+    const scrollToQuestion = (qNum) => {
+        const el = document.getElementById(`q-marker-${qNum}`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            el.classList.add('ring-4', 'ring-yellow-400', 'bg-yellow-300', 'scale-110');
+            setTimeout(() => el.classList.remove('ring-4', 'ring-yellow-400', 'bg-yellow-300', 'scale-110'), 1200);
+        }
+    };
+
     const handleAddToWrongBook = (item) => {
-        setWrongBookAddingItem(item);
+        // ✨ 修改：自動解析並擷取該題的題目內容
+        const extractedText = extractSpecificQuestion(questionHtml || questionText, item.number, !!questionHtml);
+        setWrongBookAddingItem({ ...item, extractedQText: extractedText });
     };
 
     const shareScoreToFriend = (friend) => {
@@ -1982,11 +2025,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 </div>
                             )}
                             {questionHtml && (
-                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto`}>
+                                <div className={`w-full relative bg-white dark:bg-gray-800 flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
                                     <div 
-                                        className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 text-gray-800' : 'bg-white text-black'}`}
+                                        className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-300' : 'bg-white dark:bg-gray-800 text-black dark:text-white'}`}
                                         style={{ wordBreak: 'break-word' }}
-                                        dangerouslySetInnerHTML={{ __html: questionHtml }}
+                                        // ✨ 替換為解析後的 HTML
+                                        dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
                                     />
                                 </div>
                             )}
@@ -2013,7 +2057,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                             {userAnswers.map((ans, i) => (
                                 <div key={i} className="break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 pr-2 transition-colors">
                                     <div className="flex items-center space-x-2 shrink-0 w-14">
-                                        <span className="font-mono text-sm font-bold text-gray-400 dark:text-gray-500">{i+1}.</span>
+                                        {/* ✨ 修改：將 span 替換為可點擊跳轉的 button */}
+                                        <button 
+                                            onClick={() => scrollToQuestion(i+1)}
+                                            className="font-mono text-sm font-bold text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                                            title="點擊跳轉至此題題目"
+                                        >{i+1}.</button>
                                         <button 
                                             disabled={isTimeUp}
                                             onClick={() => toggleStar(i)} 
@@ -2165,11 +2214,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 </div>
                             )}
                             {questionHtml && (
-                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto`}>
+                                <div className={`w-full relative bg-white dark:bg-gray-800 flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
                                     <div 
-                                        className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 text-gray-800' : 'bg-white text-black'}`}
+                                        className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-300' : 'bg-white dark:bg-gray-800 text-black dark:text-white'}`}
                                         style={{ wordBreak: 'break-word' }}
-                                        dangerouslySetInnerHTML={{ __html: questionHtml }}
+                                        // ✨ 替換為解析後的 HTML
+                                        dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
                                     />
                                 </div>
                             )}
@@ -2242,9 +2292,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                     if (showOnlyStarred && !item.isStarred) return false;
                                     return true;
                                 }).map((item, i) => (
-                                    <div 
+                                   <div 
                                         key={i} 
                                         onClick={() => {
+                                            scrollToQuestion(item.number); // ✨ 新增：點擊卡片時同時讓左側題目跳轉
                                             if (isTask && initialRecord.taskId) {
                                                 setCommentQNum(item.number.toString());
                                                 setShowDiscussion(true);
@@ -2253,14 +2304,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                 }, 100);
                                             }
                                         }}
-                                        className={`break-avoid flex flex-col justify-between p-3 border border-gray-100 dark:border-gray-700 no-round transition-colors ${item.isCorrect ? 'bg-green-50 dark:bg-green-900' : 'bg-red-50 dark:bg-red-900'} ${isTask ? 'cursor-pointer hover:opacity-80 hover:ring-2 ring-blue-400' : ''}`}
-                                        title={isTask ? "點擊進入此題討論" : ""}
+                                        className={`break-avoid flex flex-col justify-between p-3 border border-gray-100 dark:border-gray-700 no-round transition-colors ${item.isCorrect ? 'bg-green-50 dark:bg-green-900' : 'bg-red-50 dark:bg-red-900'} cursor-pointer hover:opacity-80 hover:ring-2 ring-blue-400`}
+                                        title="點擊跳轉至此題題目與討論"
                                     >
                                         <div className="flex justify-between items-center w-full mb-2 border-b border-gray-200 dark:border-gray-600 pb-2">
                                             <div className="flex items-center space-x-3 shrink-0">
                                                 <div className="flex items-center justify-center w-8">
                                                     {item.isStarred && <span className="text-orange-500 text-xs mr-1">★</span>}
-                                                    <span className={`font-mono text-lg font-bold ${item.isCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>{item.number}.</span>
+                                                    <span className={`font-mono text-lg font-bold hover:underline ${item.isCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>{item.number}.</span>
                                                 </div>
                                             </div>
                                             <div className="flex flex-col items-end space-y-1">
@@ -2325,8 +2376,11 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 <div className="flex space-x-2 mb-2">
                                     <select 
                                         value={commentQNum} 
-                                        onChange={e => setCommentQNum(e.target.value)}
-                                        className="p-1.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm no-round outline-none font-bold"
+                                        onChange={e => {
+                                            setCommentQNum(e.target.value);
+                                            if (e.target.value !== "0") scrollToQuestion(e.target.value); // ✨ 新增：選擇題號時同步跳轉左側題目
+                                        }}
+                                        className="p-1.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm no-round outline-none font-bold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
                                     >
                                         <option value="0">綜合討論</option>
                                         {Array.from({ length: numQuestions }, (_, i) => (
@@ -2388,10 +2442,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             )}
             
             {/* 新增：錯題收錄 Modal */}
+            {/* 新增：錯題收錄 Modal */}
             {wrongBookAddingItem && (
                 <WrongBookModal
                     title={`收錄第 ${wrongBookAddingItem.number} 題`}
-                    initialData={{ qText: '', nText: '' }}
+                    // ✨ 修改：帶入剛剛自動擷取的該題純文字
+                    initialData={{ qText: wrongBookAddingItem.extractedQText || '', nText: '' }}
                     onClose={() => setWrongBookAddingItem(null)}
                     onSave={async (data) => {
                         try {
