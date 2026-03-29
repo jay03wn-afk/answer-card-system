@@ -354,7 +354,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     const lastMyMsgId = (messages || []).slice().reverse().find(m => m.senderId === user.uid)?.id;
 
     return (
-        <div className="max-w-6xl mx-auto p-2 sm:p-4 pt-0 flex flex-col md:grid md:grid-cols-3 gap-4 md:gap-6 h-[calc(100dvh-80px)] min-h-[calc(100vh-80px)] md:h-full relative overflow-hidden">
+        <div className="max-w-6xl mx-auto p-3 sm:p-4 pt-0 flex flex-col md:grid md:grid-cols-3 gap-4 md:gap-6 h-[calc(100dvh-80px)] min-h-[calc(100vh-80px)] md:h-full relative overflow-hidden">
             
             {previewImg && (
                 <div onClick={() => setPreviewImg(null)} className="fixed inset-0 z-[200] bg-black bg-opacity-90 flex items-center justify-center p-4 cursor-zoom-out">
@@ -471,16 +471,18 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                             })}
                             <div ref={messagesEndRef} />
                         </div>
-                        <form onSubmit={sendMessage} className="p-2 sm:p-3 border-t border-gray-200 dark:border-gray-700 flex gap-1 sm:gap-2 bg-white dark:bg-gray-800 shrink-0 items-center overflow-hidden">
-    <button type="button" onMouseDown={e => e.preventDefault()} onClick={playRPS} className="bg-gray-100 dark:bg-gray-700 text-lg sm:text-xl px-2 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="猜拳">✌️</button>
+                        <form onSubmit={sendMessage} className="p-3 border-t border-gray-200 dark:border-gray-700 flex gap-2 bg-white dark:bg-gray-800 shrink-0 items-center overflow-hidden">
+    <button type="button" onMouseDown={e => e.preventDefault()} onClick={playRPS} className="bg-gray-100 dark:bg-gray-700 text-lg sm:text-xl px-2.5 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="猜拳">✌️</button>
     
-    <button type="button" onMouseDown={e => e.preventDefault()} onClick={sendGift} className="bg-gray-100 dark:bg-gray-700 text-lg sm:text-xl px-2 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="贈送鑽石">🎁</button>
+    <button type="button" onMouseDown={e => e.preventDefault()} onClick={sendGift} className="bg-gray-100 dark:bg-gray-700 text-lg sm:text-xl px-2.5 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="贈送鑽石">🎁</button>
     
-    <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => fileInputRef.current.click()} className="bg-gray-100 dark:bg-gray-700 text-lg sm:text-xl px-2 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="上傳圖片(閱後即焚)">🖼️</button>
+    <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => fileInputRef.current.click()} className="bg-gray-100 dark:bg-gray-700 text-lg sm:text-xl px-2.5 sm:px-3 py-2 no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0" title="上傳圖片(閱後即焚)">🖼️</button>
     <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
     
-    <input type="text" ref={chatInputRef} placeholder="輸入訊息..." className="flex-grow min-w-0 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none" value={newMessage} onChange={e=>setNewMessage(e.target.value)} onFocus={handleFocusScroll} />
-    <button type="submit" onMouseDown={e => e.preventDefault()} className="bg-black dark:bg-gray-200 text-white dark:text-black px-3 sm:px-4 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors shrink-0 whitespace-nowrap">傳送</button>
+    {/* ✨ 優化：在 input 上使用 p-1.5 縮小一點輸入框內的留白，換取按鈕間的間距 */}
+    <input type="text" ref={chatInputRef} placeholder="輸入訊息..." className="flex-grow min-w-0 p-1.5 sm:p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none" value={newMessage} onChange={e=>setNewMessage(e.target.value)} onFocus={handleFocusScroll} />
+    
+    <button type="submit" onMouseDown={e => e.preventDefault()} className="bg-black dark:bg-gray-200 text-white dark:text-black px-2.5 sm:px-4 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors shrink-0 whitespace-nowrap">傳送</button>
 </form>
                     </>
                 ) : (
