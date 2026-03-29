@@ -547,7 +547,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
             </div>
 
             {/* ✨ 新增：快問快答區塊 (放在最頂端) */}
-            <FastQASection user={user} showAlert={showAlert} />
+            <FastQASection user={user} showAlert={showAlert} showConfirm={showConfirm} />
 
             {/* ✨ 新增：搜尋任務列 */}
             <div className="mb-6 flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 shadow-sm no-round shrink-0">
@@ -2726,10 +2726,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         </div>
     );
 }
-// --- ✨ 新增：快問快答核心組件 ---
-// --- ✨ 新增：快問快答核心組件 (含分享與訪客模式) ---
-// --- ✨ 新增：快問快答核心組件 (含分享與訪客模式) ---
-function FastQASection({ user, showAlert, targetQaId, onClose, onRequireLogin }) {
+
+function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRequireLogin }) {
     const { useState, useEffect } = React;
     const [qaList, setQaList] = useState([]);
     const [records, setRecords] = useState({});
@@ -2854,10 +2852,20 @@ function FastQASection({ user, showAlert, targetQaId, onClose, onRequireLogin })
     };
 
     const handleDeleteQA = async (id) => {
-        if(window.confirm('確定要刪除這題嗎？')) {
+        const deleteAction = async () => {
             await window.db.collection('fastQA').doc(id).delete();
             setQaList(qaList.filter(q => q.id !== id));
             if(activeQA && activeQA.id === id) setActiveQA(null);
+        };
+
+        // 使用我們自訂的全域確認視窗，取代瀏覽器原生 confirm
+        if (showConfirm) {
+            showConfirm('確定要刪除這題嗎？', deleteAction);
+        } else {
+            // 防呆機制
+            if(window.confirm('確定要刪除這題嗎？')) {
+                deleteAction();
+            }
         }
     };
 
