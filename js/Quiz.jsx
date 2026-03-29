@@ -431,41 +431,35 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                     officialTasks[cat] && officialTasks[cat].length > 0 && (
                                         <div key={cat} className="pl-4 border-l-4 border-yellow-400 dark:border-yellow-600">
                                             <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            <div className="flex flex-col gap-2">
                                                 {officialTasks[cat].map(task => {
                                                     const localRec = myTasks[task.id];
                                                     const isCompleted = localRec && localRec.results;
                                                     const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
 
                                                     return (
-                                                        <div key={task.id} className="border border-yellow-200 dark:border-yellow-700 p-4 bg-white dark:bg-gray-800 flex flex-col justify-between hover:shadow-md transition-shadow">
-                                                            <div>
-                                                                <h3 className="font-bold text-md mb-2 dark:text-white truncate" title={task.testName}>
+                                                        <div key={task.id} className="border border-yellow-200 dark:border-yellow-700 p-3 bg-white dark:bg-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:shadow-md transition-shadow no-round">
+                                                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0 flex-grow">
+                                                                <h3 className="font-bold text-sm truncate dark:text-white max-w-full sm:max-w-[250px] md:max-w-[400px]" title={task.testName}>
                                                                     {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#op\]/g, '')}
                                                                 </h3>
-                                                                <div className="text-xs text-gray-500 mb-4 space-y-1">
-                                                                    <p className="flex gap-2">
-                                                                        <span>題數: {task.numQuestions}</span>
-                                                                        {task.hasTimer && <span className="text-red-500 font-bold">限時: {task.timeLimit}m</span>}
-                                                                    </p>
+                                                                <div className="flex items-center gap-3 text-xs shrink-0">
+                                                                    <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
+                                                                    {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
                                                                     {isCompleted ? (
-                                                                        <p className="text-green-600 dark:text-green-400 font-bold">
-                                                                            ✅ 已完成 (分數: {localRec.results.score} 分)
-                                                                        </p>
+                                                                        <span className="text-green-600 dark:text-green-400 font-bold">✅ {localRec.results.score} 分</span>
                                                                     ) : inProgress ? (
-                                                                        <p className="text-orange-500 dark:text-orange-400 font-bold">
-                                                                            📝 進行中 (已填: {localRec.userAnswers.filter(a => a).length})
-                                                                        </p>
+                                                                        <span className="text-orange-500 dark:text-orange-400 font-bold">📝 已填: {localRec.userAnswers.filter(a => a).length}</span>
                                                                     ) : (
-                                                                        <p className="text-gray-400 font-bold">⏳ 尚未作答</p>
+                                                                        <span className="text-gray-400 font-bold">⏳ 未作答</span>
                                                                     )}
                                                                 </div>
                                                             </div>
                                                             <button 
                                                                 onClick={() => handlePlayTask(task, localRec)} 
-                                                                className={`py-2 no-round font-bold text-sm transition-colors w-full ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-yellow-500 text-black hover:bg-yellow-600'}`}
+                                                                className={`py-1.5 px-4 no-round font-bold text-xs transition-colors shrink-0 w-full sm:w-auto ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-yellow-500 text-black hover:bg-yellow-600'}`}
                                                             >
-                                                                {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始測驗')}
+                                                                {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
                                                             </button>
                                                         </div>
                                                     );
@@ -489,42 +483,35 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                 tasks[cat] && tasks[cat].length > 0 && (
                                     <div key={cat} className="pl-4 border-l-4 border-indigo-300 dark:border-indigo-600">
                                         <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        <div className="flex flex-col gap-2">
                                             {tasks[cat].map(task => {
                                                 const localRec = myTasks[task.id];
                                                 const isCompleted = localRec && localRec.results;
                                                 const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
 
                                                 return (
-                                                    <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-4 bg-gray-50 dark:bg-gray-900 flex flex-col justify-between hover:shadow-md transition-shadow">
-                                                        <div>
-                                                            <h3 className="font-bold text-md mb-2 dark:text-white truncate" title={task.testName}>
+                                                    <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:shadow-md transition-shadow no-round">
+                                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0 flex-grow">
+                                                            <h3 className="font-bold text-sm truncate dark:text-white max-w-full sm:max-w-[250px] md:max-w-[400px]" title={task.testName}>
                                                                 {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#m?nm?st\]/g, '')}
                                                             </h3>
-                                                            <div className="text-xs text-gray-500 mb-4 space-y-1">
-                                                                <p className="flex gap-2">
-                                                                    <span>題數: {task.numQuestions}</span>
-                                                                    {task.hasTimer && <span className="text-red-500 font-bold">限時: {task.timeLimit}m</span>}
-                                                                </p>
-                                                                
+                                                            <div className="flex items-center gap-3 text-xs shrink-0">
+                                                                <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
+                                                                {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
                                                                 {isCompleted ? (
-                                                                    <p className="text-green-600 dark:text-green-400 font-bold">
-                                                                        ✅ 已完成 (分數: {localRec.results.score} 分)
-                                                                    </p>
+                                                                    <span className="text-green-600 dark:text-green-400 font-bold">✅ {localRec.results.score} 分</span>
                                                                 ) : inProgress ? (
-                                                                    <p className="text-orange-500 dark:text-orange-400 font-bold">
-                                                                        📝 進行中 (已填: {localRec.userAnswers.filter(a => a).length})
-                                                                    </p>
+                                                                    <span className="text-orange-500 dark:text-orange-400 font-bold">📝 已填: {localRec.userAnswers.filter(a => a).length}</span>
                                                                 ) : (
-                                                                    <p className="text-gray-400 font-bold">⏳ 尚未作答</p>
+                                                                    <span className="text-gray-400 font-bold">⏳ 未作答</span>
                                                                 )}
                                                             </div>
                                                         </div>
                                                         <button 
                                                             onClick={() => handlePlayTask(task, localRec)} 
-                                                            className={`py-2 no-round font-bold text-sm transition-colors w-full ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-black dark:bg-gray-200 text-white dark:text-black hover:bg-gray-800'}`}
+                                                            className={`py-1.5 px-4 no-round font-bold text-xs transition-colors shrink-0 w-full sm:w-auto ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-black dark:bg-gray-200 text-white dark:text-black hover:bg-gray-800'}`}
                                                         >
-                                                            {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始測驗')}
+                                                            {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
                                                         </button>
                                                     </div>
                                                 );
@@ -541,42 +528,35 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                             <h2 className="text-xl font-black mb-4 dark:text-white border-b-2 border-gray-200 dark:border-gray-700 pb-2 text-gray-600 dark:text-gray-400">
                                 🏷️ 其他任務
                             </h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <div className="flex flex-col gap-2">
                                 {tasks['模擬試題 (其他)'].map(task => {
                                     const localRec = myTasks[task.id];
                                     const isCompleted = localRec && localRec.results;
                                     const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
 
                                     return (
-                                        <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-4 bg-gray-50 dark:bg-gray-900 flex flex-col justify-between hover:shadow-md transition-shadow">
-                                            <div>
-                                                <h3 className="font-bold text-md mb-2 dark:text-white truncate" title={task.testName}>
+                                        <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:shadow-md transition-shadow no-round">
+                                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0 flex-grow">
+                                                <h3 className="font-bold text-sm truncate dark:text-white max-w-full sm:max-w-[250px] md:max-w-[400px]" title={task.testName}>
                                                     {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#m?nm?st\]/g, '')}
                                                 </h3>
-                                                <div className="text-xs text-gray-500 mb-4 space-y-1">
-                                                    <p className="flex gap-2">
-                                                        <span>題數: {task.numQuestions}</span>
-                                                        {task.hasTimer && <span className="text-red-500 font-bold">限時: {task.timeLimit}m</span>}
-                                                    </p>
-                                                    
+                                                <div className="flex items-center gap-3 text-xs shrink-0">
+                                                    <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
+                                                    {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
                                                     {isCompleted ? (
-                                                        <p className="text-green-600 dark:text-green-400 font-bold">
-                                                            ✅ 已完成 (分數: {localRec.results.score} 分)
-                                                        </p>
+                                                        <span className="text-green-600 dark:text-green-400 font-bold">✅ {localRec.results.score} 分</span>
                                                     ) : inProgress ? (
-                                                        <p className="text-orange-500 dark:text-orange-400 font-bold">
-                                                            📝 進行中 (已填: {localRec.userAnswers.filter(a => a).length})
-                                                        </p>
+                                                        <span className="text-orange-500 dark:text-orange-400 font-bold">📝 已填: {localRec.userAnswers.filter(a => a).length}</span>
                                                     ) : (
-                                                        <p className="text-gray-400 font-bold">⏳ 尚未作答</p>
+                                                        <span className="text-gray-400 font-bold">⏳ 未作答</span>
                                                     )}
                                                 </div>
                                             </div>
                                             <button 
                                                 onClick={() => handlePlayTask(task, localRec)} 
-                                                className={`py-2 no-round font-bold text-sm transition-colors w-full ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-black dark:bg-gray-200 text-white dark:text-black hover:bg-gray-800'}`}
+                                                className={`py-1.5 px-4 no-round font-bold text-xs transition-colors shrink-0 w-full sm:w-auto ${isCompleted ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' : 'bg-black dark:bg-gray-200 text-white dark:text-black hover:bg-gray-800'}`}
                                             >
-                                                {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始測驗')}
+                                                {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
                                             </button>
                                         </div>
                                     );
@@ -915,60 +895,51 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             ) : displayedRecords.length === 0 ? (
                 <div className="bg-white dark:bg-gray-800 text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 no-round shadow-sm">此分類尚無符合篩選條件的測驗紀錄。</div>
             ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 pb-10">
+                <div className="flex flex-col gap-2 pb-10">
                     {displayedRecords.map(rec => (
-                        <div key={rec.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
-                            <div>
-                                <div className="flex justify-between items-start mb-2">
-                                    <h2 className="font-bold text-lg leading-tight pr-2 flex flex-wrap items-center gap-1 dark:text-white">
-                                        <span className="truncate max-w-[150px]">{typeof renderTestName !== 'undefined' ? renderTestName(rec.testName, !!rec.results) : rec.testName}</span>
-                                        {rec.isTask && <span className="text-xs bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 no-round align-middle font-normal whitespace-nowrap">任務挑戰</span>}
-                                        {rec.isShared && !rec.isTask && <span className="text-xs bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 no-round align-middle font-normal whitespace-nowrap">好友分享</span>}
-                                        {rec.hasTimer && <span className="text-xs bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 no-round align-middle font-bold whitespace-nowrap">⏱ 限時 {rec.timeLimit}m</span>}
-                                    </h2>
-                                    {rec.results && (
-                                        <span className={`text-2xl font-black px-2 py-1 ml-2 shrink-0 ${rec.results.score >= 60 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{rec.results.score}</span>
+                        <div key={rec.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 sm:p-4 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+                            {/* 左側：標題與狀態 */}
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0 flex-grow">
+                                <h2 className="font-bold text-sm sm:text-base truncate dark:text-white flex items-center gap-2 max-w-full sm:max-w-[250px] md:max-w-[350px]">
+                                    <span className="truncate">{typeof renderTestName !== 'undefined' ? renderTestName(rec.testName, !!rec.results) : rec.testName}</span>
+                                    {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
+                                    {rec.isShared && !rec.isTask && <span className="text-[10px] bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
+                                    {rec.hasTimer && <span className="text-[10px] bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0">⏱ {rec.timeLimit}m</span>}
+                                </h2>
+                                
+                                <div className="flex items-center gap-3 text-xs shrink-0">
+                                    <span className="text-gray-500 dark:text-gray-400">{rec.numQuestions}題</span>
+                                    {rec.results ? (
+                                        <span className="text-green-600 dark:text-green-400 font-bold">✅ {rec.results.score}分</span>
+                                    ) : rec.userAnswers && rec.userAnswers.filter(a=>a).length > 0 ? (
+                                        <span className="text-orange-500 dark:text-orange-400 font-bold flex items-center gap-1">
+                                            📝 進行中
+                                            {rec.hasTimer && rec.timeRemaining !== undefined && (
+                                                <span className="text-red-500 inline-block">(剩 {Math.max(1, Math.ceil(rec.timeRemaining / 60))}m)</span>
+                                            )}
+                                        </span>
+                                    ) : (
+                                        <span className="text-gray-400 font-bold">⏳ 未作答</span>
                                     )}
                                 </div>
-                                <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">{rec.createdAt ? rec.createdAt.toDate().toLocaleString('zh-TW') : ''}</p>
-                                <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1 mb-6">
-    <p>題數：{rec.numQuestions || 0}</p>
-    {rec.results ? (
-        <p className="text-green-700 dark:text-green-400 font-bold">狀態：✅ 已完成 (答對 {rec.results.correctCount}/{rec.results.total})</p>
-    ) : (
-        rec.userAnswers && rec.userAnswers.filter(a=>a).length > 0 ? 
-        <p className="text-orange-600 dark:text-orange-400 font-bold">
-            狀態：📝 進行中 (已填 {rec.userAnswers.filter(a=>a).length})
-            {/* 新增：判斷是否有限時，且剩餘時間存在 */}
-            {rec.hasTimer && rec.timeRemaining !== undefined && (
-                <span className="text-red-500 ml-2 inline-block">
-                    ⏱ 剩 {Math.max(1, Math.ceil(rec.timeRemaining / 60))} 分鐘
-                </span>
-            )}
-        </p> :
-        <p className="text-gray-500 dark:text-gray-400 font-bold">
-            狀態：⏳ 尚未作答
-        </p>
-    )}
-</div>
                             </div>
-                            <div className="flex justify-between items-center border-t border-gray-100 dark:border-gray-700 pt-4">
-                                <div className="space-x-2 flex flex-wrap gap-2">
-                                    <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:underline transition-colors">刪除</button>
-                                    <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 font-bold transition-colors">📁 移動</button>
-                                    
-                                    {!rec.isTask && (
-                                        <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-bold transition-colors">📤 分享</button>
-                                    )}
-                                    
+
+                            {/* 右側：操作按鈕 */}
+                            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 border-gray-100 dark:border-gray-700 pt-2 sm:pt-0">
+                                <div className="flex items-center gap-3">
+                                    <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 transition-colors">刪除</button>
+                                    <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 font-bold transition-colors">📁移動</button>
+                                    {!rec.isTask && <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 dark:text-blue-400 font-bold transition-colors">📤分享</button>}
                                     {!rec.isShared && !rec.isTask && (
-                                        <button onClick={() => handleEditQuiz(rec)} className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-800 font-bold transition-colors relative">
-                                            📝 編輯試題
-                                            {rec.hasNewSuggestion && <span className="absolute -top-1 -right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
+                                        <button onClick={() => handleEditQuiz(rec)} className="text-xs text-purple-600 dark:text-purple-400 font-bold transition-colors relative">
+                                            📝編輯
+                                            {rec.hasNewSuggestion && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
                                         </button>
                                     )}
                                 </div>
-                                <button onClick={() => handleEnterQuiz(rec)} className="bg-gray-100 dark:bg-gray-700 px-4 py-2 no-round font-bold border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 dark:text-white text-sm shrink-0 transition-colors ml-2">{rec.results ? '查看詳情' : '進入測驗'}</button>
+                                <button onClick={() => handleEnterQuiz(rec)} className="bg-gray-100 dark:bg-gray-700 px-4 py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:text-white text-xs transition-colors shrink-0">
+                                    {rec.results ? '查看' : '進入'}
+                                </button>
                             </div>
                         </div>
                     ))}
@@ -1188,7 +1159,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             window.removeEventListener('mousemove', handleDragMove);
             window.removeEventListener('touchmove', handleDragMove);
             window.removeEventListener('mouseup', handleDragEnd);
-            window.removeEventListener('touchend', handleDragEnd);
+            window.removeEventListener('touchmove', handleDragEnd);
         };
     }, [isDragging, layoutMode]);
 
@@ -1268,7 +1239,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             const finalQuestionText = inputType === 'text' ? questionText : '';
             
             const updates = {
-                testName: testName.trim() || '未命名測驗', // 新增這行：儲存修改後的測驗名稱
+                testName: testName.trim() || '未命名測驗',
                 questionFileUrl: finalFileUrl,
                 questionText: finalQuestionText,
                 correctAnswersInput: cleanKey,
