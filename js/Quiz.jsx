@@ -2024,10 +2024,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                     ></textarea>
                                 </div>
                             )}
-                           {questionHtml && (
+                          {questionHtml && (
     <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
         <div 
-            className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 text-gray-800' : 'bg-white text-black'}`}
+            className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 text-black' : 'bg-white text-black'}`}
             style={{ wordBreak: 'break-word' }}
             // ✨ 替換為解析後的 HTML
             dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
