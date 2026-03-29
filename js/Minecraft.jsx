@@ -2179,8 +2179,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
                 </div>
 
-                {/* 右側商店區 */}
-                <div className="w-full h-[350px] md:h-full md:w-1/4 bg-[#333] p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 overflow-hidden relative">   
+               {/* 右側商店區 */}
+                <div className="w-full h-[220px] shrink-0 md:h-full md:w-1/4 bg-[#333] p-2 md:p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 overflow-hidden relative">
                     <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
                         <span>💰 方塊商店</span>
                         <span className="text-sm bg-black bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>
