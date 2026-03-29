@@ -2934,7 +2934,7 @@ function FastQASection({ user, showAlert, targetQaId, onClose }) {
     }
 
     return (
-        <div className={`border-2 border-pink-400 bg-pink-50 dark:bg-pink-900/20 p-4 shadow-md relative no-round w-full ${targetQaId ? 'min-h-screen m-0' : 'mb-8 shrink-0'}`}>
+        <div className={`border-2 border-pink-400 bg-pink-50 dark:bg-pink-900/20 p-4 shadow-md relative no-round w-full ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
             <div className="flex justify-between items-center mb-4 border-b border-pink-200 dark:border-pink-800 pb-2">
                 <h2 className="text-xl font-black text-pink-600 dark:text-pink-400 flex items-center">
                     ⚡ 快問快答挑戰
