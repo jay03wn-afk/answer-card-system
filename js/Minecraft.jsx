@@ -2143,7 +2143,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     <div className="grid grid-origin h-max min-h-full bg-opacity-90 w-full md:w-auto" style={{      backgroundColor: DIMENSIONS[currentDimension].bg,      
                                                                                                               gridTemplateColumns: `repeat(${activeCols}, minmax(0, 1fr))`,      
                                                                                                               minWidth: `calc((100vh - 240px) * (${activeCols}/${ROWS}))`,     
-                                                                                                              transform: `scale(${mapScale})`, // 應用初始縮放     transformOrigin: 'top left',     // 縮放原點     willChange: 'transform'          // 提示瀏覽器硬體加速 }}>
+                                                                                                              transform: `scale(${mapScale})`, }}>
                             {activeGrid.map((fgCellId, i) => {
                                 const bgCellId = activeBgGrid[i];
                                 const fgInfo = BLOCK_TYPES.find(b => b.id === fgCellId);
