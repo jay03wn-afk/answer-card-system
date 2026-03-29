@@ -712,7 +712,25 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     const [showMiningGame, setShowMiningGame] = useState(false); 
     const [showSandbox, setShowSandbox] = useState(false);
 
-    const mcData = userProfile.mcData || { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
+    // ✨ 修正：確保 mcData 的數值不為 NaN
+    const rawMcData = userProfile.mcData || {};
+    const safeNum = (val, def) => {
+        const num = Number(val);
+        return !isNaN(num) ? num : def;
+    };
+    
+    const mcData = {
+        ...rawMcData,
+        diamonds: safeNum(rawMcData.diamonds, 0),
+        level: safeNum(rawMcData.level, 1),
+        exp: safeNum(rawMcData.exp, 0),
+        hunger: safeNum(rawMcData.hunger, 10),
+        cats: safeNum(rawMcData.cats, 0),
+        sandbox_cols: safeNum(rawMcData.sandbox_cols, 20),
+        items: rawMcData.items || [],
+        lastCheckIn: rawMcData.lastCheckIn || null
+    };
+    
     const expToNextLevel = mcData.level * 20;
     
     const mcBase = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item";
@@ -1081,7 +1099,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         { id: 'furnace', name: '熔爐', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/furnace_front.png', price: 20 },
         { id: 'tnt', name: 'TNT', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/tnt_side.png', price: 100 },
         { id: 'oak_leaves', name: '橡木樹葉', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/oak_leaves.png', price: 5 },
-        { id: 'cactus', name: '仙人掌', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/cactus_side.png', price: 15 },
+        { id: 'cactus', name: '仙人幼', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/cactus_side.png', price: 15 },
         { id: 'pumpkin', name: '南瓜', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/pumpkin_side.png', price: 20 },
         { id: 'melon_side', name: '西瓜', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/melon_side.png', price: 20 }
     ];
@@ -1145,12 +1163,12 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 const newScaleFactor = currentDist / initialPinchDist.current;
                 
                 let newScale = mapScaleRef.current * newScaleFactor;
-                newScale = Math.min(Math.max(newScale, 0.5), 3); 
+                // ✨ 限制範圍在 1 ~ 3 之間
+                newScale = Math.min(Math.max(newScale, 1), 3); 
                 
                 const gridNode = mapNode.querySelector('.grid-origin');
                 if (gridNode) {
-                    gridNode.style.transform = `scale(${newScale})`;
-                    gridNode.style.transformOrigin = 'top left'; 
+                    gridNode.style.height = `${newScale * 100}%`;
                 }
                 
                 initialPinchDist.current = currentDist;
@@ -1435,6 +1453,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     
                     // 從地圖移除
                     const newSpecials = { ...specials };
+                    newSpecials[currentDimension] = { ...specials[currentDimension] };
                     delete newSpecials[currentDimension][index];
                     setSpecials(newSpecials);
                     removeSpecialFromDB(user.uid, currentDimension, index);
@@ -1451,6 +1470,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 
                 const updateDoorSpecials = (prev) => {
                     const newSpec = { ...prev };
+                    newSpec[currentDimension] = { ...newSpec[currentDimension] }; // 深層拷貝
                     if (isDoor) {
                         const isTop = hasSpecial?.half === 'top';
                         const topIdx = isTop ? index : index - activeCols;
@@ -1484,7 +1504,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         if (!isViewingSelf) return;
 
         const newInv = { ...localInventory };
-        const newSpecials = { ...specials };
         
         const removeFromHotbarIfEmpty = (inv, block) => {
             if ((inv[block] || 0) <= 0) {
@@ -1520,6 +1539,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         }
 
         // --- 處理前景實體模式 (Foreground) ---
+        // ✨ 修改：若 selectedBlock === 'erase' (鐵鎬)，會跳過互動翻轉，直接進入下方的拆除邏輯
         if (currentFg && selectedBlock !== 'erase') {
             if (currentFg.includes('_log')) {
                 setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: { type: 'rotation', rotation: (hasSpecial?.rotation || 0) === 0 ? 90 : 0 } } }));
@@ -1543,6 +1563,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 
                 setSpecials(prev => {
                     const newSpec = { ...prev };
+                    newSpec[currentDimension] = { ...newSpec[currentDimension] };
                     if(botIdx >= 0 && botIdx < TOTAL_CELLS) newSpec[currentDimension][botIdx] = { ...newSpec[currentDimension][botIdx], hinge: newHinge };
                     if(topIdx >= 0 && topIdx < TOTAL_CELLS) newSpec[currentDimension][topIdx] = { ...newSpec[currentDimension][topIdx], hinge: newHinge };
                     return newSpec;
@@ -1552,7 +1573,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 return;
             }
             
-            // ✨ 地板門：切換貼齊面 (底端、頂端、出紙面)
+            // 地板門：切換貼齊面 (底端、頂端、出紙面)
             if (currentFg.includes('_trapdoor')) {
                 const facings = ['bottom', 'top', 'face']; 
                 const currentFacing = hasSpecial?.facing || 'bottom';
@@ -1586,7 +1607,9 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
 
         if (currentFg === selectedBlock && selectedBlock !== 'erase') return; 
 
+        // ✨ 確保 React State 能確實捕捉到所有變化，避免物件覆蓋 Bug
         const newFgGrid = [...grids[currentDimension]];
+        const newSpecials = { ...specials, [currentDimension]: { ...specials[currentDimension] } }; 
         const isPlacingDoor = selectedBlock.endsWith('_door') && !selectedBlock.endsWith('_trapdoor');
         
         if (isPlacingDoor && selectedBlock !== 'erase') {
@@ -1605,13 +1628,28 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
             newInv[currentFg] = (newInv[currentFg] || 0) + 1;
             
             if (isRemovingDoor) {
-                const isTop = hasSpecial?.half === 'top';
-                const topIdx = isTop ? index : index - cols;
-                const botIdx = isTop ? index + cols : index;
-                if (topIdx >= 0) { newFgGrid[topIdx] = null; delete newSpecials[currentDimension][topIdx]; }
-                if (botIdx < TOTAL_CELLS) { newFgGrid[botIdx] = null; delete newSpecials[currentDimension][botIdx]; }
+                // ✨ 修正門拆除邏輯：更嚴謹地透過 Grid 驗證確保兩半截都能順利被拆除
+                let topIdx = index;
+                let botIdx = index;
+                if (hasSpecial?.half === 'top' || newFgGrid[index + cols] === currentFg) {
+                    topIdx = index;
+                    botIdx = index + cols;
+                } else {
+                    topIdx = index - cols;
+                    botIdx = index;
+                }
+                
+                if (topIdx >= 0 && newFgGrid[topIdx] === currentFg) { 
+                    newFgGrid[topIdx] = null; 
+                    delete newSpecials[currentDimension][topIdx]; 
+                }
+                if (botIdx < TOTAL_CELLS && newFgGrid[botIdx] === currentFg) { 
+                    newFgGrid[botIdx] = null; 
+                    delete newSpecials[currentDimension][botIdx]; 
+                }
             } else {
-                newFgGrid[index] = null; delete newSpecials[currentDimension][index];
+                newFgGrid[index] = null; 
+                delete newSpecials[currentDimension][index];
             }
         }
 
@@ -1889,7 +1927,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
                 )}
                 
-                {/* ✨ 新增：收件箱彈窗 UI */}
                 {showInbox && (
                     <div className="fixed inset-0 z-[150] bg-black bg-opacity-80 flex flex-col items-center justify-center p-4">
                         <div className="bg-[#333] border-4 border-gray-600 p-4 w-full max-w-lg shadow-2xl flex flex-col h-[70dvh]">
@@ -1999,7 +2036,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
                 )}
 
-<div className="flex-none md:flex-1 flex flex-col items-center p-1 md:p-2 w-full md:w-3/4 relative h-[65vh] md:h-full shrink-0">
+                <div className="flex-none md:flex-1 flex flex-col items-center p-1 md:p-2 w-full md:w-3/4 relative h-[65vh] md:h-full shrink-0">
                     
                     <div className="w-full flex flex-col xl:flex-row justify-between items-start xl:items-center mb-2 bg-black bg-opacity-60 p-2 text-white font-bold gap-2 z-10 shrink-0">
                         <div className="flex flex-wrap items-center gap-2">
@@ -2073,95 +2110,112 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                         </div>
                     </div>
 
-<div ref={mapContainerRef} className="w-full flex-grow overflow-auto custom-scrollbar bg-black p-1 relative shadow-inner border-2 border-black flex">
-                        {isViewingSelf && (
-                            <button onClick={() => requestExpand('left')} className="sticky left-0 top-0 bottom-0 w-8 flex-shrink-0 bg-black bg-opacity-60 hover:bg-opacity-80 text-white font-black z-20 flex items-center justify-center border-r border-gray-600 transition-all">➕</button>
-                        )}
-                        
-                    <div className="grid grid-origin h-max min-h-full bg-opacity-90 w-full md:w-auto" style={{      backgroundColor: DIMENSIONS[currentDimension].bg,      
-                                                                                                              gridTemplateColumns: `repeat(${activeCols}, minmax(0, 1fr))`,      
-                                                                                                              minWidth: `calc((100vh - 240px) * (${activeCols}/${ROWS}))`,     
-                                                                                                              transform: `scale(${mapScale})`, }}>
-                            {activeGrid.map((fgCellId, i) => {
-                                const bgCellId = activeBgGrid[i];
-                                const fgInfo = BLOCK_TYPES.find(b => b.id === fgCellId);
-                                const bgInfo = BLOCK_TYPES.find(b => b.id === bgCellId);
-                                const specialInfo = activeSpecials[i];
-                                
-                                let fgStyle = { width: '100%', height: '100%' };
-                                let fgImgSrc = fgInfo?.img;
-                                let bgImgSrc = bgInfo?.img;
-                                
-                                if (fgCellId) {
-                                    if (fgCellId.includes('_log') && specialInfo?.rotation) fgStyle.transform = `rotate(${specialInfo.rotation}deg)`;
-                                    else if (fgCellId.includes('_slab')) fgStyle.clipPath = (specialInfo?.position || 'bottom') === 'bottom' ? 'polygon(0 50%, 100% 50%, 100% 100%, 0 100%)' : 'polygon(0 0, 100% 0, 100% 50%, 0 50%)';
-                                    else if (fgCellId.includes('_stairs')) {
-                                        const rot = specialInfo?.rotation || 'bottom-right';
-                                        if (rot === 'bottom-right') fgStyle.clipPath = 'polygon(0 50%, 50% 50%, 50% 0, 100% 0, 100% 100%, 0 100%)';
-                                        else if (rot === 'bottom-left') fgStyle.clipPath = 'polygon(0 0, 50% 0, 50% 50%, 100% 50%, 100% 100%, 0 100%)';
-                                        else if (rot === 'top-right') fgStyle.clipPath = 'polygon(0 0, 100% 0, 100% 100%, 50% 100%, 50% 50%, 0 50%)';
-                                        else if (rot === 'top-left') fgStyle.clipPath = 'polygon(0 0, 100% 0, 100% 50%, 50% 50%, 50% 100%, 0 100%)';
-                                    } else if (fgCellId.endsWith('_door') && !fgCellId.endsWith('_trapdoor')) {
-                                        fgImgSrc = `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${fgCellId.split('_door')[0]}_door_${specialInfo?.half || 'bottom'}.png`;
-                                        const hinge = specialInfo?.hinge || 'left';
-                                        
-                                        if (hinge === 'left') {
-                                            fgStyle.transformOrigin = 'left'; 
-                                            fgStyle.transform = specialInfo?.open ? 'scaleX(0.2)' : 'none';
-                                        } else {
-                                            if (specialInfo?.open) {
-                                                fgStyle.transformOrigin = 'right';
-                                                fgStyle.transform = 'scaleX(0.2)'; 
-                                            } else {
-                                                fgStyle.transformOrigin = 'center';
-                                                fgStyle.transform = 'scaleX(-1)'; 
-                                            }
-                                        }
-                                    } else if (fgCellId.includes('_trapdoor')) {
-                                        // ✨ 根據 facing 繪製地板門
-                                        const facing = specialInfo?.facing || 'bottom'; 
-                                        const isOpen = specialInfo?.open || false;
-
-                                        if (facing === 'bottom') {
-                                            fgStyle.clipPath = isOpen ? 'polygon(0 0, 20% 0, 20% 100%, 0 100%)' : 'polygon(0 80%, 100% 80%, 100% 100%, 0 100%)';
-                                        } else if (facing === 'top') {
-                                            fgStyle.clipPath = isOpen ? 'polygon(0 0, 20% 0, 20% 100%, 0 100%)' : 'polygon(0 0, 100% 0, 100% 20%, 0 20%)';
-                                        } else if (facing === 'face') {
-                                            // 貼齊牆面(出紙面方向)：關閉時為整塊(none)，打開時朝上翹起(薄片)
-                                            fgStyle.clipPath = isOpen ? 'polygon(0 0, 100% 0, 100% 20%, 0 20%)' : 'none'; 
-                                        }
-                                    }
-                                }
-
-                                return (
-                                    <div 
-                                        key={i} onPointerDown={(e) => { handleCellClick(i); }} onPointerEnter={(e) => { if (e.buttons === 1) handleCellClick(i); }} 
-                                        className={`w-full aspect-square relative cursor-crosshair ${(!fgCellId && !bgCellId) ? 'border-[0.5px] border-black border-opacity-20 hover:bg-white hover:bg-opacity-30' : ''}`}
-                                        style={{ touchAction: 'pan-x pan-y' }}
-                                    >
-                                        {bgImgSrc && (
-                                            <div className="absolute inset-0 pointer-events-none" style={{ filter: 'brightness(0.4) saturate(0.8)' }}>
-                                                <McImg src={bgInfo?.img} className="w-full h-full object-cover pixelated" />
-                                            </div>
-                                        )}
-                                        {fgImgSrc && (
-                                            <div className="absolute inset-0 transition-all duration-200 pointer-events-none" style={fgStyle}>
-                                                <McImg src={fgImgSrc} className="w-full h-full object-cover pixelated drop-shadow-sm" />
-                                            </div>
-                                        )}
-                                        {specialInfo?.type === 'sign' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
-                                        {specialInfo?.type === 'poppy' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
-                                        {specialInfo?.type === 'poop' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/cocoa_beans.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
-                                        {specialInfo?.type === 'photo_map' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/filled_map.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
-                                        {specialInfo?.type === 'gift_box' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" /></div>}
-                                    </div>
-                                );
-                            })}
+                    {/* ✨ 修改畫布的包裹容器，加入縮放按鈕並且移除 transform */}
+                    <div className="w-full flex-grow relative border-2 border-black overflow-hidden flex flex-col bg-black">
+                        <div className="absolute top-2 right-2 z-40 flex flex-col gap-2">
+                            <button 
+                                onClick={() => { let n = Math.min(mapScale + 0.25, 3); setMapScale(n); mapScaleRef.current = n; }} 
+                                className="bg-[#8b8b8b] text-white w-10 h-10 font-black border-2 border-[#ffffff] border-r-[#373737] border-b-[#373737] hover:bg-[#a0a0a0] shadow-lg flex items-center justify-center text-xl active:border-t-[#373737] active:border-l-[#373737] active:border-r-white active:border-b-white cursor-pointer"
+                            >➕</button>
+                            <button 
+                                onClick={() => { let n = Math.max(mapScale - 0.25, 1); setMapScale(n); mapScaleRef.current = n; }} 
+                                className="bg-[#8b8b8b] text-white w-10 h-10 font-black border-2 border-[#ffffff] border-r-[#373737] border-b-[#373737] hover:bg-[#a0a0a0] shadow-lg flex items-center justify-center text-xl active:border-t-[#373737] active:border-l-[#373737] active:border-r-white active:border-b-white cursor-pointer"
+                            >➖</button>
                         </div>
                         
-                        {isViewingSelf && (
-                            <button onClick={() => requestExpand('right')} className="sticky right-0 top-0 bottom-0 w-8 flex-shrink-0 bg-black bg-opacity-60 hover:bg-opacity-80 text-white font-black z-20 flex items-center justify-center border-l border-gray-600 transition-all">➕</button>
-                        )}
+                        <div ref={mapContainerRef} className="w-full h-full overflow-auto custom-scrollbar p-1 relative flex">
+                            {isViewingSelf && (
+                                <button onClick={() => requestExpand('left')} className="sticky left-0 top-0 bottom-0 w-8 flex-shrink-0 bg-black bg-opacity-60 hover:bg-opacity-80 text-white font-black z-20 flex items-center justify-center border-r border-gray-600 transition-all">➕</button>
+                            )}
+                            
+                            {/* ✨ 替換原先的 scale，使用 height 搭配 aspect-ratio 做原生擴縮，解決浮動問題 */}
+                            <div className="grid grid-origin bg-opacity-90 shrink-0" 
+                                style={{      
+                                    backgroundColor: DIMENSIONS[currentDimension].bg,      
+                                    gridTemplateColumns: `repeat(${activeCols}, 1fr)`,
+                                    gridTemplateRows: `repeat(${ROWS}, 1fr)`,
+                                    height: `${mapScale * 100}%`,
+                                    aspectRatio: `${activeCols} / ${ROWS}` 
+                                }}>
+                                {activeGrid.map((fgCellId, i) => {
+                                    const bgCellId = activeBgGrid[i];
+                                    const fgInfo = BLOCK_TYPES.find(b => b.id === fgCellId);
+                                    const bgInfo = BLOCK_TYPES.find(b => b.id === bgCellId);
+                                    const specialInfo = activeSpecials[i];
+                                    
+                                    let fgStyle = { width: '100%', height: '100%' };
+                                    let fgImgSrc = fgInfo?.img;
+                                    let bgImgSrc = bgInfo?.img;
+                                    
+                                    if (fgCellId) {
+                                        if (fgCellId.includes('_log') && specialInfo?.rotation) fgStyle.transform = `rotate(${specialInfo.rotation}deg)`;
+                                        else if (fgCellId.includes('_slab')) fgStyle.clipPath = (specialInfo?.position || 'bottom') === 'bottom' ? 'polygon(0 50%, 100% 50%, 100% 100%, 0 100%)' : 'polygon(0 0, 100% 0, 100% 50%, 0 50%)';
+                                        else if (fgCellId.includes('_stairs')) {
+                                            const rot = specialInfo?.rotation || 'bottom-right';
+                                            if (rot === 'bottom-right') fgStyle.clipPath = 'polygon(0 50%, 50% 50%, 50% 0, 100% 0, 100% 100%, 0 100%)';
+                                            else if (rot === 'bottom-left') fgStyle.clipPath = 'polygon(0 0, 50% 0, 50% 50%, 100% 50%, 100% 100%, 0 100%)';
+                                            else if (rot === 'top-right') fgStyle.clipPath = 'polygon(0 0, 100% 0, 100% 100%, 50% 100%, 50% 50%, 0 50%)';
+                                            else if (rot === 'top-left') fgStyle.clipPath = 'polygon(0 0, 100% 0, 100% 50%, 50% 50%, 50% 100%, 0 100%)';
+                                        } else if (fgCellId.endsWith('_door') && !fgCellId.endsWith('_trapdoor')) {
+                                            fgImgSrc = `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${fgCellId.split('_door')[0]}_door_${specialInfo?.half || 'bottom'}.png`;
+                                            const hinge = specialInfo?.hinge || 'left';
+                                            
+                                            if (hinge === 'left') {
+                                                fgStyle.transformOrigin = 'left'; 
+                                                fgStyle.transform = specialInfo?.open ? 'scaleX(0.2)' : 'none';
+                                            } else {
+                                                if (specialInfo?.open) {
+                                                    fgStyle.transformOrigin = 'right';
+                                                    fgStyle.transform = 'scaleX(0.2)'; 
+                                                } else {
+                                                    fgStyle.transformOrigin = 'center';
+                                                    fgStyle.transform = 'scaleX(-1)'; 
+                                                }
+                                            }
+                                        } else if (fgCellId.includes('_trapdoor')) {
+                                            const facing = specialInfo?.facing || 'bottom'; 
+                                            const isOpen = specialInfo?.open || false;
+
+                                            if (facing === 'bottom') {
+                                                fgStyle.clipPath = isOpen ? 'polygon(0 0, 20% 0, 20% 100%, 0 100%)' : 'polygon(0 80%, 100% 80%, 100% 100%, 0 100%)';
+                                            } else if (facing === 'top') {
+                                                fgStyle.clipPath = isOpen ? 'polygon(0 0, 20% 0, 20% 100%, 0 100%)' : 'polygon(0 0, 100% 0, 100% 20%, 0 20%)';
+                                            } else if (facing === 'face') {
+                                                fgStyle.clipPath = isOpen ? 'polygon(0 0, 100% 0, 100% 20%, 0 20%)' : 'none'; 
+                                            }
+                                        }
+                                    }
+
+                                    return (
+                                        <div 
+                                            key={i} onPointerDown={(e) => { handleCellClick(i); }} onPointerEnter={(e) => { if (e.buttons === 1) handleCellClick(i); }} 
+                                            className={`w-full aspect-square relative cursor-crosshair ${(!fgCellId && !bgCellId) ? 'border-[0.5px] border-black border-opacity-20 hover:bg-white hover:bg-opacity-30' : ''}`}
+                                            style={{ touchAction: 'pan-x pan-y' }}
+                                        >
+                                            {bgImgSrc && (
+                                                <div className="absolute inset-0 pointer-events-none" style={{ filter: 'brightness(0.4) saturate(0.8)' }}>
+                                                    <McImg src={bgInfo?.img} className="w-full h-full object-cover pixelated" />
+                                                </div>
+                                            )}
+                                            {fgImgSrc && (
+                                                <div className="absolute inset-0 transition-all duration-200 pointer-events-none" style={fgStyle}>
+                                                    <McImg src={fgImgSrc} className="w-full h-full object-cover pixelated drop-shadow-sm" />
+                                                </div>
+                                            )}
+                                            {specialInfo?.type === 'sign' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
+                                            {specialInfo?.type === 'poppy' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
+                                            {specialInfo?.type === 'poop' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/cocoa_beans.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
+                                            {specialInfo?.type === 'photo_map' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/filled_map.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
+                                            {specialInfo?.type === 'gift_box' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" /></div>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            
+                            {isViewingSelf && (
+                                <button onClick={() => requestExpand('right')} className="sticky right-0 top-0 bottom-0 w-8 flex-shrink-0 bg-black bg-opacity-60 hover:bg-opacity-80 text-white font-black z-20 flex items-center justify-center border-l border-gray-600 transition-all">➕</button>
+                            )}
+                        </div>
                     </div>
 
                     <div className="w-full flex flex-col sm:flex-row justify-between items-center mt-3 gap-2 shrink-0">
@@ -2206,7 +2260,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                 <McImg src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" className="w-6 h-6 pixelated drop-shadow-lg" fallback="📦" />
                                 <span className="text-white font-bold text-sm">打開大背包 (裝備至快捷列)</span>
                             </button>
-                            {/* ✨ 收件箱入口 */}
                             <button onClick={() => setShowInbox(true)} className="w-full bg-blue-600 hover:bg-blue-500 border-2 border-[#1e3a8a] p-2 mb-2 rounded shadow-md flex items-center justify-center space-x-2 transition-colors shrink-0">
                                 <span className="text-white font-bold text-sm">📥 收件箱 ({(mcData.inbox || []).filter(i => i.expiresAt > Date.now()).length})</span>
                             </button>
@@ -2447,3 +2500,4 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         </div>
     );
 }
+
