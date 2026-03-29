@@ -140,7 +140,8 @@ function RichInput({ label, text, setText, image, setImage, maxLength = 300, sho
 }
 
 // --- 新增：富文本編輯器 (支援 Word 貼上) ---
-function ContentEditableEditor({ value, onChange, placeholder }) {
+// --- 新增：富文本編輯器 (支援 Word 貼上) ---
+function ContentEditableEditor({ value, onChange, placeholder, wrapperClassName = "relative w-full mb-6", editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto" }) {
     const editorRef = useRef(null);
     const [isFocused, setIsFocused] = useState(false);
 
@@ -157,9 +158,9 @@ function ContentEditableEditor({ value, onChange, placeholder }) {
     };
 
     return (
-        <div className="relative w-full mb-6">
+        <div className={wrapperClassName}>
             {!value && !isFocused && (
-                <div className="absolute top-3 left-3 text-gray-400 pointer-events-none text-sm">
+                <div className="absolute top-3 left-3 text-gray-400 pointer-events-none text-sm z-10">
                     {placeholder}
                 </div>
             )}
@@ -172,7 +173,7 @@ function ContentEditableEditor({ value, onChange, placeholder }) {
                     handleInput();
                 }}
                 onInput={handleInput}
-                className="w-full h-64 p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto"
+                className={editorClassName}
                 style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
             />
         </div>
@@ -2054,15 +2055,24 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 </div>
                             )}
                           {questionHtml && (
-    <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
-        <div 
-            className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 text-black' : 'bg-white text-black'}`}
-            style={{ wordBreak: 'break-word' }}
-            // ✨ 替換為解析後的 HTML
-            dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
-        />
-    </div>
-)}
+                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
+                                    {!(isShared || isTask) ? (
+                                        <ContentEditableEditor 
+                                            value={questionHtml} 
+                                            onChange={setQuestionHtml} 
+                                            placeholder="在此輸入或貼上富文本試題內容..."
+                                            wrapperClassName="relative w-full h-full flex flex-col flex-grow"
+                                            editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar leading-relaxed"
+                                        />
+                                    ) : (
+                                        <div 
+                                            className="w-full h-full p-4 custom-scrollbar text-sm leading-relaxed bg-gray-50 text-black"
+                                            style={{ wordBreak: 'break-word' }}
+                                            dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
+                                        />
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -2245,15 +2255,24 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 </div>
                             )}
                             {questionHtml && (
-    <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
-        <div 
-            className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 text-black' : 'bg-white text-black'}`}
-            style={{ wordBreak: 'break-word' }}
-            // ✨ 替換為解析後的 HTML
-            dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
-        />
-    </div>
-)}
+                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
+                                    {!(isShared || isTask) ? (
+                                        <ContentEditableEditor 
+                                            value={questionHtml} 
+                                            onChange={setQuestionHtml} 
+                                            placeholder="在此輸入或貼上富文本試題內容..."
+                                            wrapperClassName="relative w-full h-full flex flex-col flex-grow"
+                                            editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar leading-relaxed"
+                                        />
+                                    ) : (
+                                        <div 
+                                            className="w-full h-full p-4 custom-scrollbar text-sm leading-relaxed bg-gray-50 text-black"
+                                            style={{ wordBreak: 'break-word' }}
+                                            dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
+                                        />
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
