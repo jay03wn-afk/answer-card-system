@@ -2763,37 +2763,40 @@ function FastQASection({ user, showAlert, targetQaId, onClose }) {
         const fetchQA = async () => {
             setLoading(true);
             try {
-                // ✨ 修正問題 4：確保從全域讀取題目
-                const snapshot = await window.db.collection('fastQA').orderBy('createdAt', 'desc').get();
-                const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                
-                const now = new Date().getTime();
-                const validQas = isAdmin ? qas : qas.filter(q => !q.endTime || q.endTime > now);
-                setQaList(validQas);
-
-                // 如果從外部點擊連結，直接設定為作答狀態
+                // ✨ 優化：如果有指定題目 ID，我們「只」向資料庫請求那一題，加快訪客載入速度
                 if (targetQaId) {
-                    const target = validQas.find(q => q.id === targetQaId);
-                    if (target) {
+                    const docSnap = await window.db.collection('fastQA').doc(targetQaId).get();
+                    if (docSnap.exists) {
+                        const target = { id: docSnap.id, ...docSnap.data() };
                         setActiveQA(target);
                     } else {
                         showAlert('找不到此題目，可能已過期或被刪除！');
                     }
+                } else {
+                    // 如果沒有指定 ID (代表是列表模式)，才抓取所有題目
+                    const snapshot = await window.db.collection('fastQA').orderBy('createdAt', 'desc').get();
+                    const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    
+                    const now = new Date().getTime();
+                    const validQas = isAdmin ? qas : qas.filter(q => !q.endTime || q.endTime > now);
+                    setQaList(validQas);
                 }
 
+                // 只有已登入的用戶才需要抓取「作答紀錄」
                 if (user) {
                     const recSnap = await window.db.collection('users').doc(user.uid).collection('fastQARecords').get();
                     const recs = {};
                     recSnap.docs.forEach(doc => { recs[doc.id] = doc.data(); });
                     setRecords(recs);
 
-                    // 登入者如果點進來且已經作答過，直接顯示結果
                     if (targetQaId && recs[targetQaId]) {
                         setShowResult(true);
                     }
                 }
             } catch (e) {
                 console.error(e);
+                // ✨ 新增：如果被 Firebase 權限擋住，會明確跳出提示
+                showAlert('讀取失敗：' + e.message + '\\n(這通常是因為資料庫未開放訪客權限)');
             } finally {
                 setLoading(false);
             }
