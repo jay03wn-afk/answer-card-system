@@ -1278,8 +1278,36 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(updates);
             
             if (testName.includes('[#mnst]') || testName.includes('[#nmst]') || testName.includes('[#op]')) {
-                updates.creatorUid = currentUser.uid;
-                await window.db.collection('publicTasks').doc(quizId).set(updates, { merge: true });
+                const isOp = testName.includes('[#op]');
+                let category = '模擬試題 (其他)';
+                
+                // 自動套用分類邏輯
+                if (isOp) {
+                    if (testName.includes('藥理') || testName.includes('藥物化學')) category = '1. 藥理學與藥物化學';
+                    else if (testName.includes('藥物分析') || testName.includes('生藥') || testName.includes('中藥')) category = '2. 藥物分析學與生藥學(含中藥學)';
+                    else if (testName.includes('藥劑') || testName.includes('生物藥劑')) category = '3. 藥劑學與生物藥劑學';
+                    else category = '國考題 (其他)';
+                } else {
+                    if (testName.includes('藥物分析')) category = '1. 藥物分析學';
+                    else if (testName.includes('生藥')) category = '2. 生藥學';
+                    else if (testName.includes('中藥')) category = '3. 中藥學';
+                    else if (testName.includes('藥物化學') || testName.includes('藥理')) category = '4. 藥物化學與藥理學';
+                    else if (testName.includes('生物藥劑')) category = '6. 生物藥劑學';
+                    else if (testName.includes('藥劑')) category = '5. 藥劑學';
+                }
+
+                // 準備完整的任務資料
+                const taskUpdates = {
+                    ...updates,
+                    creatorUid: currentUser.uid,
+                    numQuestions: numQuestions,
+                    hasTimer: hasTimer,
+                    timeLimit: timeLimit,
+                    category: category,
+                    createdAt: initialRecord.createdAt || window.firebase.firestore.FieldValue.serverTimestamp() // 確保一定有建立時間，讓任務牆抓得到
+                };
+
+                await window.db.collection('publicTasks').doc(quizId).set(taskUpdates, { merge: true });
             }
 
             const myDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
