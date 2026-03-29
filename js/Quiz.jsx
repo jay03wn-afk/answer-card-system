@@ -106,7 +106,7 @@ function ContentEditableEditor({ value, onChange, placeholder }) {
                     handleInput();
                 }}
                 onInput={handleInput}
-                className="w-full h-64 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar overflow-y-auto"
+                className="w-full h-64 p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto"
                 style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
             />
         </div>
@@ -1961,9 +1961,9 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 </div>
                             )}
                             {questionHtml && (
-                                <div className={`w-full relative bg-white dark:bg-gray-800 flex flex-col flex-grow h-full overflow-y-auto`}>
+                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto`}>
                                     <div 
-                                        className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300' : 'bg-white dark:bg-gray-800 text-black dark:text-white'}`}
+                                        className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 text-gray-800' : 'bg-white text-black'}`}
                                         style={{ wordBreak: 'break-word' }}
                                         dangerouslySetInnerHTML={{ __html: questionHtml }}
                                     />
@@ -2144,9 +2144,9 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 </div>
                             )}
                             {questionHtml && (
-                                <div className={`w-full relative bg-white dark:bg-gray-800 flex flex-col flex-grow h-full overflow-y-auto`}>
+                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto`}>
                                     <div 
-                                        className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300' : 'bg-white dark:bg-gray-800 text-black dark:text-white'}`}
+                                        className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 text-gray-800' : 'bg-white text-black'}`}
                                         style={{ wordBreak: 'break-word' }}
                                         dangerouslySetInnerHTML={{ __html: questionHtml }}
                                     />
