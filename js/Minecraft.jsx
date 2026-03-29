@@ -2071,7 +2071,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                             <button onClick={() => requestExpand('left')} className="sticky left-0 top-0 bottom-0 w-8 flex-shrink-0 bg-black bg-opacity-60 hover:bg-opacity-80 text-white font-black z-20 flex items-center justify-center border-r border-gray-600 transition-all">➕</button>
                         )}
                         
-                        <div className="grid h-full mx-auto bg-opacity-90" style={{ backgroundColor: DIMENSIONS[currentDimension].bg, gridTemplateColumns: `repeat(${activeCols}, minmax(0, 1fr))`, minWidth: `calc((100vh - 240px) * (${activeCols}/${ROWS}))` }}>
+                        <div className="grid h-max min-h-full mx-auto bg-opacity-90 w-full md:w-auto" style={{ backgroundColor: DIMENSIONS[currentDimension].bg, gridTemplateColumns: `repeat(${activeCols}, minmax(0, 1fr))`, minWidth: `calc((100vh - 240px) * (${activeCols}/${ROWS}))` }}>
                             {activeGrid.map((fgCellId, i) => {
                                 const bgCellId = activeBgGrid[i];
                                 const fgInfo = BLOCK_TYPES.find(b => b.id === fgCellId);
