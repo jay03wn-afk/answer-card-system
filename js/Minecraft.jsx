@@ -1352,13 +1352,22 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
             updateMcData({ inbox: newInbox, visitorLog: [newLog, ...currentLog].slice(0, 20) }, true);
             showAlert(`📜 ${item.fromName} 的留言：\n\n「${item.text}」\n\n(已收錄至您的到訪紀錄中)`);
         } else if (action === 'view') {
+            // 更新該照片的過期時間為 10 分鐘後
+            const newExpire = Date.now() + 10 * 60 * 1000;
+            const updatedInbox = (mcData.inbox || []).map(i => 
+                i.id === item.id ? { ...i, expiresAt: newExpire } : i
+            );
+            updateMcData({ inbox: updatedInbox }, true);
+            
             setSpecialBlockModal({ 
                 type: 'photo_view', 
                 index: -1, 
                 data: item.img,
                 from: item.fromName,
-                expiresAt: item.expiresAt
+                expiresAt: newExpire
             });
+            setShowInbox(false); // 關閉收件箱避免擋住圖片
+            showAlert('⚠️ 注意：為了保護隱私，此照片將在 10 分鐘後自動銷毀！');
         }
     };
 
@@ -1375,13 +1384,22 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         if (!isBuildMode) {
             // 訪客放置
             if (!isViewingSelf && ['poppy', 'sign', 'poop', 'photo_map'].includes(selectedBlock)) {
-                if (currentFg || hasSpecial) return showAlert('❌ 只能放置在空地上喔！');
+                // 允許放在方塊上，但避免覆蓋掉門、箱子或其他禮物
+                if (hasSpecial) return showAlert('❌ 這裡已經有特殊機關或物品了，換個位子放吧！');
                 
                 if (selectedBlock === 'photo_map') {
                     if (mcData.diamonds < 50) return showAlert('💎 寄送私人照片需要 50 鑽石！');
+                    
+                    const today = new Date().toISOString().split('T')[0];
+                    const currentPhotoLog = mcData.photoSentLog?.date === today ? mcData.photoSentLog : { date: today, count: 0 };
+                    
+                    if (currentPhotoLog.count >= 5) {
+                        return showAlert('❌ 一天最多只能寄送 5 張照片喔！請明天再來。');
+                    }
+
                     setConfirmDialog({
                         title: '📸 寄送私人照片',
-                        desc: '確定要花費 50 💎 選擇並寄送照片嗎？\n(照片將在對方查看後存入收件箱)',
+                        desc: `確定要花費 50 💎 選擇並寄送照片嗎？\n(今日已發送：${currentPhotoLog.count}/5)\n(照片將在對方查看後存入收件箱)`,
                         cost: 50,
                         action: () => triggerPhotoUpload(index, viewingFriend.uid)
                     });
@@ -1599,7 +1617,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         }
 
         if (selectedBlock === 'sign') {
-            if (currentFg) return showAlert('❌ 告示牌只能插在空地上！');
+            if (hasSpecial) return showAlert('❌ 這裡已經有特殊機關或物品了，換個位子插吧！');
             if (Object.values(specials[currentDimension]).filter(s => s.type === 'sign').length >= 5) return showAlert('❌ 每個維度最多只能放 5 個告示牌！');
             if (mcData.diamonds < 10) return showAlert('💎 放置告示牌需要 10 鑽石！');
             return setSignModal({ index, isSelf: true, targetUid: user.uid });
@@ -1827,7 +1845,13 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                         return showAlert('❌ 圖片壓縮後依然過大，請選擇更小的圖片或降低解析度！');
                     }
 
-                    updateMcData({ diamonds: mcData.diamonds - 50 }, true);
+                    const today = new Date().toISOString().split('T')[0];
+                    const currentPhotoLog = mcData.photoSentLog?.date === today ? mcData.photoSentLog : { date: today, count: 0 };
+
+                    updateMcData({ 
+                        diamonds: mcData.diamonds - 50,
+                        photoSentLog: { date: today, count: currentPhotoLog.count + 1 }
+                    }, true);
 
                     const photoData = { 
                         type: 'photo_map',
