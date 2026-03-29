@@ -758,6 +758,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         { id: 'diamond_sword', name: '鑽石劍 (+50 EXP)', type: 'item', cost: 300, exp: 50, img: `${mcBase}/diamond_sword.png`, icon: '🗡️' },
         { id: 'diamond_chestplate', name: '鑽石胸甲 (+80 EXP)', type: 'item', cost: 500, exp: 80, img: `${mcBase}/diamond_chestplate.png`, icon: '💎' },
         { id: 'netherite_sword', name: '獄髓劍 (+100 EXP)', type: 'item', cost: 800, exp: 100, img: `${mcBase}/netherite_sword.png`, icon: '⚔️' },
+        { id: 'laxative', name: '瀉藥 (多拉2坨水便)', type: 'medicine', cost: 30, value: 2, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/ghast_tear.png', icon: '💊' },
     ];
 
     useEffect(() => {
@@ -867,6 +868,9 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
             updates.exp = newExp;
             updates.level = newLevel;
             updates.items = [...(mcData.items || []), item.id];
+        } else if (item.type === 'medicine') {
+            updates.laxativeBonus = (mcData.laxativeBonus || 0) + item.value;
+            showAlert(`🧪 史蒂夫吃了瀉藥...肚子開始有波浪感了！\n(額外獲得 ${item.value} 次噴水便機會)`);
         }
 
         updateMcData(updates);
@@ -1439,7 +1443,35 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 }
 
                 if (selectedBlock === 'poop') {
-                    const itemData = { type: 'poop', fromUid: user.uid, fromName: userProfile.displayName };
+                    const now = Date.now();
+                    const oneHourAgo = now - 3600000;
+                    // 過濾出一小時內的大便紀錄
+                    const recentPoops = (mcData.poopTimestamps || []).filter(t => t > oneHourAgo);
+                    const bonus = mcData.laxativeBonus || 0;
+
+                    if (recentPoops.length >= 5 && bonus <= 0) {
+                        return showAlert('❌ 肚子拉空了！一小時只能拉 5 次，除非去商城買瀉藥。');
+                    }
+
+                    let isWatery = false;
+                    let newBonus = bonus;
+
+                    // 如果正常次數用完但有藥效，觸發水便
+                    if (recentPoops.length >= 5 && bonus > 0) {
+                        isWatery = true;
+                        newBonus -= 1;
+                        showAlert('🌊 噗嚕嚕！因為瀉藥的關係拉出了水便！');
+                    } else {
+                        showAlert('💩 成功在好友家偷偷拉了一坨大便！');
+                    }
+
+                    const itemData = { type: 'poop', fromUid: user.uid, fromName: userProfile.displayName, isWatery };
+                    
+                    updateMcData({ 
+                        poopTimestamps: [...recentPoops, now],
+                        laxativeBonus: newBonus
+                    }, true);
+
                     setFriendSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: itemData } }));
                     
                     window.db.collection('users').doc(viewingFriend.uid).get().then(doc => {
@@ -1451,7 +1483,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     const newHotbar = [...hotbar];
                     newHotbar[activeHotbarIndex] = null;
                     setHotbar(newHotbar);
-                    return showAlert('💩 成功在好友家偷偷拉了一坨大便！');
+                    return;
                 }
                 return;
             }
@@ -2228,8 +2260,17 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                             )}
                                             {specialInfo?.type === 'sign' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
                                             {specialInfo?.type === 'poppy' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
-                                            {specialInfo?.type === 'poop' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/cocoa_beans.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
-                                            {specialInfo?.type === 'photo_map' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/filled_map.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
+{specialInfo?.type === 'poop' && (
+                                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                    <McImg 
+                                                        src={specialInfo.isWatery 
+                                                            ? "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/mud.png" 
+                                                            : "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/cocoa_beans.png"
+                                                        } 
+                                                        className={`w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce ${specialInfo.isWatery ? 'opacity-80 scale-110' : ''}`} 
+                                                    />
+                                                </div>
+                                            )}                                            {specialInfo?.type === 'photo_map' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/filled_map.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
                                             {specialInfo?.type === 'gift_box' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" /></div>}
                                         </div>
                                     );
