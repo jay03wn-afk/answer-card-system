@@ -91,7 +91,15 @@ const extractSpecificExplanation = (content, qNum) => {
 };
 
 // --- 新增：富文本/圖片輸入組件 ---
-
+// --- 新增：共用載入動畫組件 ---
+function LoadingSpinner({ text = "載入中..." }) {
+    return (
+        <div className="flex flex-col items-center justify-center py-16 space-y-4">
+            <div className="w-12 h-12 border-4 border-gray-200 dark:border-gray-700 border-t-black dark:border-white rounded-full animate-spin"></div>
+            <div className="text-gray-500 dark:text-gray-400 font-bold animate-pulse">{text}</div>
+        </div>
+    );
+}
 // --- 新增：富文本/圖片輸入組件 ---
 function RichInput({ label, text, setText, image, setImage, maxLength = 300, showAlert }) {
     const handlePaste = (e) => {
@@ -288,8 +296,8 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 <p className="text-sm font-bold text-gray-500 dark:text-gray-400">專屬你的弱點突破筆記本</p>
             </div>
             
-            {loading ? <div className="text-center text-gray-500 py-10 font-bold animate-pulse">載入錯題中...</div> : 
-             wrongItems.length === 0 ? <div className="text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">目前沒有收錄錯題。<br/>在測驗交卷後的檢視頁面，點擊「📓 收錄錯題」即可將題目加到這裡！</div> : 
+            {loading ? <LoadingSpinner text="載入錯題中..." /> : 
+             wrongItems.length === 0 ? <div className="text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">目前沒有收錄錯題。<br/>在測驗交卷後的檢視頁面，點擊「📓 收錄錯題」即可將題目加到這裡！</div> :
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-10">
                  {wrongItems.map(item => (
                      <div key={item.id} className="bg-white dark:bg-gray-800 p-4 border border-gray-200 dark:border-gray-700 shadow-sm relative no-round hover:shadow-md transition-shadow">
@@ -554,7 +562,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
             </div>
 
            {loading ? (
-                <div className="text-center text-gray-500 py-10 font-bold animate-pulse">正在載入公開任務...</div>
+                <LoadingSpinner text="正在載入公開任務..." />
             ) : (
                 <div className="space-y-8 pb-10">
                     
@@ -1974,13 +1982,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." />
                 )}
 
-                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解 (支援富文本)</h3>
-                <ContentEditableEditor 
-                    value={processExplanationContent(explanationHtml, true)} 
-                    onChange={(html) => setExplanationHtml(stripQuestionMarkers(html))} 
-                    placeholder="在此貼上詳解，並使用 [A.1], [A.02] 等標記對應題號..." 
-                    wrapperClassName="relative w-full mb-6"
-                    editorClassName="w-full h-48 p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto"
+                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解 (純文字)</h3>
+                <textarea 
+                    className="w-full h-48 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar"
+                    placeholder="在此貼上詳解純文字，並使用 [A.1], [A.02] 等標記對應題號..."
+                    value={explanationHtml}
+                    onChange={(e) => setExplanationHtml(e.target.value)}
                 />
 
                 <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">標準答案</h3>
@@ -2060,13 +2067,13 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." />
                 )}
                 
-                <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解 (支援富文本，選填)</h3>
-                <ContentEditableEditor 
-                    value={processExplanationContent(explanationHtml, true)} 
-                    onChange={(html) => setExplanationHtml(stripQuestionMarkers(html))} 
-                    placeholder="在此貼上詳解，並使用 [A.1], [A.02] 等標記對應題號..." 
-                    wrapperClassName="relative w-full mb-6"
-                    editorClassName="w-full h-32 p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto"
+                <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解 (純文字，選填)</h3>
+                <textarea 
+                    className="w-full h-32 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar"
+                    placeholder="在此貼上詳解純文字，並使用 [A.1], [A.02] 等標記對應題號..."
+                    value={explanationHtml}
+                    onChange={(e) => setExplanationHtml(e.target.value)}
+                    onFocus={handleFocusScroll}
                 />
 
                 {/* ✨ 修改 3-2：在 UI 加入輸入框 */}
@@ -2674,13 +2681,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                             <button onClick={() => setExplanationModalItem(null)} className="text-gray-400 hover:text-red-500 font-bold transition-colors">✖</button>
                         </h3>
                         <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-sm text-gray-800 dark:text-gray-200" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                            <style dangerouslySetInnerHTML={{__html: `
-                                .preview-rich-text p { margin-bottom: 0.75em !important; }
-                                .preview-rich-text div { margin-bottom: 0.25em !important; }
-                                .preview-rich-text ul { list-style-type: disc !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
-                                .preview-rich-text ol { list-style-type: decimal !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
-                            `}} />
-                            <div className="preview-rich-text" dangerouslySetInnerHTML={{ __html: processExplanationContent(explanationModalItem.content, true) }} />
+                            {explanationModalItem.content}
                         </div>
                         <div className="flex justify-end mt-6">
                             <button onClick={() => setExplanationModalItem(null)} className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 px-6 py-2 no-round font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shadow-sm">關閉</button>
