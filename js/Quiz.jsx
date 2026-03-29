@@ -1,3 +1,9 @@
+// --- 新增：清理試卷名稱輔助函式 ---
+const cleanQuizName = (name) => {
+    if (!name) return '';
+    return name.replace(/\[#(op|m?nm?st)\]/gi, '').trim();
+};
+
 // --- 新增：富文本/圖片輸入組件 ---
 function RichInput({ label, text, setText, image, setImage, maxLength = 300, showAlert }) {
     const handlePaste = (e) => {
@@ -200,7 +206,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                      <div key={item.id} className="bg-white dark:bg-gray-800 p-4 border border-gray-200 dark:border-gray-700 shadow-sm relative no-round hover:shadow-md transition-shadow">
                          <button onClick={() => handleDelete(item.id)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 font-bold z-10">✖</button>
                          <div className="text-xs text-blue-600 dark:text-blue-400 font-bold mb-2 pr-6 flex items-center justify-between">
-                            <span className="truncate">出自: {(item.quizName || '').replace(/\[#(op|m?nm?st)\]/gi, '').trim()} - 第 {item.questionNum} 題</span>
+                            <span className="truncate">出自: {cleanQuizName(item.quizName)} - 第 {item.questionNum} 題</span>
                             {item.quizId && (
                                 <button onClick={() => handleGoToQuiz(item.quizId)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline shrink-0 ml-2">
                                     🔗 檢視試題
@@ -322,11 +328,21 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
         const unsubMyQuizzes = window.db.collection('users').doc(user.uid).collection('quizzes')
             .onSnapshot(snap => {
                 const myTaskMap = {};
+                
+                // 第一階段：先對應所有的任務副本 (保留有成績的，避免被空白蓋掉)
                 snap.docs.forEach(doc => {
                     const data = doc.data();
                     if (data.isTask && data.taskId) {
-                        myTaskMap[data.taskId] = { id: doc.id, ...data };
-                    } else if (!data.isShared && !data.isTask) {
+                        if (!myTaskMap[data.taskId] || (!myTaskMap[data.taskId].results && data.results)) {
+                            myTaskMap[data.taskId] = { id: doc.id, ...data };
+                        }
+                    }
+                });
+
+                // 第二階段：出題者本人的原始考卷具有最高優先權，將覆蓋任何空白的任務副本
+                snap.docs.forEach(doc => {
+                    const data = doc.data();
+                    if (!data.isShared && !data.isTask) {
                         // 若是出題者本人自己的考卷，任務ID 就是該考卷的 doc.id
                         // 在此注入 isTask 與 taskId 以便讓後續 UI 可以判斷為任務模式 (如開放討論區)
                         myTaskMap[doc.id] = { id: doc.id, ...data, isTask: true, taskId: doc.id };
@@ -420,9 +436,9 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     };
 
     // 判斷搜尋後是否有資料，用來隱藏空區塊
-    const hasAnyOfficial = opCategories.some(cat => officialTasks[cat] && officialTasks[cat].some(t => t.testName.toLowerCase().includes(searchQuery.toLowerCase())));
-    const hasAnyNormal = normalCategories.slice(0, 6).some(cat => tasks[cat] && tasks[cat].some(t => t.testName.toLowerCase().includes(searchQuery.toLowerCase())));
-    const otherTasksFiltered = tasks['模擬試題 (其他)'] ? tasks['模擬試題 (其他)'].filter(t => t.testName.toLowerCase().includes(searchQuery.toLowerCase())) : [];
+    const hasAnyOfficial = opCategories.some(cat => officialTasks[cat] && officialTasks[cat].some(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())));
+    const hasAnyNormal = normalCategories.slice(0, 6).some(cat => tasks[cat] && tasks[cat].some(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())));
+    const otherTasksFiltered = tasks['模擬試題 (其他)'] ? tasks['模擬試題 (其他)'].filter(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())) : [];
 
     return (
         <div className="max-w-6xl mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar">
@@ -495,7 +511,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
 
                             <div className="space-y-8">
                                 {opCategories.map(cat => {
-                                    const filteredOpTasks = officialTasks[cat] ? officialTasks[cat].filter(t => t.testName.toLowerCase().includes(searchQuery.toLowerCase())) : [];
+                                    const filteredOpTasks = officialTasks[cat] ? officialTasks[cat].filter(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())) : [];
                                     if (filteredOpTasks.length === 0) return null;
                                     
                                     return (
@@ -510,9 +526,8 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                     return (
                                                         <div key={task.id} className="border border-yellow-200 dark:border-yellow-700 p-3 bg-white dark:bg-gray-800 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
                                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
-                                                                {/* ✨ 解除名稱限制：改為 break-words 自動折行顯示 */}
-                                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={task.testName}>
-                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}
+                                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
+                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(task.testName), isCompleted) : cleanQuizName(task.testName)}
                                                                 </h3>
                                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
@@ -552,7 +567,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                             
                             <div className="space-y-8">
                                 {normalCategories.slice(0, 6).map(cat => {
-                                    const filteredTasks = tasks[cat] ? tasks[cat].filter(t => t.testName.toLowerCase().includes(searchQuery.toLowerCase())) : [];
+                                    const filteredTasks = tasks[cat] ? tasks[cat].filter(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())) : [];
                                     if (filteredTasks.length === 0) return null;
 
                                     return (
@@ -567,8 +582,8 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                     return (
                                                         <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
                                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
-                                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={task.testName}>
-                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}
+                                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
+                                                                    {typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(task.testName), isCompleted) : cleanQuizName(task.testName)}
                                                                 </h3>
                                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
@@ -614,8 +629,8 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                     return (
                                         <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
-                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={task.testName}>
-                                                    {typeof renderTestName !== 'undefined' ? renderTestName(task.testName, isCompleted) : task.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}
+                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
+                                                    {typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(task.testName), isCompleted) : cleanQuizName(task.testName)}
                                                 </h3>
                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
@@ -814,8 +829,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 const data = doc.data();
 
                 const isContentDuplicate = records.some(r => {
-                    const localName = (r.testName || '').split(' (來自')[0].trim();
-                    const incomingName = (data.testName || '').split(' (來自')[0].trim();
+                    const localName = cleanQuizName(r.testName).split(' (來自')[0].trim();
+                    const incomingName = cleanQuizName(data.testName).split(' (來自')[0].trim();
                     return localName === incomingName && Number(r.numQuestions) === Number(data.numQuestions);
                 });
 
@@ -827,7 +842,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 const emptyStarred = Array(Number(data.numQuestions)).fill(false);
                 
                 await window.db.collection('users').doc(user.uid).collection('quizzes').add({
-                    testName: data.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim() + ' (來自代碼)',
+                    testName: cleanQuizName(data.testName) + ' (來自代碼)',
                     numQuestions: data.numQuestions,
                     questionFileUrl: data.questionFileUrl || '',
                     questionText: data.questionText || '',
@@ -847,7 +862,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
 
-                showAlert(`✅ 成功匯入「${data.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}」！\n試卷已加入「未分類」資料夾。`, "匯入成功");
+                showAlert(`✅ 成功匯入「${cleanQuizName(data.testName)}」！\n試卷已加入「未分類」資料夾。`, "匯入成功");
 
             } catch (e) {
                 console.error(e);
@@ -857,7 +872,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     };
 
     const shareToFriend = (friend) => {
-        const cleanTestName = showShareModal.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim();
+        const cleanTestName = cleanQuizName(showShareModal.testName);
         const chatId = [user.uid, friend.uid].sort().join('_');
         window.db.collection('chats').doc(chatId).collection('messages').add({
             senderId: user.uid,
@@ -901,7 +916,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         }
         
         // ✨ 新增搜尋過濾
-        if (searchQuery && !rec.testName.toLowerCase().includes(searchQuery.toLowerCase())) {
+        if (searchQuery && !cleanQuizName(rec.testName).toLowerCase().includes(searchQuery.toLowerCase())) {
             return false;
         }
         
@@ -1008,7 +1023,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                 {/* ✨ 解除名稱限制：改為 break-words 自動折行顯示 */}
                                 <h2 className="font-bold text-sm sm:text-base dark:text-white flex flex-wrap items-center gap-2 leading-relaxed">
-                                    <span className="break-words whitespace-normal">{typeof renderTestName !== 'undefined' ? renderTestName(rec.testName, !!rec.results) : rec.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}</span>
+                                    <span className="break-words whitespace-normal">{typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(rec.testName), !!rec.results) : cleanQuizName(rec.testName)}</span>
                                     {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
                                     {rec.isShared && !rec.isTask && <span className="text-[10px] bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
                                     {rec.hasTimer && <span className="text-[10px] bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0">⏱ {rec.timeLimit}m</span>}
@@ -1692,7 +1707,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     };
 
     const shareScoreToFriend = (friend) => {
-        const cleanName = testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim();
+        const cleanName = cleanQuizName(testName);
         const chatId = [currentUser.uid, friend.uid].sort().join('_');
         window.db.collection('chats').doc(chatId).collection('messages').add({
             senderId: currentUser.uid,
@@ -1875,7 +1890,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     <button onClick={onBackToDashboard} className="mr-3 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">← 返回</button>
                     <div className="overflow-hidden flex-grow flex flex-col justify-center">
                         <div className="flex items-center space-x-2">
-                            <h2 className="font-bold truncate text-base dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(testName, false) : testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}</h2>
+                            <h2 className="font-bold truncate text-base dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(testName), false) : cleanQuizName(testName)}</h2>
                             {hasTimer && (
                                 <span className={`font-mono font-bold px-1.5 py-0.5 no-round border ${isTimeUp ? 'bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border-red-200 dark:border-red-700 animate-pulse' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600'} text-xs shrink-0`}>
                                     {isTimeUp ? '時間到' : `⏱ ${formatTime(displayTime)}`}
@@ -2051,7 +2066,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
             <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10 transition-colors">
                 <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
-                    <h2 className="font-bold truncate text-base pr-4 dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(testName, true) : testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()} - 測驗結果</h2>
+                    <h2 className="font-bold truncate text-base pr-4 dark:text-white">{typeof renderTestName !== 'undefined' ? renderTestName(cleanQuizName(testName), true) : cleanQuizName(testName)} - 測驗結果</h2>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
@@ -2382,7 +2397,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         try {
                             await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').add({
                                 quizId: quizId,
-                                quizName: testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim(),
+                                quizName: cleanQuizName(testName),
                                 questionNum: wrongBookAddingItem.number,
                                 userAns: wrongBookAddingItem.userAns || '未填寫',
                                 correctAns: wrongBookAddingItem.correctAns,
