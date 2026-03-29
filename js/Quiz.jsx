@@ -546,6 +546,9 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 <p className="text-sm font-bold text-gray-500 dark:text-gray-400">完成考驗獲取獎勵鑽石！</p>
             </div>
 
+            {/* ✨ 新增：快問快答區塊 (放在最頂端) */}
+            <FastQASection user={user} showAlert={showAlert} />
+
             {/* ✨ 新增：搜尋任務列 */}
             <div className="mb-6 flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 shadow-sm no-round shrink-0">
                 <span className="text-gray-500 mr-3 text-lg">🔍</span>
@@ -2719,6 +2722,360 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     }}
                     showAlert={showAlert}
                 />
+            )}
+        </div>
+    );
+}
+// --- ✨ 新增：快問快答核心組件 ---
+// --- ✨ 新增：快問快答核心組件 (含分享與訪客模式) ---
+function FastQASection({ user, showAlert }) {
+    const { useState, useEffect } = React;
+    const [qaList, setQaList] = useState([]);
+    const [records, setRecords] = useState({});
+    const [loading, setLoading] = useState(true);
+    const [showAdminMode, setShowAdminMode] = useState(false);
+    
+    // 判斷是否為特定管理員
+    const isAdmin = user && user.email === 'jay03wn@gmail.com';
+    
+    // 管理員表單狀態
+    const [subject, setSubject] = useState('藥物分析');
+    const [difficulty, setDifficulty] = useState('簡單 (10鑽)');
+    const [endTimeStr, setEndTimeStr] = useState('');
+    const [question, setQuestion] = useState('');
+    const [options, setOptions] = useState(['', '', '', '']);
+    const [correctAns, setCorrectAns] = useState(0);
+    const [explanation, setExplanation] = useState('');
+    
+    // 作答狀態
+    const [activeQA, setActiveQA] = useState(null);
+    const [selectedAns, setSelectedAns] = useState(null);
+    const [showResult, setShowResult] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        const fetchQA = async () => {
+            try {
+                const snapshot = await window.db.collection('fastQA').orderBy('createdAt', 'desc').get();
+                const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // 過濾掉已過期的題目
+                const now = new Date().getTime();
+                const validQas = isAdmin ? qas : qas.filter(q => !q.endTime || q.endTime > now);
+                setQaList(validQas);
+
+                // ✨ 新增邏輯：檢查網址是否有分享的 qaId，若有則直接開啟該題
+                const urlParams = new URLSearchParams(window.location.search);
+                const targetQaId = urlParams.get('qaId');
+                if (targetQaId) {
+                    const targetQa = validQas.find(q => q.id === targetQaId);
+                    if (targetQa) {
+                        setActiveQA(targetQa);
+                    }
+                }
+
+                // 讀取該用戶的作答紀錄
+                if (user) {
+                    const recSnap = await window.db.collection('users').doc(user.uid).collection('fastQARecords').get();
+                    const recs = {};
+                    recSnap.docs.forEach(doc => { recs[doc.id] = doc.data(); });
+                    setRecords(recs);
+                }
+                setLoading(false);
+            } catch (e) {
+                console.error(e);
+                setLoading(false);
+            }
+        };
+        fetchQA();
+    }, [user, isAdmin]);
+
+    const getDiamonds = (diff) => {
+        if (diff.includes('10')) return 10;
+        if (diff.includes('30')) return 30;
+        if (diff.includes('50')) return 50;
+        if (diff.includes('70')) return 70;
+        if (diff.includes('100')) return 100;
+        return 10;
+    };
+
+    const handleAddQA = async () => {
+        if (!question || options.some(o => !o.trim()) || !explanation) {
+            return showAlert('請填寫完整題目、選項與詳解！');
+        }
+        try {
+            const endTimestamp = endTimeStr ? new Date(endTimeStr).getTime() : null;
+            await window.db.collection('fastQA').add({
+                subject,
+                difficulty,
+                reward: getDiamonds(difficulty),
+                endTime: endTimestamp,
+                question,
+                options,
+                correctAns,
+                explanation,
+                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+            showAlert('✅ 快問快答新增成功！');
+            setShowAdminMode(false);
+            setQuestion('');
+            setOptions(['', '', '', '']);
+            setExplanation('');
+            // 清除網址參數並重整
+            window.history.replaceState({}, '', window.location.pathname);
+            window.location.reload(); 
+        } catch (e) {
+            showAlert('新增失敗：' + e.message);
+        }
+    };
+
+    const handleDeleteQA = async (id) => {
+        if(window.confirm('確定要刪除這題嗎？')) {
+            await window.db.collection('fastQA').doc(id).delete();
+            setQaList(qaList.filter(q => q.id !== id));
+        }
+    };
+
+    // ✨ 新增分享功能
+    const handleShare = async () => {
+        const shareUrl = `${window.location.origin}${window.location.pathname}?qaId=${activeQA.id}`;
+        const plainQ = activeQA.question.replace(/<[^>]+>/g, ''); // 移除富文本標籤
+        const shortQ = plainQ.length > 25 ? plainQ.substring(0, 25) + '...' : plainQ;
+        const shareText = `⚡ 快問快答挑戰！\n【${activeQA.subject}】${activeQA.difficulty.split(' ')[0]}\n🎁 獎勵：${activeQA.reward} 鑽石\n\n📝 ${shortQ}\n\n👇 點此連結立即挑戰 👇\n${shareUrl}`;
+        
+        try {
+            if (navigator.share) {
+                await navigator.share({ title: '快問快答挑戰', text: shareText });
+            } else {
+                await navigator.clipboard.writeText(shareText);
+                showAlert('✅ 挑戰連結與文字已複製到剪貼簿！可以貼給朋友囉！');
+            }
+        } catch (err) {
+            console.log('分享取消或失敗', err);
+        }
+    };
+
+    const handleSubmitAns = async () => {
+        if (selectedAns === null) return showAlert('請選擇一個答案！');
+        
+        // ✨ 新增邏輯：未登入訪客的阻擋與引導
+        if (!user) {
+            return showAlert('✨ 您的答案已送出！\n\n請先註冊或登入帳號，才能查看正確解答、詳細解析，並將這題的💎鑽石獎勵收入囊中喔！', '訪客專屬提示');
+        }
+
+        setSubmitting(true);
+        const isCorrect = selectedAns === activeQA.correctAns;
+        
+        try {
+            await window.db.collection('users').doc(user.uid).collection('fastQARecords').doc(activeQA.id).set({
+                isCorrect,
+                selectedAns,
+                answeredAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            if (isCorrect) {
+                await window.db.collection('users').doc(user.uid).update({
+                    diamonds: window.firebase.firestore.FieldValue.increment(activeQA.reward)
+                });
+            }
+            
+            setRecords(prev => ({...prev, [activeQA.id]: { isCorrect, selectedAns }}));
+            setShowResult(true);
+        } catch (e) {
+            showAlert('送出失敗：' + e.message);
+        }
+        setSubmitting(false);
+    };
+
+    if (loading) return null;
+
+    return (
+        <div className="mb-8 border-2 border-pink-400 bg-pink-50 dark:bg-pink-900/20 p-4 shadow-md relative no-round shrink-0">
+            <div className="flex justify-between items-center mb-4 border-b border-pink-200 dark:border-pink-800 pb-2">
+                <h2 className="text-xl font-black text-pink-600 dark:text-pink-400 flex items-center">
+                    ⚡ 快問快答挑戰
+                </h2>
+                {isAdmin && (
+                    <button onClick={() => setShowAdminMode(!showAdminMode)} className="bg-pink-600 text-white text-xs px-3 py-1 font-bold no-round hover:bg-pink-700 transition-colors">
+                        {showAdminMode ? '關閉管理' : '管理試題'}
+                    </button>
+                )}
+            </div>
+
+            {/* --- 管理員新增題目區塊 --- */}
+            {isAdmin && showAdminMode && (
+                <div className="mb-6 p-4 bg-white dark:bg-gray-800 border-2 border-pink-300 no-round">
+                    <h3 className="font-bold text-pink-600 mb-3">新增快問快答</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                        <div>
+                            <label className="block text-sm font-bold mb-1 dark:text-gray-200">科目</label>
+                            <select value={subject} onChange={e=>setSubject(e.target.value)} className="w-full border p-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                {['藥物分析','生藥','中藥','藥理','藥化','藥劑','生物藥劑','其他'].map(s => <option key={s}>{s}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold mb-1 dark:text-gray-200">難度與獎勵</label>
+                            <select value={difficulty} onChange={e=>setDifficulty(e.target.value)} className="w-full border p-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                <option>簡單 (10鑽)</option>
+                                <option>中等 (30鑽)</option>
+                                <option>困難 (50鑽)</option>
+                                <option>極難 (70鑽)</option>
+                                <option>地獄 (100鑽)</option>
+                            </select>
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-bold mb-1 dark:text-gray-200">結束時間 (選填，台灣時間。留空代表直到手動刪除)</label>
+                            <input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-bold mb-1 dark:text-gray-200">題目內容 (支援富文本與直接貼上圖片)</label>
+                            <ContentEditableEditor 
+                                value={question} 
+                                onChange={setQuestion} 
+                                placeholder="請輸入題目或直接在這裡貼上圖片 (Ctrl+V)..." 
+                            />
+                        </div>
+                        {options.map((opt, idx) => (
+                            <div key={idx} className="md:col-span-2 flex items-center gap-2">
+                                <input type="radio" name="correctOpt" checked={correctAns===idx} onChange={()=>setCorrectAns(idx)} className="w-5 h-5 accent-pink-600 cursor-pointer" />
+                                <span className="font-bold text-sm dark:text-gray-200 shrink-0">正確設為此項</span>
+                                <input type="text" placeholder={`選項 ${idx+1}`} value={opt} onChange={e=>{const newO=[...options]; newO[idx]=e.target.value; setOptions(newO);}} className="flex-1 border p-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                            </div>
+                        ))}
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-bold mb-1 dark:text-gray-200">詳解</label>
+                            <textarea value={explanation} onChange={e=>setExplanation(e.target.value)} className="w-full border p-2 h-24 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="請輸入答對後顯示的詳解..."></textarea>
+                        </div>
+                    </div>
+                    <button onClick={handleAddQA} className="bg-pink-600 hover:bg-pink-700 text-white font-bold py-2 px-6 w-full no-round transition-colors">🚀 發布快問快答</button>
+                </div>
+            )}
+
+            {/* --- 題目列表與作答介面 --- */}
+            {!activeQA ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {qaList.length === 0 ? (
+                        <div className="text-pink-500 font-bold text-sm col-span-full text-center py-6 border-2 border-dashed border-pink-300">目前沒有開放的快問快答，請晚點再來！</div>
+                    ) : (
+                        qaList.map(qa => {
+                            const rec = records[qa.id];
+                            return (
+                                <div key={qa.id} className="bg-white dark:bg-gray-800 p-4 border border-pink-200 flex flex-col no-round shadow-sm hover:shadow-md transition-shadow">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <span className="bg-pink-100 dark:bg-pink-900 text-pink-800 dark:text-pink-200 text-xs px-2 py-1 font-bold no-round">{qa.subject}</span>
+                                        <span className="text-pink-600 dark:text-pink-400 font-bold text-sm flex items-center gap-1">💎 {qa.reward} 鑽</span>
+                                    </div>
+                                    <p className="text-sm text-black dark:text-white mb-4 flex-1 line-clamp-3 font-medium">{qa.question.replace(/<[^>]+>/g, '')}</p>
+                                    
+                                    <div className="flex items-center justify-between mt-auto pt-3 border-t border-gray-100 dark:border-gray-700">
+                                        {!user ? (
+                                            <span className="text-gray-400 text-sm font-bold">訪客未登入</span>
+                                        ) : rec ? (
+                                            <span className={`font-bold text-sm ${rec.isCorrect ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+                                                {rec.isCorrect ? '✅ 已答對' : '❌ 答錯了'}
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-400 text-sm font-bold">尚未作答</span>
+                                        )}
+                                        
+                                        <div className="flex gap-2 items-center">
+                                            {isAdmin && showAdminMode && (
+                                                <button onClick={() => handleDeleteQA(qa.id)} className="text-red-500 text-xs font-bold hover:underline">刪除</button>
+                                            )}
+                                            <button 
+                                                onClick={() => { setActiveQA(qa); setSelectedAns(null); setShowResult(!!rec); }} 
+                                                className="bg-pink-500 hover:bg-pink-600 text-white px-3 py-1.5 text-sm font-bold no-round transition-colors"
+                                            >
+                                                {(user && rec) ? '查看紀錄' : '立即挑戰'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            ) : (
+                <div className="bg-white dark:bg-gray-800 p-6 border-2 border-pink-300 no-round animate-fade-in">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={() => { 
+                            setActiveQA(null); 
+                            // ✨ 清除網址列的 qaId 參數，保持網址乾淨
+                            window.history.replaceState({}, '', window.location.pathname); 
+                        }} className="text-gray-500 text-sm font-bold hover:text-black dark:hover:text-white transition-colors">⬅ 返回列表</button>
+                        
+                        {/* ✨ 新增：分享按鈕 */}
+                        <button onClick={handleShare} className="text-pink-600 bg-pink-100 hover:bg-pink-200 dark:bg-pink-900 dark:text-pink-300 dark:hover:bg-pink-800 px-3 py-1.5 text-sm font-bold no-round transition-colors flex items-center gap-1 shadow-sm">
+                            🔗 分享此題
+                        </button>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2 justify-between items-center mb-6 border-b pb-4 dark:border-gray-700">
+                        <div className="flex gap-2">
+                            <span className="bg-pink-100 dark:bg-pink-900 text-pink-800 dark:text-pink-200 text-sm px-2 py-1 font-bold no-round">{activeQA.subject}</span>
+                            <span className="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm px-2 py-1 font-bold no-round">{activeQA.difficulty.split(' ')[0]}</span>
+                        </div>
+                        <span className="text-pink-600 dark:text-pink-400 font-bold text-lg">💎 {activeQA.reward} 鑽石獎勵</span>
+                    </div>
+                    
+                    {/* ✨ 修改為富文本顯示，且強制 bg-white text-black 不受夜間模式影響 */}
+                    <div 
+                        className="text-lg font-bold mb-6 bg-white text-black p-5 border border-gray-300 shadow-sm no-round leading-relaxed overflow-x-auto" 
+                        dangerouslySetInnerHTML={{ __html: activeQA.question }}
+                    ></div>
+                    
+                    <div className="space-y-3 mb-6">
+                        {activeQA.options.map((opt, idx) => {
+                            const isSelected = (selectedAns ?? records[activeQA.id]?.selectedAns) === idx;
+                            const isCorrectOpt = activeQA.correctAns === idx;
+                            
+                            let btnClass = "w-full text-left p-4 border-2 font-bold transition-all no-round text-lg flex items-center justify-between ";
+                            
+                            if (showResult) {
+                                if (isCorrectOpt) btnClass += "bg-green-100 border-green-500 text-green-800 dark:bg-green-900/40 dark:text-green-300 dark:border-green-600 ";
+                                else if (isSelected) btnClass += "bg-red-100 border-red-500 text-red-800 dark:bg-red-900/40 dark:text-red-300 dark:border-red-600 ";
+                                else btnClass += "bg-gray-50 border-gray-200 text-gray-500 opacity-60 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 ";
+                            } else {
+                                btnClass += isSelected 
+                                    ? "border-pink-500 bg-pink-50 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300 " 
+                                    : "border-gray-300 hover:border-pink-300 bg-white dark:bg-gray-800 dark:border-gray-600 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 ";
+                            }
+
+                            return (
+                                <button 
+                                    key={idx} 
+                                    disabled={showResult}
+                                    onClick={() => setSelectedAns(idx)}
+                                    className={btnClass}
+                                >
+                                    <span><span className="mr-3 inline-block w-6 text-center font-black">{['A','B','C','D'][idx]}.</span> {opt}</span>
+                                    {showResult && isCorrectOpt && <span className="text-xl">✅</span>}
+                                    {showResult && isSelected && !isCorrectOpt && <span className="text-xl">❌</span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {!showResult ? (
+                        <button 
+                            onClick={handleSubmitAns} 
+                            disabled={submitting}
+                            className="w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-4 text-xl no-round transition-colors disabled:opacity-50"
+                        >
+                            {submitting ? '送出中...' : '確認送出'}
+                        </button>
+                    ) : (
+                        <div className="mt-6 p-5 bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-300 dark:border-yellow-700 no-round animate-fade-in">
+                            <h4 className="font-bold text-yellow-800 dark:text-yellow-400 mb-3 flex items-center text-lg">
+                                💡 詳解 
+                                {records[activeQA.id]?.isCorrect && (
+                                    <span className="ml-auto text-green-600 dark:text-green-400">🎉 恭喜！已獲得 {activeQA.reward} 鑽！</span>
+                                )}
+                            </h4>
+                            <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap text-md leading-relaxed">{activeQA.explanation}</div>
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     );
