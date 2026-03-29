@@ -913,12 +913,12 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         if (!packData) return;
 
         let min, max, pools;
-        if (packId === 'pack_checkin') { min = 20; max = 20; pools = ['dirt', 'stone', 'cobblestone', 'sand', 'gravel', 'oak_planks']; }
+        
         if (packId === 'pack_basic') { min = 50; max = 100; pools = ['dirt', 'stone', 'cobblestone', 'sand', 'gravel', 'oak_log', 'oak_planks']; }
         else if (packId === 'pack_rare') { min = 100; max = 200; pools = ['glass', 'bricks', 'iron_block', 'chest_block', 'oak_door']; }
         else if (packId === 'pack_epic') { min = 150; max = 250; pools = ['gold_block', 'obsidian', 'netherrack', 'glowstone', 'magma_block']; }
-        else { min = 200; max = 300; pools = ['diamond_block', 'emerald_block', 'end_stone', 'purpur_block']; }
-
+        else if (packId === 'pack_legendary') { min = 200; max = 300; pools = ['diamond_block', 'emerald_block', 'end_stone', 'purpur_block']; }
+        else { min = 20; max = 20; pools = ['dirt', 'stone', 'cobblestone', 'sand', 'gravel', 'oak_planks']; }
         const totalAmount = Math.floor(Math.random() * (max - min + 1)) + min;
         const newInv = { ...mcData.inventory };
         
