@@ -34,43 +34,58 @@ const renderTestName = (rawName, isCompleted = false) => {
 // --- 新增：富文本題目解析輔助函式 ---
 
 // --- 新增：富文本題目解析輔助函式 ---
-// --- 新增：富文本題目解析輔助函式 ---
+// --- 新增：富文本題目與詳解解析輔助函式 ---
 const processQuestionContent = (content, isHtml) => {
     if (!content) return content;
-    // 將 [Q.1], [Q.001] 等標記轉換為帶有 id 的 span，以便捲動定位與醒目標示
     if (isHtml) {
         return content.replace(/\[Q\.?0*(\d+)\]/gi, '<span id="q-marker-$1" class="q-marker inline-block font-black text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-blue-200 dark:border-blue-700 mx-1">[Q.$1]</span>');
     }
     return content;
 };
 
-// 新增：將帶有樣式的題號標籤還原回純文字，避免存入資料庫時越來越肥大
+const processExplanationContent = (content, isHtml) => {
+    if (!content) return content;
+    if (isHtml) {
+        return content.replace(/\[A\.?0*(\d+)\]/gi, '<span id="a-marker-$1" class="a-marker inline-block font-black text-green-800 dark:text-green-200 bg-green-100 dark:bg-green-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-green-200 dark:border-green-700 mx-1">[A.$1]</span>');
+    }
+    return content;
+};
+
 const stripQuestionMarkers = (html) => {
     if (!html) return html;
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = html;
-    const markers = tempDiv.querySelectorAll('.q-marker');
+    const markers = tempDiv.querySelectorAll('.q-marker, .a-marker');
     markers.forEach(marker => {
-        marker.replaceWith(marker.textContent); // 剝除 span，只保留裡面的 [Q.x] 文字
+        marker.replaceWith(marker.textContent); 
     });
     return tempDiv.innerHTML;
 };
 
 const extractSpecificQuestion = (content, qNum, isHtml) => {
     if (!content) return '';
-    // 匹配 [Q.xxx] 到 下一個 [Q.xxx] 或 [End] 之間的內容
     const regexStr = `\\[Q\\.?0*${qNum}\\]([\\s\\S]*?)(?=\\[Q\\.?\\d+\\]|\\[End\\]|$)`;
     const regex = new RegExp(regexStr, 'i');
     const match = content.match(regex);
     if (match) {
         const raw = match[1];
         if (isHtml) {
-            // 將 HTML 轉為純文字以放入錯題本
             const tmp = document.createElement('DIV');
             tmp.innerHTML = raw;
             return (tmp.textContent || tmp.innerText || '').trim();
         }
         return raw.trim();
+    }
+    return '';
+};
+
+const extractSpecificExplanation = (content, qNum) => {
+    if (!content) return '';
+    const regexStr = `\\[A\\.?0*${qNum}\\]([\\s\\S]*?)(?=\\[A\\.?\\d+\\]|\\[End\\]|$)`;
+    const regex = new RegExp(regexStr, 'i');
+    const match = content.match(regex);
+    if (match) {
+        return match[1].trim(); // 保留 HTML 結構供顯示
     }
     return '';
 };
@@ -927,6 +942,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     questionFileUrl: data.questionFileUrl || '',
                     questionText: data.questionText || '',
                     questionHtml: data.questionHtml || '',
+                    explanationHtml: data.explanationHtml || '', 
                     correctAnswersInput: data.correctAnswersInput || '', 
                     publishAnswers: data.publishAnswers !== false,
                     userAnswers: emptyAnswers,
@@ -975,6 +991,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 questionFileUrl: showShareModal.questionFileUrl || '',
                 questionText: showShareModal.questionText || '',
                 questionHtml: showShareModal.questionHtml || '',
+                explanationHtml: showShareModal.explanationHtml || '',
                 correctAnswersInput: showShareModal.correctAnswersInput || ''
             }
         }).then(() => {
@@ -1042,26 +1059,30 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 <button onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 shadow-sm transition-colors">+ 新測驗</button>
             </div>
 
-            <div className="flex items-center space-x-2 mb-2 overflow-x-auto custom-scrollbar pb-2 shrink-0">
-                {userFolders.map(f => (
-                    <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
-                        {f === '我建立的試題' ? '⭐ ' : '📁 '} {f}
+            <div className="flex flex-col md:flex-row gap-2 mb-2 shrink-0 w-full overflow-hidden">
+                <div className="flex items-center space-x-2 overflow-x-auto custom-scrollbar pb-1 flex-grow">
+                    {userFolders.map(f => (
+                        <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
+                            {f === '我建立的試題' ? '⭐ ' : '📁 '} {f}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex items-center space-x-2 overflow-x-auto custom-scrollbar pb-1 shrink-0">
+                    <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors">
+                        + 新增資料夾
                     </button>
-                ))}
-                <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors">
-                    + 新增資料夾
-                </button>
-                <button onClick={handleImportCode} className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors">
-                    📥 輸入代碼
-                </button>
-                {!specialFolders.includes(currentFolder) && (
-                    <button 
-                        onClick={() => handleDeleteFolder(currentFolder)} 
-                        className="px-3 py-1.5 text-sm font-bold bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800 no-round whitespace-nowrap transition-colors"
-                    >
-                        🗑️ 刪除目前資料夾
+                    <button onClick={handleImportCode} className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors">
+                        📥 輸入代碼
                     </button>
-                )}
+                    {!specialFolders.includes(currentFolder) && (
+                        <button 
+                            onClick={() => handleDeleteFolder(currentFolder)} 
+                            className="px-3 py-1.5 text-sm font-bold bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800 no-round whitespace-nowrap transition-colors"
+                        >
+                            🗑️ 刪除目前資料夾
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* ✨ 新增：過濾器與搜尋列整合排版 */}
@@ -1228,9 +1249,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
     const [questionText, setQuestionText] = useState(initialRecord.questionText || ''); 
     const [questionHtml, setQuestionHtml] = useState(initialRecord.questionHtml || ''); // ✨ 新增富文本狀態
+    const [explanationHtml, setExplanationHtml] = useState(initialRecord.explanationHtml || ''); // ✨ 新增詳解狀態
     const [folder, setFolder] = useState(initialRecord.folder || '未分類');
     const [shortCode, setShortCode] = useState(initialRecord.shortCode || null);
-    const [pdfZoom, setPdfZoom] = useState(1); 
+    const [pdfZoom, setPdfZoom] = useState(1);
     const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.publishAnswers !== false);
     
     const [taskScores, setTaskScores] = useState(null);
@@ -1281,6 +1303,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [showShareScoreModal, setShowShareScoreModal] = useState(false);
     
     const [wrongBookAddingItem, setWrongBookAddingItem] = useState(null);
+    const [explanationModalItem, setExplanationModalItem] = useState(null); // ✨ 新增詳解彈窗狀態
 
     const starredIndices = starred.map((s, i) => s ? i + 1 : null).filter(Boolean);
     const canSeeAnswers = initialRecord.publishAnswers !== false;
@@ -1312,7 +1335,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             
             const stateToSave = { 
                 testName, numQuestions, userAnswers, starred, correctAnswersInput, results, 
-                questionFileUrl, questionText, questionHtml, hasTimer, timeLimit, folder,
+                questionFileUrl, questionText, questionHtml, explanationHtml, hasTimer, timeLimit, folder,
                 updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
             };
             if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
@@ -1320,7 +1343,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
                 .catch(e => console.error("自動儲存失敗", e));
         }
-    }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, questionText, questionHtml, folder, currentUser, quizId, step, syncTrigger]);
+    }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, questionText, questionHtml, explanationHtml, folder, currentUser, quizId, step, syncTrigger]);
 
     useEffect(() => {
         if (step === 'results' && isTask && initialRecord.taskId) {
@@ -1408,47 +1431,49 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         setQuestionHtml(finalQuestionHtml);
 
         window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
-            testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
-            correctAnswersInput: cleanKey, // ✨ 改帶入整理好的答案
-            publishAnswers: true, 
-            questionFileUrl: finalFileUrl,
-            questionText: finalQuestionText,
-            questionHtml: finalQuestionHtml,
-            hasTimer: hasTimer,
-            timeLimit: hasTimer ? Number(timeLimit) : null,
-            timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
-            folder: folder,
-            createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-        }).then(async docRef => {
-            setQuizId(docRef.id);
-
-            // ✨ 新增：在建立測驗時，立刻檢查是否有任務標籤，有則同步發布至公開任務牆
-            const isOp = testName.includes('[#op]');
-            const isMnst = testName.includes('[#mnst]') || testName.includes('[#nmst]');
-            
-            if (isOp || isMnst) {
-                let category = '模擬試題 (其他)';
-                if (isOp) {
-                    if (testName.includes('藥理') || testName.includes('藥物化學')) category = '1. 藥理學與藥物化學';
-                    else if (testName.includes('藥物分析') || testName.includes('生藥') || testName.includes('中藥')) category = '2. 藥物分析學與生藥學(含中藥學)';
-                    else if (testName.includes('藥劑') || testName.includes('生物藥劑')) category = '3. 藥劑學與生物藥劑學';
-                    else category = '國考題 (其他)';
-                } else {
-                    if (testName.includes('藥物分析')) category = '1. 藥物分析學';
-                    else if (testName.includes('生藥')) category = '2. 生藥學';
-                    else if (testName.includes('中藥')) category = '3. 中藥學';
-                    else if (testName.includes('藥物化學') || testName.includes('藥理')) category = '4. 藥物化學與藥理學';
-                    else if (testName.includes('生物藥劑')) category = '6. 生物藥劑學';
-                    else if (testName.includes('藥劑')) category = '5. 藥劑學';
-                }
-
-                await window.db.collection('publicTasks').doc(docRef.id).set({
-                    testName, 
-                    numQuestions, 
-                    questionFileUrl: finalFileUrl, 
-                    questionText: finalQuestionText, 
-                    questionHtml: finalQuestionHtml,
+                    testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
                     correctAnswersInput: cleanKey, // ✨ 改帶入整理好的答案
+                    publishAnswers: true, 
+                    questionFileUrl: finalFileUrl,
+                    questionText: finalQuestionText,
+                    questionHtml: finalQuestionHtml,
+                    explanationHtml: explanationHtml,
+                    hasTimer: hasTimer,
+                    timeLimit: hasTimer ? Number(timeLimit) : null,
+                    timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
+                    folder: folder,
+                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                }).then(async docRef => {
+                    setQuizId(docRef.id);
+
+                    // ✨ 新增：在建立測驗時，立刻檢查是否有任務標籤，有則同步發布至公開任務牆
+                    const isOp = testName.includes('[#op]');
+                    const isMnst = testName.includes('[#mnst]') || testName.includes('[#nmst]');
+                    
+                    if (isOp || isMnst) {
+                        let category = '模擬試題 (其他)';
+                        if (isOp) {
+                            if (testName.includes('藥理') || testName.includes('藥物化學')) category = '1. 藥理學與藥物化學';
+                            else if (testName.includes('藥物分析') || testName.includes('生藥') || testName.includes('中藥')) category = '2. 藥物分析學與生藥學(含中藥學)';
+                            else if (testName.includes('藥劑') || testName.includes('生物藥劑')) category = '3. 藥劑學與生物藥劑學';
+                            else category = '國考題 (其他)';
+                        } else {
+                            if (testName.includes('藥物分析')) category = '1. 藥物分析學';
+                            else if (testName.includes('生藥')) category = '2. 生藥學';
+                            else if (testName.includes('中藥')) category = '3. 中藥學';
+                            else if (testName.includes('藥物化學') || testName.includes('藥理')) category = '4. 藥物化學與藥理學';
+                            else if (testName.includes('生物藥劑')) category = '6. 生物藥劑學';
+                            else if (testName.includes('藥劑')) category = '5. 藥劑學';
+                        }
+
+                        await window.db.collection('publicTasks').doc(docRef.id).set({
+                            testName, 
+                            numQuestions, 
+                            questionFileUrl: finalFileUrl, 
+                            questionText: finalQuestionText, 
+                            questionHtml: finalQuestionHtml,
+                            explanationHtml: explanationHtml,
+                            correctAnswersInput: cleanKey, // ✨ 改帶入整理好的答案
                     hasTimer, 
                     timeLimit: hasTimer ? Number(timeLimit) : null, 
                     category, 
@@ -1511,6 +1536,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 questionFileUrl: finalFileUrl,
                 questionText: finalQuestionText,
                 questionHtml: finalQuestionHtml,
+                explanationHtml: explanationHtml,
                 correctAnswersInput: cleanKey,
                 publishAnswers: publishAnswersToggle
             };
@@ -1658,7 +1684,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 }
 
                 await window.db.collection('publicTasks').doc(quizId).set({
-                    testName, numQuestions, questionFileUrl, questionText, questionHtml,
+                    testName, numQuestions, questionFileUrl, questionText, questionHtml, explanationHtml,
                     correctAnswersInput: cleanKey, hasTimer, timeLimit, category, creatorUid: currentUser.uid,
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 }, { merge: true });
@@ -1888,6 +1914,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 questionFileUrl: questionFileUrl || '',
                 questionText: questionText || '',
                 questionHtml: questionHtml || '',
+                explanationHtml: explanationHtml || '',
                 correctAnswersInput: correctAnswersInput || ''
             }
         }).then(() => {
@@ -1946,6 +1973,15 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 ) : (
                     <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." />
                 )}
+
+                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解 (支援富文本)</h3>
+                <ContentEditableEditor 
+                    value={processExplanationContent(explanationHtml, true)} 
+                    onChange={(html) => setExplanationHtml(stripQuestionMarkers(html))} 
+                    placeholder="在此貼上詳解，並使用 [A.1], [A.02] 等標記對應題號..." 
+                    wrapperClassName="relative w-full mb-6"
+                    editorClassName="w-full h-48 p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto"
+                />
 
                 <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">標準答案</h3>
                 <textarea className="w-full h-24 mb-2 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
@@ -2024,6 +2060,15 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." />
                 )}
                 
+                <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解 (支援富文本，選填)</h3>
+                <ContentEditableEditor 
+                    value={processExplanationContent(explanationHtml, true)} 
+                    onChange={(html) => setExplanationHtml(stripQuestionMarkers(html))} 
+                    placeholder="在此貼上詳解，並使用 [A.1], [A.02] 等標記對應題號..." 
+                    wrapperClassName="relative w-full mb-6"
+                    editorClassName="w-full h-32 p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto"
+                />
+
                 {/* ✨ 修改 3-2：在 UI 加入輸入框 */}
                 <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2">標準答案 (選填，交卷時會自動批改)</h3>
                 <textarea className="w-full h-24 mb-6 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
@@ -2495,7 +2540,15 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex justify-end w-full">
+                                        <div className="flex justify-end w-full gap-2">
+                                            {explanationHtml && extractSpecificExplanation(explanationHtml, item.number) && (
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); setExplanationModalItem({ number: item.number, content: extractSpecificExplanation(explanationHtml, item.number) }); }} 
+                                                    className="text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-green-600 dark:text-green-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                                                >
+                                                    💡 查看詳解
+                                                </button>
+                                            )}
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); handleAddToWrongBook(item); }} 
                                                 className="text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
@@ -2612,6 +2665,30 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             )}
             
             {/* 新增：錯題收錄 Modal */}
+            {/* 新增：詳解 Modal */}
+            {explanationModalItem && (
+                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100] p-4" onClick={() => setExplanationModalItem(null)}>
+                    <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-2xl no-round shadow-2xl transform transition-all max-h-[90dvh] overflow-y-auto custom-scrollbar border-t-4 border-green-500" onClick={e => e.stopPropagation()}>
+                        <h3 className="font-black text-xl mb-4 flex justify-between items-center dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
+                            <span className="text-green-600 dark:text-green-400">💡 第 {explanationModalItem.number} 題 詳解</span>
+                            <button onClick={() => setExplanationModalItem(null)} className="text-gray-400 hover:text-red-500 font-bold transition-colors">✖</button>
+                        </h3>
+                        <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-sm text-gray-800 dark:text-gray-200" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            <style dangerouslySetInnerHTML={{__html: `
+                                .preview-rich-text p { margin-bottom: 0.75em !important; }
+                                .preview-rich-text div { margin-bottom: 0.25em !important; }
+                                .preview-rich-text ul { list-style-type: disc !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
+                                .preview-rich-text ol { list-style-type: decimal !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
+                            `}} />
+                            <div className="preview-rich-text" dangerouslySetInnerHTML={{ __html: processExplanationContent(explanationModalItem.content, true) }} />
+                        </div>
+                        <div className="flex justify-end mt-6">
+                            <button onClick={() => setExplanationModalItem(null)} className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 px-6 py-2 no-round font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shadow-sm">關閉</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* 新增：錯題收錄 Modal */}
             {wrongBookAddingItem && (
                 <WrongBookModal
