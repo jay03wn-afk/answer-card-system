@@ -2067,19 +2067,19 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                     ></textarea>
                                 </div>
                             )}
-                          {questionHtml && (
-                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
+                         {questionHtml && (
+                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full`}>
                                     {!(isShared || isTask) ? (
                                         <ContentEditableEditor 
                                             value={processQuestionContent(questionHtml, true)} 
                                             onChange={(html) => setQuestionHtml(stripQuestionMarkers(html))} 
                                             placeholder="在此輸入或貼上富文本試題內容..."
-                                            wrapperClassName="relative w-full h-full flex flex-col flex-grow"
-                                            editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar leading-relaxed"
+                                            wrapperClassName="absolute inset-0 w-full h-full flex flex-col"
+                                            editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar overflow-y-auto leading-relaxed"
                                         />
                                     ) : (
                                         <div 
-                                            className="w-full h-full p-4 custom-scrollbar text-sm leading-relaxed bg-gray-50 text-black"
+                                            className="absolute inset-0 w-full h-full p-4 custom-scrollbar text-sm leading-relaxed bg-gray-50 text-black overflow-y-auto"
                                             style={{ wordBreak: 'break-word' }}
                                             dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
                                         />
@@ -2268,18 +2268,18 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 </div>
                             )}
                             {questionHtml && (
-                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
+                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full`}>
                                     {!(isShared || isTask) ? (
                                         <ContentEditableEditor 
                                             value={processQuestionContent(questionHtml, true)} 
                                             onChange={(html) => setQuestionHtml(stripQuestionMarkers(html))} 
                                             placeholder="在此輸入或貼上富文本試題內容..."
-                                            wrapperClassName="relative w-full h-full flex flex-col flex-grow"
-                                            editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar leading-relaxed"
+                                            wrapperClassName="absolute inset-0 w-full h-full flex flex-col"
+                                            editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar overflow-y-auto leading-relaxed"
                                         />
                                     ) : (
                                         <div 
-                                            className="w-full h-full p-4 custom-scrollbar text-sm leading-relaxed bg-gray-50 text-black"
+                                            className="absolute inset-0 w-full h-full p-4 custom-scrollbar text-sm leading-relaxed bg-gray-50 text-black overflow-y-auto"
                                             style={{ wordBreak: 'break-word' }}
                                             dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
                                         />
