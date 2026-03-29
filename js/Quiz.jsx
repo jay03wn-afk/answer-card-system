@@ -2934,7 +2934,7 @@ function FastQASection({ user, showAlert, targetQaId, onClose }) {
     }
 
     return (
-        <div className="mb-8 border-2 border-pink-400 bg-pink-50 dark:bg-pink-900/20 p-4 shadow-md relative no-round shrink-0">
+        <div className="mb-8 border-2 border-pink-400 bg-pink-50 dark:bg-pink-900/20 p-4 shadow-md relative no-round shrink-0 w-full max-h-[100dvh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-4 border-b border-pink-200 dark:border-pink-800 pb-2">
                 <h2 className="text-xl font-black text-pink-600 dark:text-pink-400 flex items-center">
                     ⚡ 快問快答挑戰
@@ -3053,7 +3053,7 @@ function FastQASection({ user, showAlert, targetQaId, onClose }) {
                     )}
                 </div>
             ) : (
-                <div className="bg-white dark:bg-gray-800 p-6 border-2 border-pink-300 no-round animate-fade-in max-h-[85vh] overflow-y-auto custom-scrollbar">
+                <div className="bg-white dark:bg-gray-800 p-6 border-2 border-pink-300 no-round animate-fade-in">
                     <div className="flex justify-between items-center mb-4">
                         {/* 判斷如果 targetQaId 存在 (代表是訪客直接連結進入)，則隱藏返回列表按鈕，避免混淆 */}
                         {!targetQaId ? (
