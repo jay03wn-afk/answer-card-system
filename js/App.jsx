@@ -241,9 +241,9 @@ function Main() {
     // ==========================================
     if (!user && currentQaId) {
         return (
-            <div className={`min-h-[100dvh] flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-pink-50'}`}>
+            <div className={`h-[100dvh] overflow-y-auto custom-scrollbar flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-pink-50'}`}>
                 {SharedModal} 
-                <div className="w-full max-w-3xl z-10">
+                <div className="w-full max-w-3xl z-10 pb-12">
                     {/* 頂部引導註冊區塊 */}
                     <div className="bg-white dark:bg-gray-800 p-6 mb-6 text-center border-4 border-pink-400 shadow-xl no-round animate-fade-in">
                         <h1 className="text-2xl font-black text-pink-600 dark:text-pink-400 mb-2">👋 歡迎來到訪客試玩模式！</h1>
