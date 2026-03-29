@@ -47,6 +47,31 @@ function Main() {
 
     const closeModal = () => setModalConfig(prev => ({ ...prev, isOpen: false }));
 
+    // ✨ 新增：分享網站功能
+    const handleShareSite = () => {
+        const shareData = {
+            title: 'JJay 線上測驗',
+            text: '快來加入 JJay 線上測驗！首創雙螢幕排版、錯題整理，還有社群與史蒂夫養成系統，讓讀書不再孤單！',
+            url: window.location.origin
+        };
+        // 檢查瀏覽器是否支援原生分享 (手機端通常支援)
+        if (navigator.share) {
+            navigator.share(shareData).catch(err => console.log("分享被取消或失敗", err));
+        } else {
+            // 不支援原生分享時的備用方案 (複製網址)
+            navigator.clipboard.writeText(shareData.url);
+            showAlert('已將網站連結複製到剪貼簿！快去貼給朋友吧！', '🔗 分享網站');
+        }
+    };
+
+    // ✨ 新增：完成新手教學的狀態更新
+    const completeTutorial = () => {
+        if (!user) return;
+        window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: true })
+            .then(() => setUserProfile(prev => ({ ...prev, hasSeenTutorial: true })))
+            .catch(e => console.error("更新新手教學狀態失敗:", e));
+    };
+
     useEffect(() => {
         const unsubscribe = window.auth.onAuthStateChanged(u => {
             if (u) {
@@ -112,11 +137,16 @@ function Main() {
                 <button onClick={() => setActiveTab('minecraft')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'minecraft' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>⛏️ 史蒂夫養成</button>
                 <button onClick={() => setActiveTab('profile')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'profile' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>👤 個人檔案</button>
             </div>
-            {user && (
-                <div className="flex items-center space-x-4">
+           {user && (
+                <div className="flex items-center space-x-3 md:space-x-4">
                     {/* ✅ 將倒數計時器放在這裡 */}
                     <ExamCountdown />
                     
+                    {/* ✨ 新增：分享網站按鈕 */}
+                    <button onClick={handleShareSite} className="text-xl hover:scale-110 transition-transform" title="分享網站給好友">
+                        🔗
+                    </button>
+
                     <button onClick={() => setIsDark(!isDark)} className="text-xl hover:scale-110 transition-transform" title="切換日/夜間模式">
                         {isDark ? '☀️' : '🌙'}
                     </button>
@@ -215,6 +245,11 @@ function Main() {
     return (
         <div className="h-[100dvh] flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-900 transition-colors relative">       
             
+            {/* ✨ 新增：判斷如果尚未看過新手教學，就渲染已經寫好的教學視窗 */}
+            {userProfile && userProfile.hasSeenTutorial === false && (
+                <TutorialOverlay onComplete={completeTutorial} />
+            )}
+
             {/* ✅ 4. 主畫面這裡原本一大串的 modal 程式碼，現在只需要呼叫 SharedModal 就好了 */}
             {SharedModal}
 
