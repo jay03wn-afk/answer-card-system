@@ -329,6 +329,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                 questionFileUrl: originalData.questionFileUrl || '',
                 questionText: originalData.questionText || '',
                 questionHtml: originalData.questionHtml || '', // ✨ 補上這一行：將富文本題目一併下載過來！
+                explanationHtml: originalData.explanationHtml || '', // ✨ 補上詳解
                 correctAnswersInput: originalData.correctAnswersInput || '', 
                 publishAnswers: originalData.publishAnswers !== false, // ← 主要是補上這一行！
                 userAnswers: emptyAnswers,
