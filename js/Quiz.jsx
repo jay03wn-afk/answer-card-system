@@ -2753,6 +2753,10 @@ function FastQASection({ user, showAlert }) {
     const [showResult, setShowResult] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
+    // ✨ 新增分享視窗狀態
+    const [showShareModal, setShowShareModal] = useState(false);
+    const [shareContent, setShareContent] = useState('');
+
     useEffect(() => {
         const fetchQA = async () => {
             try {
@@ -2805,7 +2809,7 @@ function FastQASection({ user, showAlert }) {
         }
         try {
             const endTimestamp = endTimeStr ? new Date(endTimeStr).getTime() : null;
-            await window.db.collection('fastQA').add({
+            const newDoc = await window.db.collection('fastQA').add({
                 subject,
                 difficulty,
                 reward: getDiamonds(difficulty),
@@ -2816,14 +2820,30 @@ function FastQASection({ user, showAlert }) {
                 explanation,
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
+            
+            // ✨ 直接將新題目加入當前的畫面列表，不重新整理網頁
+            const newQA = {
+                id: newDoc.id,
+                subject,
+                difficulty,
+                reward: getDiamonds(difficulty),
+                endTime: endTimestamp,
+                question,
+                options,
+                correctAns,
+                explanation,
+                createdAt: new Date().getTime() 
+            };
+            setQaList(prev => [newQA, ...prev]);
+
             showAlert('✅ 快問快答新增成功！');
             setShowAdminMode(false);
             setQuestion('');
             setOptions(['', '', '', '']);
             setExplanation('');
-            // 清除網址參數並重整
+            
+            // 僅清除網址列參數，不觸發 reload
             window.history.replaceState({}, '', window.location.pathname);
-            window.location.reload(); 
         } catch (e) {
             showAlert('新增失敗：' + e.message);
         }
@@ -2836,23 +2856,15 @@ function FastQASection({ user, showAlert }) {
         }
     };
 
-    // ✨ 新增分享功能
-    const handleShare = async () => {
+    // ✨ 修改分享功能：產生文字並打開小視窗
+    const handleShare = () => {
         const shareUrl = `${window.location.origin}${window.location.pathname}?qaId=${activeQA.id}`;
         const plainQ = activeQA.question.replace(/<[^>]+>/g, ''); // 移除富文本標籤
         const shortQ = plainQ.length > 25 ? plainQ.substring(0, 25) + '...' : plainQ;
-        const shareText = `⚡ 快問快答挑戰！\n【${activeQA.subject}】${activeQA.difficulty.split(' ')[0]}\n🎁 獎勵：${activeQA.reward} 鑽石\n\n📝 ${shortQ}\n\n👇 點此連結立即挑戰 👇\n${shareUrl}`;
+        const text = `⚡ 快問快答挑戰！\n【${activeQA.subject}】${activeQA.difficulty.split(' ')[0]}\n🎁 獎勵：${activeQA.reward} 鑽石\n\n📝 ${shortQ}\n\n👇 點此連結立即挑戰 👇\n${shareUrl}`;
         
-        try {
-            if (navigator.share) {
-                await navigator.share({ title: '快問快答挑戰', text: shareText });
-            } else {
-                await navigator.clipboard.writeText(shareText);
-                showAlert('✅ 挑戰連結與文字已複製到剪貼簿！可以貼給朋友囉！');
-            }
-        } catch (err) {
-            console.log('分享取消或失敗', err);
-        }
+        setShareContent(text);
+        setShowShareModal(true); // 打開小視窗
     };
 
     const handleSubmitAns = async () => {
@@ -3075,6 +3087,48 @@ function FastQASection({ user, showAlert }) {
                             <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap text-md leading-relaxed">{activeQA.explanation}</div>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ✨ 新增：小巧的分享文本視窗 */}
+            {showShareModal && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-gray-800 p-5 w-full max-w-xs no-round shadow-2xl border-2 border-pink-400">
+                        <h3 className="font-black text-pink-600 dark:text-pink-400 mb-3 flex justify-between items-center text-lg">
+                            <span>🔗 分享此題</span>
+                            <button onClick={() => setShowShareModal(false)} className="text-gray-400 hover:text-black dark:hover:text-white transition-colors">✕</button>
+                        </h3>
+                        <textarea 
+                            readOnly 
+                            value={shareContent} 
+                            className="w-full h-36 p-3 text-sm border-2 border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 mb-4 outline-none resize-none no-round focus:border-pink-300"
+                            onClick={(e) => e.target.select()} // 點擊自動全選
+                        />
+                        <div className="flex flex-col gap-2">
+                            <button 
+                                onClick={() => {
+                                    navigator.clipboard.writeText(shareContent);
+                                    showAlert('✅ 文本已成功複製到剪貼簿！');
+                                    setShowShareModal(false);
+                                }} 
+                                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-2.5 text-sm no-round transition-colors shadow-sm"
+                            >
+                                📋 複製文本
+                            </button>
+                            
+                            {/* 如果瀏覽器支援原生分享，才顯示第二顆按鈕 */}
+                            {navigator.share && (
+                                <button 
+                                    onClick={() => {
+                                        navigator.share({ title: '快問快答挑戰', text: shareContent }).catch(e => console.log('分享取消', e));
+                                    }} 
+                                    className="w-full bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-bold py-2.5 text-sm no-round transition-colors"
+                                >
+                                    📲 開啟其他 APP 分享
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
