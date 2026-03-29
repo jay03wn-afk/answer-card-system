@@ -254,9 +254,22 @@ function ProfilePage({ user, userProfile, showAlert }) {
                     <label className="block text-sm font-bold text-gray-500 dark:text-gray-400 mb-2">關於我 (自我介紹)</label>
                     <textarea value={bio} onChange={e => setBio(e.target.value)} className="w-full h-32 mb-4 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none resize-none no-round focus:border-black dark:focus:border-white" placeholder="寫點關於你自己的事吧..."></textarea>
                     
-                    <button onClick={saveProfile} disabled={isSaving} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors">
-                        {isSaving ? '儲存中...' : '儲存變更'}
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <button onClick={saveProfile} disabled={isSaving} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors">
+                            {isSaving ? '儲存中...' : '儲存變更'}
+                        </button>
+                        
+                        {/* ✨ 新增：重新觀看新手教學的按鈕 (把狀態改回 false 即可自動觸發) */}
+                        <button 
+                            onClick={() => {
+                                window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: false })
+                                .then(() => showAlert('✅ 已為您重新開啟新手教學視窗！', '提示'));
+                            }} 
+                            className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 px-6 py-2 font-bold no-round hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        >
+                            📖 重新觀看新手教學
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
