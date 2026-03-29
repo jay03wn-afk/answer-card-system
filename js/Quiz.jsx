@@ -2877,16 +2877,28 @@ function FastQASection({ user, showAlert, targetQaId, onClose }) {
     const handleSubmitAns = async () => {
         if (selectedAns === null) return showAlert('請選擇一個答案！');
         
-        // ✨ 修改：未登入訪客直接讓他們看見簡答 (不存入資料庫)
+        // 未登入訪客直接讓他們看見簡答 (不存入資料庫，吸引註冊)
         if (!user) {
             setShowResult(true);
             return;
+        }
+
+        // 防呆 1：前端狀態檢查，避免重複送出
+        if (records[activeQA.id]) {
+            return showAlert('⚠️ 您已經作答過此題，無法重複領取獎勵喔！');
         }
 
         setSubmitting(true);
         const isCorrect = selectedAns === activeQA.correctAns;
         
         try {
+            // 防呆 2：資料庫二次確認，防止多開視窗或快速點擊造成重複領取
+            const recDoc = await window.db.collection('users').doc(user.uid).collection('fastQARecords').doc(activeQA.id).get();
+            if (recDoc.exists) {
+                setSubmitting(false);
+                return showAlert('⚠️ 您已經領取過此題的獎勵囉！');
+            }
+
             await window.db.collection('users').doc(user.uid).collection('fastQARecords').doc(activeQA.id).set({
                 isCorrect,
                 selectedAns,
@@ -2901,6 +2913,10 @@ function FastQASection({ user, showAlert, targetQaId, onClose }) {
             
             setRecords(prev => ({...prev, [activeQA.id]: { isCorrect, selectedAns }}));
             setShowResult(true);
+            
+            if (isCorrect) {
+                showAlert(`🎉 答對了！恭喜獲得 ${activeQA.reward} 💎 鑽石！\n獎勵已發放至您的帳號。`);
+            }
         } catch (e) {
             showAlert('送出失敗：' + e.message);
         }
@@ -3037,18 +3053,22 @@ function FastQASection({ user, showAlert, targetQaId, onClose }) {
                     )}
                 </div>
             ) : (
-                <div className="bg-white dark:bg-gray-800 p-6 border-2 border-pink-300 no-round animate-fade-in">
+                <div className="bg-white dark:bg-gray-800 p-6 border-2 border-pink-300 no-round animate-fade-in max-h-[85vh] overflow-y-auto custom-scrollbar">
                     <div className="flex justify-between items-center mb-4">
-                        <button onClick={() => { 
-                            setActiveQA(null); 
-                            // 判斷是否為彈窗模式，是的話呼叫 onClose 關閉
-                            if (onClose) onClose();
-                            else window.history.replaceState({}, '', window.location.pathname); 
-                        }} className="text-gray-500 text-sm font-bold hover:text-black dark:hover:text-white transition-colors">
-                            {onClose ? '✕ 關閉視窗' : '⬅ 返回列表'}
-                        </button>
+                        {/* 判斷如果 targetQaId 存在 (代表是訪客直接連結進入)，則隱藏返回列表按鈕，避免混淆 */}
+                        {!targetQaId ? (
+                            <button onClick={() => { 
+                                setActiveQA(null); 
+                                if (onClose) onClose();
+                                else window.history.replaceState({}, '', window.location.pathname); 
+                            }} className="text-gray-500 text-sm font-bold hover:text-black dark:hover:text-white transition-colors">
+                                {onClose ? '✕ 關閉視窗' : '⬅ 返回列表'}
+                            </button>
+                        ) : (
+                            <div></div> /* 佔位符，維持排版 */
+                        )}
                         
-                        <button onClick={handleShare} className="text-pink-600 bg-pink-100 hover:bg-pink-200 dark:bg-pink-900 dark:text-pink-300 dark:hover:bg-pink-800 px-3 py-1.5 text-sm font-bold no-round transition-colors flex items-center gap-1 shadow-sm">
+                        <button onClick={handleShare} className="text-pink-600 bg-pink-100 hover:bg-pink-200 dark:bg-pink-900 dark:text-pink-300 dark:hover:bg-pink-800 px-3 py-1.5 text-sm font-bold no-round transition-colors flex items-center gap-1 shadow-sm shrink-0">
                             🔗 分享此題
                         </button>
                     </div>
