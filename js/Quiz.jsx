@@ -3128,33 +3128,38 @@ function FastQASection({ user, showAlert, targetQaId, onClose }) {
                         </button>
                     ) : (
                         <div className="mt-6 animate-fade-in">
-                            {/* ✨ 修正問題 3：簡答區 (不論是否登入都能看到正確解答) */}
-                            <div className="p-4 mb-4 bg-green-50 dark:bg-green-900/30 border-l-8 border-green-500 no-round">
-                                <h3 className="font-bold text-green-700 dark:text-green-400 mb-2">✅ 正確解答：</h3>
-                                <div className="text-lg font-bold text-gray-800 dark:text-gray-200">
-                                    {['A','B','C','D'][activeQA.correctAns]}. {activeQA.options[activeQA.correctAns]}
-                                </div>
-                            </div>
-
-                            {/* ✨ 修正問題 3：詳解區判斷 (登入者顯示詳解，未登入者引導註冊) */}
                             {user ? (
-                                <div className="p-5 bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-300 dark:border-yellow-700 no-round">
-                                    <h4 className="font-bold text-yellow-800 dark:text-yellow-400 mb-3 flex items-center text-lg">
-                                        💡 詳解 
-                                        {records[activeQA.id]?.isCorrect && (
-                                            <span className="ml-auto text-green-600 dark:text-green-400">🎉 恭喜！已獲得 {activeQA.reward} 鑽！</span>
-                                        )}
-                                    </h4>
-                                    <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap text-md leading-relaxed">{activeQA.explanation}</div>
-                                </div>
+                                <>
+                                    {/* 簡答區 (僅登入可見) */}
+                                    <div className="p-4 mb-4 bg-green-50 dark:bg-green-900/30 border-l-8 border-green-500 no-round">
+                                        <h3 className="font-bold text-green-700 dark:text-green-400 mb-2">✅ 正確解答：</h3>
+                                        <div className="text-lg font-bold text-gray-800 dark:text-gray-200">
+                                            {['A','B','C','D'][activeQA.correctAns]}. {activeQA.options[activeQA.correctAns]}
+                                        </div>
+                                    </div>
+
+                                    {/* 詳解區 */}
+                                    <div className="p-5 bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-300 dark:border-yellow-700 no-round">
+                                        <h4 className="font-bold text-yellow-800 dark:text-yellow-400 mb-3 flex items-center text-lg">
+                                            💡 詳解 
+                                            {records[activeQA.id]?.isCorrect && (
+                                                <span className="ml-auto text-green-600 dark:text-green-400">🎉 恭喜！已獲得 {activeQA.reward} 鑽！</span>
+                                            )}
+                                        </h4>
+                                        <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap text-md leading-relaxed">{activeQA.explanation}</div>
+                                    </div>
+                                </>
                             ) : (
                                 <div className="p-6 bg-gray-100 dark:bg-gray-700 border-2 border-dashed border-gray-400 dark:border-gray-500 text-center mt-4">
-                                    <h3 className="text-xl font-black text-gray-700 dark:text-gray-300 mb-2">🔒 詳解已上鎖</h3>
+                                    <h3 className="text-xl font-black text-gray-700 dark:text-gray-300 mb-2">🔒 答案與詳解已上鎖</h3>
                                     <p className="text-gray-600 dark:text-gray-400 font-bold mb-4">
-                                        登入後即可解鎖完整詳解，還能將這題的 {activeQA.reward} 鑽石獎勵收入囊中！💎
+                                        登入後即可解鎖正確解答與完整詳解，還能將這題的 {activeQA.reward} 鑽石獎勵收入囊中！💎
                                     </p>
                                     <button 
-                                        onClick={() => window.location.href = window.location.pathname + '?qaId=' + activeQA.id}
+                                        onClick={() => {
+                                            if (onRequireLogin) onRequireLogin();
+                                            else window.location.href = window.location.pathname + '?qaId=' + activeQA.id; // 預防萬一的防呆
+                                        }}
                                         className="bg-black dark:bg-white text-white dark:text-black px-8 py-3 font-black text-lg no-round hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors shadow-md w-full sm:w-auto"
                                     >
                                         🚀 立即登入 / 註冊解鎖
