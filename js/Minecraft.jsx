@@ -96,7 +96,7 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         setScore(0);
         if (mcData.hunger < 1) {
             showAlert("🍖 史蒂夫太餓了！請先去商店買點東西吃，再來玩礦車吧！");
-            return; // 終止，不開始遊戲
+            return; 
         }
         updateMcData({ hunger: mcData.hunger - 1 }, true);
         if (bgmRef.current) {
@@ -125,7 +125,6 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
 
     const jump = () => {
         const now = performance.now();
-        // 加入 150ms 冷卻時間，解決手機點一下判定成兩下的 Bug
         if (now - gameRef.current.lastJumpTime < 150) return; 
         gameRef.current.lastJumpTime = now;
 
@@ -153,7 +152,6 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
 
         const ctx = cvs.getContext('2d');
 
-        // --- 防當機：安全渲染繪圖函式 ---
         const drawImgSafe = (img, x, y, w, h, fallbackColor) => {
             try {
                 if (img.complete && img.naturalWidth > 0) {
@@ -172,12 +170,11 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         state.player.dy += 0.7; 
         state.player.y += state.player.dy;
 
-        // 洞穴地形變換：每 900 frame (約15秒) 切換
         state.isCave = Math.floor(state.frames / 900) % 2 !== 0;
 
         if (state.isCave) {
             if (state.frames % 150 === 0) {
-                state.targetGroundY = 180 + Math.random() * 100; // 地形起伏
+                state.targetGroundY = 180 + Math.random() * 100;
             }
         } else {
             state.targetGroundY = 250; 
@@ -201,7 +198,6 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             }
         });
 
-        // 地板與深坑判定
         if (state.player.y + state.player.h >= state.groundY) {
             if (!inPit) {
                 if (prevBottom <= state.groundY + 15) {
@@ -219,7 +215,6 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             return;
         }
 
-        // 障礙物與怪物邏輯
         for (let i = 0; i < state.obstacles.length; i++) {
             let obs = state.obstacles[i];
             if (obs.type === 'pit') {
@@ -228,7 +223,7 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             }
 
             if (obs.type === 'dragon') {
-                obs.x -= (state.speed + 2.5); // 龍飛很快
+                obs.x -= (state.speed + 2.5);
             } else if (obs.type === 'spider') {
                 obs.x -= (state.speed + 1.5); 
                 if (Math.random() < 0.01 && obs.y >= state.groundY - obs.h - 5) obs.dy = -8; 
@@ -243,17 +238,15 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             } else if (obs.type === 'silverfish') {
                 obs.x -= (state.speed + 1.2);
             } else if (obs.type === 'creeper') {
-                // 將 state.speed 減去一個數值（例如 2），讓牠比其他東西慢
                 obs.x -= Math.max(2, state.speed - 2.5); 
                 
                 if (!obs.defused && obs.x < state.player.x + 10) {
                     dead = true;
-                    killedByCreeper = true; // 記錄死因
+                    killedByCreeper = true; 
                      } else {
                 obs.x -= state.speed; 
             }}
 
-            // 碰撞判定
             if (
                 !(obs.type === 'creeper' && obs.defused) &&
                 state.player.x + 5 < obs.x + obs.w - 5 &&
@@ -269,12 +262,11 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
                     } else dead = true; 
                 }else {
                      dead = true;
-                      if (obs.type === 'creeper') killedByCreeper = true; // 記錄死因
+                      if (obs.type === 'creeper') killedByCreeper = true;
                     }
             }
         }
 
-        // 鑽石拾取
         state.diamonds.forEach(d => {
             d.x -= state.speed;
             if (!d.collected &&
@@ -291,12 +283,10 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
 
         if (dead) {
         if (killedByCreeper) {
-            // 播放爆炸音效
             if (explodeSfxRef.current) {
                 explodeSfxRef.current.currentTime = 0;
                 explodeSfxRef.current.play().catch(e => console.log(e));
             }
-            // 繪製瞬間爆炸光芒 (兩層橘黃色圓形疊加)
             ctx.fillStyle = 'rgba(255, 100, 0, 0.8)';
             ctx.beginPath();
             ctx.arc(state.player.x + state.player.w / 2, state.player.y + state.player.h / 2, 80, 0, Math.PI * 2);
@@ -316,7 +306,6 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
 
         let spawnInterval = Math.max(40, 100 - state.speed * 4);
         
-        // 隨機生成
         if (state.frames - state.lastSpawnFrame > spawnInterval) {
             if (Math.random() < 0.55) { 
                 state.lastSpawnFrame = state.frames;
@@ -341,7 +330,6 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             }
         }
         
-        // 鑽石約 4+-2 秒出現
         if (state.frames >= state.nextDiamondFrame) {
             let dY = state.groundY - 50 - Math.random() * 70;
             if (state.isCave && dY < 80) dY = 80; 
@@ -349,14 +337,13 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             state.nextDiamondFrame = state.frames + Math.floor(Math.random() * 240 + 120);
         }
 
-        // --- 繪圖區 ---
         ctx.clearRect(0, 0, LOG_W, LOG_H);
         
         ctx.fillStyle = state.isCave ? '#222222' : '#6bc0ff';
         ctx.fillRect(0, 0, LOG_W, LOG_H);
 
         if (state.isCave) {
-            ctx.fillStyle = '#333333'; // 洞穴天花板
+            ctx.fillStyle = '#333333'; 
             ctx.fillRect(0, 0, LOG_W, 40);
         }
 
@@ -373,7 +360,6 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             }
         });
 
-        // 怪物與障礙繪製 (全面套用安全防當機繪圖)
         state.obstacles.forEach(obs => {
             if (obs.type === 'stone') {
                 drawImgSafe(images.current.stone, obs.x, obs.y, obs.w, obs.h, '#888');
@@ -402,7 +388,6 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             }
         });
 
-        // 礦車與史蒂夫
         drawImgSafe(images.current.minecart, state.player.x - 4, state.player.y + state.player.h - 15, state.player.w + 8, 20, '#555');
         drawImgSafe(images.current.steve, state.player.x + 2, state.player.y - 5, state.player.w - 4, state.player.h - 5, '#ffccaa');
 
@@ -419,7 +404,6 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         setGameState('gameover');
         if (bgmRef.current) bgmRef.current.pause();
         
-        // 如果不是被炸死，才播放原本的死亡音效
         if (!isExploded && deadSfxRef.current) {
             deadSfxRef.current.currentTime = 0;
             deadSfxRef.current.play().catch(e=>console.log("音效阻擋", e));
@@ -473,7 +457,6 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
                     <button onClick={onQuit} className="text-red-400 hover:text-red-300 transition-colors">✖ 離開</button>
                 </div>
                 
-                {/* 使用 aspectRatio 徹底解決畫面被壓縮/拉長的 Bug */}
                 <div 
                     className="relative w-full flex justify-center items-center overflow-hidden border-4 border-black bg-[#222]" 
                     style={{ aspectRatio: '800/350', touchAction: 'none' }}
@@ -921,7 +904,6 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         <p className="text-sm font-bold text-gray-600 dark:text-gray-300">完成測驗或遊玩小遊戲來獲取鑽石！</p>
     </div>
 
-    {/* ✅ 新增：將按鈕移動到這裡 (圖片中紅圈的位置) */}
     <div className="flex flex-wrap gap-2 md:mx-4">
         <button onClick={() => setShowSandbox(true)} className="bg-green-600 hover:bg-green-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-green-800 font-bold transition-colors whitespace-nowrap shadow-md">
             🏗️ 蓋房子
@@ -952,7 +934,6 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                     
                     <div className="space-y-6 lg:col-span-1">
                         <div className="mc-panel-dark text-white">
-                          {/* ✅ 1. 將按鈕從這裡移除，將 h2 改回簡單的標題 */}
                             <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300 flex justify-between items-center">
                              <span>🏡 你的家</span>
                             </h2>
@@ -1015,20 +996,18 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         </div>
     );
 }
-// --- 2D 沙盒建築遊戲組件 ---
-// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
 
+// --- 2D 沙盒建築遊戲組件 (旗艦擴充版) ---
 function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQuit }) {
-    // --- 動態地圖擴充設定 ---
     const ROWS = 12;
     const [cols, setCols] = useState(mcData.sandbox_cols || 20);
     const TOTAL_CELLS = cols * ROWS;
 
-    const [mapScale, setMapScale] = useState(1); // 目前的縮放比例
-    const mapScaleRef = useRef(mapScale); // 保持 Ref 同步以供事件監聽器使用
-    const initialPinchDist = useRef(0); // 記錄雙指剛接觸時的距離
-    const mapContainerRef = useRef(null); // 用於綁定監聽器的 Ref
-    // --- 方塊資料庫 ---
+    const [mapScale, setMapScale] = useState(1); 
+    const mapScaleRef = useRef(mapScale); 
+    const initialPinchDist = useRef(0); 
+    const mapContainerRef = useRef(null); 
+    
     const CATEGORIES = ['全部', '基礎與礦石', '原木與建材', '羊毛與佈置', '地獄(需解鎖)', '末地(需解鎖)', '裝飾與植物'];
     const [activeCategory, setActiveCategory] = useState('全部');
 
@@ -1047,7 +1026,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         { id: 'poppy', name: '送小花 (拜訪專用)', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png', price: 0, special: true, desc: '參觀時送給好友' },
         { id: 'gift_box', name: '禮物盒 (送方塊)', cat: '工具', img: 'https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg', price: 0, special: true, desc: '打包方塊送給好友' },
         { id: 'poop', name: '惡作劇大便', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/cocoa_beans.png', price: 0, special: true, desc: '在好友家拉一坨大便' },
-        
+        { id: 'photo_map', name: '私人照片', cat: '工具', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/filled_map.png', price: 50, special: true, desc: '寄送照片給好友' },
+
         // 基礎與礦石
         { id: 'dirt', name: '泥土', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/dirt.png', price: 1 },
         { id: 'grass_block_side', name: '草方塊', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/grass_block_side.png', price: 5 },
@@ -1066,7 +1046,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         { id: 'diamond_block', name: '鑽石磚', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/diamond_block.png', price: 500 },
         { id: 'obsidian', name: '黑曜石', cat: '基礎與礦石', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/obsidian.png', price: 150 },
 
-        // 原木與所有衍生建材
         ...WOOD_TYPES.flatMap(wood => [
             { id: `${wood.id}_log`, name: `${wood.name}原木`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood.id}_log.png`, price: 10 },
             { id: `${wood.id}_planks`, name: `${wood.name}木板`, cat: '原木與建材', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${wood.id}_planks.png`, price: 5 },
@@ -1081,12 +1060,10 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         { id: 'bookshelf', name: '書架', cat: '原木與建材', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/bookshelf.png', price: 30 },
         { id: 'quartz_block', name: '石英磚', cat: '原木與建材', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/quartz_block.png', price: 40 },
 
-        // 羊毛
         ...WOOL_COLORS.map((color, idx) => ({
             id: `${color}_wool`, name: `${WOOL_NAMES[idx]}色羊毛`, cat: '羊毛與佈置', img: `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/${color}_wool.png`, price: 5
         })),
 
-        // 地獄 
         { id: 'netherrack', name: '地獄石', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/netherrack.png', price: 10 },
         { id: 'soul_sand', name: '靈魂沙', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/soul_sand.png', price: 20 },
         { id: 'glowstone', name: '螢光石', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/glowstone.png', price: 50 },
@@ -1095,13 +1072,11 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         { id: 'crimson_nylium', name: '緋紅菌絲體', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/crimson_nylium_side.png', price: 40 },
         { id: 'warped_nylium', name: '扭曲菌絲體', cat: '地獄(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/warped_nylium_side.png', price: 40 },
 
-        // 末地
         { id: 'end_stone', name: '末地石', cat: '末地(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/end_stone.png', price: 50 },
         { id: 'purpur_block', name: '紫珀塊', cat: '末地(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/purpur_block.png', price: 80 },
         { id: 'end_stone_bricks', name: '末地石磚', cat: '末地(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/end_stone_bricks.png', price: 60 },
         { id: 'chorus_flower', name: '紫頌花', cat: '末地(需解鎖)', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/chorus_flower.png', price: 100 },
 
-        // 裝飾與植物
         { id: 'crafting_table', name: '工作台', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/crafting_table_front.png', price: 15 },
         { id: 'furnace', name: '熔爐', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/furnace_front.png', price: 20 },
         { id: 'tnt', name: 'TNT', cat: '裝飾與植物', img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/tnt_side.png', price: 100 },
@@ -1117,19 +1092,20 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         end: { id: 'end', name: '末地', bg: '#10002b', cost: 2000, requireStr: 'unlockedEnd' }
     };
 
-    // --- 狀態管理 ---
     const [isBuildMode, setIsBuildMode] = useState(false);
-    const [buildLayer, setBuildLayer] = useState('foreground'); // 'foreground' | 'background'
+    const [buildLayer, setBuildLayer] = useState('foreground'); 
     const lastActionRef = useRef({ index: -1, time: 0 });
     const [isChestOpen, setIsChestOpen] = useState(false);
     const [currentDimension, setCurrentDimension] = useState('overworld');
     const [localInventory, setLocalInventory] = useState(() => mcData.inventory || { dirt: 50 });
     const [confirmDialog, setConfirmDialog] = useState(null); 
     
+    // ✨ 新增收件箱狀態
+    const [showInbox, setShowInbox] = useState(false);
+
     const [dragActiveBlock, setDragActiveBlock] = useState(null); 
     const sandboxBgmRef = useRef(null);
 
-    // --- Hotbar 系統 ---
     const [hotbar, setHotbar] = useState(() => mcData.sandbox_hotbar || ['erase', null, null, null, null, null, null, null, null]);
     const [activeHotbarIndex, setActiveHotbarIndex] = useState(0);
     const selectedBlock = hotbar[activeHotbarIndex];
@@ -1144,12 +1120,10 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    // ✨ 新增：處理雙指縮放的邏輯
     useEffect(() => {
         const mapNode = mapContainerRef.current;
         if (!mapNode) return;
 
-        // 計算兩點間距離的輔助函式
         const getDistance = (touches) => {
             if (touches.length < 2) return 0;
             const dx = touches[0].clientX - touches[1].clientX;
@@ -1159,7 +1133,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
 
         const handleTouchStart = (e) => {
             if (e.touches.length === 2) {
-                // 如果是雙指觸控，記錄初始距離並阻止預設滑動行為
                 initialPinchDist.current = getDistance(e.touches);
                 if (e.cancelable) e.preventDefault();
             }
@@ -1167,28 +1140,20 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
 
         const handleTouchMove = (e) => {
             if (e.touches.length === 2 && initialPinchDist.current > 0) {
-                // 阻止預設的頁面滑動/放大行為，我們自己接管
                 if (e.cancelable) e.preventDefault();
-
                 const currentDist = getDistance(e.touches);
                 const newScaleFactor = currentDist / initialPinchDist.current;
                 
-                // 計算新比例（基於上次的比例），並限制範圍在 0.5倍 到 3倍 之間
                 let newScale = mapScaleRef.current * newScaleFactor;
                 newScale = Math.min(Math.max(newScale, 0.5), 3); 
                 
-                // 為了讓縮放更平滑，我們不直接 setMapScale (那會觸發 React 頻繁重繪)，
-                // 而是直接操作 DOM 樣式 (硬體加速)。
                 const gridNode = mapNode.querySelector('.grid-origin');
                 if (gridNode) {
                     gridNode.style.transform = `scale(${newScale})`;
-                    gridNode.style.transformOrigin = 'top left'; // 從左上角縮放
+                    gridNode.style.transformOrigin = 'top left'; 
                 }
                 
-                // 記錄這次結束時的距離，作為下次 move 的基準點 (重要：這樣才能連續縮放)
                 initialPinchDist.current = currentDist;
-                
-                // 最後在事件結束時才同步回 React 狀態
                 mapScaleRef.current = newScale;
             }
         };
@@ -1196,24 +1161,21 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         const handleTouchEnd = (e) => {
             if (e.touches.length < 2) {
                 initialPinchDist.current = 0;
-                // 同步回 React 狀態以利其他組件判斷
                 setMapScale(mapScaleRef.current);
             }
         };
 
-        // 綁定原生事件監聽器 { passive: false } 這是必須的，才能 e.preventDefault()
         mapNode.addEventListener('touchstart', handleTouchStart, { passive: false });
         mapNode.addEventListener('touchmove', handleTouchMove, { passive: false });
         mapNode.addEventListener('touchend', handleTouchEnd);
 
-        // 清除函數
         return () => {
             mapNode.removeEventListener('touchstart', handleTouchStart);
             mapNode.removeEventListener('touchmove', handleTouchMove);
             mapNode.removeEventListener('touchend', handleTouchEnd);
         };
-    }, []); // 僅執行一次
-    // --- 音效與 BGM ---
+    }, []); 
+
     useEffect(() => {
         sandboxBgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/sandbgm.mp3");
         sandboxBgmRef.current.loop = true;
@@ -1221,48 +1183,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         sandboxBgmRef.current.play().catch(e => console.log("BGM 播放阻擋", e));
         return () => { if (sandboxBgmRef.current) { sandboxBgmRef.current.pause(); sandboxBgmRef.current.currentTime = 0; } };
     }, []);
-    // 新增：處理照片地圖的 5 分鐘銷毀計時器
-    useEffect(() => {
-        if (!isViewingSelf) return; // 只有在自己家才執行銷毀
-        
-        const currentSpecials = specials[currentDimension];
-        if (!currentSpecials) return;
-
-        const photoMaps = Object.entries(currentSpecials)
-            .filter(([idx, data]) => data.type === 'photo_map' && data.expiresAt);
-
-        if (photoMaps.length === 0) return;
-
-        const interval = setInterval(() => {
-            const now = Date.now();
-            let hasChanges = false;
-            const newSpecials = { ...specials };
-
-            for (const [index, data] of photoMaps) {
-                if (now >= data.expiresAt) {
-                    delete newSpecials[currentDimension][index];
-                    hasChanges = true;
-                    // 如果使用者正打開視窗看這張照片，強迫關閉視窗
-                    if (specialBlockModal?.type === 'photo_view' && specialBlockModal.index === index) {
-                        setSpecialBlockModal(null);
-                        showAlert('⚠️ 嗶嗶！照片已過期並銷毀。');
-                    }
-                }
-            }
-
-            if (hasChanges) {
-                setSpecials(newSpecials);
-                // 同步更新 Firebase (可選擇是否立即同步，或等使用者按儲存)
-                // 為了防作弊，最好立即同步
-                window.db.collection('users').doc(user.uid).update({
-                    [`mcData.specials_${currentDimension}`]: newSpecials[currentDimension]
-                });
-            }
-
-        }, 5000); // 每 5 秒檢查一次
-
-        return () => clearInterval(interval);
-    }, [specials, currentDimension, isViewingSelf, specialBlockModal]);
 
     const playChestOpenSound = () => new Audio('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/open.mp3').play().catch(e => {});
     const playChestCloseSound = () => new Audio('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/close.mp3').play().catch(e => {});
@@ -1282,7 +1202,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         playCachedSound(soundUrls[action][soundType]);
     };
 
-    const padGrid = (arr, c) => arr ? [...arr] : Array(c * ROWS).fill(null);
+    const padGrid = (arr, c) => arr && arr.length ? [...arr] : Array(c * ROWS).fill(null);
     const [grids, setGrids] = useState({ overworld: padGrid(mcData.sandbox_overworld, cols), nether: padGrid(mcData.sandbox_nether, cols), end: padGrid(mcData.sandbox_end, cols) });
     const [bgGrids, setBgGrids] = useState({ overworld: padGrid(mcData.sandbox_bg_overworld, cols), nether: padGrid(mcData.sandbox_bg_nether, cols), end: padGrid(mcData.sandbox_bg_end, cols) });
     const [specials, setSpecials] = useState({ overworld: mcData.specials_overworld || {}, nether: mcData.specials_nether || {}, end: mcData.specials_end || {} });
@@ -1296,11 +1216,9 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
     const [buyModal, setBuyModal] = useState(null);
     const [signModal, setSignModal] = useState(null);
     const [chestUi, setChestUi] = useState(null);
-    // 新增：用於顯示照片、地圖詳情等的通用視窗
     const [specialBlockModal, setSpecialBlockModal] = useState(null); 
     const [visitorLogOpen, setVisitorLogOpen] = useState(false);
     
-    // 用於檔案選擇的引用
     const photoInputRef = useRef(null);
     const [isSaving, setIsSaving] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -1312,7 +1230,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
     const activeBgGrid = isViewingSelf ? bgGrids[currentDimension] : (friendBgGrids[currentDimension] || Array(activeCols*ROWS).fill(null));
     const activeSpecials = isViewingSelf ? specials[currentDimension] : (friendSpecials[currentDimension] || {});
 
-    // --- 擴充領地系統 ---
     const requestExpand = (direction) => {
         setConfirmDialog({
             title: `🌐 擴張${direction === 'left' ? '左邊' : '右邊'}領地`,
@@ -1392,6 +1309,41 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         } catch(e) {}
     };
 
+    // --- 收件箱處理邏輯 ---
+    const handleInboxAction = (item, action) => {
+        const newInbox = (mcData.inbox || []).filter(i => i.id !== item.id);
+        
+        if (action === 'delete') {
+            updateMcData({ inbox: newInbox }, true);
+        } else if (action === 'claim') {
+            updateMcData({ inbox: newInbox, diamonds: mcData.diamonds + 3 }, true);
+            showAlert(`🌺 你收下了 ${item.fromName} 的小花，獲得 3 💎！`);
+        } else if (action === 'open') {
+            // 原本由好友隨機給的包裹，若是沒有 blockId 就給隨機建材
+            const blockId = item.blockId || 'oak_log'; 
+            const amount = item.amount || Math.floor(Math.random() * 5) + 1;
+            const bInfo = BLOCK_TYPES.find(b => b.id === blockId);
+            const newInv = { ...localInventory }; 
+            newInv[blockId] = (newInv[blockId] || 0) + amount; 
+            setLocalInventory(newInv);
+            updateMcData({ inbox: newInbox, inventory: newInv }, true);
+            showAlert(`🎁 打開了 ${item.fromName} 的禮物！\n獲得 ${amount} 個 ${bInfo ? bInfo.name : '未知方塊'}！`);
+        } else if (action === 'read') {
+            const newLog = { uid: item.fromUid, name: item.fromName, time: Date.now(), msg: item.text };
+            const currentLog = mcData.visitorLog || [];
+            updateMcData({ inbox: newInbox, visitorLog: [newLog, ...currentLog].slice(0, 20) }, true);
+            showAlert(`📜 ${item.fromName} 的留言：\n\n「${item.text}」\n\n(已收錄至您的到訪紀錄中)`);
+        } else if (action === 'view') {
+            setSpecialBlockModal({ 
+                type: 'photo_view', 
+                index: -1, 
+                data: item.img,
+                from: item.fromName,
+                expiresAt: item.expiresAt
+            });
+        }
+    };
+
     const handleCellClick = async (index) => {
         const now = Date.now();
         if (lastActionRef.current.index === index && now - lastActionRef.current.time < 200) return;
@@ -1402,20 +1354,16 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         const currentBg = activeBgGrid[index];
 
         // --- 查看/互動模式邏輯 ---
-        // --- 查看/互動模式邏輯 ---
         if (!isBuildMode) {
-            // 允許訪客放置小花、告示牌、大便、寄照片
+            // 訪客放置
             if (!isViewingSelf && ['poppy', 'sign', 'poop', 'photo_map'].includes(selectedBlock)) {
                 if (currentFg || hasSpecial) return showAlert('❌ 只能放置在空地上喔！');
                 
-                // 新增：觸發照片上傳 (加上確認彈窗與防呆檢查)
                 if (selectedBlock === 'photo_map') {
                     if (mcData.diamonds < 50) return showAlert('💎 寄送私人照片需要 50 鑽石！');
-                    
-                    // 彈出確認視窗，按下確認後才會打開檔案選擇器
                     setConfirmDialog({
                         title: '📸 寄送私人照片',
-                        desc: '確定要花費 50 💎 選擇並寄送照片嗎？\n(照片將在對方查看後 5 分鐘銷毀)',
+                        desc: '確定要花費 50 💎 選擇並寄送照片嗎？\n(照片將在對方查看後存入收件箱)',
                         cost: 50,
                         action: () => triggerPhotoUpload(index, viewingFriend.uid)
                     });
@@ -1434,7 +1382,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                         return showAlert('❌ 你今天已經送過小花給這位好友囉！明天再來吧！');
                     }
                     
-                    // 扣除手上的小花，並給予 1 鑽石獎勵，記錄今天已送過
                     const newHotbar = [...hotbar];
                     newHotbar[activeHotbarIndex] = null;
                     setHotbar(newHotbar);
@@ -1473,73 +1420,31 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 return;
             }
 
+            // 屋主互動
             if (hasSpecial) {
-                // 新增：屋主查看/撿起照片
-                if (hasSpecial.type === 'photo_map' && isViewingSelf) {
-                    if (!hasSpecial.viewedAt) {
-                        const viewedAt = Date.now();
-                        const expiresAt = viewedAt + 5 * 60 * 1000; // 5分鐘後銷毀
-
-                        const newSpecials = { ...specials };
-                        newSpecials[currentDimension][index] = { ...hasSpecial, viewedAt, expiresAt };
-                        setSpecials(newSpecials);
-
-                        window.db.collection('users').doc(user.uid).get().then(doc => {
-                            const dbSpecials = doc.data()?.mcData[`specials_${currentDimension}`] || {};
-                            dbSpecials[index] = { ...hasSpecial, viewedAt, expiresAt };
-                            window.db.collection('users').doc(user.uid).update({ [`mcData.specials_${currentDimension}`]: dbSpecials });
-                        });
-                    }
-                    
-                    setSpecialBlockModal({ 
-                        type: 'photo_view', 
-                        index,
-                        data: hasSpecial.img,
-                        from: hasSpecial.fromName,
-                        expiresAt: hasSpecial.expiresAt || (Date.now() + 5 * 60 * 1000)
+                // ✨ 將地圖上的禮物自動存入收件箱 (保存1天)
+                if (['photo_map', 'poop', 'poppy', 'gift_box', 'sign'].includes(hasSpecial.type) && isViewingSelf) {
+                    const newInbox = [...(mcData.inbox || [])];
+                    const now = Date.now();
+                    newInbox.push({
+                        ...hasSpecial,
+                        id: now + Math.random().toString(), // 賦予唯一ID
+                        collectedAt: now,
+                        expiresAt: now + 24 * 60 * 60 * 1000 // 一天後過期
                     });
-                    return;
-                }
-
-                // 主人撿起大便
-                if (hasSpecial.type === 'poop' && isViewingSelf) {
-                    const newSpecials = { ...specials }; delete newSpecials[currentDimension][index]; setSpecials(newSpecials);
+                    
+                    // 從地圖移除
+                    const newSpecials = { ...specials };
+                    delete newSpecials[currentDimension][index];
+                    setSpecials(newSpecials);
                     removeSpecialFromDB(user.uid, currentDimension, index);
-                    return showAlert(`💩 你掃掉了 ${hasSpecial.fromName} 留下的惡作劇大便！\n(真是個調皮的傢伙)`);
-                }
-                // 主人撿起小花 (+3 鑽石)
-                if (hasSpecial.type === 'poppy' && isViewingSelf) {
-                    const newSpecials = { ...specials }; delete newSpecials[currentDimension][index]; setSpecials(newSpecials);
-                    updateMcData({ diamonds: mcData.diamonds + 3 }, true); 
-                    removeSpecialFromDB(user.uid, currentDimension, index);
-                    return showAlert(`🌺 你收起了 ${hasSpecial.fromName} 送的小花！\n獲得 3 💎 獎勵！`);
-                }
-                // 主人撿起禮物盒
-                if (hasSpecial.type === 'gift_box' && isViewingSelf) {
-                    const bInfo = BLOCK_TYPES.find(b => b.id === hasSpecial.blockId);
-                    const newSpecials = { ...specials }; delete newSpecials[currentDimension][index]; setSpecials(newSpecials);
-                    const newInv = { ...localInventory }; newInv[hasSpecial.blockId] = (newInv[hasSpecial.blockId] || 0) + hasSpecial.amount; setLocalInventory(newInv);
-                    removeSpecialFromDB(user.uid, currentDimension, index); window.db.collection('users').doc(user.uid).update({ 'mcData.inventory': newInv });
-                    return showAlert(`🎁 你打開了 ${hasSpecial.fromName} 送的禮物！\n獲得 ${hasSpecial.amount} 個 ${bInfo ? bInfo.name : '未知方塊'}！`);
-                }
-                // 主人撿起告示牌 / 訪客查看告示牌
-                if (hasSpecial.type === 'sign') {
-                    if (isViewingSelf) {
-                        const newSpecials = { ...specials }; delete newSpecials[currentDimension][index]; setSpecials(newSpecials);
-                        removeSpecialFromDB(user.uid, currentDimension, index);
-                        
-                        const newLog = { uid: hasSpecial.fromUid, name: hasSpecial.fromName, time: Date.now(), msg: hasSpecial.text };
-                        const currentLog = mcData.visitorLog || [];
-                        updateMcData({ visitorLog: [newLog, ...currentLog].slice(0, 20) }, true);
-                        
-                        return showAlert(`📜 收集了 ${hasSpecial.fromName || '屋主'} 的告示牌！\n\n留言：「${hasSpecial.text}」\n\n已收錄至您的到訪紀錄(留言板)中！`);
-                    } else {
-                        return showAlert(`📜 告示牌留言：\n\n「${hasSpecial.text}」\n- ${hasSpecial.fromName || '屋主'}`);
-                    }
+                    
+                    updateMcData({ inbox: newInbox }, true);
+                    return showAlert(`📥 物品已自動存入「收件箱」(保存 1 天)！\n請點擊商店上方的收件箱按鈕查看或清理。`);
                 }
             }
 
-            // 開關門邏輯
+            // 開關門邏輯 (互動模式)
             if (currentFg && (currentFg.endsWith('_door') || currentFg.endsWith('_trapdoor'))) {
                 const currentOpen = hasSpecial?.open || false;
                 const isDoor = !currentFg.endsWith('_trapdoor');
@@ -1578,10 +1483,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         // --- 建築模式邏輯 (僅自己家) ---
         if (!isViewingSelf) return;
 
-        if (hasSpecial && ['poppy', 'gift_box', 'sign', 'chest'].includes(hasSpecial.type) && selectedBlock !== 'erase') {
-             return showAlert("❌ 這裡有特殊物品，無法直接覆蓋！請先切換至「👀互動模式」處理。");
-        }
-
         const newInv = { ...localInventory };
         const newSpecials = { ...specials };
         
@@ -1596,9 +1497,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         };
 
         // --- 處理背景牆模式 (Background) ---
-        // --- 處理背景牆模式 (Background) ---
         if (buildLayer === 'background') {
-            if (!selectedBlock) return; // 移至此處：背景模式若是空手直接中斷
+            if (!selectedBlock) return;
             if (currentBg === selectedBlock && selectedBlock !== 'erase') return;
             const newBgGrid = [...bgGrids[currentDimension]];
 
@@ -1606,7 +1506,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 if ((newInv[selectedBlock] || 0) <= 0) return showAlert(`❌ 庫存不足，請先購買！`);
                 newInv[selectedBlock] -= 1;
                 removeFromHotbarIfEmpty(newInv, selectedBlock);
-                
                 newBgGrid[index] = selectedBlock;
                 playBlockSound(selectedBlock, 'place');
             } else {
@@ -1621,7 +1520,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         }
 
         // --- 處理前景實體模式 (Foreground) ---
-        // 修改：只要有方塊，且目前手持不是拆除工具(erase)，就優先觸發互動
         if (currentFg && selectedBlock !== 'erase') {
             if (currentFg.includes('_log')) {
                 setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: { type: 'rotation', rotation: (hasSpecial?.rotation || 0) === 0 ? 90 : 0 } } }));
@@ -1653,9 +1551,26 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 setHasUnsavedChanges(true); 
                 return;
             }
+            
+            // ✨ 地板門：切換貼齊面 (底端、頂端、出紙面)
+            if (currentFg.includes('_trapdoor')) {
+                const facings = ['bottom', 'top', 'face']; 
+                const currentFacing = hasSpecial?.facing || 'bottom';
+                const nextFacing = facings[(facings.indexOf(currentFacing) + 1) % facings.length];
+                
+                setSpecials(prev => ({ 
+                    ...prev, 
+                    [currentDimension]: { 
+                        ...prev[currentDimension], 
+                        [index]: { ...hasSpecial, type: 'trapdoor', facing: nextFacing } 
+                    } 
+                }));
+                playBlockSound(currentFg, 'place'); 
+                setHasUnsavedChanges(true); 
+                return;
+            }
         }
 
-        // 移到這裡：如果沒有觸發上方互動，且此時是空手，就中斷不進行後續的取代或放置
         if (!selectedBlock) return;
 
         if (selectedBlock === 'erase' && currentFg === 'chest_block') {
@@ -1684,6 +1599,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
             removeFromHotbarIfEmpty(newInv, selectedBlock);
         }
 
+        // 拆除原方塊
         if (currentFg && currentFg !== 'erase') {
             const isRemovingDoor = currentFg.endsWith('_door') && !currentFg.endsWith('_trapdoor');
             newInv[currentFg] = (newInv[currentFg] || 0) + 1;
@@ -1707,6 +1623,9 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 newFgGrid[index] = selectedBlock; newFgGrid[index - cols] = selectedBlock;
                 newSpecials[currentDimension][index] = { type: 'door', half: 'bottom', open: false, hinge: 'left' };
                 newSpecials[currentDimension][index - cols] = { type: 'door', half: 'top', open: false, hinge: 'left' };
+            } else if (selectedBlock.includes('_trapdoor')) {
+                // 初始化地板門
+                newSpecials[currentDimension][index] = { type: 'trapdoor', facing: 'bottom', open: false };
             } else {
                 delete newSpecials[currentDimension][index];
             }
@@ -1740,7 +1659,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         setHasUnsavedChanges(true);
     };
 
-    // --- Hotbar Drag & Drop Handlers ---
     const handleDragStart = (e, type, idOrIdx) => {
         e.dataTransfer.setData('type', type);
         if (type === 'inventory') e.dataTransfer.setData('blockId', idOrIdx);
@@ -1802,7 +1720,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 setSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: signData } })); 
                 setHasUnsavedChanges(true); 
             } else {
-                // 修復：立即更新好友家的畫面，讓告示牌當下就顯示出來！
                 setFriendSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: signData } }));
                 showAlert('✅ 成功在好友家留下告示牌！');
             }
@@ -1835,9 +1752,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         if (hasUnsavedChanges) setShowQuitConfirm(true); 
         else onQuit();
     };
-    // --- 新增功能：寄照片邏輯 ---
 
-    // 1. 處理檔案選擇與壓縮
     const handlePhotoFilesSelected = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -1848,7 +1763,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         try {
             const { index, targetUid } = window.currentPhotoTarget;
             
-            // 壓縮圖片 (使用 Canvas)
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = (event) => {
@@ -1856,7 +1770,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 img.src = event.target.result;
                 img.onload = async () => {
                     const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 800; // 壓縮最大寬度
+                    const MAX_WIDTH = 800; 
                     let width = img.width;
                     let height = img.height;
 
@@ -1869,20 +1783,15 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
                     
-                    // 轉為低畫質 Base64
                     const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
                     
                     if (compressedBase64.length > 500000) {
                         return showAlert('❌ 圖片壓縮後依然過大，請選擇更小的圖片或降低解析度！');
                     }
 
-                    // ✅ 照片成功處理，正式扣除 50 鑽石！
                     updateMcData({ diamonds: mcData.diamonds - 50 }, true);
 
-                    // 寄出照片 (存入 specials)
                     const photoData = { 
-                        type: 'photo_map', 
-                        img: compressedBase64, 
                         type: 'photo_map',
                         img: compressedBase64,
                         fromUid: user.uid, 
@@ -1892,15 +1801,14 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     
                     setFriendSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: photoData } }));
                     
-                    // 更新 Firebase
                     const doc = await window.db.collection('users').doc(targetUid).get();
                     const dbSpecials = doc.data()?.mcData[`specials_${currentDimension}`] || {};
                     dbSpecials[index] = photoData;
                     await window.db.collection('users').doc(targetUid).update({ [`mcData.specials_${currentDimension}`]: dbSpecials });
 
                     showAlert('📸 照片已成功寄出！將以「地圖」形式出現在好友家。');
-                    window.currentPhotoTarget = null; // 清空目標
-                    e.target.value = ''; // 清空 input
+                    window.currentPhotoTarget = null; 
+                    e.target.value = ''; 
                 };
             };
         } catch (err) {
@@ -1909,7 +1817,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
         }
     };
 
-    // 2. 打開隱藏的選擇器
     const triggerPhotoUpload = (index, targetUid) => {
         window.currentPhotoTarget = { index, targetUid };
         photoInputRef.current.click();
@@ -1952,7 +1859,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
                 )}
 
-                {/* --- 訪客留言紀錄彈窗 --- */}
                 {visitorLogOpen && (
                     <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
                         <div className="bg-[#333] border-4 border-gray-600 p-4 w-full max-w-md shadow-2xl flex flex-col h-[60dvh]">
@@ -1982,7 +1888,55 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                         </div>
                     </div>
                 )}
-                {/* --- 新增：隱藏的檔案選擇器，用於寄照片 --- */}
+                
+                {/* ✨ 新增：收件箱彈窗 UI */}
+                {showInbox && (
+                    <div className="absolute inset-0 z-[130] bg-black bg-opacity-80 flex flex-col items-center justify-center p-4">
+                        <div className="bg-[#333] border-4 border-gray-600 p-4 w-full max-w-lg shadow-2xl flex flex-col h-[70dvh]">
+                            <div className="flex justify-between items-center mb-4 border-b-2 border-gray-600 pb-2">
+                                <h3 className="text-white font-bold text-lg">📥 收件箱 (保存1天)</h3>
+                                <button onClick={() => setShowInbox(false)} className="text-red-400 hover:text-red-300 font-bold">✖ 關閉</button>
+                            </div>
+                            <div className="flex-grow overflow-y-auto custom-scrollbar space-y-2">
+                                {(!mcData.inbox || mcData.inbox.filter(i => i.expiresAt > Date.now()).length === 0) ? (
+                                    <p className="text-gray-400 text-center text-sm mt-10">收件箱是空的喔！</p>
+                                ) : (
+                                    mcData.inbox.filter(i => i.expiresAt > Date.now()).map(item => (
+                                        <div key={item.id} className="bg-gray-800 p-3 border-l-4 border-blue-500 flex justify-between items-center">
+                                            <div className="flex items-center gap-3">
+                                                {item.type === 'poop' && <span className="text-2xl">💩</span>}
+                                                {item.type === 'poppy' && <span className="text-2xl">🌺</span>}
+                                                {item.type === 'gift_box' && <span className="text-2xl">🎁</span>}
+                                                {item.type === 'sign' && <span className="text-2xl">📜</span>}
+                                                {item.type === 'photo_map' && <span className="text-2xl">📸</span>}
+                                                <div>
+                                                    <p className="text-white font-bold text-sm">來自: {item.fromName}</p>
+                                                    <p className="text-gray-400 text-xs">剩下 {Math.ceil((item.expiresAt - Date.now())/3600000)} 小時過期</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                {item.type === 'photo_map' && (
+                                                    <button onClick={() => handleInboxAction(item, 'view')} className="bg-blue-600 text-white px-2 py-1 text-xs font-bold rounded">查看</button>
+                                                )}
+                                                {item.type === 'sign' && (
+                                                    <button onClick={() => handleInboxAction(item, 'read')} className="bg-yellow-600 text-white px-2 py-1 text-xs font-bold rounded">閱讀</button>
+                                                )}
+                                                {item.type === 'gift_box' && (
+                                                    <button onClick={() => handleInboxAction(item, 'open')} className="bg-green-600 text-white px-2 py-1 text-xs font-bold rounded">打開</button>
+                                                )}
+                                                {item.type === 'poppy' && (
+                                                    <button onClick={() => handleInboxAction(item, 'claim')} className="bg-pink-600 text-white px-2 py-1 text-xs font-bold rounded">領3💎</button>
+                                                )}
+                                                <button onClick={() => handleInboxAction(item, 'delete')} className="bg-red-600 text-white px-2 py-1 text-xs font-bold rounded">丟棄</button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <input 
                     type="file" 
                     ref={photoInputRef} 
@@ -1991,20 +1945,13 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     onChange={handlePhotoFilesSelected}
                 />
 
-                {/* --- 新增：酷炫的照片瀏覽視窗 (可縮放、下載、閱後即焚倒數) --- */}
                 {specialBlockModal?.type === 'photo_view' && (
-                    <div className="fixed inset-0 z-[120] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in select-text">
+                    <div className="fixed inset-0 z-[140] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in select-text">
                         <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 w-full max-w-4xl shadow-2xl relative flex flex-col h-[90vh]">
                             
-                            {/* Header */}
                             <div className="flex justify-between items-center mb-2 px-1 border-b-2 border-gray-400 pb-1 shrink-0">
                                 <div>
                                     <h3 className="text-[#373737] font-bold text-lg inline-block">📸 來自 {specialBlockModal.from} 的私人照片</h3>
-                                    <span className="text-xs text-red-600 ml-2 font-bold block sm:inline-block animate-pulse">
-                                        ⚠️ 閱後即焚：此照片將於 
-                                        {Math.max(0, Math.ceil((specialBlockModal.expiresAt - Date.now()) / 1000))}
-                                        秒後徹底銷毀！
-                                    </span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <a 
@@ -2018,35 +1965,27 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                 </div>
                             </div>
 
-                            {/* 照片內容 (使用 custom-scrollbar 允許縮放滾動) */}
                             <div className="flex-grow bg-black p-1 border-2 border-[#373737] shadow-inner overflow-auto custom-scrollbar flex items-center justify-center">
-                                {/* 支援滑鼠滾輪縮放的圖片 */}
                                 <img 
                                     src={specialBlockModal.data} 
                                     alt="Sent private photo"
                                     className="pixelated max-w-none transition-transform duration-200 origin-center"
-                                    style={{ 
-                                        // 簡單的縮放實現，初始為 100%
-                                        transform: `scale(${window.tempPhotoScale || 1})`,
-                                    }}
+                                    style={{ transform: `scale(${window.tempPhotoScale || 1})` }}
                                     onWheel={(e) => {
                                         e.preventDefault();
                                         if (!window.tempPhotoScale) window.tempPhotoScale = 1;
                                         const newScale = e.deltaY > 0 ? window.tempPhotoScale * 0.9 : window.tempPhotoScale * 1.1;
-                                        // 限制縮放範圍 (0.5x ~ 3x)
                                         window.tempPhotoScale = Math.max(0.5, Math.min(3, newScale));
                                         e.target.style.transform = `scale(${window.tempPhotoScale})`;
                                     }}
                                 />
                             </div>
                             
-                            {/* Footer */}
                             <p className="text-[#373737] font-bold text-center text-xs mt-2 shrink-0">提示：使用滑鼠滾輪可縮放圖片大小。</p>
                         </div>
                     </div>
                 )}
 
-                {/* --- 通用確認彈窗 (解鎖、擴張) --- */}
                 {confirmDialog && (
                     <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[120]">
                         <div className="bg-gray-800 border-4 border-gray-600 p-6 rounded-lg shadow-2xl max-w-sm text-center transform scale-100 animate-in zoom-in">
@@ -2060,10 +1999,8 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
                 )}
 
-              {/* 左側主要建築與控制區 */}
 <div className="flex-none md:flex-1 flex flex-col items-center p-1 md:p-2 w-full md:w-3/4 relative h-[65vh] md:h-full shrink-0">
                     
-                    {/* Header */}
                     <div className="w-full flex flex-col xl:flex-row justify-between items-start xl:items-center mb-2 bg-black bg-opacity-60 p-2 text-white font-bold gap-2 z-10 shrink-0">
                         <div className="flex flex-wrap items-center gap-2">
                             <span>{isViewingSelf ? `🏠 我的基地` : `👀 ${viewingFriend.name} 的家`}</span>
@@ -2136,14 +2073,11 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                         </div>
                     </div>
 
-                    {/* --- Minecraft 捲動視窗 --- */}
-                    {/* ✨ 修改：綁定 mapContainerRef 並確保容器為 block 模式以利縮放計算 */}
 <div ref={mapContainerRef} className="w-full flex-grow overflow-auto custom-scrollbar bg-black p-1 relative shadow-inner border-2 border-black flex">
                         {isViewingSelf && (
                             <button onClick={() => requestExpand('left')} className="sticky left-0 top-0 bottom-0 w-8 flex-shrink-0 bg-black bg-opacity-60 hover:bg-opacity-80 text-white font-black z-20 flex items-center justify-center border-r border-gray-600 transition-all">➕</button>
                         )}
                         
-                        {/* ✨ 修改：加入 grid-origin 用於 DOM 操作縮放，並設定預設 transform */} 
                     <div className="grid grid-origin h-max min-h-full bg-opacity-90 w-full md:w-auto" style={{      backgroundColor: DIMENSIONS[currentDimension].bg,      
                                                                                                               gridTemplateColumns: `repeat(${activeCols}, minmax(0, 1fr))`,      
                                                                                                               minWidth: `calc((100vh - 240px) * (${activeCols}/${ROWS}))`,     
@@ -2175,17 +2109,27 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                             fgStyle.transformOrigin = 'left'; 
                                             fgStyle.transform = specialInfo?.open ? 'scaleX(0.2)' : 'none';
                                         } else {
-                                            // 修正右開門的邏輯：
                                             if (specialInfo?.open) {
                                                 fgStyle.transformOrigin = 'right';
-                                                fgStyle.transform = 'scaleX(0.2)'; // 靠右擠壓，使用正數就不會跨出格子
+                                                fgStyle.transform = 'scaleX(0.2)'; 
                                             } else {
                                                 fgStyle.transformOrigin = 'center';
-                                                fgStyle.transform = 'scaleX(-1)'; // 關門時以中心為軸原地翻轉，完美解決跨格問題
+                                                fgStyle.transform = 'scaleX(-1)'; 
                                             }
                                         }
                                     } else if (fgCellId.includes('_trapdoor')) {
-                                        fgStyle.clipPath = specialInfo?.open ? 'polygon(0 0, 20% 0, 20% 100%, 0 100%)' : 'polygon(0 80%, 100% 80%, 100% 100%, 0 100%)';
+                                        // ✨ 根據 facing 繪製地板門
+                                        const facing = specialInfo?.facing || 'bottom'; 
+                                        const isOpen = specialInfo?.open || false;
+
+                                        if (facing === 'bottom') {
+                                            fgStyle.clipPath = isOpen ? 'polygon(0 0, 20% 0, 20% 100%, 0 100%)' : 'polygon(0 80%, 100% 80%, 100% 100%, 0 100%)';
+                                        } else if (facing === 'top') {
+                                            fgStyle.clipPath = isOpen ? 'polygon(0 0, 20% 0, 20% 100%, 0 100%)' : 'polygon(0 0, 100% 0, 100% 20%, 0 20%)';
+                                        } else if (facing === 'face') {
+                                            // 貼齊牆面(出紙面方向)：關閉時為整塊(none)，打開時朝上翹起(薄片)
+                                            fgStyle.clipPath = isOpen ? 'polygon(0 0, 100% 0, 100% 20%, 0 20%)' : 'none'; 
+                                        }
                                     }
                                 }
 
@@ -2195,23 +2139,19 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                         className={`w-full aspect-square relative cursor-crosshair ${(!fgCellId && !bgCellId) ? 'border-[0.5px] border-black border-opacity-20 hover:bg-white hover:bg-opacity-30' : ''}`}
                                         style={{ touchAction: 'pan-x pan-y' }}
                                     >
-                                        {/* 渲染背景牆 */}
                                         {bgImgSrc && (
                                             <div className="absolute inset-0 pointer-events-none" style={{ filter: 'brightness(0.4) saturate(0.8)' }}>
                                                 <McImg src={bgInfo?.img} className="w-full h-full object-cover pixelated" />
                                             </div>
                                         )}
-                                        {/* 渲染前景 */}
                                         {fgImgSrc && (
                                             <div className="absolute inset-0 transition-all duration-200 pointer-events-none" style={fgStyle}>
                                                 <McImg src={fgImgSrc} className="w-full h-full object-cover pixelated drop-shadow-sm" />
                                             </div>
                                         )}
-                                        {/* 以掉落物形式呈現的特殊物品 (縮小 + 浮動彈跳) */}
                                         {specialInfo?.type === 'sign' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/oak_sign.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
                                         {specialInfo?.type === 'poppy' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
                                         {specialInfo?.type === 'poop' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/cocoa_beans.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
-                                        {/* 新增：寄照片的地圖圖示，使用 Minecraft filled_map.png */}
                                         {specialInfo?.type === 'photo_map' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/filled_map.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
                                         {specialInfo?.type === 'gift_box' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" /></div>}
                                     </div>
@@ -2224,7 +2164,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                         )}
                     </div>
 
-                    {/* Footer：9格 Hotbar (Minecraft 快捷列) */}
                     <div className="w-full flex flex-col sm:flex-row justify-between items-center mt-3 gap-2 shrink-0">
                         {isViewingSelf && (
                             <button onClick={handleSave} disabled={isSaving || !hasUnsavedChanges} className={`font-black px-6 py-2 border-2 shadow-lg w-full sm:w-auto ${hasUnsavedChanges ? 'bg-green-600 hover:bg-green-500 text-white border-black animate-pulse' : 'bg-gray-600 text-gray-400 border-gray-500 cursor-not-allowed'}`}>
@@ -2255,7 +2194,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </div>
                 </div>
 
-               {/* 右側商店區 */}
 <div className="w-full h-auto md:h-full md:w-1/4 bg-[#333] p-2 md:p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-gray-700 shrink-0 relative">
                     <h3 className="text-yellow-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
                         <span>💰 方塊商店</span>
@@ -2263,10 +2201,16 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     </h3>
 
                     {isViewingSelf && (
-                        <button onClick={() => { playChestOpenSound(); setIsChestOpen(true); }} className="w-full bg-[#8b5a2b] hover:bg-[#a06830] border-2 border-[#3e2723] p-2 mb-2 rounded shadow-md flex items-center justify-center space-x-2 transition-colors shrink-0">
-                            <McImg src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" className="w-6 h-6 pixelated drop-shadow-lg" fallback="📦" />
-                            <span className="text-white font-bold text-sm">打開大背包 (裝備至快捷列)</span>
-                        </button>
+                        <>
+                            <button onClick={() => { playChestOpenSound(); setIsChestOpen(true); }} className="w-full bg-[#8b5a2b] hover:bg-[#a06830] border-2 border-[#3e2723] p-2 mb-2 rounded shadow-md flex items-center justify-center space-x-2 transition-colors shrink-0">
+                                <McImg src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" className="w-6 h-6 pixelated drop-shadow-lg" fallback="📦" />
+                                <span className="text-white font-bold text-sm">打開大背包 (裝備至快捷列)</span>
+                            </button>
+                            {/* ✨ 收件箱入口 */}
+                            <button onClick={() => setShowInbox(true)} className="w-full bg-blue-600 hover:bg-blue-500 border-2 border-[#1e3a8a] p-2 mb-2 rounded shadow-md flex items-center justify-center space-x-2 transition-colors shrink-0">
+                                <span className="text-white font-bold text-sm">📥 收件箱 ({(mcData.inbox || []).filter(i => i.expiresAt > Date.now()).length})</span>
+                            </button>
+                        </>
                     )}
 
                     {isViewingSelf ? (
@@ -2281,10 +2225,9 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                         <div className="bg-blue-900 bg-opacity-50 border border-blue-500 p-2 mb-2 shrink-0 flex flex-col gap-1">
                             <p className="text-xs text-blue-200 font-bold mb-1">參觀模式工具：</p>
                             
-                            {/* ✨ 新增：空手 (防誤觸) 按鈕 */}
                             <button onClick={() => { 
                                 const h = [...hotbar]; 
-                                h[activeHotbarIndex] = null; // 清空當前選取的快捷列格子
+                                h[activeHotbarIndex] = null; 
                                 setHotbar(h); 
                             }} className={`w-full py-1 text-xs font-bold border ${!selectedBlock ? 'bg-gray-200 border-white text-black shadow-inner' : 'bg-gray-700 text-gray-300 border-gray-500'}`}>🤚 空手</button>
 
@@ -2309,7 +2252,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                 h[activeHotbarIndex] = 'poop'; 
                                 setHotbar(h); 
                             }} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'poop' ? 'bg-amber-800 border-amber-950 text-white' : 'bg-gray-700 text-gray-300 border-gray-500'}`}>💩 放大便</button>
-                        {/* 新增：寄照片工具 */}
                             <button onClick={() => { 
                                 const h = [...hotbar]; 
                                 const existingIdx = h.indexOf('photo_map');
@@ -2356,7 +2298,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 </div>
             </div>
 
-            {/* --- 實體機關箱互動 UI --- */}
             {chestUi && (
                 <div className="absolute inset-0 z-[110] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
                     <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 w-full max-w-2xl shadow-2xl relative">
@@ -2394,7 +2335,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 </div>
             )}
 
-            {/* --- 我的大背包庫存與快捷列設定 --- */}
             {isChestOpen && (
                 <div 
                     className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex items-center justify-center p-4"
@@ -2412,7 +2352,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                             <button onClick={() => { playChestCloseSound(); setIsChestOpen(false); setDragActiveBlock(null); }} className="text-red-600 font-black text-xl hover:scale-110">✖</button>
                         </div>
                         
-                        {/* 庫存區 */}
                         <div className="bg-[#8b8b8b] p-2 grid grid-cols-6 sm:grid-cols-9 gap-1 border-2 border-[#373737] shadow-inner h-[30vh] overflow-y-auto content-start">
                             {Object.entries(localInventory).filter(([id, count]) => count > 0 || ['erase'].includes(id)).map(([id, count]) => {
                                 const bInfo = BLOCK_TYPES.find(b => b.id === id);
@@ -2433,7 +2372,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                             })}
                         </div>
 
-                        {/* 快捷列拖放區 */}
                         <h3 className="text-[#373737] font-bold text-sm mt-3 mb-1 px-1">📥 快捷列 (請在此拖放或點擊替換)</h3>
                         <div className="flex justify-center gap-1 sm:gap-2 p-2 bg-[#5c5c5c] border-2 border-[#373737] shadow-inner">
                             {hotbar.map((blockId, idx) => {
@@ -2474,7 +2412,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 </div>
             )}
 
-            {/* 購買小彈窗 */}
             {buyModal && (
                 <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
                     <div className="bg-[#333] border-4 border-gray-600 p-6 w-full max-w-xs shadow-2xl flex flex-col items-center relative">
@@ -2494,7 +2431,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 </div>
             )}
 
-            {/* 告示牌彈窗 */}
             {signModal !== null && (
                 <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
                     <div className="bg-[#d4a373] border-8 border-[#8b5a2b] p-6 w-full max-w-sm shadow-2xl flex flex-col items-center pixelated-border">
