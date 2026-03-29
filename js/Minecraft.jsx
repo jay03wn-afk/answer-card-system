@@ -1445,33 +1445,49 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 if (selectedBlock === 'poop') {
                     const now = Date.now();
                     const oneHourAgo = now - 3600000;
-                    // 過濾出一小時內的大便紀錄
-                    const recentPoops = (mcData.poopTimestamps || []).filter(t => t > oneHourAgo);
                     const bonus = mcData.laxativeBonus || 0;
-
-                    if (recentPoops.length >= 5 && bonus <= 0) {
-                        return showAlert('❌ 肚子拉空了！一小時只能拉 5 次，除非去商城買瀉藥。');
-                    }
-
+                    
                     let isWatery = false;
                     let newBonus = bonus;
+                    let alertMsg = '';
 
-                    // 如果正常次數用完但有藥效，觸發水便
-                    if (recentPoops.length >= 5 && bonus > 0) {
+                    // --- 優先檢查瀉藥邏輯 ---
+                    if (bonus > 0) {
+                        // 吃了瀉藥，立刻拉水便！
                         isWatery = true;
-                        newBonus -= 1;
-                        showAlert('🌊 噗嚕嚕！因為瀉藥的關係拉出了水便！');
+                        newBonus = bonus - 1;
+                        alertMsg = '🌊 噗嚕嚕！史帝夫吃了瀉藥肚子劇痛，立刻拉出了一坨噁心的水便！🤢';
                     } else {
-                        showAlert('💩 成功在好友家偷偷拉了一坨大便！');
+                        // 沒有藥效，檢查正常限制
+                        const recentPoops = (mcData.poopTimestamps || []).filter(t => t > oneHourAgo);
+                        if (recentPoops.length >= 5) {
+                            return showAlert('❌ 肚子拉空了！一小時只能拉 5 次，除非去商城買瀉藥觸發水便。');
+                        }
+                        
+                        isWatery = false;
+                        newBonus = 0;
+                        alertMsg = '💩 成功在好友家偷偷拉了一坨大便！';
                     }
 
-                    const itemData = { type: 'poop', fromUid: user.uid, fromName: userProfile.displayName, isWatery };
+                    // 無論是否為水便，都記錄時間戳 (水便也算在每小時次數內)
+                    const finalRecentPoops = (mcData.poopTimestamps || []).filter(t => t > oneHourAgo);
+
+                    const itemData = { 
+                        type: 'poop', 
+                        fromUid: user.uid, 
+                        fromName: userProfile.displayName, 
+                        isWatery: isWatery // 標記是否為水便
+                    };
                     
+                    // 更新本地狀態和 DB (增加噁心警示)
                     updateMcData({ 
-                        poopTimestamps: [...recentPoops, now],
+                        poopTimestamps: [...finalRecentPoops, now],
                         laxativeBonus: newBonus
                     }, true);
+                    
+                    showAlert(alertMsg);
 
+                    // --- 同步到 DB 的邏輯 (與原本相同，確保 itemData 包含 isWatery) ---
                     setFriendSpecials(prev => ({ ...prev, [currentDimension]: { ...prev[currentDimension], [index]: itemData } }));
                     
                     window.db.collection('users').doc(viewingFriend.uid).get().then(doc => {
@@ -1485,7 +1501,6 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                     setHotbar(newHotbar);
                     return;
                 }
-                return;
             }
 
             // 屋主互動
@@ -2262,15 +2277,22 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                             {specialInfo?.type === 'poppy' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/poppy.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
 {specialInfo?.type === 'poop' && (
                                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                    <McImg 
-                                                        src={specialInfo.isWatery 
-                                                            ? "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/mud.png" 
-                                                            : "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/cocoa_beans.png"
-                                                        } 
-                                                        className={`w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce ${specialInfo.isWatery ? 'opacity-80 scale-110' : ''}`} 
-                                                    />
+                                                    {specialInfo.isWatery ? (
+                                                        // 水便的噁心視覺效果：較大、綠褐色調、半透明、滲出感
+                                                        <McImg 
+                                                            src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/mud.png" 
+                                                            className="w-2/3 h-2/3 pixelated drop-shadow-xl opacity-90 sepia hue-rotate-[70deg] contrast-125 animate-pulse" // 加上 sepia 和 hue-rotate 讓它變黃綠色，animate-pulse 讓它有呼吸感
+                                                            style={{ imageRendering: 'pixelated' }}
+                                                        />
+                                                    ) : (
+                                                        // 普通大便
+                                                        <McImg 
+                                                            src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/cocoa_beans.png"
+                                                            className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" 
+                                                        />
+                                                    )}
                                                 </div>
-                                            )}                                            {specialInfo?.type === 'photo_map' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/filled_map.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
+                                            )}                                           {specialInfo?.type === 'photo_map' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/filled_map.png" className="w-1/2 h-1/2 pixelated drop-shadow-md animate-bounce" /></div>}
                                             {specialInfo?.type === 'gift_box' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><McImg src="https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg" className="w-3/4 h-3/4 pixelated drop-shadow-md animate-pulse" /></div>}
                                         </div>
                                     );
