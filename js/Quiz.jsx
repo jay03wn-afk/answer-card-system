@@ -2979,7 +2979,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                 <div>
                                     <label className="block text-sm font-bold mb-1 dark:text-gray-200">科目</label>
                                     <select value={subject} onChange={e=>setSubject(e.target.value)} className="w-full border p-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                                        {['藥物分析','生藥','中藥','藥理','藥化','藥劑學','生物藥劑學'].map(s => <option key={s}>{s}</option>)}
+                                        {['藥物分析','生藥','中藥','藥理','藥化','藥劑學','生物藥劑學','其他'].map(s => <option key={s}>{s}</option>)}
                                     </select>
                                 </div>
                                 <div>
