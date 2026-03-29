@@ -1860,7 +1860,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 )}
 
                 {visitorLogOpen && (
-                    <div className="absolute inset-0 z-[100] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
+                    <div className="fixed inset-0 z-[150] bg-black bg-opacity-70 flex flex-col items-center justify-center p-4">
                         <div className="bg-[#333] border-4 border-gray-600 p-4 w-full max-w-md shadow-2xl flex flex-col h-[60dvh]">
                             <div className="flex justify-between items-center mb-4 border-b-2 border-gray-600 pb-2">
                                 <h3 className="text-white font-bold text-lg">👣 基地到訪與留言紀錄</h3>
@@ -1891,7 +1891,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 
                 {/* ✨ 新增：收件箱彈窗 UI */}
                 {showInbox && (
-                    <div className="absolute inset-0 z-[130] bg-black bg-opacity-80 flex flex-col items-center justify-center p-4">
+                    <div className="fixed inset-0 z-[150] bg-black bg-opacity-80 flex flex-col items-center justify-center p-4">
                         <div className="bg-[#333] border-4 border-gray-600 p-4 w-full max-w-lg shadow-2xl flex flex-col h-[70dvh]">
                             <div className="flex justify-between items-center mb-4 border-b-2 border-gray-600 pb-2">
                                 <h3 className="text-white font-bold text-lg">📥 收件箱 (保存1天)</h3>
