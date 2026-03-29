@@ -403,15 +403,18 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 )}
             </div>
 
-            {loading ? (
+           {loading ? (
                 <div className="text-center text-gray-500 py-10 font-bold animate-pulse">正在載入公開任務...</div>
             ) : (
                 <div className="space-y-8 pb-10">
                     
-                    {/* --- 金色專屬：歷屆國考題 --- */}
-                    {hasAnyOfficial && (
-                        <div className="bg-gradient-to-br from-yellow-50 to-white dark:from-gray-800 dark:to-gray-900 border border-yellow-400 dark:border-yellow-600 shadow-md no-round p-5 md:p-6">
-                            <h2 className="text-2xl font-black mb-4 dark:text-white border-b-2 border-yellow-400 dark:border-yellow-600 pb-2 text-yellow-700 dark:text-yellow-400 flex items-center">
+                    {/* ✨ 加入左右排版容器：lg:grid-cols-2 讓大螢幕分兩欄，手機版自動單欄 */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 items-start">
+
+                        {/* --- 金色專屬：歷屆國考題 --- */}
+                        {hasAnyOfficial && (
+                            <div className="bg-gradient-to-br from-yellow-50 to-white dark:from-gray-800 dark:to-gray-900 border border-yellow-400 dark:border-yellow-600 shadow-md no-round p-5 md:p-6 w-full">
+                                <h2 className="text-2xl font-black mb-4 dark:text-white border-b-2 border-yellow-400 dark:border-yellow-600 pb-2 text-yellow-700 dark:text-yellow-400 flex items-center">
                                 🏆 歷屆國考題
                             </h2>
                             
@@ -497,7 +500,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
 
                     {/* --- 一般：模擬試題 --- */}
                     {hasAnyNormal && (
-                        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5 md:p-6">
+                        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5 md:p-6 w-full">
                             <h2 className="text-2xl font-black mb-6 dark:text-white border-b-2 border-indigo-200 dark:border-indigo-900 pb-2 text-indigo-700 dark:text-indigo-400 flex items-center">
                                 📚 模擬試題
                             </h2>
@@ -550,6 +553,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                             </div>
                         </div>
                     )}
+                  </div> {/* ✨ 結束左右排版容器，接下來的區塊會回到單行全寬 */}
 
                     {otherTasksFiltered.length > 0 && (
                         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round p-5 md:p-6">
