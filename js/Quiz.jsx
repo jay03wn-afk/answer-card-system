@@ -2214,15 +2214,15 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 </div>
                             )}
                             {questionHtml && (
-                                <div className={`w-full relative bg-white dark:bg-gray-800 flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
-                                    <div 
-                                        className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-300' : 'bg-white dark:bg-gray-800 text-black dark:text-white'}`}
-                                        style={{ wordBreak: 'break-word' }}
-                                        // ✨ 替換為解析後的 HTML
-                                        dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
-                                    />
-                                </div>
-                            )}
+    <div className={`w-full relative bg-white flex flex-col flex-grow h-full overflow-y-auto scroll-smooth`}>
+        <div 
+            className={`w-full h-full p-4 custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 text-black' : 'bg-white text-black'}`}
+            style={{ wordBreak: 'break-word' }}
+            // ✨ 替換為解析後的 HTML
+            dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
+        />
+    </div>
+)}
                         </div>
                     </div>
                 )}
