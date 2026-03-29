@@ -825,15 +825,20 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         showConfirm(`確定要刪除「${folderName}」資料夾嗎？\n裡面的測驗將會被自動移至「未分類」。`, async () => {
             try {
                 const snapshot = await window.db.collection('users').doc(user.uid).collection('quizzes').where('folder', '==', folderName).get();
-                const batch = window.db.batch();
-                snapshot.docs.forEach(doc => {
-                    batch.update(doc.ref, { folder: '未分類' });
-                });
-                await batch.commit();
+                
+                // 防呆：如果資料夾裡面有試卷，才執行 batch 更新，避免空 batch 報錯
+                if (!snapshot.empty) {
+                    const batch = window.db.batch();
+                    snapshot.docs.forEach(doc => {
+                        batch.update(doc.ref, { folder: '未分類' });
+                    });
+                    await batch.commit();
+                }
 
-                await window.db.collection('users').doc(user.uid).update({
+                // 改用 set + merge: true，避免其他新帳號文件尚未完全初始化而導致 update 報錯
+                await window.db.collection('users').doc(user.uid).set({
                     folders: window.firebase.firestore.FieldValue.arrayRemove(folderName)
-                });
+                }, { merge: true });
 
                 setCurrentFolder('未分類');
                 showAlert(`✅ 已刪除「${folderName}」並將試卷移至未分類。`);
