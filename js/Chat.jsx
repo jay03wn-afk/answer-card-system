@@ -354,7 +354,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     const lastMyMsgId = (messages || []).slice().reverse().find(m => m.senderId === user.uid)?.id;
 
     return (
-        <div className="max-w-6xl mx-auto p-3 sm:p-4 pt-0 flex flex-col md:grid md:grid-cols-3 gap-4 md:gap-6 h-[calc(100dvh-80px)] min-h-[calc(100vh-80px)] md:h-full relative overflow-hidden">
+        <div className="max-w-6xl mx-auto px-0 sm:px-4 pt-0 flex flex-col md:grid md:grid-cols-3 gap-0 md:gap-6 h-[calc(100dvh-80px)] min-h-[calc(100vh-80px)] md:h-full relative overflow-hidden">
             
             {previewImg && (
                 <div onClick={() => setPreviewImg(null)} className="fixed inset-0 z-[200] bg-black bg-opacity-90 flex items-center justify-center p-4 cursor-zoom-out">
@@ -363,7 +363,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                 </div>
             )}
 
-            <div className={`w-full md:w-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round flex-col h-full overflow-hidden transition-colors ${activeChat ? 'hidden md:flex' : 'flex'}`}>
+            <div className={`w-full md:w-auto bg-white dark:bg-gray-800 border-0 md:border border-gray-200 dark:border-gray-700 shadow-sm no-round flex-col h-full overflow-hidden transition-colors ${activeChat ? 'hidden md:flex' : 'flex'}`}>
                 <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0">
                     <h2 className="font-bold mb-3 dark:text-white">加入好友</h2>
                     <div className="flex space-x-2">
@@ -388,7 +388,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                 </div>
             </div>
 
-            <div className={`flex-1 min-h-0 w-full md:w-auto md:col-span-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round flex-col h-full transition-colors ${activeChat ? 'flex' : 'hidden md:flex'}`}>
+            <div className={`flex-1 min-h-0 w-full md:w-auto md:col-span-2 bg-white dark:bg-gray-800 border-0 md:border border-gray-200 dark:border-gray-700 shadow-sm no-round flex-col h-full transition-colors ${activeChat ? 'flex' : 'hidden md:flex'}`}>
                 {activeChat ? (
                     <>
                         <div className="p-4 border-b border-gray-200 dark:border-gray-700 font-bold flex items-center space-x-2 shrink-0 bg-white dark:bg-gray-800 dark:text-white">
