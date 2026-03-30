@@ -444,7 +444,10 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                                                             <p className="mb-1 text-sm font-bold truncate">{msg.scoreData?.testName}</p>
                                                             <h3 className={`text-3xl font-black mb-1 ${isMe ? 'text-white' : 'text-red-500'}`}>{msg.scoreData?.score} 分</h3>
                                                             <p className={`text-xs mb-3 ${isMe ? 'text-gray-300' : 'text-gray-400'}`}>答對 {msg.scoreData?.correctCount} / {msg.scoreData?.total} 題</p>
-                                                            {!isMe && msg.quizData && (
+                                                            {!isMe && msg.quizData && msg.quizData.isTaskQuiz && (
+                                                                <button onClick={() => showAlert(`🎯 這是一份公開任務！\n\n請前往「🎯 任務牆」搜尋：\n「${msg.scoreData?.testName}」\n即可進行挑戰並獲取鑽石獎勵！`)} className="bg-yellow-400 dark:bg-yellow-500 text-black px-4 py-1.5 no-round font-bold text-xs border border-yellow-500 hover:bg-yellow-500 w-full transition-colors shadow-sm">去任務牆挑戰</button>
+                                                            )}
+                                                            {!isMe && msg.quizData && !msg.quizData.isTaskQuiz && (
                                                                 <button onClick={() => downloadSharedQuiz(msg.quizData)} className="bg-white dark:bg-gray-200 text-black px-4 py-1.5 no-round font-bold text-xs border border-gray-200 hover:bg-gray-100 dark:hover:bg-white w-full transition-colors">下載這份試卷</button>
                                                             )}
                                                         </div>
