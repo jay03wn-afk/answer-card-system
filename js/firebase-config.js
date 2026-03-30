@@ -78,3 +78,46 @@ const renderTestName = (name, isCompleted = false) => {
     }
     return name;
 };
+// --- JZ 壓縮引擎 (省空間與加速載入) ---
+window.jzCompress = function(data) {
+    if (!data) return data;
+    let str = typeof data === 'string' ? data : JSON.stringify(data);
+    if (str.length < 50) return data; // 太短不壓縮
+    let dict = new Map();
+    let nextCode = 1000000;
+    let phrase = str[0];
+    let out = [];
+    for (let i = 1; i < str.length; i++) {
+        let char = str[i];
+        if (dict.has(phrase + char)) phrase += char;
+        else {
+            out.push(phrase.length > 1 ? dict.get(phrase) : phrase.charCodeAt(0));
+            dict.set(phrase + char, nextCode++);
+            phrase = char;
+        }
+    }
+    out.push(phrase.length > 1 ? dict.get(phrase) : phrase.charCodeAt(0));
+    return "JZC|" + out.map(n => n.toString(36)).join('.');
+};
+
+window.jzDecompress = function(data) {
+    if (typeof data !== 'string' || !data.startsWith("JZC|")) return data;
+    try {
+        let outArr = data.substring(4).split('.').map(s => parseInt(s, 36));
+        let dict = new Map();
+        let nextCode = 1000000;
+        let phrase = String.fromCharCode(outArr[0]);
+        let oldPhrase = phrase;
+        let res = [phrase];
+        for (let i = 1; i < outArr.length; i++) {
+            let currCode = outArr[i];
+            if (currCode < 1000000) phrase = String.fromCharCode(currCode);
+            else phrase = dict.has(currCode) ? dict.get(currCode) : (oldPhrase + oldPhrase[0]);
+            res.push(phrase);
+            dict.set(nextCode++, oldPhrase + phrase[0]);
+            oldPhrase = phrase;
+        }
+        let finalStr = res.join("");
+        try { return JSON.parse(finalStr); } catch(e) { return finalStr; }
+    } catch (e) { return data; } 
+};
