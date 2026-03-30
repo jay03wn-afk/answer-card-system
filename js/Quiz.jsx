@@ -2938,8 +2938,11 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     
     // 管理員表單狀態 (升級自訂功能)
     const [qaType, setQaType] = useState('mcq'); // 'mcq' 或 'tf'
+    const [subjectMode, setSubjectMode] = useState('藥物分析');
     const [subject, setSubject] = useState('藥物分析');
-    const [customDifficulty, setCustomDifficulty] = useState('簡單');
+    const [difficultyMode, setDifficultyMode] = useState('1');
+    const [customDifficulty, setCustomDifficulty] = useState('1');
+    const [rewardMode, setRewardMode] = useState('10');
     const [customReward, setCustomReward] = useState(10);
     const [endTimeStr, setEndTimeStr] = useState('');
     const [question, setQuestion] = useState('');
@@ -3055,6 +3058,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const handleSubmitAns = async () => {
         if (selectedAns === null) return showAlert('請選擇一個答案！');
         if (!user) return setShowResult(true);
+        
+        // 第一層防護：從本地 state 判斷是否已經作答過
         if (records[activeQA.id]) return showAlert('⚠️ 您已經作答過此題！');
 
         setSubmitting(true);
@@ -3063,23 +3068,51 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         
         try {
             const recRef = window.db.collection('users').doc(user.uid).collection('fastQARecords').doc(activeQA.id);
-            const recDoc = await recRef.get();
-            if (recDoc.exists) { setSubmitting(false); return showAlert('⚠️ 您已經領取過獎勵！'); }
-
-            await recRef.set({ isCorrect, selectedAns, answeredAt: window.firebase.firestore.FieldValue.serverTimestamp() });
-
-            // 終極修復統計錯誤：先讀取當前狀態，再寫入更新的選項統計，避免 Firebase 的巢狀欄位覆蓋問題
-            const qaDoc = await window.db.collection('fastQA').doc(activeQA.id).get();
-            if (qaDoc.exists) {
-                const currentData = qaDoc.data();
-                const currentCounts = currentData.answersCount || {};
-                
-                await window.db.collection('fastQA').doc(activeQA.id).update({
-                    totalAnswers: window.firebase.firestore.FieldValue.increment(1),
-                    [`answersCount.${selectedAns}`]: (currentCounts[selectedAns] || 0) + 1
-                });
+            
+            // 第二層防護：從資料庫確認，加入 try-catch 處理離線問題
+            try {
+                // 強制嘗試從伺服器獲取，如果失敗就依賴本地的 records 狀態
+                const recDoc = await recRef.get({ source: 'server' }); 
+                if (recDoc.exists) { 
+                    setSubmitting(false); 
+                    return showAlert('⚠️ 系統紀錄顯示您已經領取過獎勵！'); 
+                }
+            } catch (getError) {
+                console.warn("無法連線至伺服器驗證紀錄，將依賴本地狀態：", getError);
+                // 如果是因為離線造成的錯誤，我們就信任第一層防護 (records state)
+                if (getError.message.includes('offline') || getError.code === 'unavailable') {
+                    // 繼續執行寫入，Firestore 會在恢復連線時自動同步
+                } else {
+                    throw getError; // 拋出其他未預期的錯誤
+                }
             }
 
+            // 寫入作答紀錄 (Firestore 支援離線寫入，恢復連線後會自動同步)
+            await recRef.set({ 
+                isCorrect, 
+                selectedAns, 
+                answeredAt: window.firebase.firestore.FieldValue.serverTimestamp() 
+            });
+
+            // 更新選項統計
+            const qaRef = window.db.collection('fastQA').doc(activeQA.id);
+            try {
+                const qaDoc = await qaRef.get();
+                if (qaDoc.exists) {
+                    const currentData = qaDoc.data();
+                    const currentCounts = currentData.answersCount || {};
+                    
+                    await qaRef.update({
+                        totalAnswers: window.firebase.firestore.FieldValue.increment(1),
+                        [`answersCount.${selectedAns}`]: (currentCounts[selectedAns] || 0) + 1
+                    });
+                }
+            } catch (statError) {
+                 console.warn("更新統計數據失敗 (可能因離線)：", statError);
+                 // 統計數據更新失敗不影響使用者獲得獎勵，所以我們只印出警告
+            }
+
+            // 發送獎勵
             if (isCorrect) {
                 await window.db.collection('users').doc(user.uid).set({
                     mcData: { diamonds: window.firebase.firestore.FieldValue.increment(rewardAmount) }
@@ -3087,9 +3120,14 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
             }
             
             setShowResult(true);
-            if (isCorrect) showAlert(`🎉 答對了！恭喜獲得 ${rewardAmount} 💎 鑽石！`);
+            if (isCorrect) {
+                showAlert(`🎉 答對了！恭喜獲得 ${rewardAmount} 💎 鑽石！\n(若網路不穩，獎勵將於連線恢復時發送)`);
+            } else {
+                 showAlert('❌ 答錯了，請看詳解！');
+            }
         } catch (e) {
-            showAlert('提交失敗：' + e.message);
+            console.error(e);
+            showAlert('提交失敗，請檢查網路連線：\n' + e.message);
         }
         setSubmitting(false);
     };
@@ -3128,9 +3166,30 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                         <input type="radio" checked={qaType==='tf'} onChange={()=>setQaType('tf')} className="w-4 h-4" /> 是非題
                                     </label>
                                 </div>
-                                <div><label className="block text-sm font-bold mb-1">科目</label><input type="text" value={subject} onChange={e=>setSubject(e.target.value)} className="w-full border p-2 dark:bg-gray-800" /></div>
-                                <div><label className="block text-sm font-bold mb-1">難度標籤</label><input type="text" value={customDifficulty} onChange={e=>setCustomDifficulty(e.target.value)} className="w-full border p-2 dark:bg-gray-800" placeholder="例如: 地獄級" /></div>
-                                <div><label className="block text-sm font-bold mb-1">獎勵鑽石數量</label><input type="number" min="1" value={customReward} onChange={e=>setCustomReward(e.target.value)} className="w-full border p-2 dark:bg-gray-800" /></div>
+                               <div>
+                                    <label className="block text-sm font-bold mb-1">科目</label>
+                                    <select value={subjectMode} onChange={e => { setSubjectMode(e.target.value); if(e.target.value !== 'custom') setSubject(e.target.value); else setSubject(''); }} className="w-full border p-2 mb-2 dark:bg-gray-800">
+                                        {['藥物分析', '生藥', '中藥', '藥理', '藥化', '藥劑', '生物藥劑'].map(s => <option key={s} value={s}>{s}</option>)}
+                                        <option value="custom">[自訂]</option>
+                                    </select>
+                                    {subjectMode === 'custom' && <input type="text" value={subject} onChange={e=>setSubject(e.target.value)} className="w-full border p-2 dark:bg-gray-800" placeholder="請輸入自訂科目" />}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">難度標籤</label>
+                                    <select value={difficultyMode} onChange={e => { setDifficultyMode(e.target.value); if(e.target.value !== 'custom') setCustomDifficulty(e.target.value); else setCustomDifficulty(''); }} className="w-full border p-2 mb-2 dark:bg-gray-800">
+                                        {Array.from({length: 10}, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}★</option>)}
+                                        <option value="custom">[自訂]</option>
+                                    </select>
+                                    {difficultyMode === 'custom' && <input type="text" value={customDifficulty} onChange={e=>setCustomDifficulty(e.target.value)} className="w-full border p-2 dark:bg-gray-800" placeholder="請輸入自訂難度" />}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">獎勵鑽石數量</label>
+                                    <select value={rewardMode} onChange={e => { setRewardMode(e.target.value); if(e.target.value !== 'custom') setCustomReward(Number(e.target.value)); else setCustomReward(''); }} className="w-full border p-2 mb-2 dark:bg-gray-800">
+                                        {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(n => <option key={n} value={n}>{n} 鑽石</option>)}
+                                        <option value="custom">[自訂]</option>
+                                    </select>
+                                    {rewardMode === 'custom' && <input type="number" min="1" value={customReward} onChange={e=>setCustomReward(e.target.value)} className="w-full border p-2 dark:bg-gray-800" placeholder="請輸入鑽石數量" />}
+                                </div>
                                 <div><label className="block text-sm font-bold mb-1">結束時間 (留空為永久)</label><input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-gray-800" /></div>
                                 <div className="md:col-span-2"><label className="block text-sm font-bold mb-1">題目內容 (支援貼上圖片)</label><ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入..." /></div>
                                 
