@@ -427,14 +427,12 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
         const unsubMyQuizzes = window.db.collection('users').doc(user.uid).collection('quizzes')
             .onSnapshot(snap => {
                 const myTaskMap = {};
-                
-                // 第一階段：先對應所有的任務副本 (保留有成績的，避免被空白蓋掉)
                 snap.docs.forEach(doc => {
                     const data = doc.data();
-                    if (data.isTask && data.taskId) {
-                        if (!myTaskMap[data.taskId] || (!myTaskMap[data.taskId].results && data.results)) {
-                            myTaskMap[data.taskId] = { id: doc.id, ...data };
-                        }
+                    if (data.taskId) {
+                        data.userAnswers = window.jzDecompress(data.userAnswers);
+                        data.results = window.jzDecompress(data.results);
+                        myTaskMap[data.taskId] = { id: doc.id, ...data };
                     }
                 });
 
@@ -497,6 +495,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                     questionFileUrl: task.questionFileUrl || '',
                     questionText: task.questionText || '',
                     questionHtml: task.questionHtml || '',
+                    explanationHtml: task.explanationHtml || '',
                     correctAnswersInput: task.correctAnswersInput || '',
                     publishAnswers: task.publishAnswers !== false,
                     userAnswers: emptyAnswers,
@@ -793,7 +792,12 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             .orderBy('createdAt', 'desc')
             .onSnapshot(snapshot => {
                 if (isMounted) {
-                    setRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setRecords(snapshot.docs.map(doc => {
+                        const data = doc.data();
+                        data.userAnswers = window.jzDecompress(data.userAnswers);
+                        data.results = window.jzDecompress(data.results);
+                        return { id: doc.id, ...data };
+                    }));
                     setLoading(false);
                     clearTimeout(fallbackTimer);
                 }
@@ -1180,7 +1184,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                                 <div className="grid grid-cols-4 sm:flex sm:flex-wrap items-center gap-1 sm:gap-3 w-full sm:w-auto text-center shrink-0">
                                     <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-500 hover:text-red-600 transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis">刪除</button>
                                     <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis">📁移動</button>
-                                    {!rec.isTask ? (
+                                    {!(rec.isTask || /\[#(op|m?nm?st)\]/i.test(rec.testName)) ? (
                                         <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 dark:text-blue-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis">📤分享</button>
                                     ) : <div />}
                                     {!rec.isShared && !rec.isTask ? (
@@ -1267,12 +1271,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [step, setStep] = useState(initialRecord.forceStep || (initialRecord.results ? 'results' : (initialRecord.id ? 'answering' : 'setup')));
     const [testName, setTestName] = useState(initialRecord.testName || '');
     const [numQuestions, setNumQuestions] = useState(initialRecord.numQuestions || 50);
-    const [userAnswers, setUserAnswers] = useState(initialRecord.userAnswers || []);
+    const [userAnswers, setUserAnswers] = useState(window.jzDecompress(initialRecord.userAnswers) || []);
     const [starred, setStarred] = useState(initialRecord.starred || []);
     const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
-    const [results, setResults] = useState(initialRecord.results || null);
+    const [results, setResults] = useState(window.jzDecompress(initialRecord.results) || null);
     const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
-    const [questionText, setQuestionText] = useState(initialRecord.questionText || ''); 
+    const [questionText, setQuestionText] = useState(window.jzDecompress(initialRecord.questionText) || '');
     const [questionHtml, setQuestionHtml] = useState(initialRecord.questionHtml || ''); // ✨ 新增富文本狀態
     const [explanationHtml, setExplanationHtml] = useState(initialRecord.explanationHtml || ''); // ✨ 新增詳解狀態
     const [folder, setFolder] = useState(initialRecord.folder || '未分類');
@@ -1359,8 +1363,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             if (userAnswers.length === 0 && numQuestions > 0 && step === 'answering') return;
             
             const stateToSave = { 
-                testName, numQuestions, userAnswers, starred, correctAnswersInput, results, 
-                questionFileUrl, questionText, questionHtml, explanationHtml, hasTimer, timeLimit, folder,
+                testName, numQuestions, userAnswers: window.jzCompress(userAnswers), starred, correctAnswersInput, results: window.jzCompress(results), 
+                questionFileUrl, questionText: window.jzCompress(questionText), hasTimer, timeLimit, folder,
                 updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
             };
             if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
@@ -1456,14 +1460,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         setQuestionHtml(finalQuestionHtml);
 
         window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
-                    testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
-                    correctAnswersInput: cleanKey, // ✨ 改帶入整理好的答案
-                    publishAnswers: true, 
-                    questionFileUrl: finalFileUrl,
-                    questionText: finalQuestionText,
-                    questionHtml: finalQuestionHtml,
-                    explanationHtml: explanationHtml,
-                    hasTimer: hasTimer,
+            testName, numQuestions, userAnswers: window.jzCompress(initialAnswers), starred: initialStarred,
+            correctAnswersInput: '',
+            publishAnswers: true, 
+            questionFileUrl: finalFileUrl,
+            questionText: window.jzCompress(finalQuestionText),
+            hasTimer: hasTimer,
                     timeLimit: hasTimer ? Number(timeLimit) : null,
                     timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
                     folder: folder,
@@ -1559,9 +1561,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             const updates = {
                 testName: testName.trim() || '未命名測驗',
                 questionFileUrl: finalFileUrl,
-                questionText: finalQuestionText,
-                questionHtml: finalQuestionHtml,
-                explanationHtml: explanationHtml,
+                questionText: window.jzCompress(finalQuestionText),
                 correctAnswersInput: cleanKey,
                 publishAnswers: publishAnswersToggle
             };
@@ -1617,12 +1617,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 if (isCorrect) tCorrectCount++;
                                 return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
                             });
-                            targetUpdates.results = { 
+                            targetUpdates.results = window.jzCompress({ 
                                 score: Math.round((tCorrectCount/targetData.numQuestions)*100), 
                                 correctCount: tCorrectCount, 
                                 total: targetData.numQuestions, 
                                 data: tData 
-                            };
+                            });
                         }
                        return targetRef.update(targetUpdates);
                     }
@@ -1685,7 +1685,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         try {
             await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
                 correctAnswersInput: cleanKey,
-                results: newResults
+                results: window.jzCompress(newResults)
             });
 
             const isOp = testName.includes('[#op]');
@@ -1709,7 +1709,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 }
 
                 await window.db.collection('publicTasks').doc(quizId).set({
-                    testName, numQuestions, questionFileUrl, questionText, questionHtml, explanationHtml,
+                    testName, numQuestions, questionFileUrl, questionText: window.jzCompress(questionText), 
                     correctAnswersInput: cleanKey, hasTimer, timeLimit, category, creatorUid: currentUser.uid,
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 }, { merge: true });
@@ -1920,6 +1920,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const shareScoreToFriend = (friend) => {
         const cleanName = cleanQuizName(testName);
         const chatId = [currentUser.uid, friend.uid].sort().join('_');
+        const isTaskQuiz = isTask || /\[#(op|m?nm?st)\]/i.test(testName);
         window.db.collection('chats').doc(chatId).collection('messages').add({
             senderId: currentUser.uid,
             senderName: userProfile.displayName,
@@ -1932,7 +1933,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 correctCount: results.correctCount,
                 total: results.total
             },
-            quizData: {
+            quizData: isTaskQuiz ? {
+                isTaskQuiz: true,
+                testName: cleanName
+            } : {
                 ownerId: currentUser.uid,
                 quizId: quizId,
                 testName: cleanName,
@@ -2341,7 +2345,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 </div>
 
                 <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
-                    {!isShared && !isTask && (
+                    {!isShared && !isTask && !/\[#(op|m?nm?st)\]/i.test(testName) && (
                         <button onClick={async () => {
                             if (shortCode) {
                                 navigator.clipboard.writeText(shortCode);
@@ -2772,48 +2776,61 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [shareContent, setShareContent] = useState('');
 
     useEffect(() => {
-        const fetchQA = async () => {
+        let unsubQA = () => {};
+        let unsubRecords = () => {};
+
+        const fetchQA = () => {
             setLoading(true);
             try {
-                // ✨ 優化：如果有指定題目 ID，我們「只」向資料庫請求那一題，加快訪客載入速度
                 if (targetQaId) {
-                    const docSnap = await window.db.collection('fastQA').doc(targetQaId).get();
-                    if (docSnap.exists) {
-                        const target = { id: docSnap.id, ...docSnap.data() };
-                        setActiveQA(target);
-                    } else {
-                        showAlert('找不到此題目，可能已過期或被刪除！');
-                    }
+                    unsubQA = window.db.collection('fastQA').doc(targetQaId).onSnapshot(docSnap => {
+                        if (docSnap.exists) {
+                            setActiveQA({ id: docSnap.id, ...docSnap.data() });
+                        } else {
+                            showAlert('找不到此題目，可能已過期或被刪除！');
+                        }
+                        setLoading(false);
+                    });
                 } else {
-                    // 如果沒有指定 ID (代表是列表模式)，才抓取所有題目
-                    const snapshot = await window.db.collection('fastQA').orderBy('createdAt', 'desc').get();
-                    const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    
-                    const now = new Date().getTime();
-                    const validQas = isAdmin ? qas : qas.filter(q => !q.endTime || q.endTime > now);
-                    setQaList(validQas);
+                    unsubQA = window.db.collection('fastQA').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+                        const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        const now = new Date().getTime();
+                        const validQas = isAdmin ? qas : qas.filter(q => !q.endTime || q.endTime > now);
+                        setQaList(validQas);
+                        
+                        setActiveQA(prev => {
+                            if (prev) {
+                                const updatedQA = validQas.find(q => q.id === prev.id);
+                                return updatedQA || prev;
+                            }
+                            return prev;
+                        });
+                        setLoading(false);
+                    });
                 }
 
-                // 只有已登入的用戶才需要抓取「作答紀錄」
                 if (user) {
-                    const recSnap = await window.db.collection('users').doc(user.uid).collection('fastQARecords').get();
-                    const recs = {};
-                    recSnap.docs.forEach(doc => { recs[doc.id] = doc.data(); });
-                    setRecords(recs);
-
-                    if (targetQaId && recs[targetQaId]) {
-                        setShowResult(true);
-                    }
+                    unsubRecords = window.db.collection('users').doc(user.uid).collection('fastQARecords').onSnapshot(recSnap => {
+                        const recs = {};
+                        recSnap.docs.forEach(doc => { recs[doc.id] = doc.data(); });
+                        setRecords(recs);
+                        if (targetQaId && recs[targetQaId]) {
+                            setShowResult(true);
+                        }
+                    });
                 }
             } catch (e) {
                 console.error(e);
-                // ✨ 新增：如果被 Firebase 權限擋住，會明確跳出提示
-                showAlert('讀取失敗：' + e.message + '\\n(這通常是因為資料庫未開放訪客權限)');
-            } finally {
+                showAlert('讀取失敗：' + e.message + '\n(這通常是因為資料庫未開放訪客權限)');
                 setLoading(false);
             }
         };
         fetchQA();
+
+        return () => {
+            unsubQA();
+            unsubRecords();
+        };
     }, [user, isAdmin, targetQaId]);
 
     const getDiamonds = (diff) => {
@@ -2939,19 +2956,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                 [`answersCount.${selectedAns}`]: window.firebase.firestore.FieldValue.increment(1)
             }, { merge: true });
 
-            // 更新本地狀態以便即時顯示分布
-            setActiveQA(prev => {
-                const currentCount = prev.answersCount || { '0':0, '1':0, '2':0, '3':0 };
-                const currentTotal = prev.totalAnswers || 0;
-                return {
-                    ...prev,
-                    totalAnswers: currentTotal + 1,
-                    answersCount: {
-                        ...currentCount,
-                        [selectedAns]: (currentCount[selectedAns] || 0) + 1
-                    }
-                };
-            });
+            // 移除手動的 setActiveQA 更新，因為已經改用 onSnapshot 即時同步
             
             // 2. 如果答對，發放鑽石
             if (isCorrect) {
