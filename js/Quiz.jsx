@@ -13,22 +13,22 @@ const renderTestName = (rawName, isCompleted = false) => {
 
     if (isOp) {
         return (
-            <span className="inline-flex flex-wrap items-center gap-1.5">
-                <span className="bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-400 px-1.5 py-0.5 text-xs font-black shadow-sm no-round whitespace-nowrap">🏆 國考題</span>
-                <span className="text-yellow-700 dark:text-yellow-400 font-bold">{cleanName}</span>
+            <span className="inline-flex flex-wrap items-center gap-1.5 min-w-0 w-full sm:w-auto">
+                <span className="bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-400 px-1.5 py-0.5 text-xs font-black shadow-sm no-round whitespace-nowrap shrink-0">🏆 國考題</span>
+                <span className="text-yellow-700 dark:text-yellow-400 font-bold break-all sm:break-words">{cleanName}</span>
             </span>
         );
     }
     if (isMnst) {
         return (
-            <span className="inline-flex flex-wrap items-center gap-1.5">
-                <span className="bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 border border-blue-400 px-1.5 py-0.5 text-xs font-black shadow-sm no-round whitespace-nowrap">📘 模擬考</span>
-                <span className="text-blue-700 dark:text-blue-400 font-bold">{cleanName}</span>
-                {!isCompleted && <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-1 py-0.5 no-round whitespace-nowrap font-bold">💎 及格獎勵</span>}
+            <span className="inline-flex flex-wrap items-center gap-1.5 min-w-0 w-full sm:w-auto">
+                <span className="bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 border border-blue-400 px-1.5 py-0.5 text-xs font-black shadow-sm no-round whitespace-nowrap shrink-0">📘 模擬考</span>
+                <span className="text-blue-700 dark:text-blue-400 font-bold break-all sm:break-words">{cleanName}</span>
+                {!isCompleted && <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-1 py-0.5 no-round whitespace-nowrap font-bold shrink-0">💎 及格獎勵</span>}
             </span>
         );
     }
-    return <span>{cleanName}</span>;
+    return <span className="break-all sm:break-words">{cleanName}</span>;
 };
 
 // --- 新增：富文本題目解析輔助函式 ---
@@ -1140,12 +1140,12 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             ) : (
                 <div className="flex flex-col gap-2 pb-10">
                     {displayedRecords.map(rec => (
-                        <div key={rec.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 sm:p-4 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
+                        <div key={rec.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 sm:p-4 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 w-full min-w-0">
                             {/* 左側：標題與狀態 */}
-                            <div className="flex flex-col gap-1 min-w-0 flex-grow">
-                                {/* ✨ 解除名稱限制：改為 break-words 自動折行顯示 */}
-                                <h2 className="font-bold text-sm sm:text-base dark:text-white flex flex-wrap items-center gap-2 leading-relaxed">
-                                    <span className="break-words whitespace-normal min-w-0 flex-1">{renderTestName(rec.testName, !!rec.results)}</span>
+                            <div className="flex flex-col gap-1 min-w-0 flex-1 w-full">
+                                {/* ✨ 修正：加入 w-full min-w-0 防止撐破，並讓手機版標題與標籤能自動往下折行排版 */}
+                                <h2 className="font-bold text-sm sm:text-base dark:text-white flex flex-col sm:flex-row sm:items-center gap-2 leading-relaxed min-w-0 w-full">
+                                    <span className="break-all sm:break-words whitespace-normal min-w-0 flex-1 block sm:inline-block w-full">{renderTestName(rec.testName, !!rec.results)}</span>
                                     <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                                         {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
                                         {rec.isShared && !rec.isTask && <span className="text-[10px] bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
@@ -1154,24 +1154,24 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                                 </h2>
                                 
                                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs mt-1">
-                                    <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">{rec.numQuestions}題</span>
+                                    <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap shrink-0">{rec.numQuestions}題</span>
                                     {rec.results ? (
-                                        <span className="text-green-600 dark:text-green-400 font-bold whitespace-nowrap">✅ {rec.results.score} 分</span>
+                                        <span className="text-green-600 dark:text-green-400 font-bold whitespace-nowrap shrink-0">✅ {rec.results.score} 分</span>
                                     ) : rec.userAnswers && rec.userAnswers.filter(a=>a).length > 0 ? (
                                         <span className="text-orange-500 dark:text-orange-400 font-bold flex items-center gap-1 flex-wrap">
                                             📝 進行中
                                             {rec.hasTimer && rec.timeRemaining !== undefined && (
-                                                <span className="text-red-500 inline-block whitespace-nowrap">(剩 {Math.max(1, Math.ceil(rec.timeRemaining / 60))}m)</span>
+                                                <span className="text-red-500 inline-block whitespace-nowrap shrink-0">(剩 {Math.max(1, Math.ceil(rec.timeRemaining / 60))}m)</span>
                                             )}
                                         </span>
                                     ) : (
-                                        <span className="text-gray-400 font-bold whitespace-nowrap">⏳ 未作答</span>
+                                        <span className="text-gray-400 font-bold whitespace-nowrap shrink-0">⏳ 未作答</span>
                                     )}
                                 </div>
                             </div>
 
                             {/* 右側：操作按鈕 */}
-                            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 w-full sm:w-auto border-t sm:border-t-0 border-gray-100 dark:border-gray-700 pt-3 sm:pt-0 mt-2 sm:mt-0">
+                            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 w-full sm:w-auto border-t sm:border-t-0 border-gray-100 dark:border-gray-700 pt-3 sm:pt-0 mt-2 sm:mt-0 shrink-0">
                                 <div className="flex flex-wrap items-center gap-3">
                                     <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 transition-colors whitespace-nowrap">刪除</button>
                                     <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 font-bold transition-colors whitespace-nowrap">📁移動</button>
