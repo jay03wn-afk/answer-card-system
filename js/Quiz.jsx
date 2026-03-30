@@ -1065,30 +1065,32 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
 
     return (
         <div className="max-w-6xl mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar">
-            <div className="flex justify-between items-center mb-4 border-b-2 border-black dark:border-white pb-2 shrink-0">
-                <h1 className="text-2xl font-black dark:text-white">我的題庫</h1>
-                <button onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 shadow-sm transition-colors">+ 新測驗</button>
+            {/* ✨ 修正：加入 flex-wrap 與 w-full，避免標題與按鈕在小螢幕擠壓超出邊界 */}
+            <div className="flex flex-wrap justify-between items-center gap-3 mb-4 border-b-2 border-black dark:border-white pb-2 shrink-0 w-full min-w-0">
+                <h1 className="text-2xl font-black dark:text-white shrink-0">我的題庫</h1>
+                <button onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 shadow-sm transition-colors whitespace-nowrap shrink-0">+ 新測驗</button>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-2 mb-2 shrink-0 w-full overflow-hidden">
-                <div className="flex items-center space-x-2 overflow-x-auto custom-scrollbar pb-1 flex-grow">
+            {/* ✨ 修正：加入 min-w-0，並將 space-x-2 改為 gap-2，確保滾動條正確作用於容器內部，不會撐破父元素 */}
+            <div className="flex flex-col md:flex-row gap-3 mb-2 shrink-0 w-full min-w-0 overflow-hidden">
+                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 flex-grow w-full min-w-0">
                     {userFolders.map(f => (
-                        <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
+                        <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors shrink-0 ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
                             {f === '我建立的試題' ? '⭐ ' : '📁 '} {f}
                         </button>
                     ))}
                 </div>
-                <div className="flex items-center space-x-2 overflow-x-auto custom-scrollbar pb-1 shrink-0">
-                    <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors">
+                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 shrink-0 w-full md:w-auto min-w-0">
+                    <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors shrink-0">
                         + 新增資料夾
                     </button>
-                    <button onClick={handleImportCode} className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors">
+                    <button onClick={handleImportCode} className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors shrink-0">
                         📥 輸入代碼
                     </button>
                     {!specialFolders.includes(currentFolder) && (
                         <button 
                             onClick={() => handleDeleteFolder(currentFolder)} 
-                            className="px-3 py-1.5 text-sm font-bold bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800 no-round whitespace-nowrap transition-colors"
+                            className="px-3 py-1.5 text-sm font-bold bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800 no-round whitespace-nowrap transition-colors shrink-0"
                         >
                             🗑️ 刪除目前資料夾
                         </button>
