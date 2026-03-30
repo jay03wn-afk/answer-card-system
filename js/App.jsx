@@ -144,6 +144,7 @@ function Main() {
         <div className="bg-black dark:bg-gray-950 text-white px-4 flex justify-between items-center shadow-md h-14 shrink-0 relative z-20 overflow-x-auto custom-scrollbar transition-colors">
             <div className="flex space-x-6 items-center h-full whitespace-nowrap">
                 <span className="font-black text-lg tracking-widest mr-4">JJay</span>
+                <button onClick={() => setActiveTab('newspaper')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'newspaper' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>📰 JJay日報</button>
                 <button onClick={() => setActiveTab('dashboard')} className={`h-full px-2 font-bold transition-colors ${activeTab === 'dashboard' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>我的題庫</button>
                 <button onClick={() => setActiveTab('taskwall')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'taskwall' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>🎯 任務牆</button>
                 <button onClick={() => setActiveTab('wrongbook')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'wrongbook' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>📓 錯題整理</button>
@@ -304,6 +305,7 @@ function Main() {
             
             {activeTab !== 'activeQuiz' ? (
                 <div className="flex-grow pt-4 md:pt-6 overflow-hidden flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
+                    {activeTab === 'newspaper' && <NewspaperDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={(folderName) => { setActiveQuizRecord({ folder: folderName }); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
                     {activeTab === 'taskwall' && <TaskWallDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     
