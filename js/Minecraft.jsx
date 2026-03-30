@@ -495,17 +495,24 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
 }
 
 // --- 礦坑尋寶小遊戲組件 ---
+// --- 礦坑尋寶小遊戲組件 ---
 function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
     const [gameState, setGameState] = useState('idle');
     const [board, setBoard] = useState(Array(9).fill(null));
     const [isProcessing, setIsProcessing] = useState(false);
     
-    const digSfx = useRef(new Audio('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/block/stone/break1.ogg'));
+    // ✨ 新增敲擊音效與破壞音效
+    const hitSfx = useRef(new Audio('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/block/stone/hit1.ogg'));
+    const breakSfx = useRef(new Audio('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/block/stone/break1.ogg'));
     const winSfx = useRef(new Audio('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/win.mp3'));
     const bgmRef = useRef(null);
 
     const imgStone = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png";
     const imgDiamond = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png";
+    
+    // ✨ 新增裂痕階段的貼圖
+    const crackStage1 = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/destroy_stage_2.png";
+    const crackStage2 = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/destroy_stage_6.png";
 
     const PRIZES = [
         { id: '711', name: '7-11 50元禮券', type: 'real', prob: 0.001, img: 'https://i.postimg.cc/pd20TjLs/638632987880299781.png', desc: '極巨獎！' },
@@ -540,7 +547,8 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         }
 
         updateMcData({ diamonds: mcData.diamonds - 50 }, true);
-        setBoard(Array(9).fill({ revealed: false, prize: null }));
+        // ✨ 初始化 state 加上 hits 與 isHit 屬性
+        setBoard(Array(9).fill({ revealed: false, prize: null, hits: 0, isHit: false }));
         setGameState('playing');
     };
 
@@ -584,14 +592,41 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
     const handleDig = async (index) => {
         if (gameState !== 'playing' || isProcessing) return;
+
+        const currentBlock = board[index];
+
+        // ✨ 逐漸破壞邏輯：前 2 下只會產生音效與裂痕
+        if (currentBlock.hits < 2) {
+            try { 
+                hitSfx.current.currentTime = 0; 
+                hitSfx.current.play(); 
+            } catch(e){}
+
+            setBoard(prev => {
+                const newBoard = [...prev];
+                newBoard[index] = { ...newBoard[index], hits: currentBlock.hits + 1, isHit: true };
+                return newBoard;
+            });
+
+            // 短暫延遲後移除點擊特效
+            setTimeout(() => {
+                setBoard(prev => {
+                    const newBoard = [...prev];
+                    if (newBoard[index]) newBoard[index].isHit = false;
+                    return newBoard;
+                });
+            }, 100);
+            return;
+        }
+
+        // ✨ 第 3 下，正式挖開
         setIsProcessing(true);
-        
-        try { digSfx.current.currentTime = 0; digSfx.current.play(); } catch(e){}
+        try { breakSfx.current.currentTime = 0; breakSfx.current.play(); } catch(e){}
 
         const prize = await drawPrize();
 
         const newBoard = Array(9).fill(null).map((_, i) => {
-            if (i === index) return { revealed: true, prize: prize, isPick: true };
+            if (i === index) return { revealed: true, prize: prize, isPick: true, hits: 3, isHit: false };
             const shouldShowFakeGift = Math.random() < 0.04; 
             let dummy;
             if (shouldShowFakeGift) {
@@ -600,7 +635,7 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 const normalPool = PRIZES.filter(p => p.id !== '711');
                 dummy = normalPool[Math.floor(Math.random() * normalPool.length)];
             }
-            return { revealed: true, prize: dummy, isPick: false };
+            return { revealed: true, prize: dummy, isPick: false, hits: 0, isHit: false };
         });
         
         setBoard(newBoard);
@@ -666,10 +701,16 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                                     key={i} 
                                     disabled={gameState === 'revealed' || isProcessing}
                                     onClick={() => handleDig(i)}
-                                    className={`relative w-full h-full border-2 border-black transition-all ${!block.revealed ? 'hover:scale-105 hover:brightness-125 cursor-pointer' : ''}`}
+                                    style={block.isHit ? { transform: 'scale(0.95)', filter: 'brightness(1.5)' } : {}}
+                                    className={`relative w-full h-full border-2 border-black transition-all duration-75 ${!block.revealed ? 'hover:scale-105 hover:brightness-110 cursor-pointer' : ''}`}
                                 >
                                     {!block.revealed ? (
-                                        <McImg src={imgStone} className="w-full h-full object-cover pixelated" />
+                                        <>
+                                            <McImg src={imgStone} className="w-full h-full object-cover pixelated" />
+                                            {/* ✨ 依照打擊次數疊加不同深度的裂痕 */}
+                                            {block.hits >= 1 && <McImg src={crackStage1} className="absolute inset-0 w-full h-full object-cover pixelated opacity-80 mix-blend-multiply" />}
+                                            {block.hits >= 2 && <McImg src={crackStage2} className="absolute inset-0 w-full h-full object-cover pixelated opacity-90 mix-blend-multiply" />}
+                                        </>
                                     ) : (
                                         <div className={`w-full h-full flex flex-col items-center justify-center p-1 ${block.isPick ? 'bg-yellow-100 border-yellow-500 border-4 animate-in zoom-in' : 'bg-[#5c5c5c] opacity-50'}`}>
                                             <McImg src={block.prize?.img} className="w-10 h-10 pixelated drop-shadow-md mb-1" />
@@ -913,12 +954,15 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         const packData = storeItems.find(i => i.id === packId);
         if (!packData) return;
 
-        let min, max, pools;
+       let min, max, pools;
         
-        if (packId === 'pack_basic') { min = 50; max = 100; pools = ['dirt', 'stone', 'cobblestone', 'sand', 'gravel', 'oak_log', 'oak_planks']; }
-        else if (packId === 'pack_rare') { min = 100; max = 200; pools = ['glass', 'bricks', 'iron_block', 'chest_block', 'oak_door']; }
-        else if (packId === 'pack_epic') { min = 150; max = 250; pools = ['gold_block', 'obsidian', 'netherrack', 'glowstone', 'magma_block']; }
-        else if (packId === 'pack_legendary') { min = 200; max = 300; pools = ['diamond_block', 'emerald_block', 'end_stone', 'purpur_block']; }
+        // ✨ 定義「常見方塊池」：放入大量泥土、石頭、木材來稀釋高級方塊，讓鑽石等高級方塊變得更稀有
+        const commonPool = ['dirt', 'dirt', 'dirt', 'stone', 'stone', 'stone', 'cobblestone', 'cobblestone', 'sand', 'gravel', 'oak_log', 'oak_planks', 'oak_planks'];
+        
+        if (packId === 'pack_basic') { min = 50; max = 100; pools = [...commonPool]; }
+        else if (packId === 'pack_rare') { min = 100; max = 200; pools = [...commonPool, 'glass', 'glass', 'bricks', 'iron_block', 'chest_block', 'oak_door']; }
+        else if (packId === 'pack_epic') { min = 150; max = 250; pools = [...commonPool, 'glass', 'iron_block', 'iron_block', 'gold_block', 'obsidian', 'netherrack', 'netherrack', 'glowstone', 'magma_block']; }
+        else if (packId === 'pack_legendary') { min = 200; max = 300; pools = [...commonPool, 'iron_block', 'gold_block', 'obsidian', 'diamond_block', 'emerald_block', 'end_stone', 'end_stone', 'purpur_block']; }
         else { min = 20; max = 20; pools = ['dirt', 'stone', 'cobblestone', 'sand', 'gravel', 'oak_planks']; }
         const totalAmount = Math.floor(Math.random() * (max - min + 1)) + min;
         const newInv = { ...mcData.inventory };
