@@ -1589,6 +1589,9 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [showOnlyWrong, setShowOnlyWrong] = useState(false);
     const [showOnlyStarred, setShowOnlyStarred] = useState(false);
     const [showShareScoreModal, setShowShareScoreModal] = useState(false);
+
+    // ✨ 新增：同步進度狀態
+    const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, total: 0 });
     
     const [wrongBookAddingItem, setWrongBookAddingItem] = useState(null);
     const [explanationModalItem, setExplanationModalItem] = useState(null); // ✨ 新增詳解彈窗狀態
@@ -1815,99 +1818,96 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     };
 
     const handleSaveEdit = async () => {
-        // ✨ 修改：編輯時保留大小寫，僅允許 A-D, a-d, Z
+        // ✨ 取得原始資料進行比對 (省流量關鍵)
+        const myDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
+        const oldData = myDoc.data() || {};
+        const latestSharedTo = oldData.sharedTo || [];
+        const syncCount = latestSharedTo.length;
+
         const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
-        try {
-            const finalFileUrl = inputType === 'url' ? questionFileUrl.trim() : '';
-            const finalQuestionText = inputType === 'text' ? questionText : '';
-            const finalQuestionHtml = inputType === 'richtext' ? questionHtml : '';
-            
-            const updates = {
-                testName: testName.trim() || '未命名測驗',
-                questionFileUrl: finalFileUrl,
-                questionText: window.jzCompress(finalQuestionText),
-                questionHtml: finalQuestionHtml, // ✨ 修復：確保編輯儲存時，會同步更新富文本內容
-                explanationHtml: explanationHtml, // ✨ 修復：確保編輯儲存時，會同步更新詳解
-                correctAnswersInput: cleanKey,
-                publishAnswers: publishAnswersToggle
-            };
-            
-            await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(updates);
-            
-            if (testName.includes('[#mnst]') || testName.includes('[#nmst]') || testName.includes('[#op]')) {
-                const isOp = testName.includes('[#op]');
-                let category = '模擬試題 (其他)';
+        
+        // 1. 建立「變動清單」：只抓取有改過的地方
+        const updates = {};
+        if (testName.trim() !== (oldData.testName || '')) updates.testName = testName.trim() || '未命名測驗';
+        if (questionFileUrl.trim() !== (oldData.questionFileUrl || '')) updates.questionFileUrl = questionFileUrl.trim();
+        if (publishAnswersToggle !== (oldData.publishAnswers !== false)) updates.publishAnswers = publishAnswersToggle;
+        
+        // 檢查大型文字欄位是否變動 (最省流量的地方)
+        const newTextJZ = window.jzCompress(questionText);
+        if (newTextJZ !== oldData.questionText) updates.questionText = newTextJZ;
+        if (questionHtml !== (oldData.questionHtml || '')) updates.questionHtml = questionHtml;
+        if (explanationHtml !== (oldData.explanationHtml || '')) updates.explanationHtml = explanationHtml;
+        if (cleanKey !== (oldData.correctAnswersInput || '')) updates.correctAnswersInput = cleanKey;
+
+        // 如果完全沒改動，直接返回
+        if (Object.keys(updates).length === 0) {
+            return showAlert("ℹ️ 資料無變動，無需儲存。");
+        }
+
+        const confirmMsg = syncCount > 0 
+            ? `⚠️ 確定要儲存嗎？\n將為 ${syncCount} 位好友同步更新 (${Object.keys(updates).join(', ')})。` 
+            : `確定要儲存目前的修改嗎？`;
+
+        showConfirm(confirmMsg, async () => {
+            try {
+                setSyncStatus({ isSyncing: true, current: 0, total: syncCount + 1 });
                 
-                if (isOp) {
-                    if (testName.includes('藥理') || testName.includes('藥物化學')) category = '1. 藥理學與藥物化學';
-                    else if (testName.includes('藥物分析') || testName.includes('生藥') || testName.includes('中藥')) category = '2. 藥物分析學與生藥學(含中藥學)';
-                    else if (testName.includes('藥劑') || testName.includes('生物藥劑')) category = '3. 藥劑學與生物藥劑學';
-                    else category = '國考題 (其他)';
-                } else {
-                    if (testName.includes('藥物分析')) category = '1. 藥物分析學';
-                    else if (testName.includes('生藥')) category = '2. 生藥學';
-                    else if (testName.includes('中藥')) category = '3. 中藥學';
-                    else if (testName.includes('藥物化學') || testName.includes('藥理')) category = '4. 藥物化學與藥理學';
-                    else if (testName.includes('生物藥劑')) category = '6. 生物藥劑學';
-                    else if (testName.includes('藥劑')) category = '5. 藥劑學';
+                // 1. 儲存自己這份
+                await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
+                    ...updates,
+                    updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+                setSyncStatus(prev => ({ ...prev, current: 1 }));
+
+                // 2. 處理任務牆 (如果是國考/模擬題)
+                if (testName.includes('[#mnst]') || testName.includes('[#nmst]') || testName.includes('[#op]')) {
+                    const taskUpdates = { ...updates, creatorUid: currentUser.uid, numQuestions, hasTimer, timeLimit };
+                    await window.db.collection('publicTasks').doc(quizId).set(taskUpdates, { merge: true });
                 }
 
-                const taskUpdates = {
-                    ...updates,
-                    creatorUid: currentUser.uid,
-                    numQuestions: numQuestions,
-                    hasTimer: hasTimer,
-                    timeLimit: timeLimit,
-                    category: category,
-                    createdAt: initialRecord.createdAt || window.firebase.firestore.FieldValue.serverTimestamp()
-                };
+                // 3. 同步給好友 (僅傳送差異部分)
+                if (syncCount > 0) {
+                    const ansChanged = !!updates.correctAnswersInput; // 檢查標答是否變動
 
-                await window.db.collection('publicTasks').doc(quizId).set(taskUpdates, { merge: true });
-            }
-
-            const myDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
-            const latestSharedTo = myDoc.data()?.sharedTo || [];
-            
-           if (latestSharedTo.length > 0) {
-                const batch = window.db.batch();
-                // ✨ 使用快取讀取減少等待時間
-                const syncPromises = latestSharedTo.map(async (target) => {
-                    const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
-                    const doc = await targetRef.get();
-                    if (doc.exists) {
-                        const targetData = doc.data();
-                        const targetUpdates = { ...updates };
-                        // 重新批改邏輯... (保持不變)
-                        if (targetData.results && targetData.userAnswers) {
-                            let tCorrectCount = 0;
-                            const tData = targetData.userAnswers.map((ans, idx) => {
-                                const key = cleanKey[idx] || '-';
-                                let isCorrect = (key === 'Z' || key === 'z' || key === 'abcd') ? true : (key !== '-' && ans !== '' ? (key === key.toUpperCase() ? ans === key : key.toLowerCase().includes(ans.toLowerCase())) : false);
-                                if (isCorrect) tCorrectCount++;
-                                return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
-                            });
-                            targetUpdates.results = window.jzCompress({ score: Math.round((tCorrectCount/targetData.numQuestions)*100), correctCount: tCorrectCount, total: targetData.numQuestions, data: tData });
+                    for (let i = 0; i < syncCount; i++) {
+                        const target = latestSharedTo[i];
+                        const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
+                        
+                        // 如果答案沒改，我們甚至不需要讀取好友的舊資料
+                        if (!ansChanged) {
+                            await targetRef.update(updates);
+                        } else {
+                            // 只有標答改了，才需要讀取並重新批改
+                            const doc = await targetRef.get();
+                            if (doc.exists) {
+                                const targetData = doc.data();
+                                const targetUpdates = { ...updates };
+                                
+                                if (targetData.results && targetData.userAnswers) {
+                                    let tCorrectCount = 0;
+                                    const tData = targetData.userAnswers.map((ans, idx) => {
+                                        const key = cleanKey[idx] || '-';
+                                        let isCorrect = (key === 'Z' || key === 'z' || key === 'abcd') ? true : (key !== '-' && ans !== '' ? (key === key.toUpperCase() ? ans === key : key.toLowerCase().includes(ans.toLowerCase())) : false);
+                                        if (isCorrect) tCorrectCount++;
+                                        return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
+                                    });
+                                    targetUpdates.results = window.jzCompress({ score: Math.round((tCorrectCount/targetData.numQuestions)*100), correctCount: tCorrectCount, total: targetData.numQuestions, data: tData });
+                                }
+                                await targetRef.update(targetUpdates);
+                            }
                         }
-                        batch.update(targetRef, targetUpdates);
+                        setSyncStatus(prev => ({ ...prev, current: i + 2 }));
                     }
-                });
-                await Promise.all(syncPromises);
-                await batch.commit(); // 🚀 一次性送出所有更新，這比一個個改快超多
-            }
+                }
 
-          showAlert("✅ 編輯成功！已同步至所有下載者及任務牆。");
-            
-            // ✨ 移除自動覆蓋本地成績的邏輯，讓用戶退回結果頁時，能看見「重新批改」按鈕手動觸發
-
-            // ✨ 根據進入點決定儲存後的返回路徑 (從主頁進就回主頁，從作答進就回作答/結果頁)
-            if (initialRecord.forceStep === 'edit') {
-                onBackToDashboard();
-            } else {
-                setStep(results ? 'results' : 'answering');
+                setSyncStatus({ isSyncing: false, current: 0, total: 0 });
+                showAlert("✅ 儲存成功！(僅同步變動欄位)");
+                initialRecord.forceStep === 'edit' ? onBackToDashboard() : setStep(results ? 'results' : 'answering');
+            } catch(e) {
+                setSyncStatus({ isSyncing: false, current: 0, total: 0 });
+                showAlert("儲存失敗：" + e.message);
             }
-        } catch(e) {
-            showAlert("儲存失敗：" + e.message);
-        }
+        });
     };
 
     const handleAnswerSelect = (idx, opt) => {
@@ -2310,7 +2310,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 <div key={s.id} className="p-3 bg-orange-50 dark:bg-gray-700 border border-orange-200 dark:border-gray-600 no-round">
                                     <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
                                         <span className="font-bold text-orange-700 dark:text-orange-300">{s.senderName}</span>
-                                        <span>{s.timestamp ? s.timestamp.toDate().toLocaleString('zh-TW') : ''}</span>
+                                        {/* ✨ 修復：增加對 timestamp 的安全檢查，防止 toDate() 當機 */}
+                                        <span>{s.timestamp && typeof s.timestamp.toDate === 'function' ? s.timestamp.toDate().toLocaleString('zh-TW') : ''}</span>
                                     </div>
                                     <p className="text-sm dark:text-white whitespace-pre-wrap font-bold">{s.text}</p>
                                 </div>
@@ -2449,8 +2450,18 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     
                     <button onClick={handleResetProgress} className="bg-gray-50 dark:bg-gray-700 text-red-400 dark:text-red-400 px-4 py-1.5 no-round font-bold hover:bg-red-50 dark:hover:bg-gray-600 hover:text-red-600 dark:hover:text-red-300 border border-transparent hover:border-red-100 dark:hover:border-gray-500 text-xs hidden md:block transition-colors">刪除</button>
                     
-                    {!isShared && !isTask && (
-                        <button onClick={() => setStep('edit')} className="text-xs font-bold bg-purple-50 dark:bg-purple-900 text-purple-600 dark:text-purple-300 px-4 py-1.5 no-round border border-purple-200 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-800 whitespace-nowrap transition-colors">📝 編輯試題</button>
+                   {!isShared && !isTask && (
+                        <button 
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                console.log("切換至編輯模式"); // 除錯用
+                                setStep('edit');
+                            }} 
+                            className="text-xs font-bold bg-purple-50 dark:bg-purple-900 text-purple-600 dark:text-purple-300 px-4 py-1.5 no-round border border-purple-200 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-800 whitespace-nowrap transition-colors active:scale-95"
+                        >
+                            📝 編輯試題
+                        </button>
                     )}
 
                     <button onClick={handleSubmitClick} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-1.5 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 text-sm shadow-sm transition-colors">
@@ -2651,7 +2662,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     )}
 
                     {!isShared && !isTask && (
-                        <button onClick={() => setStep('edit')} className="text-sm font-bold bg-purple-50 dark:bg-purple-900 text-purple-600 dark:text-purple-300 px-4 py-1.5 no-round border border-purple-200 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-800 whitespace-nowrap transition-colors">📝 編輯試題</button>
+                        <button 
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setStep('edit');
+                            }} 
+                            className="text-sm font-bold bg-purple-50 dark:bg-purple-900 text-purple-600 dark:text-purple-300 px-4 py-1.5 no-round border border-purple-200 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-800 whitespace-nowrap transition-colors active:scale-95"
+                        >
+                            📝 編輯試題
+                        </button>
                     )}
 
                     {(isShared || isTask || testName.includes('[#op]')) && (
@@ -3010,7 +3030,26 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     </div>
                 </div>
             )}
-
+            {/* ✨ 新增：同步進度條 Modal */}
+            {syncStatus.isSyncing && (
+                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-blue-600">
+                        <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mx-auto mb-6"></div>
+                        <h3 className="text-xl font-black mb-2 dark:text-white">🚀 正在同步資料...</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 font-bold">正在為您的好友更新最新版本，請勿關閉視窗</p>
+                        
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 h-4 no-round overflow-hidden mb-2">
+                            <div 
+                                className="bg-blue-600 h-full transition-all duration-300 ease-out"
+                                style={{ width: `${(syncStatus.current / syncStatus.total) * 100}%` }}
+                            ></div>
+                        </div>
+                        <div className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400">
+                            完成進度：{syncStatus.current} / {syncStatus.total} ({Math.round((syncStatus.current / syncStatus.total) * 100)}%)
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* 新增：錯題收錄 Modal */}
             {wrongBookAddingItem && (
                 <WrongBookModal
