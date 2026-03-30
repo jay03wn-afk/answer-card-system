@@ -2827,6 +2827,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                 options,
                 correctAns,
                 explanation,
+                totalAnswers: 0,
+                answersCount: { '0': 0, '1': 0, '2': 0, '3': 0 },
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
             
@@ -2840,6 +2842,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                 options,
                 correctAns,
                 explanation,
+                totalAnswers: 0,
+                answersCount: { '0': 0, '1': 0, '2': 0, '3': 0 },
                 createdAt: new Date().getTime() 
             };
             setQaList(prev => [newQA, ...prev]);
@@ -2875,7 +2879,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
 
     const handleShare = () => {
         const shareUrl = `${window.location.origin}${window.location.pathname}?qaId=${activeQA.id}`;
-        const plainQ = activeQA.question.replace(/<[^>]+>/g, '');
+        // ✨ 先將 <img> 標籤替換成 (圖片)，再清除其他 HTML 標籤
+        const plainQ = activeQA.question.replace(/<img[^>]*>/gi, '(圖片)').replace(/<[^>]+>/g, '').trim();
         const shortQ = plainQ.length > 25 ? plainQ.substring(0, 25) + '...' : plainQ;
         const text = `⚡ 快問快答挑戰！\n【${activeQA.subject}】${activeQA.difficulty.split(' ')[0]}\n🎁 獎勵：${activeQA.reward} 鑽石\n\n📝 ${shortQ}\n\n👇 點此連結立即挑戰 👇\n${shareUrl}`;
         
@@ -2916,6 +2921,26 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                 isCorrect,
                 selectedAns,
                 answeredAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            // ✨ 新增：更新全域的答案統計 (總作答人數與各選項分布)
+            await window.db.collection('fastQA').doc(activeQA.id).set({
+                totalAnswers: window.firebase.firestore.FieldValue.increment(1),
+                [`answersCount.${selectedAns}`]: window.firebase.firestore.FieldValue.increment(1)
+            }, { merge: true });
+
+            // 更新本地狀態以便即時顯示分布
+            setActiveQA(prev => {
+                const currentCount = prev.answersCount || { '0':0, '1':0, '2':0, '3':0 };
+                const currentTotal = prev.totalAnswers || 0;
+                return {
+                    ...prev,
+                    totalAnswers: currentTotal + 1,
+                    answersCount: {
+                        ...currentCount,
+                        [selectedAns]: (currentCount[selectedAns] || 0) + 1
+                    }
+                };
             });
             
             // 2. 如果答對，發放鑽石
@@ -3041,7 +3066,9 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                         <span className="bg-pink-100 dark:bg-pink-900 text-pink-800 dark:text-pink-200 text-xs px-2 py-1 font-bold no-round">{qa.subject}</span>
                                         <span className="text-pink-600 dark:text-pink-400 font-bold text-sm flex items-center gap-1">💎 {qa.reward} 鑽</span>
                                     </div>
-                                    <p className="text-sm text-black dark:text-white mb-4 flex-1 line-clamp-3 font-medium">{qa.question.replace(/<[^>]+>/g, '')}</p>
+                                    <p className="text-sm text-black dark:text-white mb-4 flex-1 line-clamp-3 font-medium">
+                                        {qa.question.replace(/<img[^>]*>/gi, '(圖片)').replace(/<[^>]+>/g, '').trim()}
+                                    </p>
                                     
                                     <div className="flex items-center justify-between mt-auto pt-3 border-t border-gray-100 dark:border-gray-700">
                                         {!user ? (
@@ -3096,6 +3123,10 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         <div className="flex gap-2">
                             <span className="bg-pink-100 dark:bg-pink-900 text-pink-800 dark:text-pink-200 text-sm px-2 py-1 font-bold no-round">{activeQA.subject}</span>
                             <span className="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm px-2 py-1 font-bold no-round">{activeQA.difficulty.split(' ')[0]}</span>
+                            {/* ✨ 新增：顯示已作答人數 (一直顯示增添人氣感) */}
+                            {activeQA.totalAnswers > 0 && (
+                                <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm px-2 py-1 font-bold no-round">👥 已作答人數: {activeQA.totalAnswers} 人</span>
+                            )}
                         </div>
                         <span className="text-pink-600 dark:text-pink-400 font-bold text-lg">💎 {activeQA.reward} 鑽石獎勵</span>
                     </div>
@@ -3110,18 +3141,34 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                             const isSelected = (selectedAns ?? records[activeQA.id]?.selectedAns) === idx;
                             const isCorrectOpt = activeQA.correctAns === idx;
                             
-                            let btnClass = "w-full text-left p-4 border-2 font-bold transition-all no-round text-lg flex items-center justify-between ";
+                            // 計算這題的選擇比例
+                            const total = activeQA.totalAnswers || 0;
+                            const count = (activeQA.answersCount && activeQA.answersCount[idx]) || 0;
+                            const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+                            
+                            // 新增 relative z-0 以便放入背景進度條
+                            let btnClass = "w-full text-left p-4 border-2 font-bold transition-all no-round text-lg flex items-center justify-between relative overflow-hidden z-0 ";
+                            let barColor = "bg-gray-300 dark:bg-gray-600";
                             
                             // ✨ 修正：判斷是否有登入，未登入者即使交卷也不顯示對錯顏色
                             if (showResult && user) {
-                                if (isCorrectOpt) btnClass += "bg-green-100 border-green-500 text-green-800 dark:bg-green-900/40 dark:text-green-300 dark:border-green-600 ";
-                                else if (isSelected) btnClass += "bg-red-100 border-red-500 text-red-800 dark:bg-red-900/40 dark:text-red-300 dark:border-red-600 ";
-                                else btnClass += "bg-gray-50 border-gray-200 text-gray-500 opacity-60 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 ";
+                                if (isCorrectOpt) {
+                                    btnClass += "bg-green-100 border-green-500 text-green-800 dark:bg-green-900/40 dark:text-green-300 dark:border-green-600 ";
+                                    barColor = "bg-green-300 dark:bg-green-700";
+                                } else if (isSelected) {
+                                    btnClass += "bg-red-100 border-red-500 text-red-800 dark:bg-red-900/40 dark:text-red-300 dark:border-red-600 ";
+                                    barColor = "bg-red-300 dark:bg-red-800";
+                                } else {
+                                    btnClass += "bg-gray-50 border-gray-200 text-gray-500 opacity-80 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 ";
+                                }
                             } else if (showResult && !user) {
                                 // 訪客交卷後，只保留他選的選項高亮，其他稍微變灰，但不顯示正確答案
-                                btnClass += isSelected 
-                                    ? "border-pink-500 bg-pink-50 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300 " 
-                                    : "bg-gray-50 border-gray-200 text-gray-500 opacity-60 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 ";
+                                if (isSelected) {
+                                    btnClass += "border-pink-500 bg-pink-50 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300 ";
+                                    barColor = "bg-pink-300 dark:bg-pink-800";
+                                } else {
+                                    btnClass += "bg-gray-50 border-gray-200 text-gray-500 opacity-80 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 ";
+                                }
                             } else {
                                 // 還沒交卷的狀態
                                 btnClass += isSelected 
@@ -3136,10 +3183,27 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                     onClick={() => setSelectedAns(idx)}
                                     className={btnClass}
                                 >
+                                    {/* ✨ 新增：長條圖背景顯示答案分布比例 (僅在交卷後且有登入時顯示) */}
+                                    {showResult && user && (
+                                        <div 
+                                            className={`absolute left-0 top-0 bottom-0 opacity-30 z-[-1] transition-all duration-1000 ease-out ${barColor}`} 
+                                            style={{ width: `${percent}%` }}
+                                        ></div>
+                                    )}
+                                    
                                     <span><span className="mr-3 inline-block w-6 text-center font-black">{['A','B','C','D'][idx]}.</span> {opt}</span>
-                                    {/* ✨ 修正：只有登入用戶才顯示勾勾跟叉叉 */}
-                                    {showResult && user && isCorrectOpt && <span className="text-xl">✅</span>}
-                                    {showResult && user && isSelected && !isCorrectOpt && <span className="text-xl">❌</span>}
+                                    
+                                    <div className="flex items-center gap-3">
+                                        {/* ✨ 新增：顯示比例數字 (僅在交卷後且有登入時顯示) */}
+                                        {showResult && user && (
+                                            <span className="text-sm font-bold opacity-80 shrink-0">
+                                                {percent}% <span className="text-xs hidden sm:inline-block">({count}人)</span>
+                                            </span>
+                                        )}
+                                        {/* ✨ 修正：只有登入用戶才顯示勾勾跟叉叉 */}
+                                        {showResult && user && isCorrectOpt && <span className="text-xl shrink-0">✅</span>}
+                                        {showResult && user && isSelected && !isCorrectOpt && <span className="text-xl shrink-0">❌</span>}
+                                    </div>
                                 </button>
                             );
                         })}
