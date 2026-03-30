@@ -2291,16 +2291,17 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." />
                 )}
 
-                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解 (純文字)</h3>
+                {/* ✨ 已將標準答案移至詳解上方 */}
+                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">標準答案</h3>
+                <textarea className="w-full h-24 mb-4 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
+
+                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字)</h3>
                 <textarea 
                     className="w-full h-48 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar"
                     placeholder="在此貼上詳解純文字，並使用 [A.1], [A.02] 等標記對應題號..."
                     value={explanationHtml}
                     onChange={(e) => setExplanationHtml(e.target.value)}
                 />
-
-                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">標準答案</h3>
-                <textarea className="w-full h-24 mb-2 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
 
                 <div className="flex items-center mt-4 mb-8 bg-gray-50 dark:bg-gray-900 p-3 border border-gray-200 dark:border-gray-700">
                     <label className="flex items-center space-x-2 cursor-pointer dark:text-white font-bold text-sm">
@@ -2376,7 +2377,11 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." />
                 )}
                 
-                <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解 (純文字，選填)</h3>
+                {/* ✨ 已將標準答案移至詳解上方 */}
+                <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">標準答案 (選填，交卷時會自動批改)</h3>
+                <textarea className="w-full h-24 mb-4 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
+
+                <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字，選填)</h3>
                 <textarea 
                     className="w-full h-32 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar"
                     placeholder="在此貼上詳解純文字，並使用 [A.1], [A.02] 等標記對應題號..."
@@ -2384,10 +2389,6 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     onChange={(e) => setExplanationHtml(e.target.value)}
                     onFocus={handleFocusScroll}
                 />
-
-                {/* ✨ 修改 3-2：在 UI 加入輸入框 */}
-                <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2">標準答案 (選填，交卷時會自動批改)</h3>
-                <textarea className="w-full h-24 mb-6 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
 
                 <div className="mb-6 border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-700 no-round">
                     <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
