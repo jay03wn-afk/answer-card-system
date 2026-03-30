@@ -93,9 +93,10 @@ function AuthScreen({ showAlert }) {
                         avatar: null,
                         bio: ""
                     }).catch(err => showAlert("註冊成功，但建立資料庫檔案失敗: " + err.message));
-                } else {
-                    window.db.collection('users').doc(cred.user.uid).set({ email: safeEmail }, { merge: true });
                 }
+                // ✨ 核心修復：移除了原本 else 的 { merge: true } 寫入操作。
+                // 這樣 Firebase 就不會觸發「樂觀更新 (Optimistic UI)」用不完整的快取去騙系統，
+                // 系統會乖乖等待雲端的完整資料載入，徹底解決暱稱畫面閃爍、亂跳的問題！
             })
             .catch(err => {
                 let errorMsg = err.message;
