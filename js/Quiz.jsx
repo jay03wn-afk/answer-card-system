@@ -1142,44 +1142,46 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                             {/* 左側：標題與狀態 */}
                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                 {/* ✨ 解除名稱限制：改為 break-words 自動折行顯示 */}
-                               <h2 className="font-bold text-sm sm:text-base dark:text-white flex flex-wrap items-center gap-2 leading-relaxed">
-    <span className="break-words whitespace-normal">{renderTestName(rec.testName, !!rec.results)}</span>
-    {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
-                                    {rec.isShared && !rec.isTask && <span className="text-[10px] bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
-                                    {rec.hasTimer && <span className="text-[10px] bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0">⏱ {rec.timeLimit}m</span>}
+                                <h2 className="font-bold text-sm sm:text-base dark:text-white flex flex-wrap items-center gap-2 leading-relaxed">
+                                    <span className="break-words whitespace-normal min-w-0 flex-1">{renderTestName(rec.testName, !!rec.results)}</span>
+                                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                                        {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
+                                        {rec.isShared && !rec.isTask && <span className="text-[10px] bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
+                                        {rec.hasTimer && <span className="text-[10px] bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0">⏱ {rec.timeLimit}m</span>}
+                                    </div>
                                 </h2>
                                 
-                                <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
-                                    <span className="text-gray-500 dark:text-gray-400">{rec.numQuestions}題</span>
+                                <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs mt-1">
+                                    <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">{rec.numQuestions}題</span>
                                     {rec.results ? (
-                                        <span className="text-green-600 dark:text-green-400 font-bold">✅ {rec.results.score}分</span>
+                                        <span className="text-green-600 dark:text-green-400 font-bold whitespace-nowrap">✅ {rec.results.score} 分</span>
                                     ) : rec.userAnswers && rec.userAnswers.filter(a=>a).length > 0 ? (
-                                        <span className="text-orange-500 dark:text-orange-400 font-bold flex items-center gap-1">
+                                        <span className="text-orange-500 dark:text-orange-400 font-bold flex items-center gap-1 flex-wrap">
                                             📝 進行中
                                             {rec.hasTimer && rec.timeRemaining !== undefined && (
-                                                <span className="text-red-500 inline-block">(剩 {Math.max(1, Math.ceil(rec.timeRemaining / 60))}m)</span>
+                                                <span className="text-red-500 inline-block whitespace-nowrap">(剩 {Math.max(1, Math.ceil(rec.timeRemaining / 60))}m)</span>
                                             )}
                                         </span>
                                     ) : (
-                                        <span className="text-gray-400 font-bold">⏳ 未作答</span>
+                                        <span className="text-gray-400 font-bold whitespace-nowrap">⏳ 未作答</span>
                                     )}
                                 </div>
                             </div>
 
                             {/* 右側：操作按鈕 */}
-                            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 border-gray-100 dark:border-gray-700 pt-2 sm:pt-0 mt-2 sm:mt-0">
-                                <div className="flex items-center gap-3">
-                                    <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 transition-colors">刪除</button>
-                                    <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 font-bold transition-colors">📁移動</button>
-                                    {!rec.isTask && <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 dark:text-blue-400 font-bold transition-colors">📤分享</button>}
+                            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 w-full sm:w-auto border-t sm:border-t-0 border-gray-100 dark:border-gray-700 pt-3 sm:pt-0 mt-2 sm:mt-0">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 transition-colors whitespace-nowrap">刪除</button>
+                                    <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 font-bold transition-colors whitespace-nowrap">📁移動</button>
+                                    {!rec.isTask && <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 dark:text-blue-400 font-bold transition-colors whitespace-nowrap">📤分享</button>}
                                     {!rec.isShared && !rec.isTask && (
-                                        <button onClick={() => handleEditQuiz(rec)} className="text-xs text-purple-600 dark:text-purple-400 font-bold transition-colors relative">
+                                        <button onClick={() => handleEditQuiz(rec)} className="text-xs text-purple-600 dark:text-purple-400 font-bold transition-colors relative whitespace-nowrap">
                                             📝編輯
                                             {rec.hasNewSuggestion && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
                                         </button>
                                     )}
                                 </div>
-                                <button onClick={() => handleEnterQuiz(rec)} className="bg-gray-100 dark:bg-gray-700 px-4 py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:text-white text-xs transition-colors shrink-0">
+                                <button onClick={() => handleEnterQuiz(rec)} className="bg-gray-100 dark:bg-gray-700 px-4 py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:text-white text-xs transition-colors shrink-0 whitespace-nowrap">
                                     {rec.results ? '查看' : '進入'}
                                 </button>
                             </div>
