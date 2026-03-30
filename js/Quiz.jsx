@@ -377,6 +377,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     const [officialTasks, setOfficialTasks] = useState({});
     const [myTasks, setMyTasks] = useState({}); 
     const [loading, setLoading] = useState(true);
+    const [taskLimit, setTaskLimit] = useState(100); // ✨ 新增：任務牆動態載入數量的狀態
     
     // ✨ 新增搜尋狀態
     const [searchQuery, setSearchQuery] = useState('');
@@ -393,12 +394,18 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     useEffect(() => {
         const unsubTasks = window.db.collection('publicTasks')
             .orderBy('createdAt', 'desc')
+            .limit(taskLimit) // ✨ 改吃我們設定的動態變數
             .onSnapshot(snap => {
                 const groupedNormal = normalCategories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
                 const groupedOfficial = opCategories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
                 
                 snap.docs.forEach(doc => {
                     const data = { id: doc.id, ...doc.data() };
+                    
+                    // ✨ 修復：確保從任務牆抓取資料時，富文本內容有被正確賦值
+                    if (data.questionText && typeof data.questionText === 'string' && data.questionText.startsWith("JZC|")) {
+                         try { data.questionText = window.jzDecompress(data.questionText); } catch(e) {}
+                    }
                     
                     if (data.testName && data.testName.includes('[#op]')) {
                         let cat = data.category || '國考題 (其他)';
@@ -456,7 +463,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
             unsubTasks();
             unsubMyQuizzes();
         };
-    }, [user.uid]);
+    }, [user.uid, taskLimit]); // ✨ 將 taskLimit 加入依賴項，當按鈕按下去時就會重新抓資料
 
     // 計算國考題能力分析
     const officialStats = { totalScore: 0, count: 0, categories: {} };
@@ -485,7 +492,22 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     const handlePlayTask = async (task, localRec) => {
         const executeEnter = async () => {
             if (localRec) {
-                onContinueQuiz(localRec);
+                // ✨ 強制同步：如果玩家本地已經有舊的空白快取，強制用雲端最新的富文本覆蓋過去
+                const updatedRec = {
+                    ...localRec,
+                    questionHtml: task.questionHtml || localRec.questionHtml || '',
+                    questionText: task.questionText || localRec.questionText || '',
+                    explanationHtml: task.explanationHtml || localRec.explanationHtml || ''
+                };
+                
+                // 背景靜默更新回本地資料庫，修復之前拿到空白試卷的災情
+                window.db.collection('users').doc(user.uid).collection('quizzes').doc(localRec.id).update({
+                    questionHtml: task.questionHtml || '',
+                    questionText: task.questionText || '',
+                    explanationHtml: task.explanationHtml || ''
+                }).catch(e => console.error("同步任務資料失敗", e));
+
+                onContinueQuiz(updatedRec);
                 return;
             }
 
@@ -762,12 +784,149 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                         </div>
                     )}
                     
+                    {/* ✨ 新增：任務牆的「載入更多」按鈕 */}
+                    <div className="flex justify-center mt-8">
+                        <button 
+                            onClick={() => setTaskLimit(prev => prev + 100)} 
+                            className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 px-6 py-2 font-bold shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                            ⬇️ 載入更早的任務...
+                        </button>
+                    </div>
+
                 </div>
             )}
         </div>
     );
 }
+// --- 新增：JJay日報組件 ---
+function NewspaperDashboard({ user, showAlert, showConfirm, showPrompt, onContinueQuiz }) {
+    const { useState, useEffect } = React;
+    const [newsList, setNewsList] = useState([]);
+    const [todayTasks, setTodayTasks] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [isPublishing, setIsPublishing] = useState(false);
+    const isAdmin = user && user.email === 'jay03wn@gmail.com';
 
+    useEffect(() => {
+        const unsubNews = window.db.collection('newsFeed').orderBy('createdAt', 'desc').onSnapshot(snap => {
+            setNewsList(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        });
+
+        // 自動抓取今天新增的試題
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const unsubTasks = window.db.collection('publicTasks')
+            .where('createdAt', '>=', startOfToday)
+            .orderBy('createdAt', 'desc')
+            .onSnapshot(snap => {
+                setTodayTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                setLoading(false);
+            });
+
+        return () => { unsubNews(); unsubTasks(); };
+    }, []);
+
+    const handlePublishNews = () => {
+        if (isPublishing) return;
+        showPrompt("請輸入新聞標題：", "", (title) => {
+            if (!title) return;
+            showPrompt("請輸入新聞內容：", "", async (content) => {
+                if (!content) return;
+                setIsPublishing(true);
+                try {
+                    await window.db.collection('newsFeed').add({
+                        title: title.trim(),
+                        content: content.trim(),
+                        importance: '一般', // 預設
+                        createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    showAlert('✅ 新聞發布成功！');
+                } catch (e) {
+                    showAlert('發布失敗：' + e.message);
+                }
+                setIsPublishing(false);
+            });
+        });
+    };
+
+    const handleDeleteNews = (id) => {
+        showConfirm("確定要刪除這條新聞嗎？", () => {
+            window.db.collection('newsFeed').doc(id).delete();
+        });
+    };
+
+    const handleGoToTask = async (taskId) => {
+        try {
+            const myQuizDoc = await window.db.collection('users').doc(user.uid).collection('quizzes').where('taskId', '==', taskId).get();
+            if (!myQuizDoc.empty) {
+                onContinueQuiz({ id: myQuizDoc.docs[0].id, ...myQuizDoc.docs[0].data() });
+            } else {
+                const taskDoc = await window.db.collection('publicTasks').doc(taskId).get();
+                if(taskDoc.exists) {
+                    showAlert("請前往「🎯 任務牆」開始這份新任務！");
+                }
+            }
+        } catch(e) { console.error(e); }
+    };
+
+    if (loading) return <LoadingSpinner text="正在印製今日報紙..." />;
+
+    return (
+        <div className="max-w-4xl mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar w-full">
+            <div className="flex justify-between items-center mb-6 border-b-4 border-black dark:border-white pb-4 mt-4">
+                <h1 className="text-3xl font-black dark:text-white font-serif tracking-widest">📰 JJay 日報</h1>
+                {isAdmin && (
+                    <button onClick={handlePublishNews} disabled={isPublishing} className="bg-blue-600 text-white px-4 py-2 font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-md">
+                        {isPublishing ? '發布中...' : '✍️ 撰寫頭條'}
+                    </button>
+                )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="md:col-span-2 space-y-6">
+                    <h2 className="text-xl font-bold border-l-4 border-black dark:border-white pl-3 dark:text-white">最新消息</h2>
+                    {newsList.length === 0 ? (
+                        <p className="text-gray-500">目前沒有新聞公告。</p>
+                    ) : (
+                        newsList.map(news => (
+                            <div key={news.id} className="bg-white dark:bg-gray-800 p-5 shadow-sm border border-gray-200 dark:border-gray-700 relative">
+                                {isAdmin && <button onClick={() => handleDeleteNews(news.id)} className="absolute top-4 right-4 text-red-500 hover:text-red-700 font-bold">✖</button>}
+                                <div className="text-xs text-gray-500 mb-2 font-mono">
+                                    {news.createdAt?.toDate().toLocaleDateString('zh-TW')} 
+                                </div>
+                                <h3 className="text-xl font-black mb-3 dark:text-white">{news.title}</h3>
+                                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">{news.content}</p>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                <div className="md:col-span-1">
+                    <div className="bg-yellow-50 dark:bg-gray-800 border-2 border-yellow-400 dark:border-yellow-600 p-4 shadow-md sticky top-4">
+                        <h2 className="text-lg font-black mb-4 text-yellow-800 dark:text-yellow-400 border-b-2 border-yellow-200 dark:border-yellow-700 pb-2 flex items-center">
+                            🔥 今日新增試題
+                        </h2>
+                        {todayTasks.length === 0 ? (
+                            <p className="text-sm text-gray-500 font-bold">今天還沒有新試題，休息一下吧！</p>
+                        ) : (
+                            <div className="space-y-3">
+                                {todayTasks.map(task => (
+                                    <div key={task.id} className="bg-white dark:bg-gray-700 p-3 border border-yellow-200 dark:border-gray-600">
+                                        <h3 className="font-bold text-sm mb-2 truncate dark:text-white">{task.testName}</h3>
+                                        <button onClick={() => handleGoToTask(task.id)} className="w-full text-xs bg-yellow-400 hover:bg-yellow-500 text-black py-1.5 font-bold transition-colors">
+                                            前往挑戰 ➡️
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
 // --- 我的題庫與測驗核心 ---
 function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm, showPrompt }) {
     const [records, setRecords] = useState([]);
@@ -1145,8 +1304,12 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 </div>
             </div>
 
-            {loading ? (
-                <div className="text-center text-gray-500 py-10 font-bold animate-pulse">讀取本地快取與雲端資料中...</div>
+           {loading ? (
+                <div className="flex flex-col items-center justify-center py-20 w-full">
+                    <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-700 border-t-black dark:border-white rounded-full animate-spin mb-4"></div>
+                    <div className="text-gray-500 dark:text-gray-400 font-bold animate-pulse text-lg">正在同步雲端題庫，這可能需要幾秒鐘...</div>
+                    <div className="text-gray-400 dark:text-gray-500 text-sm mt-2">若是初次載入，時間會稍長，感謝您的耐心等候。</div>
+                </div>
             ) : displayedRecords.length === 0 ? (
                 <div className="bg-white dark:bg-gray-800 text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 no-round shadow-sm">
                     {searchQuery ? '找不到符合關鍵字的試卷。' : '此分類尚無符合篩選條件的測驗紀錄。'}
@@ -1375,7 +1538,9 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             
             const stateToSave = { 
                 testName, numQuestions, userAnswers: window.jzCompress(userAnswers), starred, correctAnswersInput, results: window.jzCompress(results), 
-                questionFileUrl, questionText: window.jzCompress(questionText), hasTimer, timeLimit, folder,
+                questionFileUrl, questionText: window.jzCompress(questionText), 
+                questionHtml, explanationHtml, // ✨ 修復：將富文本與詳解加入自動存檔，避免切換時消失
+                hasTimer, timeLimit, folder,
                 updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
             };
             if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
@@ -1470,12 +1635,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         setQuestionText(finalQuestionText);
         setQuestionHtml(finalQuestionHtml);
 
-        window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
+       window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
             testName, numQuestions, userAnswers: window.jzCompress(initialAnswers), starred: initialStarred,
             correctAnswersInput: '',
             publishAnswers: true, 
             questionFileUrl: finalFileUrl,
             questionText: window.jzCompress(finalQuestionText),
+            questionHtml: finalQuestionHtml, // ✨ 修復：確保出題者自己的考卷能存下富文本
+            explanationHtml: explanationHtml, // ✨ 修復：確保詳解也能順利儲存
             hasTimer: hasTimer,
                     timeLimit: hasTimer ? Number(timeLimit) : null,
                     timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
@@ -1573,6 +1740,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 testName: testName.trim() || '未命名測驗',
                 questionFileUrl: finalFileUrl,
                 questionText: window.jzCompress(finalQuestionText),
+                questionHtml: finalQuestionHtml, // ✨ 修復：確保編輯儲存時，會同步更新富文本內容
+                explanationHtml: explanationHtml, // ✨ 修復：確保編輯儲存時，會同步更新詳解
                 correctAnswersInput: cleanKey,
                 publishAnswers: publishAnswersToggle
             };
@@ -2761,20 +2930,23 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [qaList, setQaList] = useState([]);
     const [records, setRecords] = useState({});
     const [loading, setLoading] = useState(true);
+    const [qaLimit, setQaLimit] = useState(30); // ✨ 新增：快問快答動態載入數量的狀態
     const [showAdminMode, setShowAdminMode] = useState(false);
-    const [isEditExpanded, setIsEditExpanded] = useState(false); // 控制編輯介面展開/收起
+    const [isEditExpanded, setIsEditExpanded] = useState(false);
     
-    // 判斷是否為特定管理員
     const isAdmin = user && user.email === 'jay03wn@gmail.com';
     
-    // 管理員表單狀態
+    // 管理員表單狀態 (升級自訂功能)
+    const [qaType, setQaType] = useState('mcq'); // 'mcq' 或 'tf'
     const [subject, setSubject] = useState('藥物分析');
-    const [difficulty, setDifficulty] = useState('簡單 (10鑽)');
+    const [customDifficulty, setCustomDifficulty] = useState('簡單');
+    const [customReward, setCustomReward] = useState(10);
     const [endTimeStr, setEndTimeStr] = useState('');
     const [question, setQuestion] = useState('');
     const [options, setOptions] = useState(['', '', '', '']);
     const [correctAns, setCorrectAns] = useState(0);
     const [explanation, setExplanation] = useState('');
+    const [isPublishing, setIsPublishing] = useState(false);
     
     // 作答狀態
     const [activeQA, setActiveQA] = useState(null);
@@ -2782,7 +2954,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [showResult, setShowResult] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
-    // 分享視窗
     const [showShareModal, setShowShareModal] = useState(false);
     const [shareContent, setShareContent] = useState('');
 
@@ -2795,25 +2966,19 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
             try {
                 if (targetQaId) {
                     unsubQA = window.db.collection('fastQA').doc(targetQaId).onSnapshot(docSnap => {
-                        if (docSnap.exists) {
-                            setActiveQA({ id: docSnap.id, ...docSnap.data() });
-                        } else {
-                            showAlert('找不到此題目，可能已過期或被刪除！');
-                        }
+                        if (docSnap.exists) setActiveQA({ id: docSnap.id, ...docSnap.data() });
+                        else showAlert('找不到此題目，可能已過期或被刪除！');
                         setLoading(false);
                     });
                 } else {
-                    unsubQA = window.db.collection('fastQA').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+                    unsubQA = window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).onSnapshot(snapshot => {
                         const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         const now = new Date().getTime();
                         const validQas = isAdmin ? qas : qas.filter(q => !q.endTime || q.endTime > now);
                         setQaList(validQas);
                         
                         setActiveQA(prev => {
-                            if (prev) {
-                                const updatedQA = validQas.find(q => q.id === prev.id);
-                                return updatedQA || prev;
-                            }
+                            if (prev) return validQas.find(q => q.id === prev.id) || prev;
                             return prev;
                         });
                         setLoading(false);
@@ -2825,410 +2990,257 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         const recs = {};
                         recSnap.docs.forEach(doc => { recs[doc.id] = doc.data(); });
                         setRecords(recs);
-                        if (targetQaId && recs[targetQaId]) {
-                            setShowResult(true);
-                        }
+                        if (targetQaId && recs[targetQaId]) setShowResult(true);
                     });
                 }
             } catch (e) {
-                console.error(e);
-                showAlert('讀取失敗：' + e.message + '\n(這通常是因為資料庫未開放訪客權限)');
+                showAlert('讀取失敗：' + e.message);
                 setLoading(false);
             }
         };
         fetchQA();
-
-        return () => {
-            unsubQA();
-            unsubRecords();
-        };
-    }, [user, isAdmin, targetQaId]);
-
-    const getDiamonds = (diff) => {
-        // ✨ 修正：直接從難度字串中精準抓出數字，避免 100 被誤判為 10
-        const match = diff.match(/\d+/);
-        return match ? parseInt(match[0], 10) : 10;
-    };
+        return () => { unsubQA(); unsubRecords(); };
+    }, [user, isAdmin, targetQaId, qaLimit]); // ✨ 依賴項補上 qaLimit
 
     const handleAddQA = async () => {
-        if (!question || options.some(o => !o.trim()) || !explanation) {
-            return showAlert('請填寫完整題目、選項與詳解！');
-        }
+        if (!question || !explanation || customReward < 1) return showAlert('請填寫完整題目、詳解，並確保鑽石大於0！');
+        
+        let finalOptions = options;
+        if (qaType === 'tf') finalOptions = ['⭕ 是 (True)', '❌ 否 (False)'];
+        if (qaType === 'mcq' && finalOptions.some(o => !o.trim())) return showAlert('選擇題請填寫完整的4個選項！');
+
+        setIsPublishing(true);
         try {
             const endTimestamp = endTimeStr ? new Date(endTimeStr).getTime() : null;
-            const newDoc = await window.db.collection('fastQA').add({
+            await window.db.collection('fastQA').add({
+                qaType,
                 subject,
-                difficulty,
-                reward: getDiamonds(difficulty),
+                difficulty: customDifficulty,
+                reward: Number(customReward),
                 endTime: endTimestamp,
                 question,
-                options,
+                options: finalOptions,
                 correctAns,
                 explanation,
                 totalAnswers: 0,
-                answersCount: { '0': 0, '1': 0, '2': 0, '3': 0 },
+                answersCount: qaType === 'tf' ? { '0': 0, '1': 0 } : { '0': 0, '1': 0, '2': 0, '3': 0 },
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
             
-            const newQA = {
-                id: newDoc.id,
-                subject,
-                difficulty,
-                reward: getDiamonds(difficulty),
-                endTime: endTimestamp,
-                question,
-                options,
-                correctAns,
-                explanation,
-                totalAnswers: 0,
-                answersCount: { '0': 0, '1': 0, '2': 0, '3': 0 },
-                createdAt: new Date().getTime() 
-            };
-            setQaList(prev => [newQA, ...prev]);
-
             showAlert('✅ 快問快答新增成功！');
-            setIsEditExpanded(false); // 新增成功後自動收起介面
-            setQuestion('');
-            setOptions(['', '', '', '']);
-            setExplanation('');
-            
+            setIsEditExpanded(false);
+            setQuestion(''); setOptions(['', '', '', '']); setExplanation('');
         } catch (e) {
             showAlert('新增失敗：' + e.message);
         }
+        setIsPublishing(false);
     };
 
-    const handleDeleteQA = async (id) => {
-        const deleteAction = async () => {
+    const handleDeleteQA = (id) => {
+        showConfirm('確定要刪除這題嗎？', async () => {
             await window.db.collection('fastQA').doc(id).delete();
-            setQaList(qaList.filter(q => q.id !== id));
             if(activeQA && activeQA.id === id) setActiveQA(null);
-        };
-
-        // 使用我們自訂的全域確認視窗，取代瀏覽器原生 confirm
-        if (showConfirm) {
-            showConfirm('確定要刪除這題嗎？', deleteAction);
-        } else {
-            // 防呆機制
-            if(window.confirm('確定要刪除這題嗎？')) {
-                deleteAction();
-            }
-        }
+        });
     };
 
     const handleShare = () => {
         const shareUrl = `${window.location.origin}${window.location.pathname}?qaId=${activeQA.id}`;
-        // ✨ 先將 <img> 標籤替換成 (圖片)，再清除其他 HTML 標籤
         const plainQ = activeQA.question.replace(/<img[^>]*>/gi, '(圖片)').replace(/<[^>]+>/g, '').trim();
         const shortQ = plainQ.length > 25 ? plainQ.substring(0, 25) + '...' : plainQ;
-        const text = `⚡ 快問快答挑戰！\n【${activeQA.subject}】${activeQA.difficulty.split(' ')[0]}\n🎁 獎勵：${activeQA.reward} 鑽石\n\n📝 ${shortQ}\n\n👇 點此連結立即挑戰 👇\n${shareUrl}`;
-        
+        const text = `⚡ 快問快答挑戰！\n【${activeQA.subject}】${activeQA.difficulty}\n🎁 獎勵：${activeQA.reward} 鑽石\n\n📝 ${shortQ}\n\n👇 點此連結立即挑戰 👇\n${shareUrl}`;
         setShareContent(text);
         setShowShareModal(true); 
     };
 
     const handleSubmitAns = async () => {
         if (selectedAns === null) return showAlert('請選擇一個答案！');
-        
-        // 訪客模式：只讓他們看結果，不觸發鑽石邏輯（引導註冊）
-        if (!user) {
-            setShowResult(true);
-            return;
-        }
-
-        // 防重複領取檢查
-        if (records[activeQA.id]) {
-            return showAlert('⚠️ 您已經作答過此題，無法重複領取獎勵喔！');
-        }
+        if (!user) return setShowResult(true);
+        if (records[activeQA.id]) return showAlert('⚠️ 您已經作答過此題！');
 
         setSubmitting(true);
         const isCorrect = selectedAns === activeQA.correctAns;
-        const rewardAmount = Number(activeQA.reward) || 10; // 強制轉換為數字，確保加法有效
+        const rewardAmount = Number(activeQA.reward) || 10;
         
         try {
-            // 資料庫端防呆：二次確認是否領取過
             const recRef = window.db.collection('users').doc(user.uid).collection('fastQARecords').doc(activeQA.id);
             const recDoc = await recRef.get();
-            
-            if (recDoc.exists) {
-                setSubmitting(false);
-                return showAlert('⚠️ 您已經領取過此題的獎勵囉！');
+            if (recDoc.exists) { setSubmitting(false); return showAlert('⚠️ 您已經領取過獎勵！'); }
+
+            await recRef.set({ isCorrect, selectedAns, answeredAt: window.firebase.firestore.FieldValue.serverTimestamp() });
+
+            // 終極修復統計錯誤：先讀取當前狀態，再寫入更新的選項統計，避免 Firebase 的巢狀欄位覆蓋問題
+            const qaDoc = await window.db.collection('fastQA').doc(activeQA.id).get();
+            if (qaDoc.exists) {
+                const currentData = qaDoc.data();
+                const currentCounts = currentData.answersCount || {};
+                
+                await window.db.collection('fastQA').doc(activeQA.id).update({
+                    totalAnswers: window.firebase.firestore.FieldValue.increment(1),
+                    [`answersCount.${selectedAns}`]: (currentCounts[selectedAns] || 0) + 1
+                });
             }
 
-            // 1. 先寫入作答紀錄
-            await recRef.set({
-                isCorrect,
-                selectedAns,
-                answeredAt: window.firebase.firestore.FieldValue.serverTimestamp()
-            });
-
-            // ✨ 新增：更新全域的答案統計 (總作答人數與各選項分布)
-            await window.db.collection('fastQA').doc(activeQA.id).set({
-                totalAnswers: window.firebase.firestore.FieldValue.increment(1),
-                [`answersCount.${selectedAns}`]: window.firebase.firestore.FieldValue.increment(1)
-            }, { merge: true });
-
-            // 移除手動的 setActiveQA 更新，因為已經改用 onSnapshot 即時同步
-            
-            // 2. 如果答對，發放鑽石
             if (isCorrect) {
-                // ✨ 終極修復：改用 set 搭配 merge: true 
-                // 這樣即使新帳號還沒有 mcData 物件，系統也會自動建立，保證 100% 領得到鑽石
                 await window.db.collection('users').doc(user.uid).set({
-                    mcData: {
-                        diamonds: window.firebase.firestore.FieldValue.increment(rewardAmount)
-                    }
+                    mcData: { diamonds: window.firebase.firestore.FieldValue.increment(rewardAmount) }
                 }, { merge: true });
             }
             
-            setRecords(prev => ({...prev, [activeQA.id]: { isCorrect, selectedAns }}));
             setShowResult(true);
-            
-            if (isCorrect) {
-                showAlert(`🎉 答對了！恭喜獲得 ${rewardAmount} 💎 鑽石！\n獎勵已發放至您的史蒂夫帳號。`);
-            }
+            if (isCorrect) showAlert(`🎉 答對了！恭喜獲得 ${rewardAmount} 💎 鑽石！`);
         } catch (e) {
-            console.error("鑽石領取失敗:", e);
-            showAlert('領取失敗：' + e.message);
+            showAlert('提交失敗：' + e.message);
         }
         setSubmitting(false);
     };
 
-    // ✨ 修正問題 5：載入中動畫
-    if (loading) {
-        return (
-            <div className="mb-8 p-12 text-center border-2 border-pink-400 bg-pink-50 dark:bg-pink-900/20 shadow-md no-round shrink-0">
-                <div className="text-4xl mb-4 animate-spin inline-block">⏳</div>
-                <div className="text-lg font-bold text-pink-600 dark:text-pink-400 animate-pulse">快問快答讀取中，請稍候...</div>
-            </div>
-        );
-    }
+    if (loading) return (
+        <div className="mb-8 p-12 text-center border-2 border-pink-400 bg-pink-50 shadow-md">
+            <div className="text-4xl mb-4 animate-spin inline-block">⏳</div>
+            <div className="text-lg font-bold text-pink-600">快問快答讀取中...</div>
+        </div>
+    );
 
     return (
         <div className={`border-2 border-pink-400 bg-pink-50 dark:bg-pink-900/20 p-4 shadow-md relative no-round w-full ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
             <div className="flex justify-between items-center mb-4 border-b border-pink-200 dark:border-pink-800 pb-2">
-                <h2 className="text-xl font-black text-pink-600 dark:text-pink-400 flex items-center">
-                    ⚡ 快問快答挑戰
-                </h2>
+                <h2 className="text-xl font-black text-pink-600 dark:text-pink-400 flex items-center">⚡ 快問快答挑戰</h2>
                 {isAdmin && !targetQaId && (
-                    <button onClick={() => setShowAdminMode(!showAdminMode)} className="bg-pink-600 text-white text-xs px-3 py-1 font-bold no-round hover:bg-pink-700 transition-colors">
+                    <button onClick={() => setShowAdminMode(!showAdminMode)} className="bg-pink-600 text-white text-xs px-3 py-1 font-bold no-round hover:bg-pink-700">
                         {showAdminMode ? '關閉管理' : '管理試題'}
                     </button>
                 )}
             </div>
 
-            {/* --- 管理員新增題目區塊 --- */}
             {isAdmin && showAdminMode && !targetQaId && (
-                <div className="mb-6 border-2 border-pink-300 no-round bg-white dark:bg-gray-800 overflow-hidden">
-                    {/* ✨ 修正問題 2：點擊這條Bar來展開/收合編輯介面 */}
-                    <button 
-                        onClick={() => setIsEditExpanded(!isEditExpanded)}
-                        className="w-full flex justify-between items-center p-4 bg-pink-100 dark:bg-pink-900/40 hover:bg-pink-200 dark:hover:bg-pink-800 transition-colors font-bold text-pink-700 dark:text-pink-300"
-                    >
-                        <span>✏️ 新增快問快答</span>
-                        <span className={`transform transition-transform ${isEditExpanded ? 'rotate-180' : ''}`}>▼</span>
+                <div className="mb-6 border-2 border-pink-300 no-round bg-white dark:bg-gray-800">
+                    <button onClick={() => setIsEditExpanded(!isEditExpanded)} className="w-full flex justify-between p-4 bg-pink-100 hover:bg-pink-200 font-bold text-pink-700">
+                        <span>✏️ 新增快問快答 (自訂升級版)</span><span>{isEditExpanded ? '▼' : '▲'}</span>
                     </button>
-                    
                     {isEditExpanded && (
-                        <div className="p-4 animate-fade-in border-t border-pink-200 dark:border-pink-800">
+                        <div className="p-4 border-t border-pink-200 dark:text-gray-200">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                                <div>
-                                    <label className="block text-sm font-bold mb-1 dark:text-gray-200">科目</label>
-                                    <select value={subject} onChange={e=>setSubject(e.target.value)} className="w-full border p-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                                        {['藥物分析','生藥','中藥','藥理','藥化','藥劑學','生物藥劑學','其他'].map(s => <option key={s}>{s}</option>)}
-                                    </select>
+                                <div className="md:col-span-2 flex gap-4 bg-gray-100 p-2 dark:bg-gray-700">
+                                    <label className="font-bold flex items-center gap-2 cursor-pointer">
+                                        <input type="radio" checked={qaType==='mcq'} onChange={()=>setQaType('mcq')} className="w-4 h-4" /> 選擇題
+                                    </label>
+                                    <label className="font-bold flex items-center gap-2 cursor-pointer">
+                                        <input type="radio" checked={qaType==='tf'} onChange={()=>setQaType('tf')} className="w-4 h-4" /> 是非題
+                                    </label>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-bold mb-1 dark:text-gray-200">難度與獎勵</label>
-                                    <select value={difficulty} onChange={e=>setDifficulty(e.target.value)} className="w-full border p-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                                        <option>簡單 (10鑽)</option>
-                                        <option>中等 (30鑽)</option>
-                                        <option>困難 (50鑽)</option>
-                                        <option>極難 (70鑽)</option>
-                                        <option>地獄 (100鑽)</option>
-                                    </select>
-                                </div>
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-bold mb-1 dark:text-gray-200">結束時間 (選填)</label>
-                                    <input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
-                                </div>
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-bold mb-1 dark:text-gray-200">題目內容 (支援富文本與直接貼上圖片)</label>
-                                    {/* 備註：請確定有 ContentEditableEditor，沒有的話請換回 textarea */}
-                                    <ContentEditableEditor 
-                                        value={question} 
-                                        onChange={setQuestion} 
-                                        placeholder="請輸入題目或直接在這裡貼上圖片 (Ctrl+V)..." 
-                                    />
-                                </div>
-                                {options.map((opt, idx) => (
+                                <div><label className="block text-sm font-bold mb-1">科目</label><input type="text" value={subject} onChange={e=>setSubject(e.target.value)} className="w-full border p-2 dark:bg-gray-800" /></div>
+                                <div><label className="block text-sm font-bold mb-1">難度標籤</label><input type="text" value={customDifficulty} onChange={e=>setCustomDifficulty(e.target.value)} className="w-full border p-2 dark:bg-gray-800" placeholder="例如: 地獄級" /></div>
+                                <div><label className="block text-sm font-bold mb-1">獎勵鑽石數量</label><input type="number" min="1" value={customReward} onChange={e=>setCustomReward(e.target.value)} className="w-full border p-2 dark:bg-gray-800" /></div>
+                                <div><label className="block text-sm font-bold mb-1">結束時間 (留空為永久)</label><input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-gray-800" /></div>
+                                <div className="md:col-span-2"><label className="block text-sm font-bold mb-1">題目內容 (支援貼上圖片)</label><ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入..." /></div>
+                                
+                                {qaType === 'mcq' ? options.map((opt, idx) => (
                                     <div key={idx} className="md:col-span-2 flex items-center gap-2">
-                                        <input type="radio" name="correctOpt" checked={correctAns===idx} onChange={()=>setCorrectAns(idx)} className="w-5 h-5 accent-pink-600 cursor-pointer" />
-                                        <span className="font-bold text-sm dark:text-gray-200 shrink-0">正確設為此項</span>
-                                        <input type="text" placeholder={`選項 ${idx+1}`} value={opt} onChange={e=>{const newO=[...options]; newO[idx]=e.target.value; setOptions(newO);}} className="flex-1 border p-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                                        <input type="radio" checked={correctAns===idx} onChange={()=>setCorrectAns(idx)} className="w-5 h-5 accent-pink-600" />
+                                        <span className="font-bold text-sm shrink-0">設為解答</span>
+                                        <input type="text" placeholder={`選項 ${idx+1}`} value={opt} onChange={e=>{const newO=[...options]; newO[idx]=e.target.value; setOptions(newO);}} className="flex-1 border p-2 dark:bg-gray-800" />
                                     </div>
-                                ))}
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-bold mb-1 dark:text-gray-200">詳解</label>
-                                    <textarea value={explanation} onChange={e=>setExplanation(e.target.value)} className="w-full border p-2 h-24 dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="請輸入答對後顯示的詳解..."></textarea>
-                                </div>
+                                )) : (
+                                    <div className="md:col-span-2 flex gap-6 mt-2">
+                                        <label className="font-bold flex items-center gap-2 cursor-pointer"><input type="radio" checked={correctAns===0} onChange={()=>setCorrectAns(0)} className="w-5 h-5 accent-pink-600" /> 正確答案是「⭕ 是」</label>
+                                        <label className="font-bold flex items-center gap-2 cursor-pointer"><input type="radio" checked={correctAns===1} onChange={()=>setCorrectAns(1)} className="w-5 h-5 accent-pink-600" /> 正確答案是「❌ 否」</label>
+                                    </div>
+                                )}
+                                <div className="md:col-span-2"><label className="block text-sm font-bold mb-1">詳解</label><textarea value={explanation} onChange={e=>setExplanation(e.target.value)} className="w-full border p-2 h-24 dark:bg-gray-800" placeholder="請輸入詳解..."></textarea></div>
                             </div>
-                            <button onClick={handleAddQA} className="bg-pink-600 hover:bg-pink-700 text-white font-bold py-2 px-6 w-full no-round transition-colors">🚀 發布快問快答</button>
+                            <button onClick={handleAddQA} disabled={isPublishing} className="bg-pink-600 hover:bg-pink-700 text-white font-bold py-2 px-6 w-full disabled:bg-gray-400">🚀 發布快問快答</button>
                         </div>
                     )}
                 </div>
             )}
 
-            {/* --- 題目列表與作答介面 --- */}
-            {!activeQA ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {qaList.length === 0 ? (
-                        <div className="text-pink-500 font-bold text-sm col-span-full text-center py-6 border-2 border-dashed border-pink-300">目前沒有開放的快問快答，請晚點再來！</div>
-                    ) : (
-                        qaList.map(qa => {
-                            const rec = records[qa.id];
-                            return (
-                                <div key={qa.id} className="bg-white dark:bg-gray-800 p-4 border border-pink-200 flex flex-col no-round shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="flex justify-between items-start mb-3">
-                                        <span className="bg-pink-100 dark:bg-pink-900 text-pink-800 dark:text-pink-200 text-xs px-2 py-1 font-bold no-round">{qa.subject}</span>
-                                        <span className="text-pink-600 dark:text-pink-400 font-bold text-sm flex items-center gap-1">💎 {qa.reward} 鑽</span>
-                                    </div>
-                                    <p className="text-sm text-black dark:text-white mb-4 flex-1 line-clamp-3 font-medium">
-                                        {qa.question.replace(/<img[^>]*>/gi, '(圖片)').replace(/<[^>]+>/g, '').trim()}
-                                    </p>
-                                    
-                                    <div className="flex items-center justify-between mt-auto pt-3 border-t border-gray-100 dark:border-gray-700">
-                                        {!user ? (
-                                            <span className="text-gray-400 text-sm font-bold">訪客未登入</span>
-                                        ) : rec ? (
-                                            <span className={`font-bold text-sm ${rec.isCorrect ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
-                                                {rec.isCorrect ? '✅ 已答對' : '❌ 答錯了'}
+           {!activeQA ? (
+                <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {qaList.length === 0 ? <div className="text-pink-500 font-bold col-span-full text-center py-6">目前沒有開放的快問快答，請晚點再來！</div> :
+                            qaList.map(qa => {
+                                const rec = records[qa.id];
+                                return (
+                                    <div key={qa.id} className="bg-white dark:bg-gray-800 p-4 border border-pink-200 flex flex-col no-round shadow-sm hover:shadow-md">
+                                        <div className="flex justify-between items-start mb-3">
+                                            <span className="bg-pink-100 text-pink-800 text-xs px-2 py-1 font-bold no-round">{qa.subject}</span>
+                                            <span className="text-pink-600 font-bold text-sm">💎 {qa.reward} 鑽</span>
+                                        </div>
+                                        <p className="text-sm dark:text-white mb-4 flex-1 line-clamp-3 font-medium">{qa.question.replace(/<img[^>]*>/gi, '(圖片)').replace(/<[^>]+>/g, '').trim()}</p>
+                                        <div className="flex items-center justify-between pt-3 border-t">
+                                            <span className={`font-bold text-sm ${!user ? 'text-gray-400' : rec ? (rec.isCorrect ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}`}>
+                                                {!user ? '訪客未登入' : rec ? (rec.isCorrect ? '✅ 已答對' : '❌ 答錯了') : '尚未作答'}
                                             </span>
-                                        ) : (
-                                            <span className="text-gray-400 text-sm font-bold">尚未作答</span>
-                                        )}
-                                        
-                                        <div className="flex gap-2 items-center">
-                                            {isAdmin && showAdminMode && (
-                                                <button onClick={() => handleDeleteQA(qa.id)} className="text-red-500 text-xs font-bold hover:underline">刪除</button>
-                                            )}
-                                            <button 
-                                                onClick={() => { setActiveQA(qa); setSelectedAns(null); setShowResult(!!rec); }} 
-                                                className="bg-pink-500 hover:bg-pink-600 text-white px-3 py-1.5 text-sm font-bold no-round transition-colors"
-                                            >
-                                                {(user && rec) ? '查看紀錄' : '立即挑戰'}
-                                            </button>
+                                            <div className="flex gap-2">
+                                                {isAdmin && showAdminMode && <button onClick={() => handleDeleteQA(qa.id)} className="text-red-500 text-xs">刪除</button>}
+                                                <button onClick={() => { setActiveQA(qa); setSelectedAns(null); setShowResult(!!rec); }} className="bg-pink-500 hover:bg-pink-600 text-white px-3 py-1.5 text-sm font-bold no-round">
+                                                    {(user && rec) ? '查看紀錄' : '立即挑戰'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            );
-                        })
+                                );
+                            })
+                        }
+                    </div>
+                    
+                    {/* ✨ 新增：快問快答的「載入更多」按鈕 (包含正確的 <> </> 包覆) */}
+                    {!targetQaId && qaList.length >= qaLimit && (
+                        <div className="flex justify-center mt-6">
+                            <button 
+                                onClick={() => setQaLimit(prev => prev + 30)} 
+                                className="bg-white border-2 border-pink-300 text-pink-600 px-6 py-2 font-bold shadow-sm hover:bg-pink-50 transition-colors"
+                            >
+                                ⬇️ 載入更早的題目...
+                            </button>
+                        </div>
                     )}
-                </div>
+                </>
             ) : (
                 <div className="bg-white dark:bg-gray-800 p-6 border-2 border-pink-300 no-round animate-fade-in">
-                    <div className="flex justify-between items-center mb-4">
-                        {/* 判斷如果 targetQaId 存在 (代表是訪客直接連結進入)，則隱藏返回列表按鈕，避免混淆 */}
-                        {!targetQaId ? (
-                            <button onClick={() => { 
-                                setActiveQA(null); 
-                                if (onClose) onClose();
-                                else window.history.replaceState({}, '', window.location.pathname); 
-                            }} className="text-gray-500 text-sm font-bold hover:text-black dark:hover:text-white transition-colors">
-                                {onClose ? '✕ 關閉視窗' : '⬅ 返回列表'}
-                            </button>
-                        ) : (
-                            <div></div> /* 佔位符，維持排版 */
-                        )}
-                        
-                        <button onClick={handleShare} className="text-pink-600 bg-pink-100 hover:bg-pink-200 dark:bg-pink-900 dark:text-pink-300 dark:hover:bg-pink-800 px-3 py-1.5 text-sm font-bold no-round transition-colors flex items-center gap-1 shadow-sm shrink-0">
-                            🔗 分享此題
-                        </button>
+                    <div className="flex justify-between mb-4">
+                        {!targetQaId ? <button onClick={() => { setActiveQA(null); if(onClose) onClose(); }} className="text-gray-500 font-bold hover:text-black dark:hover:text-white">⬅ 返回列表</button> : <div></div>}
+                        <button onClick={handleShare} className="text-pink-600 bg-pink-100 px-3 py-1.5 text-sm font-bold no-round">🔗 分享此題</button>
                     </div>
                     
-                    <div className="flex flex-wrap gap-2 justify-between items-center mb-6 border-b pb-4 dark:border-gray-700">
-                        <div className="flex gap-2">
-                            <span className="bg-pink-100 dark:bg-pink-900 text-pink-800 dark:text-pink-200 text-sm px-2 py-1 font-bold no-round">{activeQA.subject}</span>
-                            <span className="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm px-2 py-1 font-bold no-round">{activeQA.difficulty.split(' ')[0]}</span>
-                            {/* ✨ 新增：顯示已作答人數 (一直顯示增添人氣感) */}
-                            {activeQA.totalAnswers > 0 && (
-                                <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm px-2 py-1 font-bold no-round">👥 已作答人數: {activeQA.totalAnswers} 人</span>
-                            )}
-                        </div>
-                        <span className="text-pink-600 dark:text-pink-400 font-bold text-lg">💎 {activeQA.reward} 鑽石獎勵</span>
+                    <div className="flex flex-wrap gap-2 mb-6 border-b pb-4 dark:border-gray-700">
+                        <span className="bg-pink-100 text-pink-800 text-sm px-2 py-1 font-bold">{activeQA.subject}</span>
+                        <span className="bg-gray-100 text-gray-800 text-sm px-2 py-1 font-bold">{activeQA.difficulty}</span>
+                        <span className="text-pink-600 font-bold text-lg ml-auto">💎 {activeQA.reward} 鑽石獎勵</span>
                     </div>
                     
-                    <div 
-                        className="text-lg font-bold mb-6 bg-white text-black p-5 border border-gray-300 shadow-sm no-round leading-relaxed overflow-x-auto" 
-                        dangerouslySetInnerHTML={{ __html: activeQA.question }}
-                    ></div>
+                    <div className="text-lg font-bold mb-6 bg-white text-black p-5 border border-gray-300 shadow-sm" dangerouslySetInnerHTML={{ __html: activeQA.question }}></div>
                     
                     <div className="space-y-3 mb-6">
                         {activeQA.options.map((opt, idx) => {
                             const isSelected = (selectedAns ?? records[activeQA.id]?.selectedAns) === idx;
                             const isCorrectOpt = activeQA.correctAns === idx;
                             
-                            // 計算這題的選擇比例
-                            const total = activeQA.totalAnswers || 0;
+                            // ✨ 統計修復：直接從各選項的真實票數加總來算分母，徹底解決 totalAnswers 舊資料壞掉的問題
+                            const actualTotal = activeQA.answersCount ? Object.values(activeQA.answersCount).reduce((sum, val) => sum + (Number(val) || 0), 0) : 0;
+                            const total = actualTotal > 0 ? actualTotal : (activeQA.totalAnswers || 0);
                             const count = (activeQA.answersCount && activeQA.answersCount[idx]) || 0;
                             const percent = total > 0 ? Math.round((count / total) * 100) : 0;
                             
-                            // 新增 relative z-0 以便放入背景進度條
-                            let btnClass = "w-full text-left p-4 border-2 font-bold transition-all no-round text-lg flex items-center justify-between relative overflow-hidden z-0 ";
-                            let barColor = "bg-gray-300 dark:bg-gray-600";
+                            let btnClass = "w-full text-left p-4 border-2 font-bold transition-all relative z-0 flex justify-between items-center ";
+                            let barColor = "bg-gray-300";
                             
-                            // ✨ 修正：判斷是否有登入，未登入者即使交卷也不顯示對錯顏色
                             if (showResult && user) {
-                                if (isCorrectOpt) {
-                                    btnClass += "bg-green-100 border-green-500 text-green-800 dark:bg-green-900/40 dark:text-green-300 dark:border-green-600 ";
-                                    barColor = "bg-green-300 dark:bg-green-700";
-                                } else if (isSelected) {
-                                    btnClass += "bg-red-100 border-red-500 text-red-800 dark:bg-red-900/40 dark:text-red-300 dark:border-red-600 ";
-                                    barColor = "bg-red-300 dark:bg-red-800";
-                                } else {
-                                    btnClass += "bg-gray-50 border-gray-200 text-gray-500 opacity-80 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 ";
-                                }
-                            } else if (showResult && !user) {
-                                // 訪客交卷後，只保留他選的選項高亮，其他稍微變灰，但不顯示正確答案
-                                if (isSelected) {
-                                    btnClass += "border-pink-500 bg-pink-50 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300 ";
-                                    barColor = "bg-pink-300 dark:bg-pink-800";
-                                } else {
-                                    btnClass += "bg-gray-50 border-gray-200 text-gray-500 opacity-80 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 ";
-                                }
+                                if (isCorrectOpt) { btnClass += "bg-green-100 border-green-500 text-green-800 "; barColor = "bg-green-300"; }
+                                else if (isSelected) { btnClass += "bg-red-100 border-red-500 text-red-800 "; barColor = "bg-red-300"; }
+                                else { btnClass += "bg-gray-50 border-gray-200 text-gray-500 opacity-80 "; }
                             } else {
-                                // 還沒交卷的狀態
-                                btnClass += isSelected 
-                                    ? "border-pink-500 bg-pink-50 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300 " 
-                                    : "border-gray-300 hover:border-pink-300 bg-white dark:bg-gray-800 dark:border-gray-600 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 ";
+                                btnClass += isSelected ? "border-pink-500 bg-pink-50 text-pink-700 " : "border-gray-300 bg-white hover:bg-gray-50 dark:bg-gray-800 dark:text-white ";
                             }
 
                             return (
-                                <button 
-                                    key={idx} 
-                                    disabled={showResult}
-                                    onClick={() => setSelectedAns(idx)}
-                                    className={btnClass}
-                                >
-                                    {/* ✨ 新增：長條圖背景顯示答案分布比例 (僅在交卷後且有登入時顯示) */}
-                                    {showResult && user && (
-                                        <div 
-                                            className={`absolute left-0 top-0 bottom-0 opacity-30 z-[-1] transition-all duration-1000 ease-out ${barColor}`} 
-                                            style={{ width: `${percent}%` }}
-                                        ></div>
-                                    )}
-                                    
-                                    <span><span className="mr-3 inline-block w-6 text-center font-black">{['A','B','C','D'][idx]}.</span> {opt}</span>
-                                    
-                                    <div className="flex items-center gap-3">
-                                        {/* ✨ 新增：顯示比例數字 (僅在交卷後且有登入時顯示) */}
-                                        {showResult && user && (
-                                            <span className="text-sm font-bold opacity-80 shrink-0">
-                                                {percent}% <span className="text-xs hidden sm:inline-block">({count}人)</span>
-                                            </span>
-                                        )}
-                                        {/* ✨ 修正：只有登入用戶才顯示勾勾跟叉叉 */}
-                                        {showResult && user && isCorrectOpt && <span className="text-xl shrink-0">✅</span>}
-                                        {showResult && user && isSelected && !isCorrectOpt && <span className="text-xl shrink-0">❌</span>}
+                                <button key={idx} disabled={showResult || submitting} onClick={() => setSelectedAns(idx)} className={btnClass}>
+                                    {showResult && user && <div className={`absolute left-0 top-0 bottom-0 opacity-30 z-[-1] transition-all ${barColor}`} style={{ width: `${percent}%` }}></div>}
+                                    <span><span className="mr-3 font-black">{activeQA.qaType === 'tf' ? '' : ['A','B','C','D'][idx]+'.'}</span> {opt}</span>
+                                    <div className="flex gap-3">
+                                        {showResult && user && <span className="text-sm font-bold opacity-80">{percent}% ({count}人)</span>}
+                                        {showResult && user && isCorrectOpt && <span>✅</span>}
+                                        {showResult && user && isSelected && !isCorrectOpt && <span>❌</span>}
                                     </div>
                                 </button>
                             );
@@ -3236,96 +3248,26 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                     </div>
 
                     {!showResult ? (
-                        <button 
-                            onClick={handleSubmitAns} 
-                            disabled={submitting}
-                            className="w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-4 text-xl no-round transition-colors disabled:opacity-50"
-                        >
-                            {submitting ? '送出中...' : '確認送出'}
+                        <button onClick={handleSubmitAns} disabled={submitting} className="w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-4 text-xl disabled:bg-gray-400">
+                            {submitting ? '處理中，請稍候...' : '確認送出'}
                         </button>
                     ) : (
                         <div className="mt-6 animate-fade-in">
                             {user ? (
                                 <>
-                                    {/* 簡答區 (僅登入可見) */}
-                                    <div className="p-4 mb-4 bg-green-50 dark:bg-green-900/30 border-l-8 border-green-500 no-round">
-                                        <h3 className="font-bold text-green-700 dark:text-green-400 mb-2">✅ 正確解答：</h3>
-                                        <div className="text-lg font-bold text-gray-800 dark:text-gray-200">
-                                            {['A','B','C','D'][activeQA.correctAns]}. {activeQA.options[activeQA.correctAns]}
-                                        </div>
-                                    </div>
-
-                                    {/* 詳解區 */}
-                                    <div className="p-5 bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-300 dark:border-yellow-700 no-round">
-                                        <h4 className="font-bold text-yellow-800 dark:text-yellow-400 mb-3 flex items-center text-lg">
-                                            💡 詳解 
-                                            {records[activeQA.id]?.isCorrect && (
-                                                <span className="ml-auto text-green-600 dark:text-green-400">🎉 恭喜！已獲得 {activeQA.reward} 鑽！</span>
-                                            )}
-                                        </h4>
-                                        <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap text-md leading-relaxed">{activeQA.explanation}</div>
-                                    </div>
+                                    <div className="p-4 mb-4 bg-green-50 border-l-8 border-green-500"><h3 className="font-bold text-green-700 mb-2">✅ 正確解答：</h3><div className="text-lg font-bold text-gray-800">{activeQA.options[activeQA.correctAns]}</div></div>
+                                    <div className="p-5 bg-yellow-50 border-2 border-yellow-300"><h4 className="font-bold text-yellow-800 mb-3 text-lg flex items-center">💡 詳解 {records[activeQA.id]?.isCorrect && <span className="ml-auto text-green-600">🎉 獲得 {activeQA.reward} 鑽！</span>}</h4><div className="text-gray-800 whitespace-pre-wrap">{activeQA.explanation}</div></div>
                                 </>
                             ) : (
-                                <div className="p-6 bg-gray-100 dark:bg-gray-700 border-2 border-dashed border-gray-400 dark:border-gray-500 text-center mt-4">
-                                    <h3 className="text-xl font-black text-gray-700 dark:text-gray-300 mb-2">🔒 答案與詳解已上鎖</h3>
-                                    <p className="text-gray-600 dark:text-gray-400 font-bold mb-4">
-                                        登入後即可解鎖正確解答與完整詳解，還能將這題的 {activeQA.reward} 鑽石獎勵收入囊中！💎
-                                    </p>
-                                    <button 
-                                        onClick={() => {
-                                            if (onRequireLogin) onRequireLogin();
-                                            else window.location.href = window.location.pathname + '?qaId=' + activeQA.id; // 預防萬一的防呆
-                                        }}
-                                        className="bg-black dark:bg-white text-white dark:text-black px-8 py-3 font-black text-lg no-round hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors shadow-md w-full sm:w-auto"
-                                    >
-                                        🚀 立即登入 / 註冊解鎖
-                                    </button>
-                                </div>
+                                <div className="p-6 bg-gray-100 border-2 border-dashed border-gray-400 text-center"><h3 className="text-xl font-black mb-2">🔒 答案已上鎖</h3><button onClick={() => { if(onRequireLogin) onRequireLogin(); }} className="bg-black text-white px-8 py-3 font-black text-lg w-full">🚀 登入解鎖完整解答與鑽石</button></div>
                             )}
                         </div>
                     )}
                 </div>
             )}
 
-            {/* 分享文本視窗 */}
             {showShareModal && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 animate-fade-in">
-                    <div className="bg-white dark:bg-gray-800 p-5 w-full max-w-xs no-round shadow-2xl border-2 border-pink-400">
-                        <h3 className="font-black text-pink-600 dark:text-pink-400 mb-3 flex justify-between items-center text-lg">
-                            <span>🔗 分享此題</span>
-                            <button onClick={() => setShowShareModal(false)} className="text-gray-400 hover:text-black dark:hover:text-white transition-colors">✕</button>
-                        </h3>
-                        <textarea 
-                            readOnly 
-                            value={shareContent} 
-                            className="w-full h-36 p-3 text-sm border-2 border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 mb-4 outline-none resize-none no-round focus:border-pink-300"
-                            onClick={(e) => e.target.select()}
-                        />
-                        <div className="flex flex-col gap-2">
-                            <button 
-                                onClick={() => {
-                                    navigator.clipboard.writeText(shareContent);
-                                    showAlert('✅ 文本已成功複製到剪貼簿！');
-                                    setShowShareModal(false);
-                                }} 
-                                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-2.5 text-sm no-round transition-colors shadow-sm"
-                            >
-                                📋 複製文本
-                            </button>
-                            {navigator.share && (
-                                <button 
-                                    onClick={() => {
-                                        navigator.share({ title: '快問快答挑戰', text: shareContent }).catch(e => console.log('分享取消', e));
-                                    }} 
-                                    className="w-full bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-bold py-2.5 text-sm no-round transition-colors"
-                                >
-                                    📲 開啟其他 APP 分享
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4"><div className="bg-white p-5 w-full max-w-xs border-2 border-pink-400"><h3 className="font-black text-pink-600 mb-3 flex justify-between"><span>🔗 分享此題</span><button onClick={() => setShowShareModal(false)}>✕</button></h3><textarea readOnly value={shareContent} className="w-full h-36 p-3 text-sm border-2 border-gray-200 mb-4 outline-none resize-none" onClick={e => e.target.select()} /><button onClick={() => { navigator.clipboard.writeText(shareContent); showAlert('✅ 已複製！'); setShowShareModal(false); }} className="w-full bg-pink-500 text-white font-bold py-2.5 text-sm mb-2">📋 複製文本</button></div></div>
             )}
         </div>
     );
