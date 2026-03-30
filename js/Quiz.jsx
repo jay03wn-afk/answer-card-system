@@ -1066,7 +1066,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     };
 
     return (
-        <div className="max-w-6xl mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar">
+        <div className="max-w-6xl mx-auto p-4 pt-0 h-full overflow-y-auto overflow-x-hidden custom-scrollbar w-full min-w-0">
             {/* ✨ 修正：加入 flex-wrap 與 w-full，避免標題與按鈕在小螢幕擠壓超出邊界 */}
             <div className="flex flex-wrap justify-between items-center gap-3 mb-4 border-b-2 border-black dark:border-white pb-2 shrink-0 w-full min-w-0">
                 <h1 className="text-2xl font-black dark:text-white shrink-0">我的題庫</h1>
@@ -1140,21 +1140,23 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     {searchQuery ? '找不到符合關鍵字的試卷。' : '此分類尚無符合篩選條件的測驗紀錄。'}
                 </div>
             ) : (
-                <div className="flex flex-col gap-2 pb-10 w-full min-w-0">
+                <div className="flex flex-col gap-3 pb-10 w-full min-w-0">
                     {displayedRecords.map(rec => (
-                        <div key={rec.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 sm:p-4 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 w-full min-w-0 overflow-hidden">
-                            {/* 左側：標題與狀態 */}
-                            <div className="flex flex-col gap-1.5 min-w-0 flex-1 w-full">
-                                <div className="font-bold text-sm sm:text-base dark:text-white flex flex-col gap-1.5 leading-relaxed min-w-0 w-full">
-                                    <div className="min-w-0 w-full">{renderTestName(rec.testName, !!rec.results)}</div>
-                                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                                        {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
-                                        {rec.isShared && !rec.isTask && <span className="text-[10px] bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
-                                        {rec.hasTimer && <span className="text-[10px] bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0">⏱ {rec.timeLimit}m</span>}
-                                    </div>
+                        <div key={rec.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 sm:p-4 no-round shadow-sm hover:shadow-md transition-shadow flex flex-col w-full min-w-0 relative">
+                            
+                            {/* 上半部：標題與狀態資訊 */}
+                            <div className="flex flex-col gap-2 min-w-0 w-full">
+                                <div className="font-bold text-sm sm:text-base dark:text-white leading-relaxed min-w-0 w-full">
+                                    {renderTestName(rec.testName, !!rec.results)}
                                 </div>
                                 
-                                <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs mt-0.5">
+                                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                                    {rec.isTask && <span className="text-[10px] bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
+                                    {rec.isShared && !rec.isTask && <span className="text-[10px] bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
+                                    {rec.hasTimer && <span className="text-[10px] bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0">⏱ {rec.timeLimit}m</span>}
+                                </div>
+                                
+                                <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
                                     <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap shrink-0">{rec.numQuestions}題</span>
                                     {rec.results ? (
                                         <span className="text-green-600 dark:text-green-400 font-bold whitespace-nowrap shrink-0">✅ {rec.results.score} 分</span>
@@ -1171,23 +1173,30 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                                 </div>
                             </div>
 
-                            {/* 右側：操作按鈕 */}
-                            <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-start sm:justify-end gap-3 w-full sm:w-auto border-t sm:border-t-0 border-gray-100 dark:border-gray-700 pt-3 sm:pt-0 mt-2 sm:mt-0 shrink-0">
-                                <div className="flex flex-wrap items-center gap-3">
-                                    <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-600 transition-colors whitespace-nowrap">刪除</button>
-                                    <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 font-bold transition-colors whitespace-nowrap">📁移動</button>
-                                    {!rec.isTask && <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 dark:text-blue-400 font-bold transition-colors whitespace-nowrap">📤分享</button>}
-                                    {!rec.isShared && !rec.isTask && (
-                                        <button onClick={() => handleEditQuiz(rec)} className="text-xs text-purple-600 dark:text-purple-400 font-bold transition-colors relative whitespace-nowrap">
+                            {/* 下半部：操作按鈕 (手機版分開兩排：上排四個小按鈕 Grid 均分，下排一個滿版進入大按鈕) */}
+                            <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 w-full min-w-0">
+                                
+                                {/* 輔助按鈕群組：手機版使用 CSS Grid 強制四等分，絕不超出邊界 */}
+                                <div className="grid grid-cols-4 sm:flex sm:flex-wrap items-center gap-1 sm:gap-3 w-full sm:w-auto text-center shrink-0">
+                                    <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-500 hover:text-red-600 transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis">刪除</button>
+                                    <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis">📁移動</button>
+                                    {!rec.isTask ? (
+                                        <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 dark:text-blue-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis">📤分享</button>
+                                    ) : <div />}
+                                    {!rec.isShared && !rec.isTask ? (
+                                        <button onClick={() => handleEditQuiz(rec)} className="text-xs text-purple-600 dark:text-purple-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis relative">
                                             📝編輯
-                                            {rec.hasNewSuggestion && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
+                                            {rec.hasNewSuggestion && <span className="absolute top-1 right-0 sm:-top-1 sm:-right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
                                         </button>
-                                    )}
+                                    ) : <div />}
                                 </div>
-                                <button onClick={() => handleEnterQuiz(rec)} className="bg-gray-100 dark:bg-gray-700 px-4 py-2 sm:py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:text-white text-xs transition-colors shrink-0 whitespace-nowrap w-full sm:w-auto mt-1 sm:mt-0 text-center">
-                                    {rec.results ? '查看' : '進入'}
+                                
+                                {/* 進入/查看按鈕 */}
+                                <button onClick={() => handleEnterQuiz(rec)} className="bg-gray-100 dark:bg-gray-700 px-4 py-2.5 sm:py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:text-white text-sm transition-colors w-full sm:w-auto text-center shrink-0">
+                                    {rec.results ? '📊 查看' : '⚔️ 進入'}
                                 </button>
                             </div>
+
                         </div>
                     ))}
                 </div>
