@@ -510,8 +510,8 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
     const PRIZES = [
         { id: '711', name: '7-11 50元禮券', type: 'real', prob: 0.001, img: 'https://i.postimg.cc/pd20TjLs/638632987880299781.png', desc: '極巨獎！' },
         { id: 'diamond_jackpot', name: '鑽石礦 (+100 💎)', type: 'diamond', amount: 100, prob: 0.049, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/diamond_ore.png' },
-        { id: 'pack_legendary', name: '終界寶箱 (禮包)', type: 'pack', prob: 0.02, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/ender_chest_front.png' },
-        { id: 'pack_rare', name: '廢棄礦井箱 (禮包)', type: 'pack', prob: 0.08, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/trapped_chest_front.png' },
+        { id: 'pack_legendary', name: '終界寶箱 (禮包)', type: 'pack', prob: 0.02, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/respawn_anchor_top.png' },
+        { id: 'pack_rare', name: '廢棄礦井箱 (禮包)', type: 'pack', prob: 0.08, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/barrel_side.png' },
         { id: 'gold_ore', name: '金礦 (+50 💎)', type: 'diamond', amount: 50, prob: 0.15, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/gold_ore.png' },
         { id: 'iron_ore', name: '鐵礦 (+20 💎)', type: 'diamond', amount: 20, prob: 0.25, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/iron_ore.png' },
         { id: 'coal_ore', name: '煤礦 (+5 💎)', type: 'diamond', amount: 5, prob: 0.45, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/coal_ore.png' }
@@ -721,6 +721,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     const [showEnderChest, setShowEnderChest] = useState(false);
     const [villagerSpeech, setVillagerSpeech] = useState("哼嗯... 看看這些好東西！");
     const [villagerAnim, setVillagerAnim] = useState("");
+    const [openedPackResult, setOpenedPackResult] = useState(null); // ✨ 新增：記錄開箱結果的狀態
 
     // ✨ 修正：確保 mcData 的數值不為 NaN
     const rawMcData = userProfile.mcData || {};
@@ -755,12 +756,12 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         { id: 'beef', name: '烤牛肉 (+8 飽食)', type: 'food', cost: 25, value: 8, img: `${mcBase}/cooked_beef.png`, icon: '🥩' },
         { id: 'golden_apple', name: '金蘋果 (+10飽食/EXP)', type: 'food_exp', cost: 50, value: 10, exp: 10, img: `${mcBase}/golden_apple.png`, icon: '🍏' },
         { id: 'laxative', name: '瀉藥 (多拉2坨水便)', type: 'medicine', cost: 30, value: 2, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/ghast_tear.png', icon: '💊' },
-        { id: 'pack_basic', name: '村莊木箱 (隨機基礎方塊)', type: 'pack', cost: 100, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/chest_front.png', icon: '📦' },
-        { id: 'pack_rare', name: '廢棄礦井箱 (進階隨機方塊)', type: 'pack', cost: 300, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/trapped_chest_front.png', icon: '🎁' },
+        { id: 'pack_basic', name: '村莊木箱 (隨機基礎方塊)', type: 'pack', cost: 100, img: 'https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg', icon: '📦' },
+        { id: 'pack_rare', name: '廢棄礦井箱 (進階隨機方塊)', type: 'pack', cost: 300, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/barrel_side.png', icon: '🎁' },
         { id: 'pack_epic', name: '地獄遺跡箱 (珍稀隨機方塊)', type: 'pack', cost: 600, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_bricks.png', icon: '🔮' },
-        { id: 'pack_legendary', name: '終界寶箱 (極稀有隨機方塊)', type: 'pack', cost: 1000, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/ender_chest_front.png', icon: '🌟' },
+        { id: 'pack_legendary', name: '終界寶箱 (極稀有隨機方塊)', type: 'pack', cost: 1000, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/respawn_anchor_top.png', icon: '🌟' },
         // ✨ 新增簽到寶箱 (設定 hide: true 讓它不會出現在商店中)
-        { id: 'pack_checkin', name: '每日簽到箱 (普通隨機方塊)', type: 'pack', cost: 0, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/barrel_side.png', icon: '🛢️', hide: true }
+        { id: 'pack_checkin', name: '每日簽到箱 (普通隨機方塊)', type: 'pack', cost: 0, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/beehive_side.png', icon: '🛢️', hide: true }
     ];
 
     useEffect(() => {
@@ -936,7 +937,10 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
 
         updateMcData({ packs: newPacks, inventory: newInv }, true);
         playCachedSound('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/open.mp3');
-        showAlert(resultText + "方塊已全部安全存放至「沙盒左側的庫存清單」中！\n快去蓋房子吧！");
+        
+        // ✨ 觸發豪華開箱動畫視窗，並自動關閉背景的儲物箱
+        setShowEnderChest(false); 
+        setOpenedPackResult({ packName: packData.name, totalAmount, gained });
     };
     const ownedItems = storeItems.filter(i => (mcData.items || []).includes(i.id) || (i.id === 'diamond_sword' && (mcData.items || []).includes('鑽石劍')));
     const ownedPets = storeItems.filter(i => (mcData.pets || []).includes(i.id));
@@ -1112,6 +1116,44 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
 
                 </div>
             </div>
+
+           {/* ✨ 開啟禮包結果豪華 Modal */}
+            {openedPackResult && (
+                <div className="fixed inset-0 z-[250] bg-black bg-opacity-85 flex flex-col items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-[#10002b] border-4 border-purple-800 p-4 sm:p-6 w-full max-w-2xl shadow-2xl flex flex-col relative rounded-sm">
+                        <h3 className="text-purple-300 font-black text-2xl mb-2 text-center drop-shadow-md">🎉 開箱成功！</h3>
+                        <p className="text-white text-center mb-4 font-bold text-sm sm:text-base">
+                            打開了【{openedPackResult.packName}】<br/>
+                            總共獲得 <span className="text-yellow-400 font-black text-lg">{openedPackResult.totalAmount}</span> 個方塊：
+                        </p>
+                        
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar p-3 bg-black bg-opacity-50 border-2 border-purple-900 shadow-inner">
+                            {Object.entries(openedPackResult.gained).map(([blockId, count]) => {
+                                // 方塊圖庫查找表
+                                const lookup = {
+                                    dirt: { name: '泥土', img: 'block/dirt.png' }, stone: { name: '石頭', img: 'block/stone.png' }, cobblestone: { name: '鵝卵石', img: 'block/cobblestone.png' }, sand: { name: '沙子', img: 'block/sand.png' }, gravel: { name: '礫石', img: 'block/gravel.png' }, oak_log: { name: '橡木原木', img: 'block/oak_log.png' }, oak_planks: { name: '橡木木板', img: 'block/oak_planks.png' }, glass: { name: '玻璃', img: 'block/glass.png' }, bricks: { name: '磚塊', img: 'block/bricks.png' }, iron_block: { name: '鐵磚', img: 'block/iron_block.png' }, chest_block: { name: '儲物箱', img: 'https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg', abs: true }, oak_door: { name: '橡木門', img: 'item/oak_door.png' }, gold_block: { name: '金磚', img: 'block/gold_block.png' }, obsidian: { name: '黑曜石', img: 'block/obsidian.png' }, netherrack: { name: '地獄石', img: 'block/netherrack.png' }, glowstone: { name: '螢光石', img: 'block/glowstone.png' }, magma_block: { name: '岩漿塊', img: 'block/magma.png' }, diamond_block: { name: '鑽石磚', img: 'block/diamond_block.png' }, emerald_block: { name: '綠寶石磚', img: 'block/emerald_block.png' }, end_stone: { name: '末地石', img: 'block/end_stone.png' }, purpur_block: { name: '紫珀塊', img: 'block/purpur_block.png' }
+                                };
+                                const info = lookup[blockId] || { name: blockId, img: 'block/dirt.png' };
+                                const imgSrc = info.abs ? info.img : `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/${info.img}`;
+                                
+                                return (
+                                    <div key={blockId} className="flex flex-col items-center p-2 bg-gray-800 border-2 border-gray-600 hover:border-yellow-400 transition-colors shadow-md group">
+                                        <McImg src={imgSrc} fallback="📦" className="w-10 h-10 pixelated drop-shadow-md mb-2 group-hover:scale-110 transition-transform" />
+                                        <span className="text-white text-[10px] sm:text-xs font-bold text-center truncate w-full">{info.name}</span>
+                                        <span className="text-yellow-400 font-black text-sm mt-1">x{count}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        
+                        <div className="mt-5 flex justify-center">
+                            <button onClick={() => setOpenedPackResult(null)} className="bg-purple-600 hover:bg-purple-500 text-white px-8 py-3 font-black text-lg border-2 border-black shadow-lg transition-transform active:scale-95">
+                                收下獎勵 (已存入沙盒)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ✨ 終界儲物箱 Modal */}
             {showEnderChest && (
