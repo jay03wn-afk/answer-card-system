@@ -806,6 +806,10 @@ function NewspaperDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const [todayTasks, setTodayTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isPublishing, setIsPublishing] = useState(false);
+    // ✨ 新增：新聞發布的獨立 Modal 狀態與內容
+    const [showNewsModal, setShowNewsModal] = useState(false);
+    const [newsTitle, setNewsTitle] = useState('');
+    const [newsContent, setNewsContent] = useState('');
     const isAdmin = user && user.email === 'jay03wn@gmail.com';
 
     useEffect(() => {
@@ -829,25 +833,27 @@ function NewspaperDashboard({ user, showAlert, showConfirm, showPrompt, onContin
 
     const handlePublishNews = () => {
         if (isPublishing) return;
-        showPrompt("請輸入新聞標題：", "", (title) => {
-            if (!title) return;
-            showPrompt("請輸入新聞內容：", "", async (content) => {
-                if (!content) return;
-                setIsPublishing(true);
-                try {
-                    await window.db.collection('newsFeed').add({
-                        title: title.trim(),
-                        content: content.trim(),
-                        importance: '一般', // 預設
-                        createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                    showAlert('✅ 新聞發布成功！');
-                } catch (e) {
-                    showAlert('發布失敗：' + e.message);
-                }
-                setIsPublishing(false);
+        setNewsTitle('');
+        setNewsContent('');
+        setShowNewsModal(true); // 改為開啟專屬 Modal
+    };
+
+    const submitNews = async () => {
+        if (!newsTitle.trim() || !newsContent.trim()) return showAlert('❌ 標題與內容不能為空！');
+        setIsPublishing(true);
+        try {
+            await window.db.collection('newsFeed').add({
+                title: newsTitle.trim(),
+                content: newsContent, // 改為儲存富文本 HTML
+                importance: '一般',
+                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
-        });
+            showAlert('✅ 新聞發布成功！');
+            setShowNewsModal(false);
+        } catch (e) {
+            showAlert('發布失敗：' + e.message);
+        }
+        setIsPublishing(false);
     };
 
     const handleDeleteNews = (id) => {
@@ -896,11 +902,51 @@ function NewspaperDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                     {news.createdAt?.toDate().toLocaleDateString('zh-TW')} 
                                 </div>
                                 <h3 className="text-xl font-black mb-3 dark:text-white">{news.title}</h3>
-                                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">{news.content}</p>
+                                {/* ✨ 修改：改用 dangerouslySetInnerHTML 渲染富文本新聞內容 */}
+                                <div 
+                                    className="text-gray-700 dark:text-gray-300 leading-relaxed custom-scrollbar overflow-x-auto" 
+                                    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                                    dangerouslySetInnerHTML={{ __html: news.content }} 
+                                />
                             </div>
                         ))
                     )}
                 </div>
+
+                {/* ✨ 新增：新聞發布專屬的富文本 Modal */}
+                {showNewsModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100] p-4">
+                        <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-2xl no-round shadow-2xl flex flex-col max-h-[90dvh]">
+                            <h3 className="font-black text-xl mb-4 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">📰 撰寫頭條新聞</h3>
+                            
+                            <input 
+                                type="text" 
+                                placeholder="新聞標題" 
+                                className="w-full mb-4 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none font-bold"
+                                value={newsTitle}
+                                onChange={e => setNewsTitle(e.target.value)}
+                            />
+
+                            <div className="flex-grow overflow-y-auto mb-4 custom-scrollbar">
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">新聞內容 (支援貼圖與多種格式，如 Word 貼上)</label>
+                                <ContentEditableEditor 
+                                    value={newsContent} 
+                                    onChange={setNewsContent} 
+                                    placeholder="在此輸入新聞內容，可直接貼上圖片..."
+                                    wrapperClassName="relative w-full h-64"
+                                    editorClassName="w-full h-full p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto"
+                                />
+                            </div>
+
+                            <div className="flex justify-end space-x-3 mt-2 shrink-0">
+                                <button onClick={() => setShowNewsModal(false)} className="px-6 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 font-bold text-sm hover:bg-gray-200 transition-colors">取消</button>
+                                <button onClick={submitNews} disabled={isPublishing} className="px-8 py-2 bg-blue-600 text-white font-black text-sm hover:bg-blue-700 transition-colors shadow-md disabled:opacity-50">
+                                    {isPublishing ? '發布中...' : '🚀 確定發布'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <div className="md:col-span-1">
                     <div className="bg-yellow-50 dark:bg-gray-800 border-2 border-yellow-400 dark:border-yellow-600 p-4 shadow-md sticky top-4">
@@ -934,6 +980,10 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     const [showShareModal, setShowShareModal] = useState(null);
     const [showMoveModal, setShowMoveModal] = useState(null);
     const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+    
+    // ✨ 新增：獨立的新增資料夾 Modal 狀態 (避開 global prompt 的 Enter 問題)
+    const [showAddFolderModal, setShowAddFolderModal] = useState(false);
+    const [newFolderName, setNewFolderName] = useState('');
 
     // ✨ 新增搜尋狀態
     const [searchQuery, setSearchQuery] = useState('');
@@ -995,19 +1045,25 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     }
 
     const handleCreateFolder = () => {
-        showPrompt("請輸入新資料夾名稱：", "", (name) => {
-            const cleanName = name?.trim();
-            if(cleanName && !userFolders.includes(cleanName)) {
-                window.db.collection('users').doc(user.uid).set({
-                    folders: window.firebase.firestore.FieldValue.arrayUnion(cleanName)
-                }, { merge: true }).then(() => {
-                    setCurrentFolder(cleanName);
-                    showAlert(`✅ 已建立資料夾「${cleanName}」`);
-                }).catch(e => showAlert('建立失敗：' + e.message));
-            } else if (userFolders.includes(cleanName)) {
-                showAlert('❌ 資料夾名稱已存在');
-            }
-        });
+        setNewFolderName('');
+        setShowAddFolderModal(true);
+    };
+
+    const submitCreateFolder = () => {
+        const cleanName = newFolderName.trim();
+        if(cleanName && !userFolders.includes(cleanName)) {
+            window.db.collection('users').doc(user.uid).set({
+                folders: window.firebase.firestore.FieldValue.arrayUnion(cleanName)
+            }, { merge: true }).then(() => {
+                setCurrentFolder(cleanName);
+                showAlert(`✅ 已建立資料夾「${cleanName}」`);
+                setShowAddFolderModal(false);
+            }).catch(e => showAlert('建立失敗：' + e.message));
+        } else if (userFolders.includes(cleanName)) {
+            showAlert('❌ 資料夾名稱已存在');
+        } else {
+            showAlert('❌ 名稱不可為空白');
+        }
     };
 
     const moveQuizToFolder = (quiz, targetFolder) => {
@@ -1430,6 +1486,33 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     </div>
                 </div>
             )}
+
+            {/* ✨ 新增：獨立的新增資料夾 Modal */}
+            {showAddFolderModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-sm no-round shadow-xl">
+                        <h3 className="font-bold text-lg mb-4 dark:text-white">📁 新增資料夾</h3>
+                        <input 
+                            type="text" 
+                            autoFocus
+                            className="w-full p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round mb-6 outline-none focus:border-black dark:focus:border-white font-bold"
+                            placeholder="請輸入新資料夾名稱..."
+                            value={newFolderName}
+                            onChange={e => setNewFolderName(e.target.value)}
+                            onKeyDown={(e) => {
+                                // ✨ 防呆設計：過濾中文輸入法 (IME) 選字時敲擊的 Enter
+                                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                                    submitCreateFolder();
+                                }
+                            }}
+                        />
+                        <div className="flex justify-end gap-3">
+                            <button onClick={() => setShowAddFolderModal(false)} className="px-5 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 font-bold no-round hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm">取消</button>
+                            <button onClick={submitCreateFolder} className="px-5 py-2 bg-black dark:bg-gray-200 text-white dark:text-black font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors text-sm shadow-sm">建立</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -1628,8 +1711,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         const finalQuestionText = inputType === 'text' ? questionText : '';
         const finalQuestionHtml = inputType === 'richtext' ? questionHtml : '';
         
-        // ✨ 修改 3-1：先整理輸入的標準答案 (轉大寫並去除符號)
-        const cleanKey = (correctAnswersInput || '').replace(/[^a-zA-Z]/g, '').toUpperCase();
+        // ✨ 修改 3-1：先整理輸入的標準答案 (保留大小寫，僅允許 A-D, a-d, Z)
+        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
         
         setQuestionFileUrl(finalFileUrl);
         setQuestionText(finalQuestionText);
@@ -1730,7 +1813,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     };
 
     const handleSaveEdit = async () => {
-        const cleanKey = (correctAnswersInput || '').replace(/[^a-zA-Z]/g, '').toUpperCase();
+        // ✨ 修改：編輯時保留大小寫，僅允許 A-D, a-d, Z
+        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
         try {
             const finalFileUrl = inputType === 'url' ? questionFileUrl.trim() : '';
             const finalQuestionText = inputType === 'text' ? questionText : '';
@@ -1793,11 +1877,25 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                             let tCorrectCount = 0;
                             const tData = targetData.userAnswers.map((ans, idx) => {
                                 const key = cleanKey[idx] || '-';
-                                const isCorrect = ans === key && ans !== '';
+                                let isCorrect = false;
+
+                                // ✨ 新增：多選與送分的批改邏輯
+                                if (key === 'Z' || key === 'z' || key === 'abcd') {
+                                    isCorrect = true; // Z 或 abcd 代表送分，有填沒填都給分
+                                } else if (key !== '-' && ans !== '') {
+                                    if (key === key.toUpperCase()) {
+                                        // 單選大寫
+                                        isCorrect = (ans === key);
+                                    } else {
+                                        // 複選小寫 (只要使用者的答案包含在小寫字串內就給分，例如填 A，答案是 ab，就給分)
+                                        isCorrect = key.toLowerCase().includes(ans.toLowerCase());
+                                    }
+                                }
+
                                 if (isCorrect) tCorrectCount++;
                                 return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
                             });
-                            targetUpdates.results = window.jzCompress({ 
+                            targetUpdates.results = window.jzCompress({
                                 score: Math.round((tCorrectCount/targetData.numQuestions)*100), 
                                 correctCount: tCorrectCount, 
                                 total: targetData.numQuestions, 
@@ -1811,21 +1909,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 await Promise.all(promises).catch(e => console.error("同步失敗:", e));
             }
 
-            showAlert("✅ 編輯成功！已同步至所有下載者及任務牆。");
+          showAlert("✅ 編輯成功！已同步至所有下載者及任務牆。");
             
-            if (results && userAnswers) {
-                let correctCount = 0;
-                const data = userAnswers.map((ans, idx) => {
-                    const key = cleanKey[idx] || '-';
-                    const isCorrect = ans === key && ans !== '';
-                    if (isCorrect) correctCount++;
-                    return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: starred[idx] };
-                });
-                setResults({ score: Math.round((correctCount/numQuestions)*100), correctCount, total: numQuestions, data });
-            }
+            // ✨ 移除自動覆蓋本地成績的邏輯，讓用戶退回結果頁時，能看見「重新批改」按鈕手動觸發
 
-            // ✨ 修改 2：不進入作答或結果頁，直接呼叫退回主頁的函式
-            onBackToDashboard();
+            // ✨ 根據進入點決定儲存後的返回路徑 (從主頁進就回主頁，從作答進就回作答/結果頁)
+            if (initialRecord.forceStep === 'edit') {
+                onBackToDashboard();
+            } else {
+                setStep(results ? 'results' : 'answering');
+            }
         } catch(e) {
             showAlert("儲存失敗：" + e.message);
         }
@@ -1846,13 +1939,28 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     };
 
     const handleGrade = async () => {
-        const cleanKey = (correctAnswersInput || '').replace(/[^a-zA-Z]/g, '').toUpperCase();
+        // ✨ 修改：交卷時保留大小寫，僅允許 A-D, a-d, Z
+        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
         if (!cleanKey && !isTask && !isShared) return showAlert('請輸入標準答案後再批改！');
         
         let correctCount = 0;
         const data = userAnswers.map((ans, idx) => {
             const key = cleanKey[idx] || '-';
-            const isCorrect = ans === key && ans !== '';
+            let isCorrect = false;
+
+            // ✨ 新增：多選與送分的批改邏輯
+            if (key === 'Z' || key === 'z' || key === 'abcd') {
+                isCorrect = true; // Z 或 abcd 代表送分，有填沒填都給分
+            } else if (key !== '-' && ans !== '') {
+                if (key === key.toUpperCase()) {
+                    // 單選大寫
+                    isCorrect = (ans === key);
+                } else {
+                    // 複選小寫 (只要使用者的答案包含在小寫字串內就給分，例如填 A，答案是 ab，就給分)
+                    isCorrect = key.toLowerCase().includes(ans.toLowerCase());
+                }
+            }
+
             if (isCorrect) correctCount++;
             return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: starred[idx] };
         });
@@ -2458,35 +2566,45 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     </div>
                     <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white dark:bg-gray-800 transition-colors">
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px 16px' }}>
-                            {userAnswers.map((ans, i) => (
-                                <div key={i} id={`answer-card-${i+1}`} className="break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 pr-2 transition-colors rounded">
-                                    <div className="flex items-center space-x-2 shrink-0 w-14">
-                                        {/* ✨ 修改：將 span 替換為可點擊跳轉的 button */}
-                                        <button 
-                                            onClick={() => scrollToQuestion(i+1)}
-                                            className="font-mono text-sm font-bold text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
-                                            title="點擊跳轉至此題題目"
-                                        >{i+1}.</button>
-                                        <button 
-                                            disabled={isTimeUp}
-                                            onClick={() => toggleStar(i)} 
-                                            className={`text-sm focus:outline-none ${starred[i] ? 'text-orange-500' : 'text-gray-200 dark:text-gray-600'} ${isTimeUp ? 'cursor-not-allowed opacity-50' : 'hover:text-gray-300 dark:hover:text-gray-500'}`}
-                                        >★</button>
-                                    </div>
-                                    <div className="flex space-x-1 shrink-0">
-                                        {['A','B','C','D'].map(o => (
+                            {userAnswers.map((ans, i) => {
+                                // ✨ 新增：即時判斷此題是否為送分題 (Z 或 z)
+                                const currentCleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
+                                const key = currentCleanKey[i] || '-';
+                                const isBonus = (key === 'Z' || key === 'z');
+
+                                return (
+                                    <div key={i} id={`answer-card-${i+1}`} className={`break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 dark:border-gray-700 pr-2 transition-colors rounded ${isBonus ? 'bg-yellow-50 dark:bg-yellow-900/40 hover:bg-yellow-100 dark:hover:bg-yellow-900/60' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                                        <div className="flex items-center space-x-2 shrink-0 w-20">
+                                            {/* ✨ 修改：將 span 替換為可點擊跳轉的 button */}
                                             <button 
-                                                key={o} 
+                                                onClick={() => scrollToQuestion(i+1)}
+                                                className={`font-mono text-sm font-bold transition-colors cursor-pointer ${isBonus ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400'}`}
+                                                title="點擊跳轉至此題題目"
+                                            >{i+1}.</button>
+                                            <button 
                                                 disabled={isTimeUp}
-                                                onClick={() => handleAnswerSelect(i, o)} 
-                                                className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all 
-                                                    ${ans === o ? 'bg-black dark:bg-gray-200 border-black dark:border-gray-200 text-white dark:text-black scale-105 shadow-sm' : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-400'}
-                                                    ${isTimeUp ? 'locked-btn' : 'hover:border-gray-500 dark:hover:border-gray-400'}`}
-                                            >{o}</button>
-                                        ))}
+                                                onClick={() => toggleStar(i)} 
+                                                className={`text-sm focus:outline-none ${starred[i] ? 'text-orange-500' : 'text-gray-200 dark:text-gray-600'} ${isTimeUp ? 'cursor-not-allowed opacity-50' : 'hover:text-gray-300 dark:hover:text-gray-500'}`}
+                                            >★</button>
+                                            {/* ✨ 新增：送分題 UI 閃爍標籤 */}
+                                            {isBonus && <span className="text-[10px] bg-yellow-400 text-black px-1.5 py-0.5 rounded-sm font-bold animate-pulse shadow-sm">🎁 送分</span>}
+                                        </div>
+                                        <div className="flex space-x-1 shrink-0">
+                                            {['A','B','C','D'].map(o => (
+                                                <button 
+                                                    key={o} 
+                                                    disabled={isTimeUp}
+                                                    onClick={() => handleAnswerSelect(i, o)} 
+                                                    className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all 
+                                                        ${ans === o ? 'bg-black dark:bg-gray-200 border-black dark:border-gray-200 text-white dark:text-black scale-105 shadow-sm' : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-400'}
+                                                        ${isTimeUp ? 'locked-btn' : 'hover:border-gray-500 dark:hover:border-gray-400'}
+                                                        ${isBonus && ans !== o && !isTimeUp ? 'border-yellow-300 dark:border-yellow-700' : ''}`}
+                                                >{o}</button>
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -2662,12 +2780,27 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
                 <div className={`flex-grow flex flex-col bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm no-round overflow-hidden transition-colors`}>
                     <div className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-2 shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 transition-colors">
-                        <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-3 flex-wrap">
                             <span className="font-bold text-xs text-gray-600 dark:text-gray-300 flex items-center whitespace-nowrap">
                                 <span className="text-sm mr-1">📝</span> 批改結果：
                                 <span className={`text-xl ml-2 font-black ${results.score >= 60 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{results.score} 分</span>
-                                <span className="text-xs font-normal text-gray-500 ml-2 mt-1">(答對 {results.correctCount}/{results.total} 題)</span>
+                                <span className="text-xs font-normal text-gray-500 ml-2 mt-1 mr-2">(答對 {results.correctCount}/{results.total} 題)</span>
                             </span>
+                            {/* ✨ 新增：重新批改按鈕 (動態比對當前標準答案與前次批改的答案紀錄) */}
+                            {(() => {
+                                const currentCleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
+                                const gradedKey = results?.data ? results.data.map(d => (d.correctAns && d.correctAns !== '-') ? d.correctAns : '').join('') : '';
+                                const needsRegrade = currentCleanKey && gradedKey && currentCleanKey !== gradedKey;
+                                
+                                return needsRegrade ? (
+                                    <button 
+                                        onClick={handleGrade} 
+                                        className="animate-pulse bg-yellow-400 hover:bg-yellow-500 text-black px-3 py-1 text-xs font-bold no-round shadow-sm transition-colors"
+                                    >
+                                        ⚠️ 答案已更新，點此重新批改
+                                    </button>
+                                ) : null;
+                            })()}
                         </div>
                         
                         {canSeeAnswers && (
