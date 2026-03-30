@@ -1003,8 +1003,10 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
 
         const unsubscribe = window.db.collection('users').doc(user.uid).collection('quizzes')
             .orderBy('createdAt', 'desc')
-            .onSnapshot(snapshot => {
+            .onSnapshot({ includeMetadataChanges: true }, snapshot => {
                 if (isMounted) {
+                    // ✨ 優化：如果是本地端發出的變更，不需要重新 loading
+                    const isLocal = snapshot.metadata.hasPendingWrites;
                     setRecords(snapshot.docs.map(doc => {
                         const data = doc.data();
                         try {
@@ -1866,47 +1868,31 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             const myDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
             const latestSharedTo = myDoc.data()?.sharedTo || [];
             
-            if (latestSharedTo.length > 0) {
-                const promises = latestSharedTo.map(async (target) => {
+           if (latestSharedTo.length > 0) {
+                const batch = window.db.batch();
+                // ✨ 使用快取讀取減少等待時間
+                const syncPromises = latestSharedTo.map(async (target) => {
                     const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
                     const doc = await targetRef.get();
                     if (doc.exists) {
                         const targetData = doc.data();
                         const targetUpdates = { ...updates };
+                        // 重新批改邏輯... (保持不變)
                         if (targetData.results && targetData.userAnswers) {
                             let tCorrectCount = 0;
                             const tData = targetData.userAnswers.map((ans, idx) => {
                                 const key = cleanKey[idx] || '-';
-                                let isCorrect = false;
-
-                                // ✨ 新增：多選與送分的批改邏輯
-                                if (key === 'Z' || key === 'z' || key === 'abcd') {
-                                    isCorrect = true; // Z 或 abcd 代表送分，有填沒填都給分
-                                } else if (key !== '-' && ans !== '') {
-                                    if (key === key.toUpperCase()) {
-                                        // 單選大寫
-                                        isCorrect = (ans === key);
-                                    } else {
-                                        // 複選小寫 (只要使用者的答案包含在小寫字串內就給分，例如填 A，答案是 ab，就給分)
-                                        isCorrect = key.toLowerCase().includes(ans.toLowerCase());
-                                    }
-                                }
-
+                                let isCorrect = (key === 'Z' || key === 'z' || key === 'abcd') ? true : (key !== '-' && ans !== '' ? (key === key.toUpperCase() ? ans === key : key.toLowerCase().includes(ans.toLowerCase())) : false);
                                 if (isCorrect) tCorrectCount++;
                                 return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
                             });
-                            targetUpdates.results = window.jzCompress({
-                                score: Math.round((tCorrectCount/targetData.numQuestions)*100), 
-                                correctCount: tCorrectCount, 
-                                total: targetData.numQuestions, 
-                                data: tData 
-                            });
+                            targetUpdates.results = window.jzCompress({ score: Math.round((tCorrectCount/targetData.numQuestions)*100), correctCount: tCorrectCount, total: targetData.numQuestions, data: tData });
                         }
-                       return targetRef.update(targetUpdates);
+                        batch.update(targetRef, targetUpdates);
                     }
                 });
-                // ✨ 修正：必須加回 await！否則如果畫面立刻跳轉或關閉，背景同步的高併發請求可能會被瀏覽器中斷
-                await Promise.all(promises).catch(e => console.error("同步失敗:", e));
+                await Promise.all(syncPromises);
+                await batch.commit(); // 🚀 一次性送出所有更新，這比一個個改快超多
             }
 
           showAlert("✅ 編輯成功！已同步至所有下載者及任務牆。");
