@@ -423,15 +423,19 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 setLoading(false);
             });
 
-        // ✨ 修改：取得包含出題者自己原稿的 quizzes，這樣出題者在任務牆上也能顯示作答進度與成績連動
+        // ✨ 修改：取得包含出題者自己原稿的 quizzes，加入 try-catch 防當機保護與效能優化
         const unsubMyQuizzes = window.db.collection('users').doc(user.uid).collection('quizzes')
             .onSnapshot(snap => {
                 const myTaskMap = {};
                 snap.docs.forEach(doc => {
                     const data = doc.data();
                     if (data.taskId) {
-                        data.userAnswers = window.jzDecompress(data.userAnswers);
-                        data.results = window.jzDecompress(data.results);
+                        try {
+                            data.userAnswers = data.userAnswers ? window.jzDecompress(data.userAnswers) : [];
+                            data.results = data.results ? window.jzDecompress(data.results) : null;
+                        } catch (e) {
+                            console.error("解壓縮失敗", e);
+                        }
                         myTaskMap[data.taskId] = { id: doc.id, ...data };
                     }
                 });
@@ -794,8 +798,12 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 if (isMounted) {
                     setRecords(snapshot.docs.map(doc => {
                         const data = doc.data();
-                        data.userAnswers = window.jzDecompress(data.userAnswers);
-                        data.results = window.jzDecompress(data.results);
+                        try {
+                            data.userAnswers = data.userAnswers ? window.jzDecompress(data.userAnswers) : [];
+                            data.results = data.results ? window.jzDecompress(data.results) : null;
+                        } catch (e) {
+                            console.error(e);
+                        }
                         return { id: doc.id, ...data };
                     }));
                     setLoading(false);
@@ -1263,7 +1271,10 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     );
 }
 
-function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard, showAlert, showConfirm, showPrompt }) {
+function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard: originalBack, showAlert, showConfirm, showPrompt }) {
+    // ✨ 安全退出機制：微延遲 50 毫秒，讓存檔與解壓縮動作錯開，避免畫面卡死
+    const onBackToDashboard = () => setTimeout(originalBack, 50);
+
     const initialRecord = activeQuizRecord || {};
     const userFolders = Array.from(new Set(['未分類', ...(userProfile.folders || [])]));
     
