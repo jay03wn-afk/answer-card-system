@@ -278,6 +278,13 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const [currentFolder, setCurrentFolder] = useState('全部');
     const [previewImage, setPreviewImage] = useState(null);
 
+    // ✨ 新增：跳轉試卷時的載入狀態
+    const [isJumping, setIsJumping] = useState(false);
+
+    // ✨ 新增：省流機制與極速同步狀態
+    const [visibleLimit, setVisibleLimit] = useState(10);
+    const [isSyncingWb, setIsSyncingWb] = useState(false);
+
     useEffect(() => {
         const unsubItems = window.db.collection('users').doc(user.uid).collection('wrongBook')
             .orderBy('createdAt', 'desc')
@@ -298,6 +305,63 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const folders = ['全部', ...new Set([...customFolders, ...wrongItems.map(item => item.folder || '未分類')])];
     const filteredItems = currentFolder === '全部' ? wrongItems : wrongItems.filter(item => (item.folder || '未分類') === currentFolder);
 
+    // ✨ 切換資料夾時重置顯示數量
+    useEffect(() => {
+        setVisibleLimit(10);
+    }, [currentFolder]);
+
+    const displayedItems = filteredItems.slice(0, visibleLimit);
+
+    // ✨ 極速背景同步機制：只針對目前畫面上顯示的十題去檢查更新！極大減少讀取時間
+    useEffect(() => {
+        if (displayedItems.length === 0) return;
+        
+        const checkUpdates = async () => {
+            setIsSyncingWb(true);
+            const uniqueQuizIds = [...new Set(displayedItems.map(item => item.quizId).filter(Boolean))];
+            let needsUpdate = false;
+            const batch = window.db.batch();
+
+            for (const qId of uniqueQuizIds) {
+                try {
+                    const quizDoc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(qId).get();
+                    if (!quizDoc.exists) continue;
+                    const quizData = quizDoc.data();
+                    let latestKeyInput = quizData.correctAnswersInput || '';
+
+                    if (quizData.isTask && quizData.taskId) {
+                        const taskDoc = await window.db.collection('publicTasks').doc(quizData.taskId).get();
+                        if (taskDoc.exists) {
+                            latestKeyInput = taskDoc.data().correctAnswersInput || latestKeyInput;
+                        }
+                    }
+
+                    const cleanKey = latestKeyInput.replace(/[^a-dA-DZz,]/g, '');
+                    let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
+
+                    displayedItems.filter(item => item.quizId === qId).forEach(item => {
+                        const qNum = item.questionNum;
+                        const newKey = keyArray[qNum - 1] || '';
+                        if (item.correctAns !== newKey && newKey !== '') {
+                            const ref = window.db.collection('users').doc(user.uid).collection('wrongBook').doc(item.id);
+                            batch.update(ref, { correctAns: newKey });
+                            needsUpdate = true;
+                        }
+                    });
+                } catch (e) { console.error("背景檢查錯題本更新失敗", e); }
+            }
+            
+            if (needsUpdate) {
+                await batch.commit();
+            }
+            setIsSyncingWb(false);
+        };
+        
+        const timer = setTimeout(() => { checkUpdates(); }, 300);
+        return () => clearTimeout(timer);
+        
+    }, [displayedItems.map(i => i.id).join(','), user.uid]);
+
     const handleDelete = (id) => {
         showConfirm("確定要刪除這筆錯題紀錄嗎？", () => {
             window.db.collection('users').doc(user.uid).collection('wrongBook').doc(id).delete();
@@ -305,22 +369,22 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     };
 
    const handleGoToQuiz = async (quizId) => {
+        setIsJumping(true); // ✨ 開啟跳轉載入畫面
         try {
             const doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get();
             if(doc.exists) {
                 const data = doc.data();
-                try {
-                    // 修正：只解壓縮 userAnswers 和 results，絕對不要解壓縮 questionText，否則會導致 QuizApp 內二次解碼崩潰
-                    data.userAnswers = typeof data.userAnswers === 'string' ? window.jzDecompress(data.userAnswers) : (data.userAnswers || []);
-                    data.results = typeof data.results === 'string' ? window.jzDecompress(data.results) : (data.results || null);
-                } catch (e) { console.error("解碼失敗", e); }
-                
-                onContinueQuiz({ id: doc.id, ...data });
+                // ✨ 為了讓使用者看到載入畫面，加上微小延遲讓 React 渲染
+                setTimeout(() => {
+                    onContinueQuiz({ id: doc.id, ...data, forceStep: 'results' });
+                }, 50);
             } else {
                 showAlert('❌ 找不到原始試卷，可能已被刪除！');
+                setIsJumping(false);
             }
         } catch(e) {
             showAlert('❌ 載入失敗：' + e.message);
+            setIsJumping(false);
         }
     };
 
@@ -367,14 +431,14 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
             
             {loading ? <LoadingSpinner text="載入錯題中..." /> : 
              filteredItems.length === 0 ? <div className="text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">目前沒有收錄錯題。<br/>在測驗交卷後的檢視頁面，點擊「📓 收錄錯題」即可將題目加到這裡！</div> :
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-10">
-                 {filteredItems.map(item => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-10">
+                 {displayedItems.map(item => (
                      <div key={item.id} className="bg-white dark:bg-gray-800 p-4 border border-gray-200 dark:border-gray-700 shadow-sm relative no-round hover:shadow-md transition-shadow">
                          <button onClick={() => handleDelete(item.id)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 font-bold z-10">✖</button>
                          <div className="text-xs text-blue-600 dark:text-blue-400 font-bold mb-2 pr-6 flex items-center justify-between">
                             <span className="truncate">出自: {cleanQuizName(item.quizName)} - 第 {item.questionNum} 題</span>
                             {item.quizId && (
-                                <button onClick={() => handleGoToQuiz(item.quizId)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline shrink-0 ml-2">
+                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleGoToQuiz(item.quizId); }} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline shrink-0 ml-2">
                                     🔗 檢視試題
                                 </button>
                             )}
@@ -427,11 +491,34 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                  ))}
              </div>
             }
+            
+            {/* ✨ 新增：錯題本的「載入更多」按鈕 */}
+            {!loading && filteredItems.length > visibleLimit && (
+                <div className="flex justify-center mt-2 mb-10">
+                    <button 
+                        onClick={() => setVisibleLimit(prev => prev + 10)} 
+                        className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 px-6 py-2 font-bold shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+                    >
+                        {isSyncingWb ? <><div className="w-4 h-4 border-2 border-gray-400 border-t-black dark:border-t-white rounded-full animate-spin"></div>同步最新解答中...</> : '⬇️ 載入更多錯題...'}
+                    </button>
+                </div>
+            )}
 
             {previewImage && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[110] p-4 cursor-zoom-out" onClick={() => setPreviewImage(null)}>
                     <img src={previewImage} className="max-w-full max-h-[90vh] object-contain shadow-2xl" alt="放大預覽" />
                     <button className="absolute top-4 right-4 text-white text-3xl font-bold bg-black/50 w-12 h-12 rounded-full flex items-center justify-center hover:bg-black/80">✖</button>
+                </div>
+            )}
+
+            {/* ✨ 新增：跳轉試卷時的光速載入 Modal */}
+            {isJumping && (
+                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-indigo-500 animate-fade-in">
+                        <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-700 border-t-indigo-500 rounded-full animate-spin mx-auto mb-6"></div>
+                        <h3 className="text-xl font-black mb-2 dark:text-white">🚀 正在載入試卷...</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">正在為您從雲端抓取資料並解壓縮，請稍候</p>
+                    </div>
                 </div>
             )}
 
@@ -926,6 +1013,12 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
 function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm, showPrompt }) {
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [isJumping, setIsJumping] = useState(false); // ✨ 新增：跳轉載入狀態
+    
+    // 🚀 終極提速：加入題庫顯示數量限制，大幅降低網路下載量
+    const [visibleLimit, setVisibleLimit] = useState(15);
+    const [hasMore, setHasMore] = useState(true);
+
     const [showShareModal, setShowShareModal] = useState(null);
     const [showMoveModal, setShowMoveModal] = useState(null);
     const [isGeneratingCode, setIsGeneratingCode] = useState(false);
@@ -950,16 +1043,24 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             if (isMounted) setLoading(false);
         }, 3000);
 
+        // 🚀 終極提速：利用 .limit() 讓 Firebase 每次只下載 15 份考卷，避開海量資料下載卡死
         const unsubscribe = window.db.collection('users').doc(user.uid).collection('quizzes')
             .orderBy('createdAt', 'desc')
+            .limit(visibleLimit)
             .onSnapshot({ includeMetadataChanges: true }, snapshot => {
                 if (isMounted) {
+                    if (snapshot.docs.length < visibleLimit) {
+                        setHasMore(false);
+                    } else {
+                        setHasMore(true);
+                    }
+                    
                     // ✨ 優化：如果是本地端發出的變更，不需要重新 loading
                     const isLocal = snapshot.metadata.hasPendingWrites;
                     setRecords(snapshot.docs.map(doc => {
                         const data = doc.data();
                         try {
-                            data.userAnswers = data.userAnswers ? window.jzDecompress(data.userAnswers) : [];
+                            // ✨ 效能優化：在列表頁「絕對不要」解壓縮龐大的 userAnswers 陣列，避免畫面嚴重凍結卡死！
                             data.results = data.results ? window.jzDecompress(data.results) : null;
                         } catch (e) {
                             console.error(e);
@@ -979,7 +1080,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             clearTimeout(fallbackTimer);
             unsubscribe();
         };
-    }, [user]);
+    }, [user, visibleLimit]);
 
     const handleDelete = (id) => {
         const rec = records.find(r => r.id === id);
@@ -1216,8 +1317,14 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             return false;
         }
         
-        const isCompleted = !!rec.results;
-        const answeredCount = rec.userAnswers ? rec.userAnswers.filter(a => a !== '').length : 0;
+       const isCompleted = !!rec.results;
+        // ✨ 效能優化配套：因為前面跳過了解壓縮，這裡改用類型判斷，只要有壓縮字串就當作「進行中」
+        let answeredCount = 0;
+        if (Array.isArray(rec.userAnswers)) {
+            answeredCount = rec.userAnswers.filter(a => a !== '').length;
+        } else if (typeof rec.userAnswers === 'string' && rec.userAnswers.length > 10) {
+            answeredCount = 1; 
+        }
         const hasStarted = answeredCount > 0;
 
         // 狀態過濾
@@ -1229,6 +1336,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     });
 
    const handleEnterQuiz = async (rec) => {
+        setIsJumping(true); // ✨ 開啟跳轉載入畫面
+        
         // ✨ 終極同步機制：只要是從任務牆下載的題目，點擊進入前瞬間去雲端核對最新版本
         let finalRec = { ...rec };
         if (rec.isTask && rec.taskId) {
@@ -1271,14 +1380,15 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         if (finalRec.hasTimer && !finalRec.results) {
             const isNew = !finalRec.userAnswers || finalRec.userAnswers.filter(a => a !== '').length === 0;
             if (isNew) {
+                setIsJumping(false); // ✨ 彈出確認視窗前，先關閉載入畫面
                 showConfirm(`⏱ 此測驗設有時間限制（${finalRec.timeLimit} 分鐘）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
                     onContinueQuiz(finalRec);
                 });
             } else {
-                onContinueQuiz(finalRec);
+                setTimeout(() => onContinueQuiz(finalRec), 50); // ✨ 讓載入畫面有時間渲染
             }
         } else {
-            onContinueQuiz(finalRec);
+            setTimeout(() => onContinueQuiz(finalRec), 50); // ✨ 讓載入畫面有時間渲染
         }
     };
 
@@ -1387,7 +1497,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                                     <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap shrink-0">{rec.numQuestions}題</span>
                                     {rec.results ? (
                                         <span className="text-green-600 dark:text-green-400 font-bold whitespace-nowrap shrink-0">✅ {rec.results.score} 分</span>
-                                    ) : rec.userAnswers && rec.userAnswers.filter(a=>a).length > 0 ? (
+                                    ) : (Array.isArray(rec.userAnswers) ? rec.userAnswers.filter(a=>a).length > 0 : typeof rec.userAnswers === 'string' && rec.userAnswers.length > 10) ? (
                                         <span className="text-orange-500 dark:text-orange-400 font-bold flex items-center gap-1 flex-wrap">
                                             📝 進行中
                                             {rec.hasTimer && rec.timeRemaining !== undefined && (
@@ -1426,6 +1536,18 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
 
                         </div>
                     ))}
+                </div>
+            )}
+            
+            {/* 🚀 終極提速：題庫的載入更多按鈕 */}
+            {!loading && hasMore && displayedRecords.length > 0 && (
+                <div className="flex justify-center mt-6 mb-8">
+                    <button 
+                        onClick={() => setVisibleLimit(prev => prev + 15)} 
+                        className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 px-8 py-3 font-bold shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+                    >
+                        ⬇️ 載入更多歷史考卷...
+                    </button>
                 </div>
             )}
 
@@ -1479,6 +1601,17 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                             ))}
                         </div>
                         <button onClick={() => setShowMoveModal(null)} className="w-full bg-gray-100 dark:bg-gray-700 text-black dark:text-white p-2 font-bold no-round hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">取消</button>
+                    </div>
+                </div>
+            )}
+
+            {/* ✨ 新增：跳轉試卷時的光速載入 Modal */}
+            {isJumping && (
+                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-indigo-500 animate-fade-in">
+                        <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-700 border-t-indigo-500 rounded-full animate-spin mx-auto mb-6"></div>
+                        <h3 className="text-xl font-black mb-2 dark:text-white">🚀 正在進入試卷...</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">正在為您準備作答環境，請稍候</p>
                     </div>
                 </div>
             )}
@@ -1734,11 +1867,32 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [showOnlyStarred, setShowOnlyStarred] = useState(false);
     const [showShareScoreModal, setShowShareScoreModal] = useState(false);
 
-    // ✨ 新增：同步進度狀態
-const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, total: 0 });
+    // ✨ 新增：同步進度狀態與重新算分的載入狀態
+    const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, total: 0 });
     const [isCreating, setIsCreating] = useState(false); // ✨ 新增：建立試題時的載入狀態    
+    const [isRegrading, setIsRegrading] = useState(false); // ✨ 新增：重新算分的載入畫面狀態
     const [wrongBookAddingItem, setWrongBookAddingItem] = useState(null);
     const [explanationModalItem, setExplanationModalItem] = useState(null); // ✨ 新增詳解彈窗狀態
+
+    // ✨ 新增：點進試題時，自動檢查答案是否更新的監聽器
+    useEffect(() => {
+        if (step === 'results' && results && results.data) {
+            const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
+            let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
+            
+            let hasChanges = false;
+            results.data.forEach((item, idx) => {
+                const oldKey = item.correctAns === '-' ? '' : item.correctAns;
+                const newKey = keyArray[idx] || '';
+                if (oldKey !== newKey) hasChanges = true;
+            });
+
+            if (hasChanges) {
+                console.log("偵測到答案不同，自動執行重新批改...");
+                handleManualRegrade(true);
+            }
+        }
+    }, [step, results, correctAnswersInput]); // 只要這些改變，就觸發檢查
 
     const starredIndices = starred.map((s, i) => s ? i + 1 : null).filter(Boolean);
     const canSeeAnswers = initialRecord.publishAnswers !== false;
@@ -1768,17 +1922,22 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
         if (currentUser && quizId && (step === 'answering' || step === 'setup' || step === 'results')) {
             if (userAnswers.length === 0 && numQuestions > 0 && step === 'answering') return;
             
-            const stateToSave = { 
-                testName, numQuestions, userAnswers: window.jzCompress(userAnswers), starred, correctAnswersInput, results: window.jzCompress(results), 
-                questionFileUrl, questionText: window.jzCompress(questionText), 
-                questionHtml, explanationHtml, // ✨ 修復：將富文本與詳解加入自動存檔，避免切換時消失
-                hasTimer, timeLimit, folder,
-                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
-            };
-            if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
+            // ✨ 效能大躍進：加入 1.5 秒「防抖 (Debounce)」，停止打字後才執行高強度壓縮與存檔
+            const timer = setTimeout(() => {
+                const stateToSave = { 
+                    testName, numQuestions, userAnswers: window.jzCompress(userAnswers), starred, correctAnswersInput, results: window.jzCompress(results), 
+                    questionFileUrl, questionText: window.jzCompress(questionText), 
+                    questionHtml, explanationHtml, // ✨ 修復：將富文本與詳解加入自動存檔，避免切換時消失
+                    hasTimer, timeLimit, folder,
+                    updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                };
+                if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
 
-            window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
-                .catch(e => console.error("自動儲存失敗", e));
+                window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
+                    .catch(e => console.error("自動儲存失敗", e));
+            }, 1500); 
+            
+            return () => clearTimeout(timer); // 如果 1.5 秒內又有變動，就取消上一次的存檔，重新計時
         }
     }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, questionText, questionHtml, explanationHtml, folder, currentUser, quizId, step, syncTrigger]);
 
@@ -2045,18 +2204,20 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                                             });
                                             targetUpdates.results = window.jzCompress({ score: Math.round((tCorrectCount/targetData.numQuestions)*100), correctCount: tCorrectCount, total: targetData.numQuestions, data: tData });
                                             
-                                            // ✨ 新增：同步更新該學生的錯題本中的答案
+                                            // ✨ 新增：同步更新該學生的錯題本中的答案 (改為直接更新，避免超過 Batch 500 筆上限)
                                             try {
                                                 const wbSnapshot = await window.db.collection('users').doc(target.uid).collection('wrongBook').where('quizId', '==', target.quizId).get();
                                                 if (!wbSnapshot.empty) {
+                                                    const wbPromises = [];
                                                     wbSnapshot.docs.forEach(wbDoc => {
                                                         const wbData = wbDoc.data();
                                                         const qNum = wbData.questionNum;
                                                         const newKey = keyArray[qNum - 1] || '';
                                                         if (wbData.correctAns !== newKey) {
-                                                            batch.update(wbDoc.ref, { correctAns: newKey });
+                                                            wbPromises.push(wbDoc.ref.update({ correctAns: newKey }));
                                                         }
                                                     });
+                                                    await Promise.all(wbPromises);
                                                 }
                                             } catch(e) { console.error("同步學生錯題本失敗", e); }
                                         }
@@ -2221,8 +2382,8 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
         }
     };
 
-    // ✨ 新增：手動重新批改邏輯，負責比對差異並跳出提示 (加入錯題本同步)
-    const handleManualRegrade = async () => {
+    // ✨ 新增：手動/自動重新批改邏輯，負責比對差異並跳出提示 (加入錯題本同步與載入畫面)
+    const handleManualRegrade = async (isAuto = false) => {
         if (!results || !results.data) return;
 
         const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
@@ -2242,14 +2403,17 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
 
         // 情況 A：沒有任何更動
         if (changedDetails.length === 0) {
-            return showAlert("ℹ️ 目前沒有偵測到標準答案有任何更動喔！");
+            if (isAuto !== true) showAlert("ℹ️ 目前沒有偵測到標準答案有任何更動喔！");
+            return;
         }
 
-        // 情況 B：有更動，執行原本的批改邏輯更新分數
-        await handleGrade();
+        setIsRegrading(true); // ✨ 開啟全螢幕載入畫面
 
-        // ✨ 同步更新錯題本中的答案
+        // 情況 B：有更動，執行原本的批改邏輯更新分數
         try {
+            await handleGrade();
+
+            // ✨ 同步更新錯題本中的答案
             const wbSnapshot = await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').where('quizId', '==', quizId).get();
             if (!wbSnapshot.empty) {
                 const batch = window.db.batch();
@@ -2265,12 +2429,18 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
             }
         } catch(e) { console.error("同步錯題本失敗", e); }
         
+        setIsRegrading(false); // ✨ 關閉載入畫面
+        
         // 顯示變更報告 (如果改太多題，最多顯示 8 題以免視窗塞爆)
         const detailsText = changedDetails.length > 8 
             ? changedDetails.slice(0, 8).join('\n') + `\n...等共 ${changedDetails.length} 題` 
             : changedDetails.join('\n');
             
-        showAlert(`✅ 重新批改完成！成績已更新，同時也已將最新解答同步至您的「錯題筆記本」。\n\n【答案更動紀錄】\n${detailsText}`);
+        if (isAuto === true) {
+            showAlert(`🔄 系統自動偵測到標準答案有更新！\n\n已為您光速重新批改並同步錯題本。\n\n【答案更動紀錄】\n${detailsText}`);
+        } else {
+            showAlert(`✅ 重新批改完成！成績已更新，同時也已將最新解答同步至您的「錯題筆記本」。\n\n【答案更動紀錄】\n${detailsText}`);
+        }
     };
 
     const handleSubmitClick = () => {
@@ -3203,10 +3373,12 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                             </span>
                             {/* ✨ 修改：重新算分按鈕改為常駐顯示，點擊後觸發比對與提示 */}
                             <button 
-                                onClick={handleManualRegrade} 
-                                className="bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 px-3 py-1 text-xs font-bold no-round shadow-sm transition-colors active:scale-95"
+                                onClick={() => handleManualRegrade(false)} 
+                                className="bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 px-3 py-1 text-xs font-bold no-round shadow-sm transition-colors active:scale-95 flex items-center gap-1"
+                                disabled={isRegrading}
                             >
-                                🔄 重新算分
+                                {isRegrading ? <div className="w-3 h-3 border-2 border-blue-400 border-t-blue-800 rounded-full animate-spin"></div> : '🔄'}
+                                重新算分
                             </button>
                         </div>
                         
@@ -3430,6 +3602,17 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                     </div>
                 </div>
             )}
+            {/* ✨ 新增：重新算分時的光速載入 Modal */}
+            {isRegrading && (
+                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-blue-500">
+                        <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-700 border-t-blue-500 rounded-full animate-spin mx-auto mb-6"></div>
+                        <h3 className="text-xl font-black mb-2 dark:text-white">🔄 正在光速重新算分...</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">正在比對最新解答與同步錯題本，請稍候</p>
+                    </div>
+                </div>
+            )}
+            
             {/* ✨ 新增：同步進度條 Modal */}
             {syncStatus.isSyncing && (
                 <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
