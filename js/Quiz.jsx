@@ -1591,8 +1591,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [showShareScoreModal, setShowShareScoreModal] = useState(false);
 
     // ✨ 新增：同步進度狀態
-    const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, total: 0 });
-    
+const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, total: 0 });
+    const [isCreating, setIsCreating] = useState(false); // ✨ 新增：建立試題時的載入狀態    
     const [wrongBookAddingItem, setWrongBookAddingItem] = useState(null);
     const [explanationModalItem, setExplanationModalItem] = useState(null); // ✨ 新增詳解彈窗狀態
 
@@ -1703,9 +1703,11 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         };
     }, [isDragging, layoutMode]);
 
-    const handleStartTest = () => {
+    const handleStartTest = async () => {
         if (numQuestions < 1 || numQuestions > 100) return showAlert('題數限制為 1-100 題！');
         if (hasTimer && (timeLimit < 1 || timeLimit > 999)) return showAlert('計時時間請設定在 1 到 999 分鐘之間。');
+        
+        setIsCreating(true); // ✨ 開啟載入畫面
         
         const initialAnswers = Array(Number(numQuestions)).fill('');
         const initialStarred = Array(Number(numQuestions)).fill(false);
@@ -1716,63 +1718,56 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         const finalQuestionText = inputType === 'text' ? questionText : '';
         const finalQuestionHtml = inputType === 'richtext' ? questionHtml : '';
         
-        // ✨ 修改 3-1：先整理輸入的標準答案 (保留大小寫，僅允許 A-D, a-d, Z)
-        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
+        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
         
         setQuestionFileUrl(finalFileUrl);
         setQuestionText(finalQuestionText);
         setQuestionHtml(finalQuestionHtml);
 
-       window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
-            testName, numQuestions, userAnswers: window.jzCompress(initialAnswers), starred: initialStarred,
-            correctAnswersInput: '',
-            publishAnswers: true, 
-            questionFileUrl: finalFileUrl,
-            questionText: window.jzCompress(finalQuestionText),
-            questionHtml: finalQuestionHtml, // ✨ 修復：確保出題者自己的考卷能存下富文本
-            explanationHtml: explanationHtml, // ✨ 修復：確保詳解也能順利儲存
-            hasTimer: hasTimer,
-                    timeLimit: hasTimer ? Number(timeLimit) : null,
-                    timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
-                    folder: folder,
-                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                }).then(async docRef => {
-                    setQuizId(docRef.id);
+        try {
+            const docRef = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
+                testName, numQuestions, userAnswers: window.jzCompress(initialAnswers), starred: initialStarred,
+                correctAnswersInput: cleanKey,
+                publishAnswers: true, 
+                questionFileUrl: finalFileUrl,
+                questionText: window.jzCompress(finalQuestionText),
+                questionHtml: finalQuestionHtml,
+                explanationHtml: explanationHtml,
+                hasTimer: hasTimer,
+                timeLimit: hasTimer ? Number(timeLimit) : null,
+                timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
+                folder: folder,
+                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
 
-                    // ✨ 新增：在建立測驗時，立刻檢查是否有任務標籤，有則同步發布至公開任務牆
-                    const isOp = testName.includes('[#op]');
-                    const isMnst = testName.includes('[#mnst]') || testName.includes('[#nmst]');
-                    
-                    if (isOp || isMnst) {
-                        let category = '模擬試題 (其他)';
-                        if (isOp) {
-                            if (testName.includes('藥理') || testName.includes('藥物化學')) category = '1. 藥理學與藥物化學';
-                            else if (testName.includes('藥物分析') || testName.includes('生藥') || testName.includes('中藥')) category = '2. 藥物分析學與生藥學(含中藥學)';
-                            else if (testName.includes('藥劑') || testName.includes('生物藥劑')) category = '3. 藥劑學與生物藥劑學';
-                            else category = '國考題 (其他)';
-                        } else {
-                            if (testName.includes('藥物分析')) category = '1. 藥物分析學';
-                            else if (testName.includes('生藥')) category = '2. 生藥學';
-                            else if (testName.includes('中藥')) category = '3. 中藥學';
-                            else if (testName.includes('藥物化學') || testName.includes('藥理')) category = '4. 藥物化學與藥理學';
-                            else if (testName.includes('生物藥劑')) category = '6. 生物藥劑學';
-                            else if (testName.includes('藥劑')) category = '5. 藥劑學';
-                        }
+            setQuizId(docRef.id);
 
-                        await window.db.collection('publicTasks').doc(docRef.id).set({
-                            testName, 
-                            numQuestions, 
-                            questionFileUrl: finalFileUrl, 
-                            questionText: finalQuestionText, 
-                            questionHtml: finalQuestionHtml,
-                            explanationHtml: explanationHtml,
-                            correctAnswersInput: cleanKey, // ✨ 改帶入整理好的答案
-                    hasTimer, 
-                    timeLimit: hasTimer ? Number(timeLimit) : null, 
-                    category, 
-                    creatorUid: currentUser.uid,
+            const isOp = testName.includes('[#op]');
+            const isMnst = testName.includes('[#mnst]') || testName.includes('[#nmst]');
+            
+            if (isOp || isMnst) {
+                let category = '模擬試題 (其他)';
+                if (isOp) {
+                    if (testName.includes('藥理') || testName.includes('藥物化學')) category = '1. 藥理學與藥物化學';
+                    else if (testName.includes('藥物分析') || testName.includes('生藥') || testName.includes('中藥')) category = '2. 藥物分析學與生藥學(含中藥學)';
+                    else if (testName.includes('藥劑') || testName.includes('生物藥劑')) category = '3. 藥劑學與生物藥劑學';
+                    else category = '國考題 (其他)';
+                } else {
+                    if (testName.includes('藥物分析')) category = '1. 藥物分析學';
+                    else if (testName.includes('生藥')) category = '2. 生藥學';
+                    else if (testName.includes('中藥')) category = '3. 中藥學';
+                    else if (testName.includes('藥物化學') || testName.includes('藥理')) category = '4. 藥物化學與藥理學';
+                    else if (testName.includes('生物藥劑')) category = '6. 生物藥劑學';
+                    else if (testName.includes('藥劑')) category = '5. 藥劑學';
+                }
+
+                // ✨ 非同步背景執行任務牆建立，不卡住使用者
+                window.db.collection('publicTasks').doc(docRef.id).set({
+                    testName, numQuestions, questionFileUrl: finalFileUrl, questionText: finalQuestionText, 
+                    questionHtml: finalQuestionHtml, explanationHtml: explanationHtml, correctAnswersInput: cleanKey,
+                    hasTimer, timeLimit: hasTimer ? Number(timeLimit) : null, category, creatorUid: currentUser.uid,
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                });
+                }).catch(e => console.error("任務牆同步失敗", e));
             }
 
             if (hasTimer) {
@@ -1780,8 +1775,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 setDisplayTime(timeRemainingRef.current);
                 setIsTimeUp(false);
             }
+            setIsCreating(false); // ✨ 關閉載入畫面
             setStep('answering');
-        }).catch(e => showAlert('建立紀錄失敗：' + e.message));
+        } catch(e) {
+            setIsCreating(false);
+            showAlert('建立紀錄失敗：' + e.message);
+        }
     };
 
     const handleRetake = () => {
@@ -1824,7 +1823,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         const latestSharedTo = oldData.sharedTo || [];
         const syncCount = latestSharedTo.length;
 
-        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
+        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
         
         // 1. 建立「變動清單」：只抓取有改過的地方
         const updates = {};
@@ -1866,28 +1865,29 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 }
 
                 // 3. 同步給好友 (僅傳送差異部分)
+                // 3. 同步給好友 (僅傳送差異部分)
                 if (syncCount > 0) {
                     const ansChanged = !!updates.correctAnswersInput; // 檢查標答是否變動
 
-                    for (let i = 0; i < syncCount; i++) {
-                        const target = latestSharedTo[i];
+                    // ✨ 優化：使用 Promise.all 讓所有更新並行執行，大幅提升速度
+                    const syncPromises = latestSharedTo.map(async (target, i) => {
                         const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
                         
-                        // 如果答案沒改，我們甚至不需要讀取好友的舊資料
                         if (!ansChanged) {
                             await targetRef.update(updates);
                         } else {
-                            // 只有標答改了，才需要讀取並重新批改
                             const doc = await targetRef.get();
                             if (doc.exists) {
                                 const targetData = doc.data();
                                 const targetUpdates = { ...updates };
                                 
-                                if (targetData.results && targetData.userAnswers) {
+                               if (targetData.results && targetData.userAnswers) {
                                     let tCorrectCount = 0;
+                                    // ✨ 加入智慧辨識：同步給好友時也能正確解析大寫與連續小寫
+                                    let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
                                     const tData = targetData.userAnswers.map((ans, idx) => {
-                                        const key = cleanKey[idx] || '-';
-                                        let isCorrect = (key === 'Z' || key === 'z' || key === 'abcd') ? true : (key !== '-' && ans !== '' ? (key === key.toUpperCase() ? ans === key : key.toLowerCase().includes(ans.toLowerCase())) : false);
+                                        const key = keyArray[idx] || '-';
+                                        let isCorrect = (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') ? true : (key !== '-' && key !== '' && ans !== '' ? (key === key.toUpperCase() ? ans === key : key.toLowerCase().includes(ans.toLowerCase())) : false);
                                         if (isCorrect) tCorrectCount++;
                                         return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
                                     });
@@ -1896,8 +1896,11 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 await targetRef.update(targetUpdates);
                             }
                         }
-                        setSyncStatus(prev => ({ ...prev, current: i + 2 }));
-                    }
+                        // 更新進度條
+                        setSyncStatus(prev => ({ ...prev, current: Math.min(prev.current + 1, syncCount + 1) }));
+                    });
+                    
+                    await Promise.all(syncPromises); // 等待所有好友同步完成
                 }
 
                 setSyncStatus({ isSyncing: false, current: 0, total: 0 });
@@ -1926,18 +1929,20 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
     const handleGrade = async () => {
         // ✨ 修改：交卷時保留大小寫，僅允許 A-D, a-d, Z
-        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
+        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
         if (!cleanKey && !isTask && !isShared) return showAlert('請輸入標準答案後再批改！');
         
+        // ✨ 加入智慧辨識：交卷時若沒有逗號，也能正確拆分大寫與連續小寫
+        let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
         let correctCount = 0;
         const data = userAnswers.map((ans, idx) => {
-            const key = cleanKey[idx] || '-';
+            const key = keyArray[idx] || '-';
             let isCorrect = false;
 
             // ✨ 新增：多選與送分的批改邏輯
-            if (key === 'Z' || key === 'z' || key === 'abcd') {
+            if (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') {
                 isCorrect = true; // Z 或 abcd 代表送分，有填沒填都給分
-            } else if (key !== '-' && ans !== '') {
+            } else if (key !== '-' && key !== '' && ans !== '') {
                 if (key === key.toUpperCase()) {
                     // 單選大寫
                     isCorrect = (ans === key);
@@ -2236,12 +2241,70 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             setStep(results ? 'results' : 'answering');
         }
     };
+    
+    // ✨ 修改：升級格子輸入器，完美支援大寫獨立、小寫群組的智慧貼上
+    const AnswerGridInput = ({ value, onChange, maxQuestions }) => {
+        const handlePaste = (e) => {
+            e.preventDefault();
+            const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+            
+            // ✨ 智慧辨識核心：大寫字母(A-D,Z)獨立一格，小寫字母(a-d,z)連續一格。自動無視空白與逗號！
+            const pastedParts = pastedText.match(/[A-DZ]|[a-dz]+/g) || [];
 
+            const valStr = value || '';
+            let currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
+            while(currentArr.length < maxQuestions) currentArr.push('');
+
+            for(let i=0; i<pastedParts.length && i<maxQuestions; i++) {
+                currentArr[i] = pastedParts[i];
+            }
+            onChange(currentArr.join(','));
+        };
+
+        const handleChange = (index, char) => {
+            const cleanChar = char.replace(/[^a-dA-DZz]/g, '');
+            const valStr = value || '';
+            let currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
+            while(currentArr.length < maxQuestions) currentArr.push('');
+            
+            currentArr[index] = cleanChar;
+            onChange(currentArr.join(','));
+        };
+
+        const valStr = value || '';
+        const currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
+        const filledCount = currentArr.slice(0, maxQuestions).filter(ans => ans && ans.trim() !== '').length;
+
+        return (
+            <div 
+                className="w-full mb-4 p-4 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 no-round max-h-64 overflow-y-auto custom-scrollbar"
+                onPaste={handlePaste}
+            >
+                <div className="text-xs text-gray-500 mb-3 font-bold flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                    <span className="text-blue-600 dark:text-blue-400">💡 提示：點擊格子後 <b>Ctrl+V</b> 貼上答案 (Z表示送分 一格填入數個小寫表示複數答案)！</span>
+                    <span className="bg-gray-200 dark:bg-gray-700 px-2 py-1">已填寫: {filledCount} / {maxQuestions}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(48px, 1fr))', gap: '10px' }}>
+                    {Array.from({ length: maxQuestions }).map((_, i) => (
+                        <div key={i} className="flex flex-col items-center">
+                            <span className="text-[10px] text-gray-400 font-bold mb-1">{i + 1}.</span>
+                            <input 
+                                type="text"
+                                className="w-12 h-10 text-center border border-gray-300 dark:border-gray-500 font-black text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-white transition-all shadow-sm"
+                                maxLength={4}
+                                value={currentArr[i] || ''}
+                                onChange={(e) => handleChange(i, e.target.value)}
+                            />
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
     if (step === 'edit') return (
         <div className="flex flex-col min-h-[100dvh] items-center p-4 relative py-10 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors custom-scrollbar">
             <button onClick={handleBackFromEdit} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">← 返回</button>
-            <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-2xl no-round border border-gray-200 dark:border-gray-700 mt-6 transition-colors">
-                <h2 className="font-bold mb-6 text-2xl dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">📝 編輯試題</h2>
+<div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-4xl no-round border border-gray-200 dark:border-gray-700 mt-6 transition-colors">                <h2 className="font-bold mb-6 text-2xl dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">📝 編輯試題</h2>
                 
                 {/* 新增：測驗名稱編輯區塊 */}
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗名稱</label>
@@ -2279,7 +2342,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
                 {/* ✨ 已將標準答案移至詳解上方 */}
                 <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">標準答案</h3>
-                <textarea className="w-full h-24 mb-4 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
+                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} />
 
                 <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字)</h3>
                 <textarea 
@@ -2326,8 +2389,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     if (step === 'setup') return (
         <div className="flex flex-col items-center p-4 h-[100dvh] overflow-y-auto relative custom-scrollbar bg-gray-100 dark:bg-gray-900">
             <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">← 返回列表</button>
-            <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-sm no-round border border-gray-200 dark:border-gray-700 mt-10 mb-10 transition-colors">
-                <h1 className="text-xl font-bold mb-6 border-b border-gray-200 dark:border-gray-700 pb-2 tracking-tight dark:text-white">新增測驗</h1>
+<div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-4xl no-round border border-gray-200 dark:border-gray-700 mt-10 mb-10 transition-colors">                <h1 className="text-xl font-bold mb-6 border-b border-gray-200 dark:border-gray-700 pb-2 tracking-tight dark:text-white">新增測驗</h1>
                 
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">存放資料夾</label>
                 <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm cursor-pointer">
@@ -2366,7 +2428,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 
                 {/* ✨ 已將標準答案移至詳解上方 */}
                 <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">標準答案 (選填，交卷時會自動批改)</h3>
-                <textarea className="w-full h-24 mb-4 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="例如: ABCD..." value={correctAnswersInput} onChange={e => setCorrectAnswersInput(e.target.value)}></textarea>
+                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} />
 
                 <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字，選填)</h3>
                 <textarea 
@@ -2392,6 +2454,15 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 </div>
 
                 <button onClick={handleStartTest} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors">開始作答</button>
+            {isCreating && (
+                    <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
+                        <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-black dark:border-white">
+                            <div className="w-16 h-16 border-4 border-gray-200 border-t-black dark:border-gray-700 dark:border-t-white rounded-full animate-spin mx-auto mb-6"></div>
+                            <h3 className="text-xl font-black mb-2 dark:text-white">🚀 正在建立試卷...</h3>
+                            <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">即將為您準備作答環境，請稍候</p>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -2617,7 +2688,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 ← 返回作答
             </button>
             <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-lg no-round border border-gray-200 dark:border-gray-700 mt-10 transition-colors">
-                <h2 className="font-bold mb-4 text-lg dark:text-white">輸入標準答案</h2>
+                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} />
                 <textarea 
                     className={`w-full h-40 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono mb-4 outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white`} 
                     placeholder="例如: ABCD..." 
@@ -3103,8 +3174,37 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [customDifficulty, setCustomDifficulty] = useState('1');
     const [rewardMode, setRewardMode] = useState('10');
     const [customReward, setCustomReward] = useState(10);
+    const [timePreset, setTimePreset] = useState('permanent'); // ✨ 新增：時間預設選單狀態
     const [endTimeStr, setEndTimeStr] = useState('');
     const [question, setQuestion] = useState('');
+
+    // ✨ 新增：處理時間預設變化 (自動轉換為台灣/本地時間格式)
+    useEffect(() => {
+        if (timePreset === 'custom' || timePreset === 'permanent') {
+            if (timePreset === 'permanent') setEndTimeStr('');
+            return;
+        }
+
+        const now = new Date();
+        let targetDate;
+
+        if (timePreset === 'today') {
+            targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        } else if (timePreset === '24h') {
+            targetDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        } else if (timePreset === '48h') {
+            targetDate = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+        } else if (timePreset === '1w') {
+            targetDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        }
+
+        if (targetDate) {
+            // 自動補零，組合成本地時間字串 (YYYY-MM-DDThh:mm)
+            const pad = (n) => n.toString().padStart(2, '0');
+            const localStr = `${targetDate.getFullYear()}-${pad(targetDate.getMonth()+1)}-${pad(targetDate.getDate())}T${pad(targetDate.getHours())}:${pad(targetDate.getMinutes())}`;
+            setEndTimeStr(localStr);
+        }
+    }, [timePreset]);
     const [options, setOptions] = useState(['', '', '', '']);
     const [correctAns, setCorrectAns] = useState(0);
     const [explanation, setExplanation] = useState('');
@@ -3349,7 +3449,28 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                     </select>
                                     {rewardMode === 'custom' && <input type="number" min="1" value={customReward} onChange={e=>setCustomReward(e.target.value)} className="w-full border p-2 dark:bg-gray-800" placeholder="請輸入鑽石數量" />}
                                 </div>
-                                <div><label className="block text-sm font-bold mb-1">結束時間 (留空為永久)</label><input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-gray-800" /></div>
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">結束時間</label>
+                                    <select value={timePreset} onChange={e => {
+                                        setTimePreset(e.target.value);
+                                        // 切換到自訂時，若原本為空，自動填入當前時間，方便微調
+                                        if (e.target.value === 'custom' && !endTimeStr) {
+                                            const now = new Date();
+                                            const pad = (n) => n.toString().padStart(2, '0');
+                                            setEndTimeStr(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
+                                        }
+                                    }} className="w-full border p-2 mb-2 dark:bg-gray-800 font-bold">
+                                        <option value="permanent">♾️ 永久公開</option>
+                                        <option value="today">📅 到今天結束 (23:59)</option>
+                                        <option value="24h">⌛ 24 小時後</option>
+                                        <option value="48h">⌛ 48 小時後</option>
+                                        <option value="1w">🗓️ 一週後 (168小時)</option>
+                                        <option value="custom">⚙️ 自訂時間</option>
+                                    </select>
+                                    {timePreset === 'custom' && (
+                                        <input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-gray-800" />
+                                    )}
+                                </div>
                                 <div className="md:col-span-2"><label className="block text-sm font-bold mb-1">題目內容 (支援貼上圖片)</label><ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入..." /></div>
                                 
                                 {qaType === 'mcq' ? options.map((opt, idx) => (
