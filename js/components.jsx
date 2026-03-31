@@ -420,6 +420,9 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                     setNewsList(snap.docs.map(d => ({id: d.id, ...d.data()})));
                     setLoading(false);
                 });
+                unsubEvents = window.db.collection('calendarEvents').orderBy('date', 'asc').onSnapshot(snap => {
+                    setEvents(snap.docs.map(d => ({id: d.id, ...d.data()})));
+                });
                 const startOfToday = new Date();
                 startOfToday.setHours(0, 0, 0, 0);
                 window.db.collection('publicTasks')
@@ -622,7 +625,17 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                 {categories.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                             
-                            <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">報紙內容 (純文字)</label>
+                            <div className="flex justify-between items-end mt-4 mb-1">
+                                <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">報紙內容 (純文字)</label>
+                                <select onChange={e => { if(e.target.value) setNewsContent(prev => prev + '\n' + e.target.value); e.target.value=''; }} className="p-1 border border-gray-300 text-xs dark:bg-gray-700 dark:text-white outline-none cursor-pointer">
+                                    <option value="">➕ 引用近期考試資訊...</option>
+                                    {events.filter(ev => new Date(ev.date).getTime() > Date.now()).map(ev => (
+                                        <option key={ev.id} value={`📌 提醒：【${ev.title}】將於 ${ev.date.replace('T', ' ')} 舉行！`}>
+                                            {ev.title} ({ev.date})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                             <textarea placeholder="在這裡輸入電子報內容，支援換行排版..." value={newsContent} onChange={e=>setNewsContent(e.target.value)} className="w-full h-48 p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none custom-scrollbar"></textarea>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white dark:bg-gray-900 p-4 border border-dashed border-gray-400">
@@ -643,8 +656,8 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                             <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">考試名稱</label>
                             <input type="text" placeholder="例如: 藥理學期中考" value={eventTitle} onChange={e=>setEventTitle(e.target.value)} className="w-full p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none" />
                             
-                            <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">考試日期</label>
-                            <input type="date" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="w-full p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none cursor-pointer" />
+                            <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">考試日期與時間</label>
+                            <input type="datetime-local" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="w-full p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none cursor-pointer" />
                             
                             <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">所屬類別</label>
                             <select value={eventCat} onChange={e=>setEventCat(e.target.value)} className="w-full p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none cursor-pointer">
