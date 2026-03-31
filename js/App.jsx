@@ -208,7 +208,8 @@ function Main() {
                         value={promptInput}
                         onChange={(e) => setPromptInput(e.target.value)}
                         onKeyDown={(e) => {
-                            if(e.key === 'Enter') {
+                            // 修正：加入 !e.nativeEvent.isComposing 避免中文輸入法選字時觸發確認
+                            if(e.key === 'Enter' && !e.nativeEvent.isComposing) {
                                 const currentInput = promptInput;
                                 const currentConfirm = modalConfig.onConfirm;
                                 closeModal();
