@@ -84,6 +84,27 @@
             border-right-color: #ffffff;
             background-color: #b0b0b0;
         }
+        /* ✨ 修正：富文本專用容器，強制白底黑字，無視暗色模式 */
+.rich-text-container {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+}
+
+/* 強制讓容器內的「所有子元素」也繼承黑色，解決 Word 夾帶樣式問題 */
+.rich-text-container * {
+    background-color: transparent !important;
+    color: #000000 !important;
+    border-color: #cccccc !important;
+}
+
+/* 確保裡面的圖片不會因為 dark 樣式縮放或濾鏡 */
+.rich-text-container img {
+    max-width: 100% !important;
+    height: auto !important;
+    border: 1px solid #eee !important;
+    margin: 10px auto !important;
+    display: block !important;
+}
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100 font-sans h-[100dvh] overflow-hidden transition-colors duration-200">
