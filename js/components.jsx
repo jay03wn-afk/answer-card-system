@@ -493,6 +493,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
     const [newsComments, setNewsComments] = useState([]);
     const [newComment, setNewComment] = useState('');
     const [hasClaimed, setHasClaimed] = useState(false);
+    const [isClaiming, setIsClaiming] = useState(false);
 
     useEffect(() => {
         let unsubNews = () => {};
@@ -667,8 +668,15 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
         setNewComment('');
     };
 
+    
+
     const claimReward = async () => {
-        if (hasClaimed || !user || !viewingNews.rewardType || viewingNews.rewardType === 'none') return;
+        // ⚠️ 注意：這裡面「不可以」出現 const [isClaiming, setIsClaiming] = useState(false);
+
+        if (hasClaimed || isClaiming || !user || !viewingNews.rewardType || viewingNews.rewardType === 'none') return;
+        
+        setIsClaiming(true); // ✨ 點擊後立刻上鎖，防止重複點擊
+        
         let amount = 0;
         if (viewingNews.rewardType === 'fixed') {
             amount = Number(viewingNews.rewardVal1) || 0;
@@ -680,21 +688,35 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
 
         if (amount > 0) {
             try {
-                await window.db.collection('users').doc(user.uid).collection('newsRewards').doc(viewingNews.id).set({
+                // ✨ 雲端雙重防護：領取前先去資料庫確認是否真的沒領過
+                const rewardRef = window.db.collection('users').doc(user.uid).collection('newsRewards').doc(viewingNews.id);
+                const rewardDoc = await rewardRef.get();
+                if (rewardDoc.exists) {
+                    setHasClaimed(true);
+                    setIsClaiming(false);
+                    return showAlert("⚠️ 你已經領取過這篇的獎勵囉！");
+                }
+
+                await rewardRef.set({
                     claimedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
                     amount: amount
                 });
-                const currentDiamonds = userProfile?.mcData?.diamonds || 0;
+                
+                // ✨ 雲端原子累加：直接讓伺服器幫你 +amount，不會再因為狂點而算錯
                 await window.db.collection('users').doc(user.uid).set({
-                    mcData: { diamonds: currentDiamonds + amount }
+                    mcData: { diamonds: window.firebase.firestore.FieldValue.increment(amount) }
                 }, { merge: true });
                 
                 showAlert(`🎉 恭喜！你${viewingNews.rewardType === 'random' ? '抽中' : '獲得'}了 ${amount} 💎 閱讀獎勵！`);
                 setHasClaimed(true);
-            } catch(e) { showAlert("領取失敗：" + e.message); }
+            } catch(e) { 
+                showAlert("領取失敗：" + e.message); 
+            }
         } else {
             showAlert("獎勵設定有誤，無法領取。");
         }
+        
+        setIsClaiming(false); // ✨ 處理完畢後解鎖
     };
 
     const handleShareNews = (news) => {
@@ -764,7 +786,13 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                     ))}
                                 </select>
                             </div>
-                            <NewsMiniRichEditor value={newsContent} onChange={setNewsContent} placeholder="在此貼上文章內容或圖片..." />
+                            {/* ✨ 替換為支援自動圖片壓縮上傳至 Storage 的高級編輯器 */}
+<ContentEditableEditor 
+    value={newsContent} 
+    onChange={setNewsContent} 
+    placeholder="在此貼上文章內容或圖片，圖片將自動壓縮並上傳至雲端..." 
+    showAlert={showAlert} 
+/>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white dark:bg-gray-900 p-4 border border-dashed border-gray-400">
                                 <div>
@@ -830,7 +858,13 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                             </div>
                         )}
 
-                        {displayedNews.length === 0 ? (
+                        {/* ✨ 非同步載入狀態：不阻擋整個頁面，只在內容區顯示 */}
+                        {loading ? (
+                            <div className="flex flex-col items-center justify-center p-16 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className="w-12 h-12 border-4 border-gray-200 dark:border-gray-600 border-t-black dark:border-white rounded-full animate-spin mb-4"></div>
+                                <div className="text-gray-500 font-bold animate-pulse">電子報派送中...</div>
+                            </div>
+                        ) : displayedNews.length === 0 ? (
                             <div className="text-gray-500 font-bold p-10 text-center bg-white dark:bg-gray-800 border border-gray-200 shadow-sm no-round">目前沒有電子報。</div>
                         ) : (
                             displayedNews.map(news => {
@@ -976,8 +1010,12 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                     ) : (
                                         <>
                                             <p className="text-sm font-bold text-yellow-700 dark:text-yellow-500 mb-4">感謝你的閱讀！點擊下方按鈕領取獎勵鑽石。</p>
-                                            <button onClick={claimReward} className="bg-yellow-400 hover:bg-yellow-500 text-black font-black px-8 py-3 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all">
-                                                {viewingNews.rewardType === 'fixed' ? `💎 立即領取 ${viewingNews.rewardVal1} 鑽石` : '🧧 抽取隨機鑽石紅包'}
+                                            <button 
+                                                onClick={claimReward} 
+                                                disabled={isClaiming} 
+                                                className={`bg-yellow-400 hover:bg-yellow-500 text-black font-black px-8 py-3 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all ${isClaiming ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            >
+                                                {isClaiming ? '處理中...' : (viewingNews.rewardType === 'fixed' ? `💎 立即領取 ${viewingNews.rewardVal1} 鑽石` : '🧧 抽取隨機鑽石紅包')}
                                             </button>
                                         </>
                                     )}
