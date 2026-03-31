@@ -3919,6 +3919,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [records, setRecords] = useState({});
     const [loading, setLoading] = useState(true);
     const [qaLimit, setQaLimit] = useState(30); // ✨ 新增：快問快答動態載入數量的狀態
+    const [refreshTrigger, setRefreshTrigger] = useState(0); // ✨ 新增：重新整理觸發器
     const [showAdminMode, setShowAdminMode] = useState(false);
     const [isEditExpanded, setIsEditExpanded] = useState(false);
     
@@ -4020,7 +4021,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         };
         fetchQA();
         return () => { unsubQA(); unsubRecords(); };
-    }, [user, isAdmin, targetQaId, qaLimit]); // ✨ 依賴項補上 qaLimit
+    }, [user, isAdmin, targetQaId, qaLimit, refreshTrigger]); // ✨ 依賴項補上 refreshTrigger
 
     const handleAddQA = async () => {
         if (!question || !explanation || customReward < 1) return showAlert('請填寫完整題目、詳解，並確保鑽石大於0！');
@@ -4140,7 +4141,18 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     return (
         <div className={`border-2 border-pink-400 bg-pink-50 dark:bg-pink-900/20 p-4 shadow-md relative no-round w-full ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
             <div className="flex justify-between items-center mb-4 border-b border-pink-200 dark:border-pink-800 pb-2">
-                <h2 className="text-xl font-black text-pink-600 dark:text-pink-400 flex items-center">⚡ 快問快答挑戰</h2>
+                <div className="flex items-center gap-3">
+                    <h2 className="text-xl font-black text-pink-600 dark:text-pink-400 flex items-center">⚡ 快問快答挑戰</h2>
+                    {!targetQaId && (
+                        <button 
+                            onClick={() => { setLoading(true); setRefreshTrigger(prev => prev + 1); }} 
+                            className="text-xs bg-white hover:bg-pink-50 text-pink-600 border border-pink-200 px-2 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round"
+                            title="手動同步雲端最新題目"
+                        >
+                            🔄 重新整理
+                        </button>
+                    )}
+                </div>
                 {isAdmin && !targetQaId && (
                     <button onClick={() => setShowAdminMode(!showAdminMode)} className="bg-pink-600 text-white text-xs px-3 py-1 font-bold no-round hover:bg-pink-700">
                         {showAdminMode ? '關閉管理' : '管理試題'}
