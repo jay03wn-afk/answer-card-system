@@ -304,16 +304,15 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
         });
     };
 
-    const handleGoToQuiz = async (quizId) => {
+   const handleGoToQuiz = async (quizId) => {
         try {
             const doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get();
             if(doc.exists) {
                 const data = doc.data();
                 try {
-                    // 修正：必須將資料解壓縮，否則進入測驗畫面會解析錯誤卡死
-                    data.userAnswers = data.userAnswers ? window.jzDecompress(data.userAnswers) : [];
-                    data.results = data.results ? window.jzDecompress(data.results) : null;
-                    data.questionText = data.questionText ? window.jzDecompress(data.questionText) : '';
+                    // 修正：只解壓縮 userAnswers 和 results，絕對不要解壓縮 questionText，否則會導致 QuizApp 內二次解碼崩潰
+                    data.userAnswers = typeof data.userAnswers === 'string' ? window.jzDecompress(data.userAnswers) : (data.userAnswers || []);
+                    data.results = typeof data.results === 'string' ? window.jzDecompress(data.results) : (data.results || null);
                 } catch (e) { console.error("解碼失敗", e); }
                 
                 onContinueQuiz({ id: doc.id, ...data });
@@ -2038,13 +2037,28 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                                                 targetAnswersArray = Array.isArray(rawAns) ? rawAns : (typeof rawAns === 'string' ? window.jzDecompress(rawAns) : []);
                                             } catch(e) { targetAnswersArray = []; }
 
-                                            const tData = targetAnswersArray.map((ans, idx) => {
+                                           const tData = targetAnswersArray.map((ans, idx) => {
                                                 const key = keyArray[idx] || '-';
                                                 let isCorrect = (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') ? true : (key !== '-' && key !== '' && ans !== '' ? (key === key.toUpperCase() ? ans === key : key.toLowerCase().includes(ans.toLowerCase())) : false);
                                                 if (isCorrect) tCorrectCount++;
                                                 return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
                                             });
                                             targetUpdates.results = window.jzCompress({ score: Math.round((tCorrectCount/targetData.numQuestions)*100), correctCount: tCorrectCount, total: targetData.numQuestions, data: tData });
+                                            
+                                            // ✨ 新增：同步更新該學生的錯題本中的答案
+                                            try {
+                                                const wbSnapshot = await window.db.collection('users').doc(target.uid).collection('wrongBook').where('quizId', '==', target.quizId).get();
+                                                if (!wbSnapshot.empty) {
+                                                    wbSnapshot.docs.forEach(wbDoc => {
+                                                        const wbData = wbDoc.data();
+                                                        const qNum = wbData.questionNum;
+                                                        const newKey = keyArray[qNum - 1] || '';
+                                                        if (wbData.correctAns !== newKey) {
+                                                            batch.update(wbDoc.ref, { correctAns: newKey });
+                                                        }
+                                                    });
+                                                }
+                                            } catch(e) { console.error("同步學生錯題本失敗", e); }
                                         }
                                     }
                                 } catch(e) { console.error("同步失敗", e); }
