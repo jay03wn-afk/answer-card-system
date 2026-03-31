@@ -2363,7 +2363,7 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
 
                 <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字)</h3>
 
-                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字)</h3>
+                
                 <textarea 
                     className="w-full h-48 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar"
                     placeholder="在此貼上詳解純文字，並使用 [A.1], [A.02] 等標記對應題號..."
