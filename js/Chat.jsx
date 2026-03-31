@@ -152,14 +152,14 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     };
 
     const handleImageUpload = (e) => {
-        if (!activeChat) return;
-        const file = e.target.files[0];
-        if (!file) return;
-        if (file.size > 10 * 1024 * 1024) {
-            showAlert("圖片大小不能超過 10MB！");
-            e.target.value = '';
-            return;
-        }
+    const isAuth = user && (user.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
+    if (!isAuth) {
+        showAlert("⚠️ 權限不足：僅限管理員或受邀創作者上傳圖片。");
+        e.target.value = '';
+        return;
+    }
+    if (!activeChat) return;
+    const file = e.target.files[0];
 
         const reader = new FileReader();
         reader.onload = (event) => {
