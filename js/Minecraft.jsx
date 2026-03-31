@@ -1614,7 +1614,13 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                 if (hasSpecial) return showAlert('❌ 這裡已經有特殊機關或物品了，換個位子放吧！');
                 
                 if (selectedBlock === 'photo_map') {
-                    if (mcData.diamonds < 50) return showAlert('💎 寄送私人照片需要 50 鑽石！');
+    // 檢查是否為 jay03wn@gmail.com 或 獲授權人員
+    const isAuth = user && (user.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
+    if (!isAuth) {
+        return showAlert("📸 私人照片功能僅限管理員或經授權的用戶使用！");
+    }
+
+    if (mcData.diamonds < 50) return showAlert('💎 寄送私人照片需要 50 鑽石！');
                     
                     const today = new Date().toISOString().split('T')[0];
                     const currentPhotoLog = mcData.photoSentLog?.date === today ? mcData.photoSentLog : { date: today, count: 0 };
