@@ -808,180 +808,29 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     );
 }
 // --- 新增：JJay日報組件 ---
-function NewspaperDashboard({ user, showAlert, showConfirm, showPrompt, onContinueQuiz }) {
-    const { useState, useEffect } = React;
-    const [newsList, setNewsList] = useState([]);
-    const [todayTasks, setTodayTasks] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [isPublishing, setIsPublishing] = useState(false);
-    // ✨ 新增：新聞發布的獨立 Modal 狀態與內容
-    const [showNewsModal, setShowNewsModal] = useState(false);
-    const [newsTitle, setNewsTitle] = useState('');
-    const [newsContent, setNewsContent] = useState('');
-    const isAdmin = user && user.email === 'jay03wn@gmail.com';
 
-    useEffect(() => {
-        const unsubNews = window.db.collection('newsFeed').orderBy('createdAt', 'desc').onSnapshot(snap => {
-            setNewsList(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        });
-
-        // 自動抓取今天新增的試題
-        const startOfToday = new Date();
-        startOfToday.setHours(0, 0, 0, 0);
-        const unsubTasks = window.db.collection('publicTasks')
-            .where('createdAt', '>=', startOfToday)
-            .orderBy('createdAt', 'desc')
-            .onSnapshot(snap => {
-                setTodayTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                setLoading(false);
-            });
-
-        return () => { unsubNews(); unsubTasks(); };
-    }, []);
-
-    const handlePublishNews = () => {
-        if (isPublishing) return;
-        setNewsTitle('');
-        setNewsContent('');
-        setShowNewsModal(true); // 改為開啟專屬 Modal
-    };
-
-    const submitNews = async () => {
-        if (!newsTitle.trim() || !newsContent.trim()) return showAlert('❌ 標題與內容不能為空！');
-        setIsPublishing(true);
-        try {
-            await window.db.collection('newsFeed').add({
-                title: newsTitle.trim(),
-                content: newsContent, // 改為儲存富文本 HTML
-                importance: '一般',
-                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-            });
-            showAlert('✅ 新聞發布成功！');
-            setShowNewsModal(false);
-        } catch (e) {
-            showAlert('發布失敗：' + e.message);
-        }
-        setIsPublishing(false);
-    };
-
-    const handleDeleteNews = (id) => {
-        showConfirm("確定要刪除這條新聞嗎？", () => {
-            window.db.collection('newsFeed').doc(id).delete();
-        });
-    };
-
-    const handleGoToTask = async (taskId) => {
-        try {
-            const myQuizDoc = await window.db.collection('users').doc(user.uid).collection('quizzes').where('taskId', '==', taskId).get();
-            if (!myQuizDoc.empty) {
-                onContinueQuiz({ id: myQuizDoc.docs[0].id, ...myQuizDoc.docs[0].data() });
-            } else {
-                const taskDoc = await window.db.collection('publicTasks').doc(taskId).get();
-                if(taskDoc.exists) {
-                    showAlert("請前往「🎯 任務牆」開始這份新任務！");
-                }
-            }
-        } catch(e) { console.error(e); }
-    };
-
-    if (loading) return <LoadingSpinner text="正在印製今日報紙..." />;
-
-    return (
-        <div className="max-w-4xl mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar w-full">
-            <div className="flex justify-between items-center mb-6 border-b-4 border-black dark:border-white pb-4 mt-4">
-                <h1 className="text-3xl font-black dark:text-white font-serif tracking-widest">📰 JJay 日報</h1>
-                {isAdmin && (
-                    <button onClick={handlePublishNews} disabled={isPublishing} className="bg-blue-600 text-white px-4 py-2 font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-md">
-                        {isPublishing ? '發布中...' : '✍️ 撰寫頭條'}
-                    </button>
-                )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="md:col-span-2 space-y-6">
-                    <h2 className="text-xl font-bold border-l-4 border-black dark:border-white pl-3 dark:text-white">最新消息</h2>
-                    {newsList.length === 0 ? (
-                        <p className="text-gray-500">目前沒有新聞公告。</p>
-                    ) : (
-                        newsList.map(news => (
-                            <div key={news.id} className="bg-white dark:bg-gray-800 p-5 shadow-sm border border-gray-200 dark:border-gray-700 relative">
-                                {isAdmin && <button onClick={() => handleDeleteNews(news.id)} className="absolute top-4 right-4 text-red-500 hover:text-red-700 font-bold">✖</button>}
-                                <div className="text-xs text-gray-500 mb-2 font-mono">
-                                    {news.createdAt?.toDate().toLocaleDateString('zh-TW')} 
-                                </div>
-                                <h3 className="text-xl font-black mb-3 dark:text-white">{news.title}</h3>
-                                {/* ✨ 修改：改用 dangerouslySetInnerHTML 渲染富文本新聞內容 */}
-                                <div 
-                                    className="text-gray-700 dark:text-gray-300 leading-relaxed custom-scrollbar overflow-x-auto" 
-                                    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                                    dangerouslySetInnerHTML={{ __html: news.content }} 
-                                />
-                            </div>
-                        ))
-                    )}
-                </div>
-
-                {/* ✨ 新增：新聞發布專屬的富文本 Modal */}
-                {showNewsModal && (
-                    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100] p-4">
-                        <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-2xl no-round shadow-2xl flex flex-col max-h-[90dvh]">
-                            <h3 className="font-black text-xl mb-4 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">📰 撰寫頭條新聞</h3>
-                            
-                            <input 
-                                type="text" 
-                                placeholder="新聞標題" 
-                                className="w-full mb-4 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none font-bold"
-                                value={newsTitle}
-                                onChange={e => setNewsTitle(e.target.value)}
-                            />
-
-                            <div className="flex-grow overflow-y-auto mb-4 custom-scrollbar">
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">新聞內容 (支援貼圖與多種格式，如 Word 貼上)</label>
-                                <ContentEditableEditor 
-                                    value={newsContent} 
-                                    onChange={setNewsContent} 
-                                    placeholder="在此輸入新聞內容，可直接貼上圖片..."
-                                    wrapperClassName="relative w-full h-64"
-                                    editorClassName="w-full h-full p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto"
-                                />
-                            </div>
-
-                            <div className="flex justify-end space-x-3 mt-2 shrink-0">
-                                <button onClick={() => setShowNewsModal(false)} className="px-6 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 font-bold text-sm hover:bg-gray-200 transition-colors">取消</button>
-                                <button onClick={submitNews} disabled={isPublishing} className="px-8 py-2 bg-blue-600 text-white font-black text-sm hover:bg-blue-700 transition-colors shadow-md disabled:opacity-50">
-                                    {isPublishing ? '發布中...' : '🚀 確定發布'}
-                                </button>
+// --- 我的題庫與測驗核心 ---{/* 🔥 今日新增試題區塊 */}
+                        <div className="bg-yellow-50 dark:bg-gray-800 border-2 border-yellow-400 dark:border-yellow-600 p-5 mt-6 no-round shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.1)]">
+                            <h2 className="text-xl font-black mb-5 flex items-center border-b-2 border-yellow-400 dark:border-yellow-600 pb-2 dark:text-white tracking-widest text-yellow-800">
+                                🔥 今日新增試題
+                            </h2>
+                            <div className="space-y-4 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
+                                {todayTasks.length === 0 ? (
+                                    <div className="text-sm text-gray-500 font-bold text-center py-6 border border-dashed border-gray-300">今天還沒有新試題，休息一下吧！</div>
+                                ) : (
+                                    todayTasks.map(task => (
+                                        <div key={task.id} className="bg-white dark:bg-gray-700 p-3 border border-yellow-200 dark:border-gray-600 hover:shadow-md transition-shadow">
+                                            <h3 className="font-bold text-sm mb-3 truncate dark:text-white">{task.testName}</h3>
+                                            <button onClick={() => {
+                                                showAlert("請前往「🎯 任務牆」搜尋並開始這份新任務！");
+                                            }} className="w-full text-xs bg-yellow-400 hover:bg-yellow-500 text-black py-2 font-black transition-colors shadow-sm">
+                                                前往挑戰 ➡️
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
-                    </div>
-                )}
-
-                <div className="md:col-span-1">
-                    <div className="bg-yellow-50 dark:bg-gray-800 border-2 border-yellow-400 dark:border-yellow-600 p-4 shadow-md sticky top-4">
-                        <h2 className="text-lg font-black mb-4 text-yellow-800 dark:text-yellow-400 border-b-2 border-yellow-200 dark:border-yellow-700 pb-2 flex items-center">
-                            🔥 今日新增試題
-                        </h2>
-                        {todayTasks.length === 0 ? (
-                            <p className="text-sm text-gray-500 font-bold">今天還沒有新試題，休息一下吧！</p>
-                        ) : (
-                            <div className="space-y-3">
-                                {todayTasks.map(task => (
-                                    <div key={task.id} className="bg-white dark:bg-gray-700 p-3 border border-yellow-200 dark:border-gray-600">
-                                        <h3 className="font-bold text-sm mb-2 truncate dark:text-white">{task.testName}</h3>
-                                        <button onClick={() => handleGoToTask(task.id)} className="w-full text-xs bg-yellow-400 hover:bg-yellow-500 text-black py-1.5 font-bold transition-colors">
-                                            前往挑戰 ➡️
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
-// --- 我的題庫與測驗核心 ---
 function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm, showPrompt }) {
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -1579,8 +1428,71 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [syncTrigger, setSyncTrigger] = useState(0);
 
     // 根據螢幕寬度自動決定預設排版
-    const [layoutMode, setLayoutMode] = useState(window.innerWidth < 768 ? 'vertical' : 'horizontal'); 
+   const [layoutMode, setLayoutMode] = useState(window.innerWidth < 768 ? 'vertical' : 'horizontal'); 
     const [splitRatio, setSplitRatio] = useState(50);
+    const [viewMode, setViewMode] = useState('split'); // ✨ 新增：'split' (傳統) 或 'interactive' (沉浸式作答)
+    const [currentInteractiveIndex, setCurrentInteractiveIndex] = useState(0); // ✨ 新增：當前顯示的沉浸式題目索引
+    const [showQuestionGrid, setShowQuestionGrid] = useState(false); // ✨ 新增：是否展開題號導覽網格
+    
+    // ✨ 新增：自動解析沉浸式作答的題目與選項
+    const parsedInteractiveQuestions = React.useMemo(() => {
+        if (viewMode !== 'interactive') return [];
+        const rawContent = questionHtml || questionText || '';
+        if (!rawContent) return [];
+        
+        // ✨ 安全純淨版 V4：純字串正規化清理，升級洋蔥剝除法解決 D 選項換行問題
+        const superClean = (html) => {
+            if (!html) return '';
+            
+            // 1. 提早抹除 Word 容易夾帶的「隱形零寬字元」與 BOM
+            let cleaned = html.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+            
+            // 2. ✨ 暗黑模式修復 1：提早抹除 Word 貼上時強制加上的「黑色」樣式，讓暗色模式的白字能正常顯示！
+            cleaned = cleaned.replace(/color:\s*(black|#000000|#000|rgb\(0,\s*0,\s*0\)|windowtext);?/gi, '');
+
+            // 3. 遞迴拔除尾部的空行、空段落、無意義標籤 (解決 D 選項多一行的問題)
+            let prev;
+            do {
+                prev = cleaned;
+                // 砍掉結尾的單純換行與各種網頁空白實體
+                cleaned = cleaned.replace(/(<br\s*\/?>|&nbsp;|&ensp;|&emsp;|\s)+$/gi, '');
+                // 砍掉結尾的空殼標籤，動態支援所有 HTML 標籤的「洋蔥式剝除法」(例如 <p><span><br></span></p> 會被層層剝除乾淨)
+                cleaned = cleaned.replace(/<([a-z0-9]+)[^>]*>(\s|&nbsp;|&ensp;|&emsp;|<br\s*\/?>)*<\/\1>$/gi, '');
+            } while (cleaned !== prev);
+            
+            return cleaned.trim();
+        };
+
+        const result = [];
+        const qBlocks = rawContent.split(/\[Q\.?0*(\d+)\]/i); 
+        
+        for (let i = 1; i < qBlocks.length; i += 2) {
+            const qNum = parseInt(qBlocks[i], 10);
+            const qContent = qBlocks[i+1] || '';
+            
+            const optRegex = /\[([A-D])\]([\s\S]*?)(?=\[[A-D]\]|\[End\]|$)/gi; 
+            let match;
+            const options = {};
+            let questionMainText = qContent;
+            
+            const firstOptIndex = qContent.search(/\[[A-D]\]/i);
+            if (firstOptIndex !== -1) {
+                questionMainText = qContent.substring(0, firstOptIndex).replace(/\[End\]/gi, '');
+            } else {
+                questionMainText = qContent.replace(/\[End\]/gi, '');
+            }
+            
+            questionMainText = superClean(questionMainText);
+
+            while ((match = optRegex.exec(qContent)) !== null) {
+                const optLetter = match[1].toUpperCase();
+                options[optLetter] = superClean(match[2]);
+            }
+
+            result.push({ number: qNum, mainText: questionMainText, options });
+        }
+        return result;
+    }, [questionHtml, questionText, viewMode]);
 
     // 監聽螢幕旋轉或大小改變，自動調整
     useEffect(() => {
@@ -2515,13 +2427,20 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
-                    {(questionFileUrl || questionText || questionHtml) && previewOpen && (
+                    {/* ✨ 新增：沉浸式作答切換按鈕 (偵測到有題目格式才顯示) */}
+                    {(questionHtml || questionText)?.match(/\[Q\.?0*\d+\]/i) && (
+                        <button onClick={() => setViewMode(prev => prev === 'split' ? 'interactive' : 'split')} className="bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-3 py-1.5 no-round font-bold border border-blue-200 dark:border-blue-700 text-xs hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors">
+                            {viewMode === 'split' ? '✨ 沉浸式作答' : '🔙 傳統雙視窗'}
+                        </button>
+                    )}
+
+                    {viewMode === 'split' && (questionFileUrl || questionText || questionHtml) && previewOpen && (
                         <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-gray-100 dark:bg-gray-700 text-black dark:text-white px-3 py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                             {layoutMode === 'horizontal' ? '🔄 切換上下/左右' : '🔄 切換上下/左右'}
                         </button>
                     )}
 
-                    {(questionFileUrl || questionText || questionHtml) && (
+                    {viewMode === 'split' && (questionFileUrl || questionText || questionHtml) && (
                         <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-gray-100 dark:bg-gray-700 text-black dark:text-white px-3 py-1.5 no-round font-bold border border-gray-200 dark:border-gray-600 text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                             {previewOpen ? '👀 關閉預覽' : '👀 開啟預覽'}
                         </button>
@@ -2549,6 +2468,148 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                 </div>
             </div>
             
+           {viewMode === 'interactive' ? (
+                /* ✨ 新增：沉浸式作答介面 (單題翻頁版) */
+                <div className="flex-grow flex flex-col w-full bg-gray-100 dark:bg-gray-900 transition-colors mt-2 overflow-hidden relative">
+                   <style dangerouslySetInnerHTML={{__html: `
+                        .preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; }
+                        .preview-rich-text p { margin-bottom: 0.75em !important; }
+                        .preview-rich-text *:last-child { margin-bottom: 0 !important; }
+                        .preview-rich-text img { max-width: 100%; height: auto; border-radius: 4px; margin: 0.5rem 0; }
+                        /* ✨ 暗色模式終極防線：強制讓所有文字顏色與背景透明，避免 Word 殘留樣式蓋過白字 */
+                        .dark .preview-rich-text * { color: inherit !important; background-color: transparent !important; }
+                    `}} />
+                    
+                    {parsedInteractiveQuestions.length === 0 ? (
+                        <div className="text-center p-10 mt-10 text-gray-500 font-bold border border-dashed border-gray-300 bg-white dark:bg-gray-800 mx-4">
+                            無法解析題目，請確認試題是否包含 [Q.1] 以及選項 [A], [B], [C], [D] 的格式標記。
+                        </div>
+                    ) : (
+                        <div className="flex-grow flex flex-col h-full max-w-3xl mx-auto w-full relative">
+                            {/* 頂部導覽列 */}
+                            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 sm:p-4 flex justify-between items-center shadow-sm z-20">
+                                <button 
+                                    onClick={() => setShowQuestionGrid(!showQuestionGrid)}
+                                    className="font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 px-3 py-1.5 rounded transition-colors flex items-center gap-2"
+                                >
+                                    <span>第 {currentInteractiveIndex + 1} / {parsedInteractiveQuestions.length} 題</span>
+                                    <span className="text-xs">{showQuestionGrid ? '▲ 收起' : '▼ 展開列表'}</span>
+                                </button>
+                                <div className="flex gap-2">
+                                    <button 
+                                        disabled={currentInteractiveIndex === 0}
+                                        onClick={() => {
+                                            setCurrentInteractiveIndex(prev => Math.max(0, prev - 1));
+                                            setShowQuestionGrid(false);
+                                        }}
+                                        className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-1.5 font-bold disabled:opacity-30 transition-colors"
+                                    >
+                                        上一題
+                                    </button>
+                                    <button 
+                                        disabled={currentInteractiveIndex === parsedInteractiveQuestions.length - 1}
+                                        onClick={() => {
+                                            setCurrentInteractiveIndex(prev => Math.min(parsedInteractiveQuestions.length - 1, prev + 1));
+                                            setShowQuestionGrid(false);
+                                        }}
+                                        className="bg-black dark:bg-gray-200 text-white dark:text-black px-4 py-1.5 font-bold disabled:opacity-30 transition-colors shadow-sm"
+                                    >
+                                        下一題
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* 展開的題號網格面板 */}
+                            {showQuestionGrid && (
+                                <div className="absolute top-[60px] left-0 right-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-lg p-4 z-30 max-h-[50vh] overflow-y-auto custom-scrollbar">
+                                    <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3">
+                                        {parsedInteractiveQuestions.map((q, idx) => {
+                                            const actualIdx = q.number - 1;
+                                            const isAnswered = !!userAnswers[actualIdx];
+                                            const isStarred = starred[actualIdx];
+                                            const isCurrent = currentInteractiveIndex === idx;
+                                            
+                                            return (
+                                                <button
+                                                    key={q.number}
+                                                    onClick={() => {
+                                                        setCurrentInteractiveIndex(idx);
+                                                        setShowQuestionGrid(false);
+                                                    }}
+                                                    className={`relative py-2 font-bold text-sm border-2 transition-colors
+                                                        ${isCurrent ? 'border-black dark:border-white bg-gray-100 dark:bg-gray-700 text-black dark:text-white' : 'border-gray-200 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-400 text-gray-600 dark:text-gray-300'}
+                                                        ${isAnswered && !isCurrent ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : ''}
+                                                    `}
+                                                >
+                                                    {q.number}
+                                                    {isStarred && <span className="absolute -top-3 -right-3 text-orange-500 drop-shadow-sm text-lg z-10">★</span>}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 題目主體內容區 (可滾動) */}
+                            <div className="flex-grow overflow-y-auto p-4 sm:p-6 custom-scrollbar relative z-10">
+                                {(() => {
+                                    const q = parsedInteractiveQuestions[currentInteractiveIndex];
+                                    if (!q) return null;
+                                    const actualIdx = q.number - 1; 
+                                    const currentAns = userAnswers[actualIdx];
+                                    const isStarred = starred[actualIdx];
+
+                                    return (
+                                        <div key={q.number} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm p-4 sm:p-6 mb-10 transition-colors">
+                                            <div className="flex justify-between items-start mb-4 border-b border-gray-100 dark:border-gray-700 pb-3">
+                                                <div className="flex items-center space-x-3">
+                                                    <span className="text-xl font-black text-blue-600 dark:text-blue-400">第 {q.number} 題</span>
+                                                    <button onClick={() => toggleStar(actualIdx)} className={`text-xl focus:outline-none transition-colors ${isStarred ? 'text-orange-500' : 'text-gray-300 dark:text-gray-600'} hover:scale-110`} title="標記星號">★</button>
+                                                </div>
+                                                <span className="text-sm font-bold bg-gray-100 dark:bg-gray-700 px-3 py-1 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                                                    選擇: {currentAns || '未答'}
+                                                </span>
+                                            </div>
+                                            
+                                            <div 
+                                                className="preview-rich-text text-black dark:text-white mb-6 font-medium"
+                                                dangerouslySetInnerHTML={{ __html: q.mainText }}
+                                            />
+
+                                            <div className="grid grid-cols-1 gap-3">
+                                                {['A', 'B', 'C', 'D'].map(opt => {
+                                                    const hasCustomContent = !!q.options[opt];
+                                                    const isSelected = currentAns === opt;
+                                                    return (
+                                                        <button 
+                                                            key={opt}
+                                                            disabled={isTimeUp}
+                                                            onClick={() => handleAnswerSelect(actualIdx, opt)}
+                                                            className={`text-left w-full p-4 border-2 transition-all flex items-start space-x-3 no-round
+                                                                ${isSelected ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400 shadow-sm scale-[1.01]' : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-750'}
+                                                                ${isTimeUp ? 'locked-btn opacity-80' : ''}`}
+                                                        >
+                                                            <span className={`text-lg font-black mt-0.5 w-6 shrink-0 text-center ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}>{opt}.</span>
+                                                            {hasCustomContent ? (
+                                                                <div 
+                                                                    className={`preview-rich-text w-full flex-1 ${isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}
+                                                                    dangerouslySetInnerHTML={{ __html: q.options[opt] }}
+                                                                />
+                                                            ) : (
+                                                                <span className={`w-full flex-1 ${isSelected ? 'text-black dark:text-white' : 'text-gray-400 dark:text-gray-600'} italic`}>(選項無內容，但可點擊作答)</span>
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            ) : (
             <div 
                 ref={splitContainerRef}
                 className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full mt-2 sm:mt-4`}
@@ -2687,6 +2748,7 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                 </div>
 
             </div>
+            )}
         </div>
     );
 
