@@ -451,6 +451,14 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 snap.docs.forEach(doc => {
                     const data = doc.data();
                     if (!data.isShared && !data.isTask) {
+                        // ✨ 修正：出題者本人的考卷也必須經過解壓縮，否則字串無法使用 filter
+                        try {
+                            data.userAnswers = Array.isArray(data.userAnswers) ? data.userAnswers : (data.userAnswers ? window.jzDecompress(data.userAnswers) : []);
+                            data.results = data.results && typeof data.results === 'string' ? window.jzDecompress(data.results) : data.results;
+                        } catch (e) {
+                            console.error("解壓縮失敗", e);
+                            data.userAnswers = Array.isArray(data.userAnswers) ? data.userAnswers : [];
+                        }
                         // 若是出題者本人自己的考卷，任務ID 就是該考卷的 doc.id
                         // 在此注入 isTask 與 taskId 以便讓後續 UI 可以判斷為任務模式 (如開放討論區)
                         myTaskMap[doc.id] = { id: doc.id, ...data, isTask: true, taskId: doc.id };
@@ -648,7 +656,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                 {filteredOpTasks.map(task => {
                                                     const localRec = myTasks[task.id];
                                                     const isCompleted = localRec && localRec.results;
-                                                    const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
+                                                    const inProgress = localRec && !localRec.results && Array.isArray(localRec.userAnswers) && localRec.userAnswers.filter(a => a).length > 0;
 
                                                     return (
                                                         <div key={task.id} className="border border-yellow-200 dark:border-yellow-700 p-3 bg-white dark:bg-gray-800 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
@@ -704,7 +712,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                 {filteredTasks.map(task => {
                                                     const localRec = myTasks[task.id];
                                                     const isCompleted = localRec && localRec.results;
-                                                    const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
+                                                    const inProgress = localRec && !localRec.results && Array.isArray(localRec.userAnswers) && localRec.userAnswers.filter(a => a).length > 0;
 
                                                     return (
                                                         <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
@@ -751,7 +759,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                 {otherTasksFiltered.map(task => {
                                     const localRec = myTasks[task.id];
                                     const isCompleted = localRec && localRec.results;
-                                    const inProgress = localRec && !localRec.results && localRec.userAnswers && localRec.userAnswers.filter(a => a).length > 0;
+                                    const inProgress = localRec && !localRec.results && Array.isArray(localRec.userAnswers) && localRec.userAnswers.filter(a => a).length > 0;
 
                                     return (
                                         <div key={task.id} className="border border-gray-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-gray-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow no-round">
