@@ -545,6 +545,17 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
 
+                // ✨ 核心修復：把從任務牆下載任務的玩家，偷偷寫回出題者的「sharedTo」陣列中！
+                // 這樣出題者按下「儲存並同步」時，系統才會知道要發送更新給這些從任務牆下載的人。
+                if (task.creatorUid && task.id) {
+                    window.db.collection('users').doc(task.creatorUid).collection('quizzes').doc(task.id).update({
+                        sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
+                            uid: user.uid, 
+                            quizId: newDocRef.id 
+                        })
+                    }).catch(e => console.error("任務牆同步連結建立失敗", e));
+                }
+
                 const newRec = await newDocRef.get();
                 onContinueQuiz({ id: newRec.id, ...newRec.data() });
                 
