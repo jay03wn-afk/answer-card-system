@@ -500,20 +500,35 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     const handlePlayTask = async (task, localRec) => {
         const executeEnter = async () => {
             if (localRec) {
-                // ✨ 強制同步：如果玩家本地已經有舊的空白快取，強制用雲端最新的富文本覆蓋過去
+                // ✨ 強制同步：比對雲端最新任務與本地快取，這次加入了最重要的 correctAnswersInput
+                const isAnsChanged = task.correctAnswersInput && task.correctAnswersInput !== localRec.correctAnswersInput;
+                
                 const updatedRec = {
                     ...localRec,
+                    testName: task.testName || localRec.testName,
                     questionHtml: task.questionHtml || localRec.questionHtml || '',
                     questionText: task.questionText || localRec.questionText || '',
-                    explanationHtml: task.explanationHtml || localRec.explanationHtml || ''
+                    explanationHtml: task.explanationHtml || localRec.explanationHtml || '',
+                    correctAnswersInput: task.correctAnswersInput || localRec.correctAnswersInput || ''
                 };
                 
-                // 背景靜默更新回本地資料庫，修復之前拿到空白試卷的災情
-                window.db.collection('users').doc(user.uid).collection('quizzes').doc(localRec.id).update({
-                    questionHtml: task.questionHtml || '',
-                    questionText: task.questionText || '',
-                    explanationHtml: task.explanationHtml || ''
-                }).catch(e => console.error("同步任務資料失敗", e));
+                const payload = {
+                    testName: updatedRec.testName,
+                    questionHtml: updatedRec.questionHtml,
+                    questionText: updatedRec.questionText,
+                    explanationHtml: updatedRec.explanationHtml,
+                    correctAnswersInput: updatedRec.correctAnswersInput
+                };
+
+                // 如果答案有變，且玩家已經交過卷，就自動標記有答案更新
+                if (isAnsChanged && localRec.results) {
+                    payload.hasAnswerUpdate = true;
+                    updatedRec.hasAnswerUpdate = true;
+                }
+
+                // 背景靜默更新回本地資料庫
+                window.db.collection('users').doc(user.uid).collection('quizzes').doc(localRec.id).update(payload)
+                    .catch(e => console.error("同步任務資料失敗", e));
 
                 onContinueQuiz(updatedRec);
                 return;
@@ -544,17 +559,6 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                     folder: '任務牆',
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
-
-                // ✨ 核心修復：把從任務牆下載任務的玩家，偷偷寫回出題者的「sharedTo」陣列中！
-                // 這樣出題者按下「儲存並同步」時，系統才會知道要發送更新給這些從任務牆下載的人。
-                if (task.creatorUid && task.id) {
-                    window.db.collection('users').doc(task.creatorUid).collection('quizzes').doc(task.id).update({
-                        sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
-                            uid: user.uid, 
-                            quizId: newDocRef.id 
-                        })
-                    }).catch(e => console.error("任務牆同步連結建立失敗", e));
-                }
 
                 const newRec = await newDocRef.get();
                 onContinueQuiz({ id: newRec.id, ...newRec.data() });
@@ -1124,26 +1128,57 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         return false;
     });
 
-    const handleEnterQuiz = (rec) => {
-        // ✨ 新增：如果學生點進去看成績了，就把資料庫裡的「答案已更正」閃爍提醒消除
-        if (rec.hasAnswerUpdate) {
-            window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update({ 
-                hasAnswerUpdate: window.firebase.firestore.FieldValue.delete() 
-            }).catch(e=>console.error(e));
-            rec.hasAnswerUpdate = false;
+   const handleEnterQuiz = async (rec) => {
+        // ✨ 終極同步機制：只要是從任務牆下載的題目，點擊進入前瞬間去雲端核對最新版本
+        let finalRec = { ...rec };
+        if (rec.isTask && rec.taskId) {
+            try {
+                const taskDoc = await window.db.collection('publicTasks').doc(rec.taskId).get();
+                if (taskDoc.exists) {
+                    const taskData = taskDoc.data();
+                    const isAnsChanged = taskData.correctAnswersInput && taskData.correctAnswersInput !== rec.correctAnswersInput;
+                    
+                    const payload = {};
+                    if (taskData.testName && taskData.testName !== rec.testName) payload.testName = taskData.testName;
+                    if (taskData.questionHtml !== undefined) payload.questionHtml = taskData.questionHtml;
+                    if (taskData.questionText !== undefined) payload.questionText = taskData.questionText;
+                    if (taskData.explanationHtml !== undefined) payload.explanationHtml = taskData.explanationHtml;
+                    // 確保標準答案被更新
+                    if (taskData.correctAnswersInput !== undefined) payload.correctAnswersInput = taskData.correctAnswersInput;
+
+                    // 如果答案被改了且玩家已經有成績，自動觸發重新算分提示
+                    if (isAnsChanged && rec.results) {
+                        payload.hasAnswerUpdate = true;
+                    }
+
+                    if (Object.keys(payload).length > 0) {
+                        await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update(payload);
+                        finalRec = { ...finalRec, ...payload };
+                    }
+                }
+            } catch(e) { 
+                console.error("題庫同步最新任務失敗", e); 
+            }
         }
 
-        if (rec.hasTimer && !rec.results) {
-            const isNew = !rec.userAnswers || rec.userAnswers.filter(a => a !== '').length === 0;
+        if (finalRec.hasAnswerUpdate) {
+            window.db.collection('users').doc(user.uid).collection('quizzes').doc(finalRec.id).update({ 
+                hasAnswerUpdate: window.firebase.firestore.FieldValue.delete() 
+            }).catch(e=>console.error(e));
+            finalRec.hasAnswerUpdate = false;
+        }
+
+        if (finalRec.hasTimer && !finalRec.results) {
+            const isNew = !finalRec.userAnswers || finalRec.userAnswers.filter(a => a !== '').length === 0;
             if (isNew) {
-                showConfirm(`⏱ 此測驗設有時間限制（${rec.timeLimit} 分鐘）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
-                    onContinueQuiz(rec);
+                showConfirm(`⏱ 此測驗設有時間限制（${finalRec.timeLimit} 分鐘）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
+                    onContinueQuiz(finalRec);
                 });
             } else {
-                onContinueQuiz(rec);
+                onContinueQuiz(finalRec);
             }
         } else {
-            onContinueQuiz(rec);
+            onContinueQuiz(finalRec);
         }
     };
 
