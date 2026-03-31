@@ -760,7 +760,9 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                 ) : (
                                     todayTasks.map(task => (
                                         <div key={task.id} className="bg-white dark:bg-gray-700 p-3 border border-yellow-200 dark:border-gray-600 hover:shadow-md transition-shadow">
-                                            <h3 className="font-bold text-sm mb-3 truncate dark:text-white">{task.testName}</h3>
+                                            <h3 className="font-bold text-sm mb-3 truncate dark:text-white">
+                                                {task.testName ? task.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim() : ''}
+                                            </h3>
                                             <button onClick={() => {
                                                 showAlert("請前往「🎯 任務牆」搜尋並開始這份新任務！");
                                             }} className="w-full text-xs bg-yellow-400 hover:bg-yellow-500 text-black py-2 font-black transition-colors shadow-sm">
