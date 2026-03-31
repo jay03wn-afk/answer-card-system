@@ -2,7 +2,7 @@ const firebaseConfig = {
     apiKey: "AIzaSyBAGM92NBQnUlI1gnLRK-mufM6YtDq5sHk",
     authDomain: "anser-card.firebaseapp.com",
     projectId: "anser-card",
-    storageBucket: "anser-card.appspot.com", // ✨ 新增這行！告訴系統要把圖片傳到哪
+    storageBucket: "anser-card.firebasestorage.app", // ✨ 新增這行！告訴系統要把圖片傳到哪
     messagingSenderId: "224666683961",
     appId: "1:224666683961:web:351991d6cbc8543b181be8"
 };
