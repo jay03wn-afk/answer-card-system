@@ -536,14 +536,23 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
     }, [targetNewsId]);
 
     // 監聽閱讀視窗中的留言與獎勵領取狀態
+    // 監聽閱讀視窗中的留言與獎勵領取狀態
     useEffect(() => {
         if (!viewingNews) return;
+        
+        // ✨ 新增：每次開啟新電子報時，強制先將領取狀態設為「未領取」
+        // 這樣就不會看到上一篇文章留下來的狀態
+        setHasClaimed(true); 
+        setIsClaiming(false);
+
         let unsubComments = () => {};
         
         if (user) {
             const checkClaim = async () => {
+                // 從雲端抓取最新的領取紀錄
                 const doc = await window.db.collection('users').doc(user.uid).collection('newsRewards').doc(viewingNews.id).get();
-                setHasClaimed(doc.exists);
+                // 只有當雲端回傳「確定沒有領取紀錄」時，才把 hasClaimed 設為 false，讓按鈕出現
+                setHasClaimed(doc.exists); 
             };
             checkClaim();
         }
@@ -671,11 +680,27 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
     
 
     const claimReward = async () => {
-        // ⚠️ 注意：這裡面「不可以」出現 const [isClaiming, setIsClaiming] = useState(false);
-
+        // 基本檢查
         if (hasClaimed || isClaiming || !user || !viewingNews.rewardType || viewingNews.rewardType === 'none') return;
         
-        setIsClaiming(true); // ✨ 點擊後立刻上鎖，防止重複點擊
+        setIsClaiming(true);
+
+        // 🛡️ 最後一道雲端校驗：點擊瞬間再去雲端看一眼，確保這 0.1 秒內沒有被領過
+        try {
+            const safetyCheck = await window.db.collection('users').doc(user.uid).collection('newsRewards').doc(viewingNews.id).get();
+            if (safetyCheck.exists) {
+                setHasClaimed(true); // 如果雲端說領過了，立刻更新狀態並跳出
+                setIsClaiming(false);
+                return showAlert("⚠️ 系統偵測到您已領取過此獎勵囉！");
+            }
+        } catch (e) {
+            setIsClaiming(false);
+            return;
+        }
+        
+        // 接下來才是你原本的領取獎勵邏輯...
+        
+        setIsClaiming(true);
         
         let amount = 0;
         if (viewingNews.rewardType === 'fixed') {
@@ -687,36 +712,27 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
         }
 
         if (amount > 0) {
-            try {
-                // ✨ 雲端雙重防護：領取前先去資料庫確認是否真的沒領過
-                const rewardRef = window.db.collection('users').doc(user.uid).collection('newsRewards').doc(viewingNews.id);
-                const rewardDoc = await rewardRef.get();
-                if (rewardDoc.exists) {
-                    setHasClaimed(true);
-                    setIsClaiming(false);
-                    return showAlert("⚠️ 你已經領取過這篇的獎勵囉！");
-                }
+            // ✨ 極速優化：先改介面狀態，不等待資料庫回傳
+            setHasClaimed(true); 
+            showAlert(`🎉 恭喜！你${viewingNews.rewardType === 'random' ? '抽中' : '獲得'}了 ${amount} 💎 閱讀獎勵！`);
 
-                await rewardRef.set({
-                    claimedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-                    amount: amount
-                });
-                
-                // ✨ 雲端原子累加：直接讓伺服器幫你 +amount，不會再因為狂點而算錯
-                await window.db.collection('users').doc(user.uid).set({
+            // 背景默默執行資料庫更新
+            const rewardRef = window.db.collection('users').doc(user.uid).collection('newsRewards').doc(viewingNews.id);
+            
+            rewardRef.set({
+                claimedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+                amount: amount
+            }).then(() => {
+                return window.db.collection('users').doc(user.uid).set({
                     mcData: { diamonds: window.firebase.firestore.FieldValue.increment(amount) }
                 }, { merge: true });
-                
-                showAlert(`🎉 恭喜！你${viewingNews.rewardType === 'random' ? '抽中' : '獲得'}了 ${amount} 💎 閱讀獎勵！`);
-                setHasClaimed(true);
-            } catch(e) { 
-                showAlert("領取失敗：" + e.message); 
-            }
-        } else {
-            showAlert("獎勵設定有誤，無法領取。");
+            }).catch(e => {
+                console.error("獎勵背景同步失敗", e);
+                // 如果真的失敗（例如網路斷線），再把狀態改回來
+                setHasClaimed(false);
+            });
         }
-        
-        setIsClaiming(false); // ✨ 處理完畢後解鎖
+        setIsClaiming(false);
     };
 
     const handleShareNews = (news) => {
