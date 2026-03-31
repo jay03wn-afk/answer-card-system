@@ -272,22 +272,30 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
 // --- 錯題整理組件 ---
 function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContinueQuiz }) {
     const [wrongItems, setWrongItems] = useState([]);
+    const [customFolders, setCustomFolders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [editingItem, setEditingItem] = useState(null);
     const [currentFolder, setCurrentFolder] = useState('全部');
     const [previewImage, setPreviewImage] = useState(null);
 
     useEffect(() => {
-        const unsub = window.db.collection('users').doc(user.uid).collection('wrongBook')
+        const unsubItems = window.db.collection('users').doc(user.uid).collection('wrongBook')
             .orderBy('createdAt', 'desc')
             .onSnapshot(snap => {
                 setWrongItems(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 setLoading(false);
             });
-        return () => unsub();
+            
+        const unsubUser = window.db.collection('users').doc(user.uid).onSnapshot(doc => {
+            if (doc.exists && doc.data().wrongBookFolders) {
+                setCustomFolders(doc.data().wrongBookFolders);
+            }
+        });
+
+        return () => { unsubItems(); unsubUser(); };
     }, [user.uid]);
 
-    const folders = ['全部', ...new Set(wrongItems.map(item => item.folder || '未分類'))];
+    const folders = ['全部', ...new Set([...customFolders, ...wrongItems.map(item => item.folder || '未分類')])];
     const filteredItems = currentFolder === '全部' ? wrongItems : wrongItems.filter(item => (item.folder || '未分類') === currentFolder);
 
     const handleDelete = (id) => {
@@ -300,7 +308,15 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
         try {
             const doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get();
             if(doc.exists) {
-                onContinueQuiz({ id: doc.id, ...doc.data() });
+                const data = doc.data();
+                try {
+                    // 修正：必須將資料解壓縮，否則進入測驗畫面會解析錯誤卡死
+                    data.userAnswers = data.userAnswers ? window.jzDecompress(data.userAnswers) : [];
+                    data.results = data.results ? window.jzDecompress(data.results) : null;
+                    data.questionText = data.questionText ? window.jzDecompress(data.questionText) : '';
+                } catch (e) { console.error("解碼失敗", e); }
+                
+                onContinueQuiz({ id: doc.id, ...data });
             } else {
                 showAlert('❌ 找不到原始試卷，可能已被刪除！');
             }
@@ -318,12 +334,36 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 <p className="text-sm font-bold text-gray-500 dark:text-gray-400">專屬你的弱點突破筆記本</p>
             </div>
 
-            <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-3 mb-4 flex-grow w-full min-w-0">
-                {folders.map(f => (
-                    <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors shrink-0 ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
-                        {f === '全部' ? '🔍 ' : '📁 '} {f}
+            <div className="flex flex-col md:flex-row gap-3 mb-4 shrink-0 w-full min-w-0">
+                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 flex-grow w-full min-w-0">
+                    {folders.map(f => (
+                        <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors shrink-0 ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
+                            {f === '全部' ? '🔍 ' : '📁 '} {f}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 shrink-0 w-full md:w-auto min-w-0">
+                    <button 
+                        onClick={() => {
+                            showPrompt("請輸入新的錯題資料夾名稱：", "", (folderName) => {
+                                const cleanName = folderName?.trim();
+                                if (cleanName && !folders.includes(cleanName)) {
+                                    window.db.collection('users').doc(user.uid).set({
+                                        wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(cleanName)
+                                    }, { merge: true }).then(() => {
+                                        setCurrentFolder(cleanName);
+                                        showAlert(`✅ 已成功建立錯題資料夾「${cleanName}」！`);
+                                    });
+                                } else if (folders.includes(cleanName)) {
+                                    showAlert('❌ 資料夾已存在！');
+                                }
+                            });
+                        }} 
+                        className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors shrink-0"
+                    >
+                        + 新增錯題資料夾
                     </button>
-                ))}
+                </div>
             </div>
             
             {loading ? <LoadingSpinner text="載入錯題中..." /> : 
@@ -366,7 +406,22 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                          )}
 
                          <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
-                             <span className="text-[10px] text-gray-400 font-bold px-2 py-0.5 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">📁 {item.folder || '未分類'}</span>
+                             <div className="flex items-center gap-1">
+                                 <span className="text-[10px] text-gray-400 font-bold">📁</span>
+                                 <select 
+                                     value={item.folder || '未分類'} 
+                                     onChange={(e) => {
+                                         window.db.collection('users').doc(user.uid).collection('wrongBook').doc(item.id).update({
+                                             folder: e.target.value
+                                         }).then(() => showAlert('✅ 分類已更新！'));
+                                     }}
+                                     className="text-[10px] text-gray-600 dark:text-gray-300 font-bold px-1 py-0.5 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 outline-none cursor-pointer"
+                                 >
+                                     {folders.filter(f => f !== '全部').map(f => (
+                                         <option key={f} value={f}>{f}</option>
+                                     ))}
+                                 </select>
+                             </div>
                              <button onClick={() => setEditingItem(item)} className="text-xs font-bold text-gray-500 hover:text-black dark:hover:text-white transition-colors">✏️ 編輯內容</button>
                          </div>
                      </div>
@@ -404,7 +459,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                         });
                         if (data.folder && !folders.includes(data.folder)) {
                              window.db.collection('users').doc(user.uid).set({
-                                 folders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
+                                 wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
                              }, { merge: true });
                         }
                         showAlert('✅ 修改成功！');
@@ -2152,7 +2207,7 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
         }
     };
 
-    // ✨ 新增：手動重新批改邏輯，負責比對差異並跳出提示
+    // ✨ 新增：手動重新批改邏輯，負責比對差異並跳出提示 (加入錯題本同步)
     const handleManualRegrade = async () => {
         if (!results || !results.data) return;
 
@@ -2178,13 +2233,30 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
 
         // 情況 B：有更動，執行原本的批改邏輯更新分數
         await handleGrade();
+
+        // ✨ 同步更新錯題本中的答案
+        try {
+            const wbSnapshot = await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').where('quizId', '==', quizId).get();
+            if (!wbSnapshot.empty) {
+                const batch = window.db.batch();
+                wbSnapshot.docs.forEach(doc => {
+                    const wbData = doc.data();
+                    const qNum = wbData.questionNum;
+                    const newKey = keyArray[qNum - 1] || '';
+                    if (wbData.correctAns !== newKey) {
+                        batch.update(doc.ref, { correctAns: newKey });
+                    }
+                });
+                await batch.commit();
+            }
+        } catch(e) { console.error("同步錯題本失敗", e); }
         
         // 顯示變更報告 (如果改太多題，最多顯示 8 題以免視窗塞爆)
         const detailsText = changedDetails.length > 8 
             ? changedDetails.slice(0, 8).join('\n') + `\n...等共 ${changedDetails.length} 題` 
             : changedDetails.join('\n');
             
-        showAlert(`✅ 重新批改完成！成績已更新。\n\n【答案更動紀錄】\n${detailsText}`);
+        showAlert(`✅ 重新批改完成！成績已更新，同時也已將最新解答同步至您的「錯題筆記本」。\n\n【答案更動紀錄】\n${detailsText}`);
     };
 
     const handleSubmitClick = () => {
@@ -2652,8 +2724,9 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                 /* ✨ 新增：沉浸式作答介面 (單題翻頁版) */
                 <div className="flex-grow flex flex-col w-full bg-gray-100 dark:bg-gray-900 transition-colors mt-2 overflow-hidden relative">
                    <style dangerouslySetInnerHTML={{__html: `
-                        .preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; }
-                        .preview-rich-text p { margin-bottom: 0.75em !important; }
+                        .preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.5; }
+                        .preview-rich-text p { margin-bottom: 0.5em !important; }
+                        .preview-rich-text *:first-child { margin-top: 0 !important; }
                         .preview-rich-text *:last-child { margin-bottom: 0 !important; }
                         .preview-rich-text img { max-width: 100%; height: auto; border-radius: 4px; margin: 0.5rem 0; }
                         /* ✨ 暗色模式終極防線：強制讓所有文字顏色與背景透明，避免 Word 殘留樣式蓋過白字 */
@@ -2765,11 +2838,11 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                                                             key={opt}
                                                             disabled={isTimeUp}
                                                             onClick={() => handleAnswerSelect(actualIdx, opt)}
-                                                            className={`text-left w-full p-4 border-2 transition-all flex items-start space-x-3 no-round
+                                                            className={`text-left w-full py-2.5 px-3 min-h-[44px] border-2 transition-all flex items-start space-x-2 sm:space-x-3 no-round
                                                                 ${isSelected ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400 shadow-sm scale-[1.01]' : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-750'}
                                                                 ${isTimeUp ? 'locked-btn opacity-80' : ''}`}
                                                         >
-                                                            <span className={`text-lg font-black mt-0.5 w-6 shrink-0 text-center ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}>{opt}.</span>
+                                                            <span className={`text-base font-black mt-0.5 w-6 shrink-0 text-center ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}>{opt}.</span>
                                                             {hasCustomContent ? (
                                                                 <div 
                                                                     className={`preview-rich-text w-full flex-1 ${isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}
@@ -3386,9 +3459,9 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                             });
                             // 如果是新資料夾，加到使用者資料夾清單
-                            if (data.folder && !userProfile.folders?.includes(data.folder)) {
+                            if (data.folder && !userProfile.wrongBookFolders?.includes(data.folder)) {
                                 await window.db.collection('users').doc(currentUser.uid).set({
-                                    folders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
+                                    wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
                                 }, { merge: true });
                             }
                             showAlert(`✅ 第 ${wrongBookAddingItem.number} 題已成功收錄至「錯題整理」！`);
