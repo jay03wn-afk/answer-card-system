@@ -84,17 +84,34 @@
             border-right-color: #ffffff;
             background-color: #b0b0b0;
         }
-        /* ✨ 修正：富文本專用容器，強制白底黑字，無視暗色模式 */
-.rich-text-container {
+        /* ✨ 修正：富文本容器，強制鎖定白底黑字以符合使用者需求 */
+.rich-text-container, .preview-rich-text-white {
     background-color: #ffffff !important;
-    color: #000000 !important;
+    color: #1a1a1a !important;
+    padding: 15px;
+    border-radius: 8px;
 }
 
-/* 強制讓容器內的「所有子元素」也繼承黑色，解決 Word 夾帶樣式問題 */
-.rich-text-container * {
+/* 確保裡面的圖片不會超出範圍 */
+.rich-text-container img, .preview-rich-text img {
+    max-width: 100% !important;
+    height: auto !important;
+    margin: 10px 0;
+    display: block;
+}
+
+/* 強制清除 Word 夾帶的顏色樣式，讓字體在深色模式變白 */
+.rich-text-container *, .preview-rich-text * {
     background-color: transparent !important;
-    color: #000000 !important;
-    border-color: #cccccc !important;
+    color: inherit !important; 
+}
+
+.rich-text-container img, .preview-rich-text img {
+    max-width: 100% !important;
+    height: auto !important;
+    border: 1px solid #ddd;
+    margin: 10px auto !important;
+    display: block !important;
 }
 
 /* 確保裡面的圖片不會因為 dark 樣式縮放或濾鏡 */
