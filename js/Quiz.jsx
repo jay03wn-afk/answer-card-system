@@ -807,30 +807,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
         </div>
     );
 }
-// --- 新增：JJay日報組件 ---
-
-// --- 我的題庫與測驗核心 ---{/* 🔥 今日新增試題區塊 */}
-                        <div className="bg-yellow-50 dark:bg-gray-800 border-2 border-yellow-400 dark:border-yellow-600 p-5 mt-6 no-round shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.1)]">
-                            <h2 className="text-xl font-black mb-5 flex items-center border-b-2 border-yellow-400 dark:border-yellow-600 pb-2 dark:text-white tracking-widest text-yellow-800">
-                                🔥 今日新增試題
-                            </h2>
-                            <div className="space-y-4 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
-                                {todayTasks.length === 0 ? (
-                                    <div className="text-sm text-gray-500 font-bold text-center py-6 border border-dashed border-gray-300">今天還沒有新試題，休息一下吧！</div>
-                                ) : (
-                                    todayTasks.map(task => (
-                                        <div key={task.id} className="bg-white dark:bg-gray-700 p-3 border border-yellow-200 dark:border-gray-600 hover:shadow-md transition-shadow">
-                                            <h3 className="font-bold text-sm mb-3 truncate dark:text-white">{task.testName}</h3>
-                                            <button onClick={() => {
-                                                showAlert("請前往「🎯 任務牆」搜尋並開始這份新任務！");
-                                            }} className="w-full text-xs bg-yellow-400 hover:bg-yellow-500 text-black py-2 font-black transition-colors shadow-sm">
-                                                前往挑戰 ➡️
-                                            </button>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </div>
+// --- 我的題庫與測驗核心 ---
 function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm, showPrompt }) {
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -1376,6 +1353,83 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     );
 }
 
+// ✨ 修改：將 AnswerGridInput 移到外部，避免 React 重新渲染導致手機鍵盤收起，並加入一鍵清空功能
+const AnswerGridInput = ({ value, onChange, maxQuestions, showConfirm }) => {
+    const handlePaste = (e) => {
+        e.preventDefault();
+        const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+        
+        const pastedParts = pastedText.match(/[A-DZ]|[a-dz]+/g) || [];
+
+        const valStr = value || '';
+        let currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
+        while(currentArr.length < maxQuestions) currentArr.push('');
+
+        for(let i=0; i<pastedParts.length && i<maxQuestions; i++) {
+            currentArr[i] = pastedParts[i];
+        }
+        onChange(currentArr.join(','));
+    };
+
+    const handleChange = (index, char) => {
+        const cleanChar = char.replace(/[^a-dA-DZz]/g, '');
+        const valStr = value || '';
+        let currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
+        while(currentArr.length < maxQuestions) currentArr.push('');
+        
+        currentArr[index] = cleanChar;
+        onChange(currentArr.join(','));
+    };
+
+    const handleClearAll = () => {
+        if (showConfirm) {
+            showConfirm("確定要清空所有已填寫的答案嗎？", () => {
+                onChange('');
+            });
+        } else {
+            onChange('');
+        }
+    };
+
+    const valStr = value || '';
+    const currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
+    const filledCount = currentArr.slice(0, maxQuestions).filter(ans => ans && ans.trim() !== '').length;
+
+    return (
+        <div 
+            className="w-full mb-4 p-4 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 no-round max-h-64 overflow-y-auto custom-scrollbar"
+            onPaste={handlePaste}
+        >
+            <div className="text-xs text-gray-500 mb-3 font-bold flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                <span className="text-blue-600 dark:text-blue-400">💡 提示：點擊格子後 <b>Ctrl+V</b> 貼上答案 (Z表示送分 一格填入數個小寫表示複數答案)！</span>
+                <div className="flex items-center gap-3">
+                    <span className="bg-gray-200 dark:bg-gray-700 px-2 py-1">已填寫: {filledCount} / {maxQuestions}</span>
+                    <button 
+                        onClick={handleClearAll}
+                        className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-1 font-bold hover:bg-red-100 dark:hover:bg-red-900 transition-colors shadow-sm"
+                    >
+                        🗑️ 一鍵清空
+                    </button>
+                </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(48px, 1fr))', gap: '10px' }}>
+                {Array.from({ length: maxQuestions }).map((_, i) => (
+                    <div key={i} className="flex flex-col items-center">
+                        <span className="text-[10px] text-gray-400 font-bold mb-1">{i + 1}.</span>
+                        <input 
+                            type="text"
+                            className="w-12 h-10 text-center border border-gray-300 dark:border-gray-500 font-black text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-white transition-all shadow-sm"
+                            maxLength={4}
+                            value={currentArr[i] || ''}
+                            onChange={(e) => handleChange(i, e.target.value)}
+                        />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard: originalBack, showAlert, showConfirm, showPrompt }) {
     // ✨ 安全退出機制：微延遲 50 毫秒，讓存檔與解壓縮動作錯開，避免畫面卡死
     const onBackToDashboard = () => setTimeout(originalBack, 50);
@@ -1801,11 +1855,20 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                                 const targetData = doc.data();
                                 const targetUpdates = { ...updates };
                                 
-                               if (targetData.results && targetData.userAnswers) {
+                              if (targetData.results && targetData.userAnswers) {
                                     let tCorrectCount = 0;
                                     // ✨ 加入智慧辨識：同步給好友時也能正確解析大寫與連續小寫
                                     let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
-                                    const tData = targetData.userAnswers.map((ans, idx) => {
+                                    
+                                    // ✨ 修復：從資料庫取出的 userAnswers 是壓縮字串，必須先解壓縮轉回陣列才能跑 .map()
+                                    let targetAnswersArray = [];
+                                    try {
+                                        targetAnswersArray = Array.isArray(targetData.userAnswers) ? targetData.userAnswers : window.jzDecompress(targetData.userAnswers) || [];
+                                    } catch(e) {
+                                        targetAnswersArray = [];
+                                    }
+
+                                    const tData = targetAnswersArray.map((ans, idx) => {
                                         const key = keyArray[idx] || '-';
                                         let isCorrect = (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') ? true : (key !== '-' && key !== '' && ans !== '' ? (key === key.toUpperCase() ? ans === key : key.toLowerCase().includes(ans.toLowerCase())) : false);
                                         if (isCorrect) tCorrectCount++;
@@ -2162,65 +2225,6 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
         }
     };
     
-    // ✨ 修改：升級格子輸入器，完美支援大寫獨立、小寫群組的智慧貼上
-    const AnswerGridInput = ({ value, onChange, maxQuestions }) => {
-        const handlePaste = (e) => {
-            e.preventDefault();
-            const pastedText = (e.clipboardData || window.clipboardData).getData('text');
-            
-            // ✨ 智慧辨識核心：大寫字母(A-D,Z)獨立一格，小寫字母(a-d,z)連續一格。自動無視空白與逗號！
-            const pastedParts = pastedText.match(/[A-DZ]|[a-dz]+/g) || [];
-
-            const valStr = value || '';
-            let currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
-            while(currentArr.length < maxQuestions) currentArr.push('');
-
-            for(let i=0; i<pastedParts.length && i<maxQuestions; i++) {
-                currentArr[i] = pastedParts[i];
-            }
-            onChange(currentArr.join(','));
-        };
-
-        const handleChange = (index, char) => {
-            const cleanChar = char.replace(/[^a-dA-DZz]/g, '');
-            const valStr = value || '';
-            let currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
-            while(currentArr.length < maxQuestions) currentArr.push('');
-            
-            currentArr[index] = cleanChar;
-            onChange(currentArr.join(','));
-        };
-
-        const valStr = value || '';
-        const currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
-        const filledCount = currentArr.slice(0, maxQuestions).filter(ans => ans && ans.trim() !== '').length;
-
-        return (
-            <div 
-                className="w-full mb-4 p-4 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 no-round max-h-64 overflow-y-auto custom-scrollbar"
-                onPaste={handlePaste}
-            >
-                <div className="text-xs text-gray-500 mb-3 font-bold flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-                    <span className="text-blue-600 dark:text-blue-400">💡 提示：點擊格子後 <b>Ctrl+V</b> 貼上答案 (Z表示送分 一格填入數個小寫表示複數答案)！</span>
-                    <span className="bg-gray-200 dark:bg-gray-700 px-2 py-1">已填寫: {filledCount} / {maxQuestions}</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(48px, 1fr))', gap: '10px' }}>
-                    {Array.from({ length: maxQuestions }).map((_, i) => (
-                        <div key={i} className="flex flex-col items-center">
-                            <span className="text-[10px] text-gray-400 font-bold mb-1">{i + 1}.</span>
-                            <input 
-                                type="text"
-                                className="w-12 h-10 text-center border border-gray-300 dark:border-gray-500 font-black text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-white transition-all shadow-sm"
-                                maxLength={4}
-                                value={currentArr[i] || ''}
-                                onChange={(e) => handleChange(i, e.target.value)}
-                            />
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    };
     if (step === 'edit') return (
         <div className="flex flex-col min-h-[100dvh] items-center p-4 relative py-10 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors custom-scrollbar">
             <button onClick={handleBackFromEdit} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">← 返回</button>
@@ -2260,9 +2264,11 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                     <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." />
                 )}
 
-                {/* ✨ 已將標準答案移至詳解上方 */}
+              {/* ✨ 已將標準答案移至詳解上方 */}
                 <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">標準答案</h3>
-                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} />
+                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} showConfirm={showConfirm} />
+
+                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字)</h3>
 
                 <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字)</h3>
                 <textarea 
@@ -2346,11 +2352,13 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                     <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." />
                 )}
                 
-                {/* ✨ 已將標準答案移至詳解上方 */}
+              {/* ✨ 已將標準答案移至詳解上方 */}
                 <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">標準答案 (選填，交卷時會自動批改)</h3>
-                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} />
+                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} showConfirm={showConfirm} />
 
                 <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字，選填)</h3>
+
+                
                 <textarea 
                     className="w-full h-32 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar"
                     placeholder="在此貼上詳解純文字，並使用 [A.1], [A.02] 等標記對應題號..."
