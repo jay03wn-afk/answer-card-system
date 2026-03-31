@@ -554,7 +554,8 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
    const handleGoToQuiz = async (quizId) => {
         setIsJumping(true); // ✨ 開啟跳轉載入畫面
         try {
-            const doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'server' });
+            // ✨ 修正：移除 { source: 'server' }，讓 Firebase 彈性使用本地快取，徹底解決離線或網路不穩時的報錯
+            const doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get();
             if(doc.exists) {
                 const data = doc.data();
                 // ✨ 為了讓使用者看到載入畫面，加上微小延遲讓 React 渲染
@@ -1539,7 +1540,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         let finalRec = { ...rec };
         if (rec.isTask && rec.taskId) {
             try {
-                const taskDoc = await window.db.collection('publicTasks').doc(rec.taskId).get({ source: 'server' });
+                const taskDoc = await window.db.collection('publicTasks').doc(rec.taskId).get();
                 if (taskDoc.exists) {
                     const taskData = taskDoc.data();
                     const isAnsChanged = taskData.correctAnswersInput && taskData.correctAnswersInput !== rec.correctAnswersInput;
@@ -4239,7 +4240,15 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
            {!activeQA ? (
                 <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {qaList.length === 0 ? <div className="text-pink-500 font-bold col-span-full text-center py-6">目前沒有開放的快問快答，請晚點再來！</div> :
+                        {/* ✨ 非同步載入狀態 */}
+                        {loading ? (
+                            <div className="col-span-full py-12 text-center bg-white/50 border border-pink-200">
+                                <div className="w-10 h-10 border-4 border-pink-200 border-t-pink-500 rounded-full animate-spin mx-auto mb-3"></div>
+                                <div className="text-pink-600 font-bold animate-pulse">試題讀取中...</div>
+                            </div>
+                        ) : qaList.length === 0 ? (
+                            <div className="text-pink-500 font-bold col-span-full text-center py-6">目前沒有開放的快問快答，請晚點再來！</div> 
+                        ) : (
                             qaList.map(qa => {
                                 const rec = records[qa.id];
                                 return (
@@ -4268,7 +4277,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                     </div>
                                 );
                             })
-                        }
+                        )}
                     </div>
                     
                     {/* ✨ 新增：快問快答的「載入更多」按鈕 (包含正確的 <> </> 包覆) */}
