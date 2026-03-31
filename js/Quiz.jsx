@@ -1030,6 +1030,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
 
     // ✨ 新增搜尋狀態
     const [searchQuery, setSearchQuery] = useState('');
+    const [pendingShareCode, setPendingShareCode] = useState(() => new URLSearchParams(window.location.search).get('shareCode'));
 
     const specialFolders = ['我建立的試題', '未分類', '任務牆'];
     const rawUserFolders = (userProfile.folders || []).filter(f => !specialFolders.includes(f));
@@ -1184,91 +1185,100 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         setIsGeneratingCode(false);
     };
 
-    const handleImportCode = () => {
-        showPrompt("請輸入 6 碼測驗代碼：", "", async (code) => {
-            const cleanCode = code?.trim().toUpperCase();
-            if (!cleanCode) return;
+    useEffect(() => {
+        if (!loading && pendingShareCode) {
+            const codeToImport = pendingShareCode;
+            setPendingShareCode(null);
+            window.history.replaceState({}, document.title, window.location.pathname);
+            executeImport(codeToImport);
+        }
+    }, [loading, pendingShareCode, records]);
+
+    const executeImport = async (code) => {
+        const cleanCode = code?.trim().toUpperCase();
+        if (!cleanCode) return;
+        
+        const codeRegex = /^[A-Z0-9]{6}$/;
+        if (!codeRegex.test(cleanCode)) {
+            return showAlert("⚠️ 代碼格式錯誤！\n請確認您輸入的是剛好「6 碼」的英數組合（不可包含符號或空白）。", "輸入錯誤");
+        }
+
+        try {
+            const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
+            if (isDuplicateCode) {
+                return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
+            }
+
+            const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
+            if (!codeDoc.exists) {
+                return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
+            }
+
+            const { ownerId, quizId: targetQuizId } = codeDoc.data();
+
+            if (ownerId === user.uid) {
+                return showAlert("⚠️ 你已經擁有此試卷！", "重複擁有");
+            }
+
+            const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get({ source: 'server' });
+            if (!doc.exists) {
+                return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除。", "載入失敗");
+            }
             
-            const codeRegex = /^[A-Z0-9]{6}$/;
-            if (!codeRegex.test(cleanCode)) {
-                return showAlert("⚠️ 代碼格式錯誤！\n請確認您輸入的是剛好「6 碼」的英數組合（不可包含符號或空白）。", "輸入錯誤");
+            const data = doc.data();
+
+            const isContentDuplicate = records.some(r => {
+                const localName = cleanQuizName(r.testName).split(' (來自')[0].trim();
+                const incomingName = cleanQuizName(data.testName).split(' (來自')[0].trim();
+                return localName === incomingName && Number(r.numQuestions) === Number(data.numQuestions);
+            });
+
+            if (isContentDuplicate) {
+                return showAlert(`⚠️ 你已經擁有此試卷！`, "內容重複");
             }
 
-            try {
-                const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
-                if (isDuplicateCode) {
-                    return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
-                }
+            const emptyAnswers = Array(Number(data.numQuestions)).fill('');
+            const emptyStarred = Array(Number(data.numQuestions)).fill(false);
+            
+            const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
+                testName: cleanQuizName(data.testName) + ' (來自代碼)',
+                numQuestions: data.numQuestions,
+                questionFileUrl: data.questionFileUrl || '',
+                questionText: data.questionText || '',
+                questionHtml: data.questionHtml || '',
+                explanationHtml: data.explanationHtml || '', 
+                correctAnswersInput: data.correctAnswersInput || '', 
+                publishAnswers: data.publishAnswers !== false,
+                userAnswers: emptyAnswers,
+                starred: emptyStarred,
+                hasTimer: data.hasTimer || false,
+                timeLimit: data.timeLimit || null,
+                timeRemaining: data.hasTimer ? (data.timeLimit * 60) : null,
+                isShared: true, 
+                creatorUid: ownerId, 
+                creatorQuizId: targetQuizId,
+                folder: '未分類', 
+                shortCode: cleanCode, 
+                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
 
-                const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
-                if (!codeDoc.exists) {
-                    return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
-                }
+            await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).update({
+                sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
+                    uid: user.uid, 
+                    quizId: newDocRef.id 
+                })
+            }).catch(e => console.error("建立同步連結失敗", e));
 
-                const { ownerId, quizId: targetQuizId } = codeDoc.data();
+            showAlert(`✅ 成功加入「${cleanQuizName(data.testName)}」！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
 
-                if (ownerId === user.uid) {
-                    return showAlert("⚠️ 你已經擁有此試卷！", "重複擁有");
-                }
+        } catch (e) {
+            console.error(e);
+            showAlert('❌ 發生非預期錯誤：' + e.message, "系統錯誤");
+        }
+    };
 
-                const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get({ source: 'server' });
-                if (!doc.exists) {
-                    return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除。", "載入失敗");
-                }
-                
-                const data = doc.data();
-
-                const isContentDuplicate = records.some(r => {
-                    const localName = cleanQuizName(r.testName).split(' (來自')[0].trim();
-                    const incomingName = cleanQuizName(data.testName).split(' (來自')[0].trim();
-                    return localName === incomingName && Number(r.numQuestions) === Number(data.numQuestions);
-                });
-
-                if (isContentDuplicate) {
-                    return showAlert(`⚠️ 你已經擁有此試卷！`, "內容重複");
-                }
-
-                const emptyAnswers = Array(Number(data.numQuestions)).fill('');
-                const emptyStarred = Array(Number(data.numQuestions)).fill(false);
-                
-                // ✨ 修改 1：取得新增文件的參照 (newDocRef)
-                const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
-                    testName: cleanQuizName(data.testName) + ' (來自代碼)',
-                    numQuestions: data.numQuestions,
-                    questionFileUrl: data.questionFileUrl || '',
-                    questionText: data.questionText || '',
-                    questionHtml: data.questionHtml || '',
-                    explanationHtml: data.explanationHtml || '', 
-                    correctAnswersInput: data.correctAnswersInput || '', 
-                    publishAnswers: data.publishAnswers !== false,
-                    userAnswers: emptyAnswers,
-                    starred: emptyStarred,
-                    hasTimer: data.hasTimer || false,
-                    timeLimit: data.timeLimit || null,
-                    timeRemaining: data.hasTimer ? (data.timeLimit * 60) : null,
-                    isShared: true, 
-                    creatorUid: ownerId, 
-                    creatorQuizId: targetQuizId,
-                    folder: '未分類', 
-                    shortCode: cleanCode, 
-                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                });
-
-                // ✨ 修改 2：將下載者的資訊寫回原作者的 sharedTo 陣列，這樣後續編輯才能同步！
-                await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).update({
-                    sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
-                        uid: user.uid, 
-                        quizId: newDocRef.id 
-                    })
-                }).catch(e => console.error("建立同步連結失敗", e));
-
-                showAlert(`✅ 成功匯入「${cleanQuizName(data.testName)}」！\n試卷已加入「未分類」資料夾。`, "匯入成功");
-
-            } catch (e) {
-                console.error(e);
-                showAlert('❌ 發生非預期錯誤：' + e.message, "系統錯誤");
-            }
-        });
+    const handleImportCode = () => {
+        showPrompt("請輸入 6 碼測驗代碼：", "", executeImport);
     };
 
     const shareToFriend = (friend) => {
@@ -1575,12 +1585,22 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                         <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
                             <p className="text-sm font-bold text-gray-600 dark:text-gray-400 mb-2">公開測驗代碼</p>
                             {showShareModal.shortCode ? (
-                                <div className="flex items-center justify-between bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 p-2">
-                                    <span className="text-2xl font-mono font-black tracking-widest text-blue-600 dark:text-blue-400">{showShareModal.shortCode}</span>
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center justify-between bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 p-2">
+                                        <span className="text-2xl font-mono font-black tracking-widest text-blue-600 dark:text-blue-400">{showShareModal.shortCode}</span>
+                                        <button onClick={() => {
+                                            navigator.clipboard.writeText(showShareModal.shortCode);
+                                            showAlert(`✅ 已複製代碼：${showShareModal.shortCode}`);
+                                        }} className="text-xs bg-black dark:bg-gray-200 text-white dark:text-black px-3 py-1.5 no-round font-bold hover:bg-gray-800">複製代碼</button>
+                                    </div>
                                     <button onClick={() => {
-                                        navigator.clipboard.writeText(showShareModal.shortCode);
-                                        showAlert(`✅ 已複製代碼：${showShareModal.shortCode}`);
-                                    }} className="text-xs bg-black dark:bg-gray-200 text-white dark:text-black px-3 py-1.5 no-round font-bold hover:bg-gray-800">複製</button>
+                                        const link = `${window.location.origin}/?shareCode=${showShareModal.shortCode}`;
+                                        const text = `🔥 快來挑戰我的試卷！\n📝 試卷名稱：${showShareModal.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}\n\n👇 點擊下方連結，立即將試卷自動加入你的題庫：\n${link}`;
+                                        navigator.clipboard.writeText(text);
+                                        showAlert(`✅ 已複製邀請連結與文案！快去貼給朋友吧！`);
+                                    }} className="text-sm bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-700 px-4 py-2 no-round font-bold hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors">
+                                        🔗 複製邀請連結與文案
+                                    </button>
                                 </div>
                             ) : (
                                 <button onClick={() => handleGenerateCode(showShareModal)} disabled={isGeneratingCode} className="text-sm bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-700 px-4 py-2 no-round font-bold hover:bg-blue-100 dark:hover:bg-blue-800 w-full transition-colors">
@@ -2692,7 +2712,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         <span>純文字</span>
                     </label>
                     <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300 mt-2 sm:mt-0">
-                        <input type="radio" checked={inputType === 'richtext'} onChange={() => setInputType('richtext')} className="w-4 h-4 accent-black dark:accent-white" />
+                        <input type="radio" checked={inputType === 'richtext'} onChange={() => {
+    const isAuth = currentUser && (currentUser.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
+    if (isAuth) {
+        setInputType('richtext');
+    } else {
+        showAlert("🔒 此功能目前僅開放給 jay03wn@gmail.com 或經授權的老師使用。");
+    }
+}} className="w-4 h-4 accent-black dark:accent-white" />
                         <span className="text-blue-600 dark:text-blue-400 font-bold">富文本 (支援 Word 貼上)</span>
                     </label>
                 </div>
@@ -2709,9 +2736,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">標準答案</h3>
                 <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} showConfirm={showConfirm} />
 
-                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字)</h3>
-
-                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字)</h3>
+                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解 (純文字)</h3>
                 <textarea 
                     className="w-full h-48 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar"
                     placeholder="在此貼上詳解純文字，並使用 [A.1], [A.02] 等標記對應題號..."
@@ -2780,7 +2805,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         <span>純文字</span>
                     </label>
                     <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300 mt-2 sm:mt-0">
-                        <input type="radio" checked={inputType === 'richtext'} onChange={() => setInputType('richtext')} className="w-4 h-4 accent-black dark:accent-white" />
+                        <input type="radio" checked={inputType === 'richtext'} onChange={() => {
+    const isAuth = currentUser && (currentUser.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
+    if (isAuth) {
+        setInputType('richtext');
+    } else {
+        showAlert("🔒 此功能目前僅開放給 jay03wn@gmail.com 或經授權的老師使用。");
+    }
+}} className="w-4 h-4 accent-black dark:accent-white" />
                         <span className="text-blue-600 dark:text-blue-400 font-bold">富文本 (支援 Word 貼上)</span>
                     </label>
                 </div>
@@ -3095,43 +3127,31 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 </div>
                             )}
                             {questionText && !questionHtml && (
-                                <div className={`w-full relative bg-white dark:bg-gray-800 flex flex-col flex-grow h-full`}>
+                                <div className={`w-full relative bg-gray-50 dark:bg-gray-900 flex flex-col flex-grow h-full`}>
                                     <textarea 
-                                        className={`absolute inset-0 w-full h-full p-4 resize-none outline-none custom-scrollbar text-sm leading-relaxed ${isShared || isTask ? 'bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300' : 'bg-white dark:bg-gray-800 text-black dark:text-white focus:ring-2 focus:ring-inset focus:ring-black dark:focus:ring-white'}`}
+                                        className={`absolute inset-0 w-full h-full p-4 resize-none outline-none custom-scrollbar text-sm leading-relaxed bg-transparent text-gray-700 dark:text-gray-300`}
                                         style={{ whiteSpace: 'pre-wrap' }}
                                         value={questionText}
-                                        onChange={e => setQuestionText(e.target.value)}
-                                        readOnly={isShared || isTask}
-                                        placeholder={isShared || isTask ? "沒有提供試題文字" : "在此輸入或貼上試題純文字..."}
-                                        onFocus={handleFocusScroll}
+                                        readOnly={true}
+                                        placeholder={"沒有提供試題文字"}
                                     ></textarea>
                                 </div>
                             )}
-                         {questionHtml && (
-                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full`}>
-                                    {!(isShared || isTask) ? (
-                                        <ContentEditableEditor 
-                                            value={processQuestionContent(questionHtml, true)} 
-                                            onChange={(html) => setQuestionHtml(stripQuestionMarkers(html))} 
-                                            placeholder="在此輸入或貼上富文本試題內容..."
-                                            wrapperClassName="absolute inset-0 w-full h-full flex flex-col"
-                                            editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar overflow-y-auto leading-relaxed"
+                            {questionHtml && (
+                                <div className={`w-full relative bg-gray-50 dark:bg-gray-900 flex flex-col flex-grow h-full`}>
+                                    <div className="absolute inset-0 w-full h-full p-4 custom-scrollbar text-gray-800 dark:text-gray-200 overflow-y-auto">
+                                        <style dangerouslySetInnerHTML={{__html: `
+                                            .preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.875rem; line-height: 1.625; }
+                                            .preview-rich-text p { margin-bottom: 0.75em !important; }
+                                            .preview-rich-text div { margin-bottom: 0.25em !important; }
+                                            .preview-rich-text ul { list-style-type: disc !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
+                                            .preview-rich-text ol { list-style-type: decimal !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
+                                        `}} />
+                                        <div 
+                                            className="preview-rich-text"
+                                            dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
                                         />
-                                    ) : (
-                                        <div className="absolute inset-0 w-full h-full p-4 custom-scrollbar bg-gray-50 text-black overflow-y-auto">
-                                            <style dangerouslySetInnerHTML={{__html: `
-                                                .preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.875rem; line-height: 1.625; }
-                                                .preview-rich-text p { margin-bottom: 0.75em !important; }
-                                                .preview-rich-text div { margin-bottom: 0.25em !important; }
-                                                .preview-rich-text ul { list-style-type: disc !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
-                                                .preview-rich-text ol { list-style-type: decimal !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
-                                            `}} />
-                                            <div 
-                                                className="preview-rich-text"
-                                                dangerouslySetInnerHTML={{ __html: processQuestionContent(questionHtml, true) }}
-                                            />
-                                        </div>
-                                    )}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -3203,24 +3223,18 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     );
 
     if (step === 'grading') return (
-        <div className="flex flex-col min-h-[100dvh] items-center justify-center p-4 relative py-10 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors">
-            <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">
-                ← 返回作答
-            </button>
-            <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-lg no-round border border-gray-200 dark:border-gray-700 mt-10 transition-colors">
-                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} />
-                <textarea 
-                    className={`w-full h-40 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono mb-4 outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white`} 
-                    placeholder="例如: ABCD..." 
-                    value={correctAnswersInput} 
-                    onChange={e => setCorrectAnswersInput(e.target.value.replace(/[^a-dA-DZz,]/g, ''))} 
-                    onFocus={handleFocusScroll}
-                ></textarea>
-                
-                <button onClick={handleGrade} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors">開始批改</button>
-            </div>
-        </div>
-    );
+                <div className="flex flex-col min-h-[100dvh] items-center justify-center p-4 relative py-10 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors">
+                    <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">
+                        ← 返回作答
+                    </button>
+                    <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-lg no-round border border-gray-200 dark:border-gray-700 mt-10 transition-colors">
+                        <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-4 text-center">請輸入正確答案以進行批改</h3>
+                        <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} showConfirm={showConfirm} />
+                        
+                        <button onClick={handleGrade} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors mt-4">開始批改</button>
+                    </div>
+                </div>
+            );
 
     if (step === 'results') return (
         <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
