@@ -371,7 +371,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
    const handleGoToQuiz = async (quizId) => {
         setIsJumping(true); // ✨ 開啟跳轉載入畫面
         try {
-            const doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get();
+            const doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'server' });
             if(doc.exists) {
                 const data = doc.data();
                 // ✨ 為了讓使用者看到載入畫面，加上微小延遲讓 React 渲染
@@ -1017,6 +1017,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     
     // 🚀 終極提速：加入題庫顯示數量限制，大幅降低網路下載量
     const [visibleLimit, setVisibleLimit] = useState(15);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [hasMore, setHasMore] = useState(true);
 
     const [showShareModal, setShowShareModal] = useState(null);
@@ -1057,18 +1058,21 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     
                     // ✨ 優化：如果是本地端發出的變更，不需要重新 loading
                     const isLocal = snapshot.metadata.hasPendingWrites;
-                    setRecords(snapshot.docs.map(doc => {
-                        const data = doc.data();
-                        try {
-                            // ✨ 效能優化：在列表頁「絕對不要」解壓縮龐大的 userAnswers 陣列，避免畫面嚴重凍結卡死！
-                            data.results = data.results ? window.jzDecompress(data.results) : null;
-                        } catch (e) {
-                            console.error(e);
-                        }
-                        return { id: doc.id, ...data };
-                    }));
-                    setLoading(false);
-                    clearTimeout(fallbackTimer);
+                    
+                    // ✨ 終極防卡死：將解壓縮推遲到背景執行，讓載入動畫能順暢轉動
+                    setTimeout(() => {
+                        setRecords(snapshot.docs.map(doc => {
+                            const data = doc.data();
+                            try {
+                                data.results = data.results ? window.jzDecompress(data.results) : null;
+                            } catch (e) {
+                                console.error(e);
+                            }
+                            return { id: doc.id, ...data };
+                        }));
+                        setLoading(false);
+                        clearTimeout(fallbackTimer);
+                    }, 10);
                 }
             }, err => {
                 console.error(err);
@@ -1080,7 +1084,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             clearTimeout(fallbackTimer);
             unsubscribe();
         };
-    }, [user, visibleLimit]);
+    }, [user, visibleLimit, refreshTrigger]);
 
     const handleDelete = (id) => {
         const rec = records.find(r => r.id === id);
@@ -1207,7 +1211,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     return showAlert("⚠️ 你已經擁有此試卷！", "重複擁有");
                 }
 
-                const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get();
+                const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get({ source: 'server' });
                 if (!doc.exists) {
                     return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除。", "載入失敗");
                 }
@@ -1342,7 +1346,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         let finalRec = { ...rec };
         if (rec.isTask && rec.taskId) {
             try {
-                const taskDoc = await window.db.collection('publicTasks').doc(rec.taskId).get();
+                const taskDoc = await window.db.collection('publicTasks').doc(rec.taskId).get({ source: 'server' });
                 if (taskDoc.exists) {
                     const taskData = taskDoc.data();
                     const isAnsChanged = taskData.correctAnswersInput && taskData.correctAnswersInput !== rec.correctAnswersInput;
@@ -1396,7 +1400,16 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         <div className="max-w-6xl mx-auto p-4 pt-0 h-full overflow-y-auto overflow-x-hidden custom-scrollbar w-full min-w-0">
             {/* ✨ 修正：加入 flex-wrap 與 w-full，避免標題與按鈕在小螢幕擠壓超出邊界 */}
             <div className="flex flex-wrap justify-between items-center gap-3 mb-4 border-b-2 border-black dark:border-white pb-2 shrink-0 w-full min-w-0">
-                <h1 className="text-2xl font-black dark:text-white shrink-0">我的題庫</h1>
+                <div className="flex items-center gap-3">
+                    <h1 className="text-2xl font-black dark:text-white shrink-0">我的題庫</h1>
+                    <button 
+                        onClick={() => { setLoading(true); setRefreshTrigger(prev => prev + 1); }} 
+                        className="text-sm bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 px-3 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round"
+                        title="手動同步雲端最新資料"
+                    >
+                        🔄 重新整理
+                    </button>
+                </div>
                 <button onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 shadow-sm transition-colors whitespace-nowrap shrink-0">+ 新測驗</button>
             </div>
 
