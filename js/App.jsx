@@ -254,7 +254,8 @@ function Main() {
     // ==========================================
     if (!user && (currentQaId || currentNewsId) && !forceLoginScreen) {
         return (
-            <div className={`h-[100dvh] overflow-y-auto custom-scrollbar flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-pink-50'}`}>
+            /* 修改：如果是訪客看分享連結，強行移除 dark mode 的背景影響 */
+<div className={`h-[100dvh] overflow-y-auto custom-scrollbar flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'bg-gray-800' : 'bg-pink-50'}`}>
                 {SharedModal} 
                 <div className="w-full max-w-3xl z-10 pb-12">
                     {currentQaId && <FastQASection user={null} showAlert={showAlert} showConfirm={showConfirm} targetQaId={currentQaId} onRequireLogin={() => setForceLoginScreen(true)} />}
