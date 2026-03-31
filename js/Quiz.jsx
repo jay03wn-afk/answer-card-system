@@ -2035,6 +2035,41 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
         }
     };
 
+    // ✨ 新增：手動重新批改邏輯，負責比對差異並跳出提示
+    const handleManualRegrade = async () => {
+        if (!results || !results.data) return;
+
+        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
+        let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
+        
+        let changedDetails = [];
+        
+        // 比對每一題的舊答案與新答案
+        results.data.forEach((item, idx) => {
+            const oldKey = item.correctAns === '-' ? '' : item.correctAns;
+            const newKey = keyArray[idx] || '';
+            
+            if (oldKey !== newKey) {
+                changedDetails.push(`第 ${item.number} 題： ${oldKey || '(空)'} ➔ ${newKey || '(空)'}`);
+            }
+        });
+
+        // 情況 A：沒有任何更動
+        if (changedDetails.length === 0) {
+            return showAlert("ℹ️ 目前沒有偵測到標準答案有任何更動喔！");
+        }
+
+        // 情況 B：有更動，執行原本的批改邏輯更新分數
+        await handleGrade();
+        
+        // 顯示變更報告 (如果改太多題，最多顯示 8 題以免視窗塞爆)
+        const detailsText = changedDetails.length > 8 
+            ? changedDetails.slice(0, 8).join('\n') + `\n...等共 ${changedDetails.length} 題` 
+            : changedDetails.join('\n');
+            
+        showAlert(`✅ 重新批改完成！成績已更新。\n\n【答案更動紀錄】\n${detailsText}`);
+    };
+
     const handleSubmitClick = () => {
         const unansweredCount = userAnswers.filter(a => !a).length;
         let warnMsg = unansweredCount > 0 ? `⚠️ 注意：你有 ${unansweredCount} 題尚未填寫！\n\n` : "";
@@ -2942,21 +2977,13 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                                 <span className={`text-xl ml-2 font-black ${results.score >= 60 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{results.score} 分</span>
                                 <span className="text-xs font-normal text-gray-500 ml-2 mt-1 mr-2">(答對 {results.correctCount}/{results.total} 題)</span>
                             </span>
-                            {/* ✨ 新增：重新批改按鈕 (動態比對當前標準答案與前次批改的答案紀錄) */}
-                            {(() => {
-                                const currentCleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
-                                const gradedKey = results?.data ? results.data.map(d => (d.correctAns && d.correctAns !== '-') ? d.correctAns : '').join('') : '';
-                                const needsRegrade = currentCleanKey && gradedKey && currentCleanKey !== gradedKey;
-                                
-                                return needsRegrade ? (
-                                    <button 
-                                        onClick={handleGrade} 
-                                        className="animate-pulse bg-yellow-400 hover:bg-yellow-500 text-black px-3 py-1 text-xs font-bold no-round shadow-sm transition-colors"
-                                    >
-                                        ⚠️ 答案已更新，點此重新批改
-                                    </button>
-                                ) : null;
-                            })()}
+                            {/* ✨ 修改：重新算分按鈕改為常駐顯示，點擊後觸發比對與提示 */}
+                            <button 
+                                onClick={handleManualRegrade} 
+                                className="bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 px-3 py-1 text-xs font-bold no-round shadow-sm transition-colors active:scale-95"
+                            >
+                                🔄 重新算分
+                            </button>
                         </div>
                         
                         {canSeeAnswers && (
