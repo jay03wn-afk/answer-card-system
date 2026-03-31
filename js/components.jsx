@@ -971,8 +971,11 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
 
                             {/* 內文 */}
                             <style dangerouslySetInnerHTML={{__html: `
-                                .news-rich-text img { max-width: 100%; height: auto; display: block; margin: 10px auto; border: 1px solid #ccc; }
-                                .news-rich-text p { margin-bottom: 1em; }
+                                /* 強制電子報內容永遠是白底黑字，無視暗色模式 */
+.news-rich-text { background-color: white !important; color: black !important; padding: 20px; border: 1px solid #ddd; }
+.news-rich-text * { color: black !important; } 
+.news-rich-text img { max-width: 100%; height: auto; display: block; margin: 10px auto; border: 1px solid #ccc; }
+.news-rich-text p { margin-bottom: 1em; }
                             `}} />
                             <div className="news-rich-text text-gray-800 dark:text-gray-200 text-base leading-relaxed mb-8 font-medium" dangerouslySetInnerHTML={{ __html: viewingNews.content }}></div>
 
@@ -1047,7 +1050,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                 
                                 {user ? (
                                     <div className="flex gap-2">
-                                        <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="分享你的想法..." className="flex-grow p-3 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white no-round text-sm outline-none resize-none h-12 custom-scrollbar font-bold focus:border-black dark:focus:border-white" />
+                                        <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="分享你的想法..." className="flex-grow p-3 border-2 border-gray-300 dark:border-gray-600 bg-white text-black no-round text-sm outline-none resize-none h-12 custom-scrollbar font-bold focus:border-black dark:focus:border-white" />
                                         <button onClick={postComment} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 font-black no-round transition-colors hover:bg-gray-800 dark:hover:bg-white">送出</button>
                                     </div>
                                 ) : (
