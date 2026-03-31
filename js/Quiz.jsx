@@ -1114,6 +1114,14 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     });
 
     const handleEnterQuiz = (rec) => {
+        // ✨ 新增：如果對方點進去看成績了，就把資料庫裡的閃爍提醒消除
+        if (rec.hasAnswerUpdate) {
+            window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update({ 
+                hasAnswerUpdate: window.firebase.firestore.FieldValue.delete() 
+            }).catch(e=>console.error(e));
+            rec.hasAnswerUpdate = false;
+        }
+
         if (rec.hasTimer && !rec.results) {
             const isNew = !rec.userAnswers || rec.userAnswers.filter(a => a !== '').length === 0;
             if (isNew) {
@@ -1213,8 +1221,14 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                             
                             {/* 上半部：標題與狀態資訊 */}
                             <div className="flex flex-col gap-2 min-w-0 w-full">
-                                <div className="font-bold text-sm sm:text-base dark:text-white leading-relaxed min-w-0 w-full">
+                                <div className="font-bold text-sm sm:text-base dark:text-white leading-relaxed min-w-0 w-full relative inline-block">
                                     {renderTestName(rec.testName, !!rec.results)}
+                                    {/* ✨ 新增：偵測到答案更新且重新算分時，顯示閃爍提醒 */}
+                                    {rec.hasAnswerUpdate && (
+                                        <span className="absolute -top-3 -right-2 sm:-right-4 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse shadow-md border border-white dark:border-gray-800 z-10 pointer-events-none">
+                                            🚨 答案已更正
+                                        </span>
+                                    )}
                                 </div>
                                 
                                 <div className="flex flex-wrap items-center gap-1.5 shrink-0">
@@ -1839,51 +1853,65 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                 }
 
                 // 3. 同步給好友 (僅傳送差異部分)
-                // 3. 同步給好友 (僅傳送差異部分)
                 if (syncCount > 0) {
                     const ansChanged = !!updates.correctAnswersInput; // 檢查標答是否變動
 
-                    // ✨ 優化：使用 Promise.all 讓所有更新並行執行，大幅提升速度
-                    const syncPromises = latestSharedTo.map(async (target, i) => {
-                        const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
+                    // ✨ 終極優化：將名單分批處理 (每批 20 筆)，並使用 Batch 批量更新，避免短時間內大量請求導致卡死或資料不同步
+                    const chunkSize = 20;
+                    for (let i = 0; i < syncCount; i += chunkSize) {
+                        const chunk = latestSharedTo.slice(i, i + chunkSize);
+                        const batch = window.db.batch();
                         
-                        if (!ansChanged) {
-                            await targetRef.update(updates);
-                        } else {
-                            const doc = await targetRef.get();
-                            if (doc.exists) {
-                                const targetData = doc.data();
-                                const targetUpdates = { ...updates };
-                                
-                              if (targetData.results && targetData.userAnswers) {
-                                    let tCorrectCount = 0;
-                                    // ✨ 加入智慧辨識：同步給好友時也能正確解析大寫與連續小寫
-                                    let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
-                                    
-                                    // ✨ 修復：從資料庫取出的 userAnswers 是壓縮字串，必須先解壓縮轉回陣列才能跑 .map()
-                                    let targetAnswersArray = [];
-                                    try {
-                                        targetAnswersArray = Array.isArray(targetData.userAnswers) ? targetData.userAnswers : window.jzDecompress(targetData.userAnswers) || [];
-                                    } catch(e) {
-                                        targetAnswersArray = [];
-                                    }
+                        // 平行抓取這批次的資料 (如果有改答案才需要抓取舊資料重新算分)
+                        const readPromises = chunk.map(async (target) => {
+                            const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
+                            const targetUpdates = { ...updates };
+                            
+                            if (ansChanged) {
+                                try {
+                                    const doc = await targetRef.get();
+                                    if (doc.exists) {
+                                        const targetData = doc.data();
+                                        if (targetData.results && targetData.userAnswers) {
+                                            let tCorrectCount = 0;
+                                            let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
+                                            
+                                            let targetAnswersArray = [];
+                                            try {
+                                                targetAnswersArray = Array.isArray(targetData.userAnswers) ? targetData.userAnswers : window.jzDecompress(targetData.userAnswers) || [];
+                                            } catch(e) {
+                                                targetAnswersArray = [];
+                                            }
 
-                                    const tData = targetAnswersArray.map((ans, idx) => {
-                                        const key = keyArray[idx] || '-';
-                                        let isCorrect = (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') ? true : (key !== '-' && key !== '' && ans !== '' ? (key === key.toUpperCase() ? ans === key : key.toLowerCase().includes(ans.toLowerCase())) : false);
-                                        if (isCorrect) tCorrectCount++;
-                                        return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
-                                    });
-                                    targetUpdates.results = window.jzCompress({ score: Math.round((tCorrectCount/targetData.numQuestions)*100), correctCount: tCorrectCount, total: targetData.numQuestions, data: tData });
+                                            const tData = targetAnswersArray.map((ans, idx) => {
+                                                const key = keyArray[idx] || '-';
+                                                let isCorrect = (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') ? true : (key !== '-' && key !== '' && ans !== '' ? (key === key.toUpperCase() ? ans === key : key.toLowerCase().includes(ans.toLowerCase())) : false);
+                                                if (isCorrect) tCorrectCount++;
+                                                return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
+                                            });
+                                            targetUpdates.results = window.jzCompress({ score: Math.round((tCorrectCount/targetData.numQuestions)*100), correctCount: tCorrectCount, total: targetData.numQuestions, data: tData });
+                                            
+                                            // ✨ 核心新增：確保只有「改了答案」且「對方分數被影響」，才會發送閃爍標記！
+                                            targetUpdates.hasAnswerUpdate = true;
+                                        }
+                                    }
+                                } catch(e) {
+                                    console.error("讀取目標資料失敗", e);
                                 }
-                                await targetRef.update(targetUpdates);
                             }
-                        }
+                            // 將計算好的更新加入批次寫入隊列
+                            batch.update(targetRef, targetUpdates);
+                        });
+
+                        // 等待這批次的讀取與計算全部完成
+                        await Promise.all(readPromises);
+                        
+                        // 一次性提交這批次的更新 (最高效、最穩定的寫入方式，失敗也是整批一起失敗不會有殘缺)
+                        await batch.commit();
+                        
                         // 更新進度條
-                        setSyncStatus(prev => ({ ...prev, current: Math.min(prev.current + 1, syncCount + 1) }));
-                    });
-                    
-                    await Promise.all(syncPromises); // 等待所有好友同步完成
+                        setSyncStatus(prev => ({ ...prev, current: Math.min(prev.current + chunk.length, syncCount + 1) }));
+                    }
                 }
 
                 setSyncStatus({ isSyncing: false, current: 0, total: 0 });
@@ -2252,12 +2280,32 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
         }).catch(e => showAlert('炫耀失敗：' + e.message));
     };
 
-    const handleBackFromEdit = () => {
+    const handleBackFromEdit = async () => {
+        // 如果是從首頁題庫直接點「編輯」進來的，直接退回首頁就會銷毀組件，不會觸發自動存檔
         if (initialRecord.forceStep === 'edit') {
-            onBackToDashboard();
-        } else {
-            setStep(results ? 'results' : 'answering');
+            return onBackToDashboard();
         }
+
+        // ✨ 修復：如果是從作答/結果頁面進入編輯的，退出時必須先將狀態「還原」回資料庫原本的樣子，
+        // 否則退出編輯模式的瞬間，會觸發作答頁面的「自動存檔」把未保存的草稿覆蓋進去！
+        try {
+            const doc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
+            if (doc.exists) {
+                const data = doc.data();
+                setTestName(data.testName || '');
+                setCorrectAnswersInput(data.correctAnswersInput || '');
+                setQuestionFileUrl(data.questionFileUrl || '');
+                setQuestionText(data.questionText ? window.jzDecompress(data.questionText) : '');
+                setQuestionHtml(data.questionHtml || '');
+                setExplanationHtml(data.explanationHtml || '');
+                setPublishAnswersToggle(data.publishAnswers !== false);
+                setInputType(data.questionHtml ? 'richtext' : (data.questionText && !data.questionFileUrl) ? 'text' : 'url');
+            }
+        } catch (e) {
+            console.error("還原編輯狀態失敗", e);
+        }
+
+        setStep(results ? 'results' : 'answering');
     };
     
     if (step === 'edit') return (
