@@ -220,6 +220,8 @@ function ContentEditableEditor({ value, onChange, placeholder, wrapperClassName 
 
 // --- 新增：錯題編輯 Modal ---
 function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
+    const [folder, setFolder] = useState(initialData?.folder || '未分類');
+    const [newFolder, setNewFolder] = useState('');
     const [qText, setQText] = useState(initialData?.qText || '');
     const [qImage, setQImage] = useState(initialData?.qImage || null);
     const [nText, setNText] = useState(initialData?.nText || '');
@@ -227,8 +229,9 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
     const [isSaving, setIsSaving] = useState(false);
 
     const handleSave = async () => {
+        const finalFolder = (folder === '新增資料夾' ? newFolder.trim() : folder) || '未分類';
         setIsSaving(true);
-        await onSave({ qText: qText.trim(), qImage, nText: nText.trim(), nImage });
+        await onSave({ folder: finalFolder, qText: qText.trim(), qImage, nText: nText.trim(), nImage });
         setIsSaving(false);
     };
 
@@ -240,6 +243,18 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
                     <button onClick={onClose} className="text-gray-400 hover:text-red-500 font-bold transition-colors">✖</button>
                 </h3>
                 
+                <div className="mb-4">
+                    <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">📁 選擇資料夾</label>
+                    <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none text-sm mb-2">
+                        {initialData?.userFolders && initialData.userFolders.map(f => <option key={f} value={f}>{f}</option>)}
+                        {!initialData?.userFolders?.includes('未分類') && <option value="未分類">未分類</option>}
+                        <option value="新增資料夾">+ 新增資料夾</option>
+                    </select>
+                    {folder === '新增資料夾' && (
+                        <input type="text" placeholder="輸入新資料夾名稱..." value={newFolder} onChange={e => setNewFolder(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-black dark:text-white no-round outline-none text-sm" />
+                    )}
+                </div>
+
                 <RichInput label="📝 題目內容" text={qText} setText={setQText} image={qImage} setImage={setQImage} maxLength={300} showAlert={showAlert} />
                 <RichInput label="💡 我的筆記 / 詳解" text={nText} setText={setNText} image={nImage} setImage={setNImage} maxLength={300} showAlert={showAlert} />
                 
@@ -259,6 +274,8 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const [wrongItems, setWrongItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [editingItem, setEditingItem] = useState(null);
+    const [currentFolder, setCurrentFolder] = useState('全部');
+    const [previewImage, setPreviewImage] = useState(null);
 
     useEffect(() => {
         const unsub = window.db.collection('users').doc(user.uid).collection('wrongBook')
@@ -269,6 +286,9 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
             });
         return () => unsub();
     }, [user.uid]);
+
+    const folders = ['全部', ...new Set(wrongItems.map(item => item.folder || '未分類'))];
+    const filteredItems = currentFolder === '全部' ? wrongItems : wrongItems.filter(item => (item.folder || '未分類') === currentFolder);
 
     const handleDelete = (id) => {
         showConfirm("確定要刪除這筆錯題紀錄嗎？", () => {
@@ -297,11 +317,19 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 </h1>
                 <p className="text-sm font-bold text-gray-500 dark:text-gray-400">專屬你的弱點突破筆記本</p>
             </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-3 mb-4 flex-grow w-full min-w-0">
+                {folders.map(f => (
+                    <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors shrink-0 ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
+                        {f === '全部' ? '🔍 ' : '📁 '} {f}
+                    </button>
+                ))}
+            </div>
             
             {loading ? <LoadingSpinner text="載入錯題中..." /> : 
-             wrongItems.length === 0 ? <div className="text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">目前沒有收錄錯題。<br/>在測驗交卷後的檢視頁面，點擊「📓 收錄錯題」即可將題目加到這裡！</div> :
+             filteredItems.length === 0 ? <div className="text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">目前沒有收錄錯題。<br/>在測驗交卷後的檢視頁面，點擊「📓 收錄錯題」即可將題目加到這裡！</div> :
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-10">
-                 {wrongItems.map(item => (
+                 {filteredItems.map(item => (
                      <div key={item.id} className="bg-white dark:bg-gray-800 p-4 border border-gray-200 dark:border-gray-700 shadow-sm relative no-round hover:shadow-md transition-shadow">
                          <button onClick={() => handleDelete(item.id)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 font-bold z-10">✖</button>
                          <div className="text-xs text-blue-600 dark:text-blue-400 font-bold mb-2 pr-6 flex items-center justify-between">
@@ -322,7 +350,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                  <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">📝 題目</p>
                                  <div className="bg-gray-50 dark:bg-gray-900 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap border-l-4 border-gray-400 font-bold">
                                      {item.qText && <p>{item.qText}</p>}
-                                     {item.qImage && <img src={item.qImage} className="mt-2 max-h-40 object-contain border border-gray-200 dark:border-gray-700" alt="題目附圖" />}
+                                     {item.qImage && <img src={item.qImage} onClick={() => setPreviewImage(item.qImage)} className="mt-2 max-h-40 object-contain border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity" alt="題目附圖" title="點擊放大" />}
                                  </div>
                              </div>
                          )}
@@ -332,21 +360,33 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                  <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">💡 筆記</p>
                                  <div className="bg-yellow-50 dark:bg-gray-900 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap border-l-4 border-yellow-400 font-bold">
                                      {(item.nText || item.note) && <p>{item.nText || item.note}</p>}
-                                     {item.nImage && <img src={item.nImage} className="mt-2 max-h-40 object-contain border border-gray-200 dark:border-gray-700" alt="筆記附圖" />}
+                                     {item.nImage && <img src={item.nImage} onClick={() => setPreviewImage(item.nImage)} className="mt-2 max-h-40 object-contain border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity" alt="筆記附圖" title="點擊放大" />}
                                  </div>
                              </div>
                          )}
 
-                         <button onClick={() => setEditingItem(item)} className="text-xs font-bold text-gray-500 hover:text-black dark:hover:text-white transition-colors mt-2">✏️ 編輯內容</button>
+                         <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+                             <span className="text-[10px] text-gray-400 font-bold px-2 py-0.5 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">📁 {item.folder || '未分類'}</span>
+                             <button onClick={() => setEditingItem(item)} className="text-xs font-bold text-gray-500 hover:text-black dark:hover:text-white transition-colors">✏️ 編輯內容</button>
+                         </div>
                      </div>
                  ))}
              </div>
             }
 
-            {editingItem && (
+            {previewImage && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[110] p-4 cursor-zoom-out" onClick={() => setPreviewImage(null)}>
+                    <img src={previewImage} className="max-w-full max-h-[90vh] object-contain shadow-2xl" alt="放大預覽" />
+                    <button className="absolute top-4 right-4 text-white text-3xl font-bold bg-black/50 w-12 h-12 rounded-full flex items-center justify-center hover:bg-black/80">✖</button>
+                </div>
+            )}
+
+           {editingItem && (
                 <WrongBookModal
                     title={`編輯錯題 - 第 ${editingItem.questionNum} 題`}
                     initialData={{
+                        folder: editingItem.folder || '未分類',
+                        userFolders: folders.filter(f => f !== '全部'),
                         qText: editingItem.qText || '',
                         qImage: editingItem.qImage || null,
                         nText: editingItem.nText || editingItem.note || '',
@@ -355,12 +395,18 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     onClose={() => setEditingItem(null)}
                     onSave={async (data) => {
                         await window.db.collection('users').doc(user.uid).collection('wrongBook').doc(editingItem.id).update({
+                            folder: data.folder || '未分類',
                             qText: data.qText,
                             qImage: data.qImage,
                             nText: data.nText,
                             nImage: data.nImage,
                             note: window.firebase.firestore.FieldValue.delete()
                         });
+                        if (data.folder && !folders.includes(data.folder)) {
+                             window.db.collection('users').doc(user.uid).set({
+                                 folders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
+                             }, { merge: true });
+                        }
                         showAlert('✅ 修改成功！');
                         setEditingItem(null);
                     }}
@@ -1490,11 +1536,11 @@ const AnswerGridInput = ({ value, onChange, maxQuestions, showConfirm }) => {
                 </div>
             </div>
             
-            <textarea 
+           <textarea 
                 className="w-full h-24 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" 
                 placeholder="或者直接在這裡輸入/貼上連續的字母答案 (例如: ABCD...)" 
                 value={value} 
-                onChange={e => onChange(e.target.value)} 
+                onChange={e => onChange(e.target.value.replace(/[^a-dA-DZz,]/g, ''))} 
             ></textarea>
         </div>
     );
@@ -2897,7 +2943,7 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                     className={`w-full h-40 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono mb-4 outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white`} 
                     placeholder="例如: ABCD..." 
                     value={correctAnswersInput} 
-                    onChange={e => setCorrectAnswersInput(e.target.value)} 
+                    onChange={e => setCorrectAnswersInput(e.target.value.replace(/[^a-dA-DZz,]/g, ''))} 
                     onFocus={handleFocusScroll}
                 ></textarea>
                 
@@ -3321,13 +3367,14 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
             {wrongBookAddingItem && (
                 <WrongBookModal
                     title={`收錄第 ${wrongBookAddingItem.number} 題`}
-                    // ✨ 修改：帶入剛剛自動擷取的該題純文字
-                    initialData={{ qText: wrongBookAddingItem.extractedQText || '', nText: '' }}
+                    // ✨ 修改：帶入剛剛自動擷取的該題純文字與使用者的資料夾列表
+                    initialData={{ qText: wrongBookAddingItem.extractedQText || '', nText: '', userFolders: Array.from(new Set(userProfile.folders || ['未分類'])) }}
                     onClose={() => setWrongBookAddingItem(null)}
                     onSave={async (data) => {
                         try {
                             await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').add({
                                 quizId: quizId,
+                                folder: data.folder || '未分類',
                                 quizName: cleanQuizName(testName),
                                 questionNum: wrongBookAddingItem.number,
                                 userAns: wrongBookAddingItem.userAns || '未填寫',
@@ -3338,6 +3385,12 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                                 nImage: data.nImage,
                                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                             });
+                            // 如果是新資料夾，加到使用者資料夾清單
+                            if (data.folder && !userProfile.folders?.includes(data.folder)) {
+                                await window.db.collection('users').doc(currentUser.uid).set({
+                                    folders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
+                                }, { merge: true });
+                            }
                             showAlert(`✅ 第 ${wrongBookAddingItem.number} 題已成功收錄至「錯題整理」！`);
                             setWrongBookAddingItem(null);
                         } catch(e) {
@@ -3707,7 +3760,12 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                                 {!user ? '訪客未登入' : rec ? (rec.isCorrect ? '✅ 已答對' : '❌ 答錯了') : '尚未作答'}
                                             </span>
                                             <div className="flex gap-2">
-                                                {isAdmin && showAdminMode && <button onClick={() => handleDeleteQA(qa.id)} className="text-red-500 text-xs">刪除</button>}
+                                                {isAdmin && showAdminMode && (
+                                                    <>
+                                                        <button onClick={() => { navigator.clipboard.writeText(qa.id); showAlert(`✅ 已複製題目ID：${qa.id}`); }} className="text-blue-500 text-xs border border-blue-500 px-1">複製ID</button>
+                                                        <button onClick={() => handleDeleteQA(qa.id)} className="text-red-500 text-xs border border-red-500 px-1">刪除</button>
+                                                    </>
+                                                )}
                                                 <button onClick={() => { setActiveQA(qa); setSelectedAns(null); setShowResult(!!rec); }} className="bg-pink-500 hover:bg-pink-600 text-white px-3 py-1.5 text-sm font-bold no-round">
                                                     {(user && rec) ? '查看紀錄' : '立即挑戰'}
                                                 </button>
