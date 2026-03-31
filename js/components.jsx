@@ -375,7 +375,7 @@ function NewsMiniRichEditor({ value, onChange, placeholder }) {
 }
 
 function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPrompt, onContinueQuiz, targetNewsId, onClose, onRequireLogin }) {
-    const isAdmin = user && user.email === 'jay03wn@gmail.com';
+    const isAdmin = user && (user.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
     const [newsList, setNewsList] = useState([]);
     const [events, setEvents] = useState([]);
     const [categories, setCategories] = useState(['藥學電子報', '未分類']);
