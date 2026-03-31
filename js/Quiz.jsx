@@ -1114,7 +1114,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     });
 
     const handleEnterQuiz = (rec) => {
-        // ✨ 新增：如果對方點進去看成績了，就把資料庫裡的閃爍提醒消除
+        // ✨ 新增：如果學生點進去看成績了，就把資料庫裡的「答案已更正」閃爍提醒消除
         if (rec.hasAnswerUpdate) {
             window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update({ 
                 hasAnswerUpdate: window.firebase.firestore.FieldValue.delete() 
@@ -1814,7 +1814,7 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
         });
     };
 
-    const handleSaveEdit = async () => {
+   const handleSaveEdit = async () => {
         // ✨ 取得原始資料進行比對 (省流量關鍵)
         const myDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
         const oldData = myDoc.data() || {};
@@ -1842,7 +1842,7 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
         }
 
         const confirmMsg = syncCount > 0 
-            ? `⚠️ 確定要儲存嗎？\n將為 ${syncCount} 位好友同步更新 (${Object.keys(updates).join(', ')})。` 
+            ? `⚠️ 確定要儲存嗎？\n將為 ${syncCount} 位好友同步更新並重新計算他們的分數。` 
             : `確定要儲存目前的修改嗎？`;
 
         showConfirm(confirmMsg, async () => {
@@ -1862,36 +1862,34 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                     await window.db.collection('publicTasks').doc(quizId).set(taskUpdates, { merge: true });
                 }
 
-                // 3. 同步給好友 (僅傳送差異部分)
+                // 3. 同步給所有學生 (包含自動重算分數)
                 if (syncCount > 0) {
                     const ansChanged = !!updates.correctAnswersInput; // 檢查標答是否變動
 
-                    // ✨ 終極優化：將名單分批處理 (每批 20 筆)，並使用 Batch 批量更新，避免短時間內大量請求導致卡死或資料不同步
                     const chunkSize = 20;
                     for (let i = 0; i < syncCount; i += chunkSize) {
                         const chunk = latestSharedTo.slice(i, i + chunkSize);
                         const batch = window.db.batch();
                         
-                        // 平行抓取這批次的資料 (如果有改答案才需要抓取舊資料重新算分)
                         const readPromises = chunk.map(async (target) => {
                             const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
-                            const targetUpdates = { ...updates };
+                            const targetUpdates = { ...updates, hasAnswerUpdate: true }; // 加入閃爍提醒標籤
                             
                             if (ansChanged) {
                                 try {
                                     const doc = await targetRef.get();
                                     if (doc.exists) {
                                         const targetData = doc.data();
-                                        if (targetData.results && targetData.userAnswers) {
+                                        // 只有已經交卷(有 results)的人才需要重算
+                                        if (targetData.results) {
                                             let tCorrectCount = 0;
                                             let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
                                             
                                             let targetAnswersArray = [];
                                             try {
-                                                targetAnswersArray = Array.isArray(targetData.userAnswers) ? targetData.userAnswers : window.jzDecompress(targetData.userAnswers) || [];
-                                            } catch(e) {
-                                                targetAnswersArray = [];
-                                            }
+                                                const rawAns = targetData.userAnswers;
+                                                targetAnswersArray = Array.isArray(rawAns) ? rawAns : (typeof rawAns === 'string' ? window.jzDecompress(rawAns) : []);
+                                            } catch(e) { targetAnswersArray = []; }
 
                                             const tData = targetAnswersArray.map((ans, idx) => {
                                                 const key = keyArray[idx] || '-';
@@ -1900,32 +1898,21 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
                                                 return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
                                             });
                                             targetUpdates.results = window.jzCompress({ score: Math.round((tCorrectCount/targetData.numQuestions)*100), correctCount: tCorrectCount, total: targetData.numQuestions, data: tData });
-                                            
-                                            // ✨ 核心新增：確保只有「改了答案」且「對方分數被影響」，才會發送閃爍標記！
-                                            targetUpdates.hasAnswerUpdate = true;
                                         }
                                     }
-                                } catch(e) {
-                                    console.error("讀取目標資料失敗", e);
-                                }
+                                } catch(e) { console.error("同步失敗", e); }
                             }
-                            // 將計算好的更新加入批次寫入隊列
                             batch.update(targetRef, targetUpdates);
                         });
 
-                        // 等待這批次的讀取與計算全部完成
                         await Promise.all(readPromises);
-                        
-                        // 一次性提交這批次的更新 (最高效、最穩定的寫入方式，失敗也是整批一起失敗不會有殘缺)
                         await batch.commit();
-                        
-                        // 更新進度條
                         setSyncStatus(prev => ({ ...prev, current: Math.min(prev.current + chunk.length, syncCount + 1) }));
                     }
                 }
 
                 setSyncStatus({ isSyncing: false, current: 0, total: 0 });
-                showAlert("✅ 儲存成功！(僅同步變動欄位)");
+                showAlert("✅ 儲存成功！所有學生的分數已自動重新計算並更新。");
                 initialRecord.forceStep === 'edit' ? onBackToDashboard() : setStep(results ? 'results' : 'answering');
             } catch(e) {
                 setSyncStatus({ isSyncing: false, current: 0, total: 0 });
@@ -2363,7 +2350,7 @@ const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, tot
 
                 <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字)</h3>
 
-                
+                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字)</h3>
                 <textarea 
                     className="w-full h-48 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar"
                     placeholder="在此貼上詳解純文字，並使用 [A.1], [A.02] 等標記對應題號..."
