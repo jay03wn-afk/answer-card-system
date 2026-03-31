@@ -166,16 +166,16 @@ function RichInput({ label, text, setText, image, setImage, maxLength = 300, sho
     return (
         <div className="mb-4">
             <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">{label} (最多 {maxLength} 字)</label>
-            <div className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 relative no-round">
+            <div className="border border-gray-300 dark:border-gray-600 bg-white relative no-round">
                 <textarea
-                    className="w-full p-3 outline-none bg-transparent text-black dark:text-white resize-none custom-scrollbar text-sm"
+                    className="w-full p-3 outline-none bg-transparent text-black resize-none custom-scrollbar text-sm"
                     rows="3"
                     placeholder="輸入文字，或直接在這裡貼上圖片 (Ctrl+V)..."
                     value={text}
                     onChange={e => setText(e.target.value.slice(0, maxLength))}
                     onPaste={handlePaste}
                 />
-                <div className="absolute bottom-1 right-2 text-xs text-gray-400 font-bold bg-white dark:bg-gray-700 px-1">
+                <div className="absolute bottom-1 right-2 text-xs text-gray-400 font-bold bg-white px-1">
                     {text.length}/{maxLength}
                 </div>
             </div>
@@ -198,7 +198,8 @@ function RichInput({ label, text, setText, image, setImage, maxLength = 300, sho
 // --- 新增：富文本編輯器 (支援 Word 貼上) ---
 // --- 新增：富文本編輯器 (支援 Word 貼上與自動圖片壓縮上傳至 Storage) ---
 // --- 新增：富文本編輯器 (全面防禦 Base64 塞爆資料庫版) ---
-function ContentEditableEditor({ value, onChange, placeholder, wrapperClassName = "relative w-full mb-6", editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 bg-white text-black no-round outline-none focus:border-black text-sm custom-scrollbar overflow-y-auto", showAlert }) {
+function ContentEditableEditor({ value, onChange, placeholder, wrapperClassName = "relative w-full mb-6", 
+editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar overflow-y-auto", showAlert }) {
     const editorRef = useRef(null);
     const [isFocused, setIsFocused] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
@@ -394,7 +395,7 @@ function ContentEditableEditor({ value, onChange, placeholder, wrapperClassName 
                 }}
                 onInput={handleInput}
                 onPaste={handlePaste} // ✨ 綁定全新的終極攔截器
-                className={editorClassName}
+                className={`${editorClassName} rich-text-container`}
                 style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
             />
         </div>
@@ -635,7 +636,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                          {(item.qText || item.qImage) && (
                              <div className="mb-3">
                                  <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">📝 題目</p>
-                                 <div className="bg-gray-50 dark:bg-gray-900 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap border-l-4 border-gray-400 font-bold">
+                                 <div className="bg-white p-3 text-sm text-gray-900 whitespace-pre-wrap border-l-4 border-blue-500 font-bold shadow-sm">
                                      {item.qText && <p>{item.qText}</p>}
                                      {item.qImage && <img src={item.qImage} onClick={() => setPreviewImage(item.qImage)} className="mt-2 max-h-40 object-contain border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity" alt="題目附圖" title="點擊放大" />}
                                  </div>
@@ -3148,17 +3149,37 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             </div>
             
            {viewMode === 'interactive' ? (
-                /* ✨ 新增：沉浸式作答介面 (單題翻頁版) */
-                <div className="flex-grow flex flex-col w-full bg-gray-100 dark:bg-gray-900 transition-colors mt-2 overflow-hidden relative">
-                   <style dangerouslySetInnerHTML={{__html: `
-                        .preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.5; }
-                        .preview-rich-text p { margin-bottom: 0.5em !important; }
-                        .preview-rich-text *:first-child { margin-top: 0 !important; }
-                        .preview-rich-text *:last-child { margin-bottom: 0 !important; }
-                        .preview-rich-text img { max-width: 100%; height: auto; border-radius: 4px; margin: 0.5rem 0; }
-                        /* ✨ 暗色模式終極防線：強制讓所有文字顏色與背景透明，避免 Word 殘留樣式蓋過白字 */
-                        .dark .preview-rich-text * { color: inherit !important; background-color: transparent !important; }
-                    `}} />
+                /* ✨ 修改：沉浸式作答介面 - 支援暗色模式的白底黑字/黑底白字自動切換 */
+                <div className="flex-grow flex flex-col w-full bg-slate-50 dark:bg-slate-950 transition-colors mt-2 overflow-hidden relative">
+                    /* ✨ 重新視覺設計：沉浸式作答與富文本自適應 */
+<style dangerouslySetInnerHTML={{__html: `
+    .preview-rich-text {
+        word-break: break-word;
+        white-space: pre-wrap;
+        font-size: 1rem;
+        line-height: 1.6;
+        background-color: #ffffff !important;
+        color: #1a1a1a !important;
+        padding: 20px;
+        border: 1px solid #e2e8f0;
+    }
+    .dark .preview-rich-text {
+        background-color: #1f2937 !important;
+        color: #f8fafc !important;
+        border-color: #374151 !important;
+    }
+    /* 選項按鈕內部的富文本也要強制繼承顏色 */
+    .preview-rich-text * {
+        color: inherit !important;
+        background-color: transparent !important;
+    }
+    /* 🚀 修正：強制消除「選項按鈕」內部富文本的白底與巨大邊距 */
+    button .preview-rich-text {
+        padding: 0 !important;
+        border: none !important;
+        background-color: transparent !important;
+    }
+`}} />
                     
                     {parsedInteractiveQuestions.length === 0 ? (
                         <div className="text-center p-10 mt-10 text-gray-500 font-bold border border-dashed border-gray-300 bg-white dark:bg-gray-800 mx-4">
@@ -3240,8 +3261,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                     const isStarred = starred[actualIdx];
 
                                     return (
-                                        <div key={q.number} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm p-4 sm:p-6 mb-10 transition-colors">
-                                            <div className="flex justify-between items-start mb-4 border-b border-gray-100 dark:border-gray-700 pb-3">
+                                <div key={q.number} className="bg-white dark:bg-gray-800 border-2 border-slate-200 dark:border-slate-700 shadow-xl p-4 sm:p-6 mb-10 transition-all">
+                                    <div className="flex justify-between items-start mb-4 border-b border-slate-100 dark:border-gray-700 pb-3">
                                                 <div className="flex items-center space-x-3">
                                                     <span className="text-xl font-black text-blue-600 dark:text-blue-400">第 {q.number} 題</span>
                                                     <button onClick={() => toggleStar(actualIdx)} className={`text-xl focus:outline-none transition-colors ${isStarred ? 'text-orange-500' : 'text-gray-300 dark:text-gray-600'} hover:scale-110`} title="標記星號">★</button>
@@ -3256,7 +3277,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                 dangerouslySetInnerHTML={{ __html: q.mainText }}
                                             />
 
-                                            <div className="grid grid-cols-1 gap-3">
+                                            <div className="grid grid-cols-1 gap-2">
                                                 {['A', 'B', 'C', 'D'].map(opt => {
                                                     const hasCustomContent = !!q.options[opt];
                                                     const isSelected = currentAns === opt;
@@ -3265,7 +3286,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                             key={opt}
                                                             disabled={isTimeUp}
                                                             onClick={() => handleAnswerSelect(actualIdx, opt)}
-                                                            className={`text-left w-full py-2.5 px-3 min-h-[44px] border-2 transition-all flex items-start space-x-2 sm:space-x-3 no-round
+                                                            className={`text-left w-full py-1.5 px-3 border-2 transition-all flex items-start space-x-2 sm:space-x-3 no-round
                                                                 ${isSelected ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400 shadow-sm scale-[1.01]' : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-750'}
                                                                 ${isTimeUp ? 'locked-btn opacity-80' : ''}`}
                                                         >
@@ -3548,23 +3569,32 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 </div>
                             )}
                             {questionHtml && (
-                                <div className={`w-full relative bg-white flex flex-col flex-grow h-full`}>
+                                <div className={`w-full relative bg-white dark:bg-gray-800 flex flex-col flex-grow h-full`}>
                                     {!(isShared || isTask) ? (
                                         <ContentEditableEditor 
                                             value={processQuestionContent(questionHtml, true)} 
                                             onChange={(html) => setQuestionHtml(stripQuestionMarkers(html))} 
                                             placeholder="在此輸入或貼上富文本試題內容..."
                                             wrapperClassName="absolute inset-0 w-full h-full flex flex-col"
-                                            editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black bg-white text-black text-sm custom-scrollbar overflow-y-auto leading-relaxed"
+                                            editorClassName="w-full h-full p-4 outline-none focus:ring-2 focus:ring-inset focus:ring-black dark:focus:ring-white bg-white dark:bg-gray-800 text-black dark:text-white text-sm custom-scrollbar overflow-y-auto leading-relaxed"
                                         />
                                     ) : (
-                                        <div className="absolute inset-0 w-full h-full p-4 custom-scrollbar bg-gray-50 text-black overflow-y-auto">
+                                        <div className="absolute inset-0 w-full h-full p-4 custom-scrollbar bg-gray-50 dark:bg-gray-900 text-black dark:text-white overflow-y-auto">
                                             <style dangerouslySetInnerHTML={{__html: `
-                                                .preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.875rem; line-height: 1.625; }
-                                                .preview-rich-text p { margin-bottom: 0.75em !important; }
-                                                .preview-rich-text div { margin-bottom: 0.25em !important; }
-                                                .preview-rich-text ul { list-style-type: disc !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
-                                                .preview-rich-text ol { list-style-type: decimal !important; margin-left: 1.5em !important; margin-bottom: 0.5em !important; }
+                                                .preview-rich-text { 
+    word-break: break-word; 
+    white-space: pre-wrap; 
+    font-size: 0.95rem; 
+    line-height: 1.6; 
+    color: #1a1a1a !important;
+}
+.dark .preview-rich-text { 
+    color: #f3f4f6 !important; 
+}
+.preview-rich-text * {
+    color: inherit !important;
+    background-color: transparent !important;
+}
                                             `}} />
                                             <div 
                                                 className="preview-rich-text"
@@ -4305,7 +4335,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         <span className="text-pink-600 font-bold text-lg ml-auto">💎 {activeQA.reward} 鑽石獎勵</span>
                     </div>
                     
-                    <div className="text-lg font-bold mb-6 bg-white text-black p-5 border border-gray-300 shadow-sm" dangerouslySetInnerHTML={{ __html: activeQA.question }}></div>
+                    {/* 支援暗色模式：移除強制白底黑字 */}
+<div className="text-lg font-bold mb-6 bg-white dark:bg-gray-800 text-black dark:text-white p-5 border border-gray-300 dark:border-gray-600 shadow-sm preview-rich-text" dangerouslySetInnerHTML={{ __html: activeQA.question }}></div>
                     
                     <div className="space-y-3 mb-6">
                         {activeQA.options.map((opt, idx) => {
@@ -4351,8 +4382,13 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         <div className="mt-6 animate-fade-in">
                             {user ? (
                                 <>
-                                    <div className="p-4 mb-4 bg-green-50 border-l-8 border-green-500"><h3 className="font-bold text-green-700 mb-2">✅ 正確解答：</h3><div className="text-lg font-bold text-gray-800">{activeQA.options[activeQA.correctAns]}</div></div>
-                                    <div className="p-5 bg-yellow-50 border-2 border-yellow-300"><h4 className="font-bold text-yellow-800 mb-3 text-lg flex items-center">💡 詳解 {records[activeQA.id]?.isCorrect && <span className="ml-auto text-green-600">🎉 獲得 {activeQA.reward} 鑽！</span>}</h4><div className="text-gray-800 whitespace-pre-wrap">{activeQA.explanation}</div></div>
+                                    <div className="p-4 bg-white dark:bg-gray-800 border-2 border-blue-100 dark:border-blue-900 shadow-inner">
+                                        <h4 className="font-black mb-2 flex justify-between items-center">
+                                            <span className="text-blue-900 dark:text-blue-300">💡 解答與討論</span>
+                                            {activeQA.reward > 0 && <span className="text-green-600 dark:text-green-400">🎉 獲得 {activeQA.reward} 鑽！</span>}
+                                        </h4>
+                                        <div className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap preview-rich-text">{activeQA.explanation}</div>
+                                    </div>
                                 </>
                             ) : (
                                 <div className="p-6 bg-gray-100 border-2 border-dashed border-gray-400 text-center"><h3 className="text-xl font-black mb-2">🔒 答案已上鎖</h3><button onClick={() => { if(onRequireLogin) onRequireLogin(); }} className="bg-black text-white px-8 py-3 font-black text-lg w-full">🚀 登入解鎖完整解答與鑽石</button></div>
@@ -4363,7 +4399,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
             )}
 
             {showShareModal && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4"><div className="bg-white p-5 w-full max-w-xs border-2 border-pink-400"><h3 className="font-black text-pink-600 mb-3 flex justify-between"><span>🔗 分享此題</span><button onClick={() => setShowShareModal(false)}>✕</button></h3><textarea readOnly value={shareContent} className="w-full h-36 p-3 text-sm border-2 border-gray-200 mb-4 outline-none resize-none" onClick={e => e.target.select()} /><button onClick={() => { navigator.clipboard.writeText(shareContent); showAlert('✅ 已複製！'); setShowShareModal(false); }} className="w-full bg-pink-500 text-white font-bold py-2.5 text-sm mb-2">📋 複製文本</button></div></div>
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4"><div className="bg-white p-5 w-full max-w-xs border-2 border-pink-400"><h3 className="font-black text-pink-600 mb-3 flex justify-between"><span>🔗 分享此題</span><button onClick={() => setShowShareModal(false)}>✕</button></h3>
+                <textarea readOnly value={shareContent} className="w-full h-36 p-3 text-sm border-2 border-gray-200 mb-4 outline-none resize-none bg-white text-black" onClick={e => e.target.select()} /><button onClick={() => { navigator.clipboard.writeText(shareContent); showAlert('✅ 已複製！'); setShowShareModal(false); }} className="w-full bg-pink-500 text-white font-bold py-2.5 text-sm mb-2">📋 複製文本</button></div></div>
             )}
         </div>
     );
