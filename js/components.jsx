@@ -91,7 +91,8 @@ function AuthScreen({ showAlert }) {
                         mcData: initMcData,
                         hasSeenTutorial: false,
                         avatar: null,
-                        bio: ""
+                        bio: "",
+                        subscriptions: ['藥學電子報'] // ✨ 預設訂閱藥學電子報
                     }).catch(err => showAlert("註冊成功，但建立資料庫檔案失敗: " + err.message));
                 }
                 // ✨ 核心修復：移除了原本 else 的 { merge: true } 寫入操作。
@@ -273,6 +274,522 @@ function ProfilePage({ user, userProfile, showAlert }) {
                     </div>
                 </div>
             </div>
+        </div>
+    );
+}
+// ==========================================
+// ✨ 新增：近期考試彈出提醒元件
+// ==========================================
+function ExamAlertPopup({ user, userProfile }) {
+    const [examAlerts, setExamAlerts] = useState([]);
+    const [showPopup, setShowPopup] = useState(false);
+    const [hideToday, setHideToday] = useState(false);
+
+    useEffect(() => {
+        const todayStr = new Date().toDateString();
+        const hideCookie = localStorage.getItem('hideExamAlert_' + user.uid);
+        if (hideCookie === todayStr) return;
+
+        const subs = userProfile.subscriptions || ['藥學電子報'];
+        const now = new Date().getTime();
+        const nextWeek = now + 14 * 24 * 60 * 60 * 1000; // 抓未來 14 天內
+
+        window.db.collection('calendarEvents').get().then(snap => {
+            const upcoming = [];
+            snap.docs.forEach(doc => {
+                const data = doc.data();
+                if (subs.includes(data.category)) {
+                    const eventTime = new Date(data.date).getTime();
+                    // 檢查是否在未來 14 天內
+                    if (eventTime >= now && eventTime <= nextWeek) {
+                        upcoming.push({ id: doc.id, ...data });
+                    }
+                }
+            });
+            if (upcoming.length > 0) {
+                upcoming.sort((a,b) => new Date(a.date) - new Date(b.date));
+                setExamAlerts(upcoming);
+                setShowPopup(true);
+            }
+        });
+    }, [user.uid, userProfile.subscriptions]);
+
+    const closePopup = () => {
+        if (hideToday) {
+            localStorage.setItem('hideExamAlert_' + user.uid, new Date().toDateString());
+        }
+        setShowPopup(false);
+    };
+
+    if (!showPopup) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 animate-fade-in">
+            <div className="bg-white dark:bg-gray-800 w-full max-w-sm border-2 border-black dark:border-white no-round shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-6 relative">
+                <button onClick={closePopup} className="absolute top-3 right-3 text-gray-400 hover:text-black dark:hover:text-white font-bold text-xl">✖</button>
+                <h3 className="text-xl font-black mb-4 flex items-center dark:text-white border-b-2 border-gray-200 dark:border-gray-700 pb-2">
+                    📅 近期考試提醒
+                </h3>
+                <div className="space-y-3 mb-6 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                    {examAlerts.map(ex => {
+                        const daysLeft = Math.ceil((new Date(ex.date).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                        return (
+                            <div key={ex.id} className="p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 border-l-4 border-l-blue-500">
+                                <div className="text-xs font-bold text-gray-500 mb-1">{ex.category}</div>
+                                <div className="font-bold text-gray-800 dark:text-gray-200">{ex.title}</div>
+                                <div className="text-sm mt-1 text-red-500 font-bold">倒數 {daysLeft} 天 ({ex.date})</div>
+                            </div>
+                        );
+                    })}
+                </div>
+                <label className="flex items-center space-x-2 text-sm cursor-pointer dark:text-gray-300 font-bold justify-center border-t border-gray-100 dark:border-gray-700 pt-4">
+                    <input type="checkbox" checked={hideToday} onChange={e => setHideToday(e.target.checked)} className="w-4 h-4 accent-black" />
+                    <span>今日不再顯示此提醒</span>
+                </label>
+                <button onClick={closePopup} className="mt-4 w-full bg-black dark:bg-gray-200 text-white dark:text-black font-bold py-2 hover:bg-gray-800 transition-colors">我知道了</button>
+            </div>
+        </div>
+    );
+}
+
+// ==========================================
+// ✨ 新增：JJay 日報與行事曆核心系統
+// ==========================================
+function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPrompt, onContinueQuiz, targetNewsId, onClose, onRequireLogin }) {
+    const isAdmin = user && user.email === 'jay03wn@gmail.com';
+    const [newsList, setNewsList] = useState([]);
+    const [events, setEvents] = useState([]);
+    const [todayTasks, setTodayTasks] = useState([]);
+    const [categories, setCategories] = useState(['藥學電子報']);
+    const [loading, setLoading] = useState(true);
+    
+    
+    // 取得使用者目前的訂閱狀態 (若無則預設)
+    const [subs, setSubs] = useState(userProfile?.subscriptions || ['藥學電子報']);
+    
+    // 編輯器狀態
+    const [showEditor, setShowEditor] = useState(false);
+    const [editMode, setEditMode] = useState(''); // 'news' 或 'event'
+    const [editingId, setEditingId] = useState(null);
+    
+    // 報紙表單
+    const [newsTitle, setNewsTitle] = useState('');
+    const [newsCat, setNewsCat] = useState('藥學電子報');
+    const [newsContent, setNewsContent] = useState('');
+    const [embeddedQaId, setEmbeddedQaId] = useState('');
+    const [embeddedQuizCode, setEmbeddedQuizCode] = useState('');
+    
+    // 行事曆表單
+    const [eventTitle, setEventTitle] = useState('');
+    const [eventDate, setEventDate] = useState('');
+    const [eventCat, setEventCat] = useState('藥學電子報');
+
+    // 分享彈窗文本
+    const [shareNews, setShareNews] = useState(null);
+
+    useEffect(() => {
+        let unsubNews = () => {};
+        let unsubEvents = () => {};
+        let unsubCats = () => {};
+
+        const loadData = async () => {
+            setLoading(true);
+            
+            // 讀取分類設定
+            unsubCats = window.db.collection('settings').doc('newspaper').onSnapshot(doc => {
+                if (doc.exists && doc.data().categories) {
+                    setCategories(doc.data().categories);
+                } else if (isAdmin) {
+                    window.db.collection('settings').doc('newspaper').set({ categories: ['藥學電子報'] });
+                }
+            });
+
+            if (targetNewsId) {
+                // 訪客專屬連結模式，只讀取單篇
+                unsubNews = window.db.collection('newsletters').doc(targetNewsId).onSnapshot(doc => {
+                    if (doc.exists) {
+                        setNewsList([{ id: doc.id, ...doc.data() }]);
+                    } else {
+                        showAlert('找不到此電子報，可能已被刪除！');
+                    }
+                    setLoading(false);
+                });
+            } else {
+                // 一般模式，讀取所有報紙跟考試
+                unsubNews = window.db.collection('newsletters').orderBy('createdAt', 'desc').onSnapshot(snap => {
+                    setNewsList(snap.docs.map(d => ({id: d.id, ...d.data()})));
+                    setLoading(false);
+                });
+                const startOfToday = new Date();
+                startOfToday.setHours(0, 0, 0, 0);
+                window.db.collection('publicTasks')
+                    .where('createdAt', '>=', startOfToday)
+                    .orderBy('createdAt', 'desc')
+                    .onSnapshot(snap => {
+                        setTodayTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    });
+            }
+        };
+        loadData();
+        return () => { unsubNews(); unsubEvents(); unsubCats(); };
+    }, [targetNewsId, isAdmin]);
+
+    // 切換訂閱狀態
+    const toggleSub = async (cat) => {
+        if (!user) return;
+        let newSubs = [...subs];
+        if (newSubs.includes(cat)) {
+            newSubs = newSubs.filter(c => c !== cat);
+        } else {
+            newSubs.push(cat);
+        }
+        setSubs(newSubs);
+        await window.db.collection('users').doc(user.uid).update({ subscriptions: newSubs });
+    };
+
+    // 管理員：新增類別
+    const handleAddCategory = () => {
+        showPrompt('請輸入新的電子報/行事曆分類名稱：', '', async (val) => {
+            if (val && !categories.includes(val)) {
+                await window.db.collection('settings').doc('newspaper').update({
+                    categories: window.firebase.firestore.FieldValue.arrayUnion(val)
+                });
+                showAlert('分類新增成功！');
+            }
+        });
+    };
+
+    // 儲存報紙
+    const saveNews = async () => {
+        if (!newsTitle || !newsContent) return showAlert('標題與內容為必填！');
+        const data = {
+            title: newsTitle,
+            category: newsCat,
+            content: newsContent,
+            embeddedQaId,
+            embeddedQuizCode,
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        };
+        if (editingId) {
+            await window.db.collection('newsletters').doc(editingId).update(data);
+            showAlert('✅ 報紙更新成功！');
+        } else {
+            data.createdAt = window.firebase.firestore.FieldValue.serverTimestamp();
+            await window.db.collection('newsletters').add(data);
+            showAlert('✅ 報紙發佈成功！');
+        }
+        closeEditor();
+    };
+
+    // 儲存考試
+    const saveEvent = async () => {
+        if (!eventTitle || !eventDate) return showAlert('標題與日期為必填！');
+        const data = {
+            title: eventTitle,
+            date: eventDate,
+            category: eventCat,
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        };
+        if (editingId) {
+            await window.db.collection('calendarEvents').doc(editingId).update(data);
+            showAlert('✅ 考試日程更新成功！');
+        } else {
+            await window.db.collection('calendarEvents').add(data);
+            showAlert('✅ 考試日程新增成功！');
+        }
+        closeEditor();
+    };
+
+    const deleteNews = (id) => {
+        showConfirm('確定刪除這篇報紙？這動作無法復原！', async () => {
+            await window.db.collection('newsletters').doc(id).delete();
+        });
+    };
+    
+    const deleteEvent = (id) => {
+        showConfirm('確定刪除這個考試日程？', async () => {
+            await window.db.collection('calendarEvents').doc(id).delete();
+        });
+    };
+
+    const openNewsEditor = (news = null) => {
+        setEditMode('news');
+        if (news) {
+            setEditingId(news.id); setNewsTitle(news.title); setNewsCat(news.category);
+            setNewsContent(news.content); setEmbeddedQaId(news.embeddedQaId || '');
+            setEmbeddedQuizCode(news.embeddedQuizCode || '');
+        } else {
+            setEditingId(null); setNewsTitle(''); setNewsCat(categories[0]);
+            setNewsContent(''); setEmbeddedQaId(''); setEmbeddedQuizCode('');
+        }
+        setShowEditor(true);
+    };
+
+    const openEventEditor = (ev = null) => {
+        setEditMode('event');
+        if (ev) {
+            setEditingId(ev.id); setEventTitle(ev.title); setEventDate(ev.date); setEventCat(ev.category);
+        } else {
+            setEditingId(null); setEventTitle(''); setEventDate(''); setEventCat(categories[0]);
+        }
+        setShowEditor(true);
+    };
+
+    const closeEditor = () => { setShowEditor(false); setEditMode(''); setEditingId(null); };
+
+    // 處理報紙內容渲染 (訪客只顯示前10行)
+    const renderNewsContent = (content, isGuest) => {
+        let lines = content.split('\n');
+        if (isGuest && lines.length > 10) {
+            lines = lines.slice(0, 10);
+            return (
+                <>
+                    <p className="whitespace-pre-wrap leading-relaxed">{lines.join('\n')}</p>
+                    <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700 text-center border-2 border-dashed border-gray-400 font-bold">
+                        ... 以下內容已隱藏，請 <button onClick={() => onRequireLogin && onRequireLogin()} className="text-blue-600 underline">登入或註冊</button> 以觀看完整電子報與相關測驗。
+                    </div>
+                </>
+            );
+        }
+        return <p className="whitespace-pre-wrap leading-relaxed">{content}</p>;
+    };
+
+    // 產生分享文本
+    const handleShareNews = (news) => {
+        const url = `${window.location.origin}${window.location.pathname}?newsId=${news.id}`;
+        const text = `📰 JJay電子報：【${news.title}】\n\n${news.content.split('\n').slice(0, 3).join('\n')}...\n\n👉 點此閱讀完整內容並下載測驗：\n${url}`;
+        setShareNews(text);
+    };
+
+    if (loading) return (
+        <div className="flex flex-col items-center justify-center p-16">
+            <div className="text-4xl mb-4 animate-spin">📰</div>
+            <div className="text-gray-500 font-bold animate-pulse">電子報派送中...</div>
+        </div>
+    );
+
+    return (
+        <div className={`max-w-6xl mx-auto p-4 h-full overflow-y-auto custom-scrollbar w-full ${targetNewsId ? 'bg-white dark:bg-gray-900 border-4 border-black' : ''}`}>
+            <div className="flex flex-wrap justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 gap-3">
+                <h1 className="text-2xl font-black dark:text-white flex items-center">📰 JJay 日報與行事曆</h1>
+                
+                {targetNewsId && !user && (
+                    <button onClick={() => onClose ? onClose() : window.history.replaceState({}, '', window.location.pathname)} className="text-gray-500 font-bold text-sm hover:text-black dark:hover:text-white transition-colors">
+                        ⬅ 返回首頁
+                    </button>
+                )}
+
+                {isAdmin && !targetNewsId && (
+                    <div className="flex gap-2">
+                        <button onClick={handleAddCategory} className="bg-gray-200 text-black px-3 py-1 text-sm font-bold border border-black no-round hover:bg-gray-300 transition-colors">+ 新增類別</button>
+                        <button onClick={() => openEventEditor()} className="bg-black text-white px-3 py-1 text-sm font-bold no-round hover:bg-gray-800 transition-colors">+ 新增考試</button>
+                        <button onClick={() => openNewsEditor()} className="bg-blue-600 text-white px-3 py-1 text-sm font-bold no-round hover:bg-blue-700 transition-colors">+ 發佈報紙</button>
+                    </div>
+                )}
+            </div>
+
+            {/* 訂閱面板 (一般登入模式才顯示) */}
+            {!targetNewsId && user && (
+                <div className="mb-6 bg-white dark:bg-gray-800 p-5 border border-gray-200 dark:border-gray-700 shadow-sm no-round">
+                    <h3 className="font-black mb-3 text-lg dark:text-white flex items-center gap-2">📡 我的訂閱頻道</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 font-bold">勾選以接收對應分類的電子報與考試行事曆提醒。</p>
+                    <div className="flex flex-wrap gap-3">
+                        {categories.map(cat => (
+                            <label key={cat} className={`flex items-center space-x-2 cursor-pointer px-4 py-2 border transition-colors ${subs.includes(cat) ? 'bg-black text-white border-black dark:bg-gray-200 dark:text-black' : 'bg-gray-50 text-gray-600 border-gray-300 dark:bg-gray-900 dark:border-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                                <input type="checkbox" checked={subs.includes(cat)} onChange={() => toggleSub(cat)} className="hidden" />
+                                <span className="font-bold text-sm">{subs.includes(cat) ? '✔ 已訂閱' : '+ 訂閱'} {cat}</span>
+                            </label>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* 管理員編輯器 */}
+            {showEditor && (
+                <div className="mb-8 p-6 bg-blue-50 dark:bg-gray-800 border-2 border-black dark:border-white no-round shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(255,255,255,0.2)] animate-fade-in-up">
+                    <div className="flex justify-between items-center mb-6 border-b border-gray-300 dark:border-gray-600 pb-2">
+                        <h2 className="text-xl font-black dark:text-white">{editMode === 'news' ? (editingId ? '📝 編輯報紙' : '📢 發佈新報紙') : (editingId ? '📝 編輯考試' : '📅 新增考試')}</h2>
+                        <button onClick={closeEditor} className="text-gray-500 font-bold hover:text-red-500">✖ 關閉</button>
+                    </div>
+                    
+                    {editMode === 'news' ? (
+                        <div className="space-y-4">
+                            <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">報紙標題</label>
+                            <input type="text" placeholder="例如：藥學週報 #12" value={newsTitle} onChange={e=>setNewsTitle(e.target.value)} className="w-full p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none" />
+                            
+                            <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">發佈類別 (頻道)</label>
+                            <select value={newsCat} onChange={e=>setNewsCat(e.target.value)} className="w-full p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none cursor-pointer">
+                                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            
+                            <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">報紙內容 (純文字)</label>
+                            <textarea placeholder="在這裡輸入電子報內容，支援換行排版..." value={newsContent} onChange={e=>setNewsContent(e.target.value)} className="w-full h-48 p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none custom-scrollbar"></textarea>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white dark:bg-gray-900 p-4 border border-dashed border-gray-400">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">🔗 嵌入快問快答 ID (選填)</label>
+                                    <input type="text" placeholder="輸入 QA 的資料庫 ID" value={embeddedQaId} onChange={e=>setEmbeddedQaId(e.target.value)} className="w-full p-2 border border-gray-300 dark:bg-gray-700 dark:text-white text-sm no-round outline-none" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">📥 嵌入試卷代碼 (選填)</label>
+                                    <input type="text" placeholder="輸入 6 碼試卷代碼" value={embeddedQuizCode} onChange={e=>setEmbeddedQuizCode(e.target.value)} className="w-full p-2 border border-gray-300 dark:bg-gray-700 dark:text-white text-sm no-round outline-none" />
+                                </div>
+                            </div>
+                            
+                            <button onClick={saveNews} className="w-full bg-blue-600 text-white font-black py-3 text-lg no-round hover:bg-blue-700 transition-colors shadow-sm mt-4">💾 儲存報紙</button>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">考試名稱</label>
+                            <input type="text" placeholder="例如: 藥理學期中考" value={eventTitle} onChange={e=>setEventTitle(e.target.value)} className="w-full p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none" />
+                            
+                            <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">考試日期</label>
+                            <input type="date" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="w-full p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none cursor-pointer" />
+                            
+                            <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">所屬類別</label>
+                            <select value={eventCat} onChange={e=>setEventCat(e.target.value)} className="w-full p-3 border border-black dark:bg-gray-700 dark:text-white no-round outline-none cursor-pointer">
+                                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            
+                            <button onClick={saveEvent} className="w-full bg-green-600 text-white font-black py-3 text-lg no-round hover:bg-green-700 transition-colors shadow-sm mt-4">💾 儲存考試</button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* 左側：電子報文章列表 */}
+                <div className="lg:col-span-2 space-y-8">
+                    {newsList.filter(n => targetNewsId || subs.includes(n.category) || isAdmin).length === 0 ? (
+                        <div className="text-gray-500 font-bold p-10 text-center bg-white dark:bg-gray-800 border border-gray-200 shadow-sm no-round">目前沒有符合您訂閱頻道的電子報。</div>
+                    ) : (
+                        newsList.filter(n => targetNewsId || subs.includes(n.category) || isAdmin).map(news => (
+                            <article key={news.id} className="bg-white dark:bg-gray-800 border-2 border-black dark:border-gray-600 no-round shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(255,255,255,0.1)] p-6 relative">
+                                <div className="flex justify-between items-start mb-4 border-b-2 border-gray-100 dark:border-gray-700 pb-3">
+                                    <div>
+                                        <span className="text-xs font-black bg-black text-white px-2 py-1 mr-2 tracking-widest">{news.category}</span>
+                                        <span className="text-xs text-gray-500 font-bold">{news.createdAt?.toDate().toLocaleDateString('zh-TW') || '剛剛'}</span>
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={() => handleShareNews(news)} className="text-sm font-bold text-blue-600 hover:text-blue-800 bg-blue-50 dark:bg-gray-900 px-2 py-1 no-round border border-blue-200 transition-colors">🔗 分享</button>
+                                        {isAdmin && (
+                                            <>
+                                                <button onClick={() => openNewsEditor(news)} className="text-sm font-bold text-purple-600 bg-purple-50 dark:bg-gray-900 px-2 py-1 no-round border border-purple-200">編輯</button>
+                                                <button onClick={() => deleteNews(news.id)} className="text-sm font-bold text-red-600 bg-red-50 dark:bg-gray-900 px-2 py-1 no-round border border-red-200">刪除</button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                <h2 className="text-3xl font-black mb-5 dark:text-white leading-tight tracking-tight">{news.title}</h2>
+                                
+                                <div className="text-gray-800 dark:text-gray-200 text-base mb-6 font-medium bg-gray-50 dark:bg-gray-900 p-5 border-l-4 border-black dark:border-gray-500">
+                                    {renderNewsContent(news.content, !user)}
+                                </div>
+                                
+                                {/* 嵌入區塊 (訪客看得到框，但點擊要求登入) */}
+                                {(news.embeddedQaId || news.embeddedQuizCode) && (
+                                    <div className="bg-white dark:bg-gray-800 p-4 border-2 border-dashed border-gray-300 dark:border-gray-600 mt-6 flex flex-col sm:flex-row gap-4">
+                                        {news.embeddedQaId && (
+                                            <button onClick={() => {
+                                                if (!user) return onRequireLogin && onRequireLogin();
+                                                window.location.href = `/?qaId=${news.embeddedQaId}`;
+                                            }} className="flex-1 bg-pink-100 border border-pink-400 text-pink-700 font-black py-3 hover:bg-pink-200 transition-colors no-round shadow-sm text-center">
+                                                ⚡ 挑戰本期快問快答
+                                            </button>
+                                        )}
+                                        {news.embeddedQuizCode && (
+                                            <button onClick={() => {
+                                                if (!user) return onRequireLogin && onRequireLogin();
+                                                navigator.clipboard.writeText(news.embeddedQuizCode);
+                                                showAlert(`✅ 已複製試卷代碼: ${news.embeddedQuizCode}\n\n請前往「我的題庫」，點擊右上角「📥 輸入代碼」即可下載此測驗卷！`);
+                                            }} className="flex-1 bg-blue-100 border border-blue-400 text-blue-700 font-black py-3 hover:bg-blue-200 transition-colors no-round shadow-sm text-center">
+                                                📥 領取專屬測驗卷 ({news.embeddedQuizCode})
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </article>
+                        ))
+                    )}
+                </div>
+
+                {/* 右側：行事曆區塊 (訪客隱藏) */}
+                {!targetNewsId && user && (
+                    <div className="lg:col-span-1">
+                        <div className="bg-white dark:bg-gray-800 border-2 border-black dark:border-gray-600 p-5 no-round shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.1)] sticky top-4">
+                            <h2 className="text-xl font-black mb-5 flex items-center border-b-2 border-black dark:border-gray-600 pb-2 dark:text-white tracking-widest">
+                                📅 考試行事曆
+                            </h2>
+                            <div className="space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar pr-2">
+                                {events.filter(e => subs.includes(e.category) || isAdmin).length === 0 ? (
+                                    <div className="text-sm text-gray-500 font-bold text-center py-8 border border-dashed border-gray-300">近期無考試安排，放假囉！</div>
+                                ) : (
+                                    events.filter(e => subs.includes(e.category) || isAdmin).map(ev => {
+                                        const daysLeft = Math.ceil((new Date(ev.date).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                                        const isPast = daysLeft < 0;
+                                        return (
+                                            <div key={ev.id} className={`p-4 border-l-4 border border-gray-100 dark:border-gray-700 relative ${isPast ? 'border-l-gray-400 bg-gray-50 dark:bg-gray-900 opacity-50' : (daysLeft <= 7 ? 'border-l-red-500 bg-red-50 dark:bg-red-900/20' : 'border-l-blue-500 bg-blue-50 dark:bg-blue-900/20')}`}>
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className="text-[10px] font-black text-white bg-gray-400 px-1.5 py-0.5 tracking-widest">{ev.category}</span>
+                                                    {isAdmin && (
+                                                        <div className="flex gap-2">
+                                                            <button onClick={() => openEventEditor(ev)} className="text-[10px] text-purple-600 font-bold bg-white px-1 border">編輯</button>
+                                                            <button onClick={() => deleteEvent(ev.id)} className="text-[10px] text-red-600 font-bold bg-white px-1 border">刪除</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className={`font-black text-base ${isPast ? 'line-through text-gray-500' : 'dark:text-white'}`}>{ev.title}</div>
+                                                <div className={`text-sm mt-1 font-black ${isPast ? 'text-gray-400' : (daysLeft <= 7 ? 'text-red-600' : 'text-blue-600')}`}>
+                                                    {ev.date} {isPast ? '(已結束)' : `(倒數 ${daysLeft} 天)`}
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        </div>
+                        {/* 🔥 今日新增試題區塊 */}
+                        <div className="bg-yellow-50 dark:bg-gray-800 border-2 border-yellow-400 dark:border-yellow-600 p-5 mt-6 no-round shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.1)]">
+                            <h2 className="text-xl font-black mb-5 flex items-center border-b-2 border-yellow-400 dark:border-yellow-600 pb-2 dark:text-white tracking-widest text-yellow-800">
+                                🔥 今日新增試題
+                            </h2>
+                            <div className="space-y-4 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
+                                {todayTasks.length === 0 ? (
+                                    <div className="text-sm text-gray-500 font-bold text-center py-6 border border-dashed border-gray-300">今天還沒有新試題，休息一下吧！</div>
+                                ) : (
+                                    todayTasks.map(task => (
+                                        <div key={task.id} className="bg-white dark:bg-gray-700 p-3 border border-yellow-200 dark:border-gray-600 hover:shadow-md transition-shadow">
+                                            <h3 className="font-bold text-sm mb-3 truncate dark:text-white">{task.testName}</h3>
+                                            <button onClick={() => {
+                                                showAlert("請前往「🎯 任務牆」搜尋並開始這份新任務！");
+                                            }} className="w-full text-xs bg-yellow-400 hover:bg-yellow-500 text-black py-2 font-black transition-colors shadow-sm">
+                                                前往挑戰 ➡️
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* 分享報紙連結的專屬文字框 */}
+            {shareNews && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-sm no-round shadow-2xl border-4 border-black">
+                        <h3 className="font-black mb-4 flex justify-between items-center text-xl dark:text-white">
+                            <span>🔗 分享電子報</span>
+                            <button onClick={() => setShareNews(null)} className="text-gray-400 hover:text-red-500 transition-colors">✕</button>
+                        </h3>
+                        <textarea readOnly value={shareNews} className="w-full h-40 p-4 text-sm border-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 mb-5 outline-none resize-none no-round leading-relaxed font-bold" onClick={(e) => e.target.select()} />
+                        <button onClick={() => { navigator.clipboard.writeText(shareNews); showAlert('✅ 已複製分享文本，快去貼給好友吧！'); setShareNews(null); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 text-lg no-round transition-colors shadow-md">
+                            📋 複製分享文本
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
