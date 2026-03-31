@@ -4,16 +4,24 @@ function Main() {
     // --- 基礎 App 狀態 ---
     const [user, setUser] = useState(null);
     
-    // ✨ 新增：一進來就檢查網址有沒有 qaId，存入狀態中
+    // ✨ 新增：一進來就檢查網址有沒有 qaId 或 newsId，存入狀態中
     const [currentQaId, setCurrentQaId] = useState(() => {
         const params = new URLSearchParams(window.location.search);
         return params.get('qaId');
     });
+    const [currentNewsId, setCurrentNewsId] = useState(() => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('newsId');
+    });
 
-    // ✨ 新增：用來關閉快問快答視窗並清理網址的方法
+    // ✨ 新增：用來關閉快問快答與電子報視窗的方法
     const closeFastQA = () => {
         window.history.replaceState({}, document.title, window.location.pathname);
         setCurrentQaId(null);
+    };
+    const closeNews = () => {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setCurrentNewsId(null);
     };
     const [userProfile, setUserProfile] = useState({ displayName: '載入中...', folders: [] });
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -243,13 +251,13 @@ function Main() {
     // ==========================================
     // ✨ 新增：訪客分享連結專屬通道 (必須放在 AuthScreen 擋板之前！)
     // ==========================================
-    if (!user && currentQaId && !forceLoginScreen) {
+    if (!user && (currentQaId || currentNewsId) && !forceLoginScreen) {
         return (
             <div className={`h-[100dvh] overflow-y-auto custom-scrollbar flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'dark bg-gray-900' : 'bg-pink-50'}`}>
                 {SharedModal} 
                 <div className="w-full max-w-3xl z-10 pb-12">
-                    {/* 直接載入快問快答，並傳遞觸發登入的函式 (已隱藏頂部的登入引導) */}
-                    <FastQASection user={null} showAlert={showAlert} showConfirm={showConfirm} targetQaId={currentQaId} onRequireLogin={() => setForceLoginScreen(true)} />
+                    {currentQaId && <FastQASection user={null} showAlert={showAlert} showConfirm={showConfirm} targetQaId={currentQaId} onRequireLogin={() => setForceLoginScreen(true)} />}
+                    {currentNewsId && <NewspaperDashboard user={null} userProfile={{}} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} targetNewsId={currentNewsId} onRequireLogin={() => setForceLoginScreen(true)} />}
                 </div>
             </div>
         );
@@ -287,26 +295,36 @@ function Main() {
             {/* ✅ 4. 主畫面這裡原本一大串的 modal 程式碼，現在只需要呼叫 SharedModal 就好了 */}
             {SharedModal}
 
-            {/* ✨ 新增：已經登入的玩家，如果網址有 qaId，直接蓋一個滿版視窗在最上層 */}
+            {/* ✨ 新增：已經登入的玩家，如果網址有 qaId 或 newsId，直接蓋一個滿版視窗在最上層 */}
             {user && currentQaId && (
                 <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-2 sm:p-4 animate-fade-in">
                     <div className="bg-gray-100 dark:bg-gray-900 w-full max-w-4xl max-h-[95vh] overflow-y-auto no-round relative shadow-2xl border-4 border-pink-400">
-                        {/* 關閉按鈕 */}
                         <button onClick={closeFastQA} className="absolute top-4 right-4 text-3xl z-20 hover:scale-110 transition-transform bg-white dark:bg-gray-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md border border-gray-300 dark:border-gray-600">❌</button>
-                        
                         <div className="p-4 sm:p-8 pt-16">
                             <FastQASection user={user} showAlert={showAlert} showConfirm={showConfirm} targetQaId={currentQaId} onClose={closeFastQA} />
                         </div>
                     </div>
                 </div>
             )}
+            {user && currentNewsId && (
+                <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-2 sm:p-4 animate-fade-in">
+                    <div className="bg-gray-100 dark:bg-gray-900 w-full max-w-4xl max-h-[95vh] overflow-y-auto no-round relative shadow-2xl border-4 border-blue-400">
+                        <button onClick={closeNews} className="absolute top-4 right-4 text-3xl z-20 hover:scale-110 transition-transform bg-white dark:bg-gray-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md border border-gray-300 dark:border-gray-600">❌</button>
+                        <div className="p-4 sm:p-8 pt-16">
+                            <NewspaperDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} targetNewsId={currentNewsId} onClose={closeNews} />
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* ✨ 新增：行事曆考試彈出提醒 */}
+            {user && userProfile && <ExamAlertPopup user={user} userProfile={userProfile} />}
 
             {activeTab !== 'activeQuiz' && topNavContent}
             
             {activeTab !== 'activeQuiz' ? (
                 <div className="flex-grow pt-4 md:pt-6 overflow-hidden flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
-                    {activeTab === 'newspaper' && <NewspaperDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
-                    {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={(folderName) => { setActiveQuizRecord({ folder: folderName }); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
+                    {activeTab === 'newspaper' && <NewspaperDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}                    {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={(folderName) => { setActiveQuizRecord({ folder: folderName }); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
                     {activeTab === 'taskwall' && <TaskWallDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     
                     {/* 更新：傳入 onContinueQuiz，實現跳轉功能 */}
