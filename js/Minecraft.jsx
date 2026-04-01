@@ -19,11 +19,16 @@ const playCachedSound = (url) => {
 };
 // --- 礦車跑酷小遊戲組件 ---
 // --- 礦車跑酷小遊戲組件 ---
-function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
+// --- 礦車跑酷小遊戲組件 ---
+function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGameOver, onQuit }) {
     const canvasRef = useRef(null);
     const [gameState, setGameState] = useState('start'); 
     const [score, setScore] = useState(0);
     
+    // --- 排行榜狀態 ---
+    const [leaderboard, setLeaderboard] = useState([]);
+    const [highScore, setHighScore] = useState(0);
+
     const bgmRef = useRef(null);
     const deadSfxRef = useRef(null);
     const explodeSfxRef = useRef(null);
@@ -57,6 +62,13 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         fireball: new Image(), portal: new Image()
     });
 
+    // 取得本週的唯一字串 (以週日為每週起點)
+    const getWeekString = () => {
+        const now = new Date();
+        const firstDay = new Date(now.setDate(now.getDate() - now.getDay()));
+        return `${firstDay.getFullYear()}-${firstDay.getMonth() + 1}-${firstDay.getDate()}`;
+    };
+
     useEffect(() => {
         images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
         images.current.stone.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png";
@@ -83,6 +95,53 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         explodeSfxRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/exEXP.mp3");
         explodeSfxRef.current.volume = 0.8;
         
+        // --- 排行榜與自動結算系統 ---
+        if (user && userProfile) {
+            const weekStr = getWeekString();
+            const sysRef = window.db.collection('system').doc('minecart');
+            
+            sysRef.get().then(doc => {
+                let data = doc.exists ? doc.data() : { week: weekStr, scores: {}, lastWeek: {} };
+                
+                // 若換週，備份並重置分數
+                if (data.week !== weekStr) {
+                    data.lastWeek = data.scores || {};
+                    data.scores = {};
+                    data.week = weekStr;
+                    sysRef.set(data);
+                }
+                
+                // 檢查是否符合上週獎勵發放資格
+                if (data.lastWeek && Object.keys(data.lastWeek).length > 0) {
+                    const lastWeekRank = Object.entries(data.lastWeek)
+                        .map(([uid, info]) => ({ uid, ...info }))
+                        .sort((a, b) => b.score - a.score);
+                        
+                    const myRankIndex = lastWeekRank.findIndex(r => r.uid === user.uid);
+                    if (myRankIndex >= 0 && myRankIndex < 3) {
+                        const rewardWeekStr = data.week + "_last"; // 標記為已領取此週獎勵
+                        if (mcData.minecartRewardClaimedWeek !== rewardWeekStr) {
+                            const rewards = [100, 60, 30];
+                            const earned = rewards[myRankIndex];
+                            updateMcData({ 
+                                diamonds: (mcData.diamonds || 0) + earned, 
+                                minecartRewardClaimedWeek: rewardWeekStr 
+                            }, true);
+                            showAlert(`🏆 恭喜！你在上週的礦車小遊戲獲得第 ${myRankIndex + 1} 名！\n獎勵發放：${earned} 💎`);
+                        }
+                    }
+                }
+
+                // 載入當前排行顯示
+                const currentRanks = Object.entries(data.scores || {})
+                    .map(([uid, info]) => ({ uid, ...info }))
+                    .sort((a, b) => b.score - a.score);
+                    
+                setLeaderboard(currentRanks);
+                setHighScore(data.scores?.[user.uid]?.score || 0);
+            });
+        }
+
         const cvs = canvasRef.current;
         if (cvs) {
             const ctx = cvs.getContext('2d');
@@ -181,7 +240,7 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         state.player.dy += 0.7; 
         state.player.y += state.player.dy;
 
-       // 階段計算：草原 (900) -> 洞穴 (900) -> 地獄 (900) 循環
+        // 階段計算：草原 (900) -> 洞穴 (900) -> 地獄 (900) 循環
         let cyclePos = state.frames % 2700;
         state.isCave = cyclePos >= 900 && cyclePos < 1800;
         state.isNether = cyclePos >= 1800;
@@ -278,7 +337,7 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             } else if (obs.type === 'silverfish') {
                 obs.x -= (state.speed + 1.2);
             } else if (obs.type === 'creeper') {
-                // 苦力怕速度降低 20% (原本是 state.speed - 2.5)
+                // 苦力怕速度降低 20%
                 obs.x -= Math.max(1.5, (state.speed - 2.5) * 0.8); 
                 
                 if (!obs.defused && obs.x < state.player.x + 10) {
@@ -515,8 +574,38 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             deadSfxRef.current.play().catch(e=>console.log("音效阻擋", e));
         }
         
-        onGameOver(gameRef.current.score); 
+        const finalScore = gameRef.current.score;
+        onGameOver(finalScore); 
         if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
+
+        // --- 遊戲結束時上傳分數 ---
+        if (user && userProfile && finalScore > 0) {
+            const sysRef = window.db.collection('system').doc('minecart');
+            sysRef.get().then(doc => {
+                const data = doc.exists ? doc.data() : { week: getWeekString(), scores: {} };
+                
+                // 防呆檢查：如果剛好跨週
+                if (data.week !== getWeekString()) {
+                    data.lastWeek = data.scores || {};
+                    data.scores = {};
+                    data.week = getWeekString();
+                }
+                if (!data.scores) data.scores = {};
+                
+                const previousBest = data.scores[user.uid]?.score || 0;
+                if (finalScore > previousBest) {
+                    data.scores[user.uid] = { name: userProfile.displayName, score: finalScore };
+                    sysRef.set(data);
+                    setHighScore(finalScore);
+                    
+                    // 更新畫面上的排行榜
+                    const currentRanks = Object.entries(data.scores)
+                        .map(([uid, info]) => ({ uid, ...info }))
+                        .sort((a, b) => b.score - a.score);
+                    setLeaderboard(currentRanks);
+                }
+            });
+        }
     };
 
     const handlePointerDown = (e) => {
@@ -572,7 +661,29 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
                     
                     {gameState === 'start' && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60">
-                            <button className="mc-btn px-8 py-4 text-2xl animate-pulse pointer-events-none">🛻 點擊開始</button>
+                            {/* --- 新增：左側排行榜 --- */}
+                            <div className="absolute left-2 sm:left-4 top-2 sm:top-4 bottom-2 sm:bottom-4 w-44 sm:w-56 bg-gray-900 bg-opacity-90 border-2 border-yellow-600 rounded p-2 flex flex-col z-20 pointer-events-auto shadow-2xl" onPointerDown={(e) => e.stopPropagation()}>
+                                <h3 className="text-yellow-400 font-bold text-center border-b border-gray-600 mb-2 pb-1 text-sm sm:text-base">🏆 礦車排行榜<br/><span className="text-[10px] sm:text-xs text-gray-400">週日結算 (100/60/30💎)</span></h3>
+                                <div className="flex-grow overflow-y-auto custom-scrollbar space-y-1">
+                                    {leaderboard.length === 0 ? (
+                                        <p className="text-gray-400 text-center text-xs py-4">本週尚無人挑戰，搶下第一吧！</p>
+                                    ) : (
+                                        leaderboard.map((lb, i) => (
+                                            <div key={i} className={`flex justify-between items-center px-1 sm:px-2 py-1 rounded border ${lb.uid === user?.uid ? 'bg-yellow-900 bg-opacity-50 border-yellow-700' : 'bg-gray-800 border-gray-700'}`}>
+                                                <span className="font-bold text-xs sm:text-sm text-white truncate max-w-[65%]">
+                                                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`} {lb.name}
+                                                </span>
+                                                <span className="text-green-400 font-bold text-[10px] sm:text-xs shrink-0">{lb.score} 💎</span>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                                <div className="text-center mt-2 text-xs sm:text-sm text-gray-400 border-t border-gray-600 pt-2 shrink-0">
+                                    我的本週最高: <span className="text-white font-bold">{highScore}</span>
+                                </div>
+                            </div>
+                            
+                            <button className="mc-btn px-6 sm:px-8 py-3 sm:py-4 text-xl sm:text-2xl animate-pulse pointer-events-none z-10 ml-32 sm:ml-48 shadow-lg">🛻 點擊開始</button>
                         </div>
                     )}
                     
