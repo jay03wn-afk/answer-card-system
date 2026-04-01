@@ -100,39 +100,55 @@ function AuthScreen({ showAlert }) {
     };
 
     // ✨ 2. 新增 Google 登入處理邏輯
+    // ✨ 2. 新增 Google 登入處理邏輯
     const handleGoogleLogin = async () => {
         setLoading(true);
+        let user = null;
+        
+        // 第一階段：處理 Google 帳號驗證
         try {
             const provider = new window.firebase.auth.GoogleAuthProvider();
             const result = await window.auth.signInWithPopup(provider);
-            const user = result.user;
-
-            // 檢查這個 Google 帳號是不是第一次登入
-            const userDoc = await window.db.collection('users').doc(user.uid).get();
-            
-            if (!userDoc.exists) {
-                // 如果是新用戶，建立預設資料庫檔案
-                const initMcData = { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
-                await window.db.collection('users').doc(user.uid).set({ 
-                    email: user.email, 
-                    friends: [], 
-                    unreadChats: {}, 
-                    folders: ['未分類'], 
-                    mcData: initMcData,
-                    hasSeenTutorial: false,
-                    avatar: user.photoURL || null,      // 直接使用 Google 大頭照
-                    displayName: user.displayName || "", // 直接使用 Google 暱稱
-                    bio: "",
-                    subscriptions: ['藥學電子報'] 
-                });
-            }
+            user = result.user;
         } catch (err) {
+            // 如果是在這階段失敗，才是真正的登入失敗
             if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
                 showAlert('Google 登入失敗：\n' + err.message);
             }
-        } finally {
             setLoading(false);
+            return; // 登入失敗就中斷
         }
+
+        // 第二階段：檢查是否為新用戶並建立資料 (加上獨立的 Try-Catch 防護)
+        if (user) {
+            try {
+                // 檢查這個 Google 帳號是不是第一次登入
+                const userDoc = await window.db.collection('users').doc(user.uid).get();
+                
+                if (!userDoc.exists) {
+                    // 如果是新用戶，建立預設資料庫檔案
+                    const initMcData = { diamonds: 0, level: 1, exp: 0, hunger: 10, items: [], cats: 0, lastCheckIn: null };
+                    await window.db.collection('users').doc(user.uid).set({ 
+                        email: user.email, 
+                        friends: [], 
+                        unreadChats: {}, 
+                        folders: ['未分類'], 
+                        mcData: initMcData,
+                        hasSeenTutorial: false,
+                        avatar: user.photoURL || null,      // 直接使用 Google 大頭照
+                        displayName: user.displayName || "", // 直接使用 Google 暱稱
+                        bio: "",
+                        subscriptions: ['藥學電子報'] 
+                    });
+                }
+            } catch (dbErr) {
+                // 🛑 核心修復：忽略「client is offline」等資料庫瞬斷錯誤
+                // 因為 Auth 驗證已經成功，系統底層其實已經登入了，不要因為網路小抖動就跳出嚇人的失敗警告
+                console.warn("檢查新用戶資料失敗 (可能是網路瞬斷)，但不影響登入:", dbErr);
+            }
+        }
+        
+        setLoading(false);
     };
 
     return (
@@ -511,11 +527,12 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
             });
 
             if (targetNewsId) {
-                unsubNews = window.db.collection('newsletters').doc(targetNewsId).onSnapshot(doc => {
+                unsubNews = window.db.collection('newsletters').doc(targetNewsId).onSnapshot({ includeMetadataChanges: true }, doc => {
+                    if (doc.metadata.fromCache && !doc.exists) return; // ✨ 擋掉無效快取
                     if (doc.exists) {
                         const loaded = { id: doc.id, ...doc.data() };
                         setNewsList([loaded]);
-                        setViewingNews(loaded); // 訪客連結直接打開
+                        setViewingNews(loaded);
                     } else {
                         showAlert('找不到此電子報，可能已被刪除！');
                     }
@@ -524,8 +541,9 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
             } else {
                 unsubNews = window.db.collection('newsletters')
                 .orderBy('createdAt', 'desc')
-                .limit(10) // 👈 新增這行
-                .onSnapshot(snap => {
+                .limit(5) // 🚀 提速優化：先抓 5 份日報封面，減少網路負擔
+                .onSnapshot({ includeMetadataChanges: true }, snap => {
+                    if (snap.empty && snap.metadata.fromCache) return; // ✨ 擋掉空快取防閃爍
                     setNewsList(snap.docs.map(d => ({id: d.id, ...d.data()})));
                     setLoading(false);
                 });
