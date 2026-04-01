@@ -57,11 +57,11 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
         images.current.stone.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png";
         images.current.diamond.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png";
-        images.current.zombie.src = "https://minotar.net/helm/Zombie/64.png";
-        images.current.spider.src = "https://minotar.net/helm/Spider/64.png";
-        images.current.silverfish.src = "https://minotar.net/helm/Silverfish/64.png";
-        images.current.creeper.src = "https://minotar.net/helm/Creeper/64.png";
-        images.current.dragon.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/dragon_head.png";
+        images.current.zombie.src = "https://minotar.net/helm/MHF_Zombie/64.png";
+        images.current.spider.src = "https://minotar.net/helm/MHF_Spider/64.png";
+        images.current.silverfish.src = "https://minotar.net/helm/MHF_Silverfish/64.png";
+        images.current.creeper.src = "https://minotar.net/helm/MHF_Creeper/64.png";
+        images.current.dragon.src = "https://minotar.net/helm/MHF_EnderDragon/64.png";
         images.current.minecart.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/minecart.png";
         
         bgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3");
