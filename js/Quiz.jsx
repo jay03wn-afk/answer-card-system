@@ -259,13 +259,21 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
         const clipboardData = e.clipboardData || window.clipboardData;
         if (!clipboardData) return;
 
-        // 1. 先取得 HTML 資料，判斷是否為 Word 或網頁複製過來的內容
         const htmlData = clipboardData.getData('text/html');
-        // 新增：取得純文字資料，用於判斷是否為 Word 複製的複合內容
-        const plainText = clipboardData.getData('text/plain');
+        const items = clipboardData.items;
+
+        let hasImageItem = false;
+        let hasTextFormat = false;
+
+        // 判斷剪貼簿內含有的資料格式
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) hasImageItem = true;
+            // 偵測是否含有任何文字格式 (包含 text/plain, text/html, text/rtf)
+            if (items[i].type.indexOf('text') !== -1) hasTextFormat = true; 
+        }
 
         // ==========================================
-        // 情況 2：優先處理從 Word 或網頁複製的「圖文混排」(含大量 Base64 圖片)
+        // 情況 1：優先處理從 Word 或網頁複製的「圖文混排」(含有 Base64 圖片)
         // ==========================================
         if (htmlData && htmlData.includes('data:image')) {
             e.preventDefault();
@@ -311,7 +319,6 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                 }));
 
                 const finalHtml = doc.body.innerHTML;
-                // ✨ 改用 editorRef.current 防止抓錯元素
                 if (editorRef.current) {
                     editorRef.current.innerHTML = editorRef.current.innerHTML.replace(new RegExp(`<div id="${tempId}".*?</div>`), finalHtml);
                     handleInput();
@@ -322,64 +329,64 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
             } finally {
                 setIsUploading(false);
             }
-            return; // ✨ 處理完直接結束，不要往下走
+            return;
         }
 
         // ==========================================
-        // ✨ 新增防呆：如果是從 Word/網頁 複製純文字或帶格式文字 (但沒有 Base64 圖片)
+        // 情況 2：一般的 Word / 網頁圖文混排 (無 Base64)
+        // ✨ 修復核心：如果有任何文字格式存在，我們必須放行給瀏覽器原生處理，
+        // 絕對不能攔截，否則 Word 複製過來的整包內容會被誤判成「單張截圖」！
         // ==========================================
-        if (htmlData && htmlData.trim().length > 0) {
+        if (hasTextFormat) {
             return; 
         }
 
         // ==========================================
-        // ✨ 終極修復：避免 Word 圖文混排變成「單張圖片」
+        // 情況 3：純粹的圖片複製 (例如 PrintScreen、Line 截圖)
+        // 只有在「有圖片」且「完全沒有文字格式」的時候，我們才當作純截圖攔截！
         // ==========================================
-        const items = clipboardData.items;
-        let hasImageItem = false;
-        let hasTextItem = plainText && plainText.trim().length > 0;
+        if (hasImageItem && !hasTextFormat) {
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    e.preventDefault(); 
+                    const file = items[i].getAsFile();
+                    if (!file) continue;
 
-        for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf('image') !== -1) hasImageItem = true;
-            if (items[i].type === 'text/plain') hasTextItem = true;
-        }
+                    setIsUploading(true);
+                    const tempId = 'img-' + Date.now();
+                    document.execCommand('insertHTML', false, `<span id="${tempId}" class="text-blue-500 font-bold">[🖼️ 圖片上傳中...]</span>`);
+                    handleInput();
 
-        // 💡 如果同時有文字和圖片，這就是 Word 產生的複合內容，
-        // 我們直接 return 交給瀏覽器處理，這樣文字就不會消失變成一張截圖！
-        if (hasImageItem && hasTextItem) {
-            return; 
-        }
-
-        // ==========================================
-        // 情況 1：最後才處理「純粹的圖片複製」(例如 Line 截圖、PrintScreen)
-        // ==========================================
-        for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf('image') !== -1) {
-                e.preventDefault(); 
-                const file = items[i].getAsFile();
-                if (!file) continue;
-
-                setIsUploading(true);
-                const tempId = 'img-' + Date.now();
-                document.execCommand('insertHTML', false, `<span id="${tempId}" class="text-blue-500 font-bold">[🖼️ 圖片上傳中...]</span>`);
-                handleInput();
-
-                uploadSingleFile(file, (url, err) => {
-                    if (editorRef.current) {
-                        let currentHtml = editorRef.current.innerHTML;
-                        const regex = new RegExp(`<span id="${tempId}"[^>]*>.*?<\\/span>`, 'g');
-                        if (url) {
-                            currentHtml = currentHtml.replace(regex, `<img src="${url}" style="max-width: 100%; height: auto; border: 1px solid #ccc; margin: 10px 0; border-radius: 4px;" alt="試題附圖" />`);
-                        } else {
-                            currentHtml = currentHtml.replace(regex, `<span class="text-red-500">[上傳失敗]</span>`);
-                            if (showAlert && err) showAlert("圖片上傳失敗：" + err.message);
-                        }
-                        editorRef.current.innerHTML = currentHtml;
-                        handleInput();
+                    // 處理單圖上傳與替換文字
+                    try {
+                        const path = `uploads/${window.auth.currentUser.uid}/${Date.now()}_img.jpg`;
+                        const storageRef = window.storage.ref(path);
+                        const task = storageRef.put(file);
+                        
+                        task.on('state_changed',
+                            null,
+                            (error) => {
+                                console.error(error);
+                                if (editorRef.current) {
+                                    editorRef.current.innerHTML = editorRef.current.innerHTML.replace(new RegExp(`<span id="${tempId}"[^>]*>.*?<\\/span>`, 'g'), `<span class="text-red-500">[上傳失敗]</span>`);
+                                    handleInput();
+                                }
+                                setIsUploading(false);
+                            },
+                            async () => {
+                                const url = await task.snapshot.ref.getDownloadURL();
+                                if (editorRef.current) {
+                                    editorRef.current.innerHTML = editorRef.current.innerHTML.replace(new RegExp(`<span id="${tempId}"[^>]*>.*?<\\/span>`, 'g'), `<img src="${url}" style="max-width: 100%; height: auto; border: 1px solid #ccc; margin: 10px 0; border-radius: 4px;" alt="試題附圖" />`);
+                                    handleInput();
+                                }
+                                setIsUploading(false);
+                            }
+                        );
+                    } catch (error) {
+                        setIsUploading(false);
                     }
-                    setIsUploading(false);
-                });
-                break; // 處理完單張圖片就跳出
+                    break;
+                }
             }
         }
     };
@@ -1227,21 +1234,6 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     // ✨ 新增搜尋狀態
     const [searchQuery, setSearchQuery] = useState('');
     const [pendingShareCode, setPendingShareCode] = useState(() => new URLSearchParams(window.location.search).get('shareCode'));
-
-    // --- 新增自動背景重新整理 (我的題庫)，每 3 秒同步一次 ---
-    useEffect(() => {
-        const timer = setInterval(() => {
-            if (!isRefreshing) {
-                window.db.collection('users').doc(user.uid).collection('quizzes')
-                    .orderBy('createdAt', 'desc')
-                    .limit(visibleLimit)
-                    .get({ source: 'server' })
-                    .then(() => setRefreshTrigger(prev => prev + 1))
-                    .catch(e => console.log('背景同步略過', e));
-            }
-        }, 3000);
-        return () => clearInterval(timer);
-    }, [isRefreshing, user.uid, visibleLimit]);
 
     const specialFolders = ['我建立的試題', '未分類', '任務牆'];
     const rawUserFolders = (userProfile.folders || []).filter(f => !specialFolders.includes(f));
@@ -4070,19 +4062,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [showAdminMode, setShowAdminMode] = useState(false);
     const [isEditExpanded, setIsEditExpanded] = useState(false);
     
-    // --- 新增自動背景重新整理 (快問快答)，每 3 秒同步一次 ---
-    useEffect(() => {
-        if (targetQaId) return; // 單題模式不輪詢
-        const timer = setInterval(() => {
-            if (!isRefreshing) {
-                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get({ source: 'server' })
-                    .then(() => setRefreshTrigger(prev => prev + 1))
-                    .catch(e => console.log('背景同步略過', e));
-            }
-        }, 3000);
-        return () => clearInterval(timer);
-    }, [isRefreshing, targetQaId, qaLimit]);
-
     const isAdmin = user && user.email === 'jay03wn@gmail.com';
     
     // 管理員表單狀態 (升級自訂功能)
