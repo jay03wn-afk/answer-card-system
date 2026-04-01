@@ -18,17 +18,13 @@ const playCachedSound = (url) => {
     audioClone.play().catch(e => console.log("音效播放被阻擋", e));
 };
 // --- 礦車跑酷小遊戲組件 ---
-// --- 礦車跑酷小遊戲組件 ---
-// --- 礦車跑酷小遊戲組件 ---
-function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGameOver, onQuit }) {
+function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
     const canvasRef = useRef(null);
     const [gameState, setGameState] = useState('start'); 
-    const [score, setScore] = useState(0);
     
-    // --- 排行榜狀態 ---
-    const [leaderboard, setLeaderboard] = useState([]);
-    const [highScore, setHighScore] = useState(0);
-
+    // ✨ 將原本單一的 score 改為紀錄 距離、收集鑽石 與 總收益
+    const [runStats, setRunStats] = useState({ distance: 0, diamonds: 0, totalEarned: 0 });
+    
     const bgmRef = useRef(null);
     const deadSfxRef = useRef(null);
     const explodeSfxRef = useRef(null);
@@ -42,14 +38,14 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
         obstacles: [],
         diamonds: [],
         speed: 6,
-        score: 0,
+        distance: 0,          // ✨ 新增距離紀錄
+        collectedDiamonds: 0, // ✨ 新增收集鑽石紀錄
         frames: 0,
         lastSpawnFrame: 0,
         nextDiamondFrame: 180,
         groundY: 250,
         targetGroundY: 250, 
         isCave: false,
-        isNether: false,
         lastJumpTime: 0, 
         lastFrameTime: 0
     });
@@ -57,34 +53,19 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
     const images = useRef({ 
         steve: new Image(), stone: new Image(), diamond: new Image(),
         zombie: new Image(), spider: new Image(), silverfish: new Image(),
-        creeper: new Image(), dragon: new Image(), minecart: new Image(),
-        netherrack: new Image(), magma: new Image(), ghast: new Image(),
-        fireball: new Image(), portal: new Image()
+        creeper: new Image(), dragon: new Image(), minecart: new Image()
     });
-
-    // 取得本週的唯一字串 (以週日為每週起點)
-    const getWeekString = () => {
-        const now = new Date();
-        const firstDay = new Date(now.setDate(now.getDate() - now.getDay()));
-        return `${firstDay.getFullYear()}-${firstDay.getMonth() + 1}-${firstDay.getDate()}`;
-    };
 
     useEffect(() => {
         images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
         images.current.stone.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png";
         images.current.diamond.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png";
-        images.current.zombie.src = "https://minotar.net/helm/MHF_Zombie/64.png";
-        images.current.spider.src = "https://minotar.net/helm/MHF_Spider/64.png";
-        images.current.silverfish.src = "https://minotar.net/helm/MHF_Silverfish/64.png";
-        images.current.creeper.src = "https://minotar.net/helm/MHF_Creeper/64.png";
-        images.current.dragon.src = "https://minotar.net/helm/MHF_EnderDragon/64.png";
+        images.current.zombie.src = "https://minotar.net/helm/Zombie/64.png";
+        images.current.spider.src = "https://minotar.net/helm/Spider/64.png";
+        images.current.silverfish.src = "https://minotar.net/helm/Silverfish/64.png";
+        images.current.creeper.src = "https://minotar.net/helm/Creeper/64.png";
+        images.current.dragon.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/dragon_head.png";
         images.current.minecart.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/minecart.png";
-        
-        images.current.netherrack.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/netherrack.png";
-        images.current.magma.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/magma.png";
-        images.current.ghast.src = "https://minotar.net/helm/MHF_Ghast/64.png";
-        images.current.fireball.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/fire_charge.png";
-        images.current.portal.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_portal.png";
         
         bgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3");
         bgmRef.current.loop = true;
@@ -95,53 +76,6 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
         explodeSfxRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/exEXP.mp3");
         explodeSfxRef.current.volume = 0.8;
         
-        // --- 排行榜與自動結算系統 ---
-        if (user && userProfile) {
-            const weekStr = getWeekString();
-            const sysRef = window.db.collection('system').doc('minecart');
-            
-            sysRef.get().then(doc => {
-                let data = doc.exists ? doc.data() : { week: weekStr, scores: {}, lastWeek: {} };
-                
-                // 若換週，備份並重置分數
-                if (data.week !== weekStr) {
-                    data.lastWeek = data.scores || {};
-                    data.scores = {};
-                    data.week = weekStr;
-                    sysRef.set(data);
-                }
-                
-                // 檢查是否符合上週獎勵發放資格
-                if (data.lastWeek && Object.keys(data.lastWeek).length > 0) {
-                    const lastWeekRank = Object.entries(data.lastWeek)
-                        .map(([uid, info]) => ({ uid, ...info }))
-                        .sort((a, b) => b.score - a.score);
-                        
-                    const myRankIndex = lastWeekRank.findIndex(r => r.uid === user.uid);
-                    if (myRankIndex >= 0 && myRankIndex < 3) {
-                        const rewardWeekStr = data.week + "_last"; // 標記為已領取此週獎勵
-                        if (mcData.minecartRewardClaimedWeek !== rewardWeekStr) {
-                            const rewards = [100, 60, 30];
-                            const earned = rewards[myRankIndex];
-                            updateMcData({ 
-                                diamonds: (mcData.diamonds || 0) + earned, 
-                                minecartRewardClaimedWeek: rewardWeekStr 
-                            }, true);
-                            showAlert(`🏆 恭喜！你在上週的礦車小遊戲獲得第 ${myRankIndex + 1} 名！\n獎勵發放：${earned} 💎`);
-                        }
-                    }
-                }
-
-                // 載入當前排行顯示
-                const currentRanks = Object.entries(data.scores || {})
-                    .map(([uid, info]) => ({ uid, ...info }))
-                    .sort((a, b) => b.score - a.score);
-                    
-                setLeaderboard(currentRanks);
-                setHighScore(data.scores?.[user.uid]?.score || 0);
-            });
-        }
-
         const cvs = canvasRef.current;
         if (cvs) {
             const ctx = cvs.getContext('2d');
@@ -162,7 +96,8 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
 
     const startGame = () => {
         setGameState('playing');
-        setScore(0);
+        setRunStats({ distance: 0, diamonds: 0, totalEarned: 0 }); // ✨ 初始化狀態
+        
         if (mcData.hunger < 1) {
             showAlert("🍖 史蒂夫太餓了！請先去商店買點東西吃，再來玩礦車吧！");
             return; 
@@ -179,14 +114,14 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
             obstacles: [],
             diamonds: [],
             speed: 6.5,
-            score: 0,
+            distance: 0,          // ✨ 距離歸零
+            collectedDiamonds: 0, // ✨ 鑽石歸零
             frames: 0,
             lastSpawnFrame: 0,
             nextDiamondFrame: Math.floor(Math.random() * 240 + 120), 
             groundY: 250,
             targetGroundY: 250,
             isCave: false,
-            isNether: false,
             lastJumpTime: 0,
             lastFrameTime: performance.now()
         };
@@ -236,22 +171,23 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
             }
         };
 
+        // ✨ 每一幀根據速度增加距離
+        state.distance += state.speed / 10;
+        
+        // ✨ 每 5 幀更新一次 React State，避免過度渲染導致卡頓
+        if (state.frames % 5 === 0) {
+            setRunStats(prev => ({ ...prev, distance: Math.floor(state.distance), diamonds: state.collectedDiamonds }));
+        }
+
         let prevBottom = state.player.y + state.player.h; 
         state.player.dy += 0.7; 
         state.player.y += state.player.dy;
 
-        // 階段計算：草原 (900) -> 洞穴 (900) -> 地獄 (900) 循環
-        let cyclePos = state.frames % 2700;
-        state.isCave = cyclePos >= 900 && cyclePos < 1800;
-        state.isNether = cyclePos >= 1800;
+        state.isCave = Math.floor(state.frames / 900) % 2 !== 0;
 
         if (state.isCave) {
             if (state.frames % 150 === 0) {
                 state.targetGroundY = 180 + Math.random() * 100;
-            }
-        } else if (state.isNether) {
-            if (state.frames % 40 === 0) { // 地獄地形更凹凸不平
-                state.targetGroundY = 160 + Math.random() * 110;
             }
         } else {
             state.targetGroundY = 250; 
@@ -294,35 +230,13 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
 
         for (let i = 0; i < state.obstacles.length; i++) {
             let obs = state.obstacles[i];
-            if (obs.type === 'pit' || obs.type === 'portal') {
+            if (obs.type === 'pit') {
                 obs.x -= state.speed;
                 continue;
             }
 
             if (obs.type === 'dragon') {
                 obs.x -= (state.speed + 2.5);
-            } else if (obs.type === 'ghast') {
-                obs.x -= Math.max(1, state.speed - 3.5); 
-                obs.y += Math.sin(state.frames * 0.05) * 1.5; 
-                
-                // 幽靈發射火球 (加大特效與發射音效)
-                if (Math.random() < 0.015 && obs.x > state.player.x && obs.x < LOG_W - 50) {
-                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/ghast/fireball4.ogg');
-                    state.obstacles.push({
-                        type: 'fireball',
-                        x: obs.x - 10,
-                        y: obs.y + obs.h / 2 - 10,
-                        w: 30, // 火球變大
-                        h: 30,
-                        dx: - (state.speed + 3.5), // 火球速度微調
-                        dy: (state.player.y - obs.y) * 0.025
-                    });
-                }
-            } else if (obs.type === 'fireball') {
-                obs.x += obs.dx;
-                obs.y += obs.dy;
-                // 添加一點火球的上下飄浮感
-                obs.y += Math.sin(state.frames * 0.2) * 2;
             } else if (obs.type === 'spider') {
                 obs.x -= (state.speed + 1.5); 
                 if (Math.random() < 0.01 && obs.y >= state.groundY - obs.h - 5) obs.dy = -8; 
@@ -337,37 +251,32 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
             } else if (obs.type === 'silverfish') {
                 obs.x -= (state.speed + 1.2);
             } else if (obs.type === 'creeper') {
-                // 苦力怕速度降低 20%
-                obs.x -= Math.max(1.5, (state.speed - 2.5) * 0.8); 
+                obs.x -= Math.max(2, state.speed - 2.5); 
                 
                 if (!obs.defused && obs.x < state.player.x + 10) {
                     dead = true;
                     killedByCreeper = true; 
-                } else {
-                    obs.x -= state.speed; 
-                }
-            } else if (obs.type === 'magma' || obs.type === 'netherrack_block' || obs.type === 'stone' || obs.type === 'zombie' || obs.type === 'ceiling_spider') {
-                obs.x -= state.speed;
-            }
+                     } else {
+                obs.x -= state.speed; 
+            }}
 
             if (
                 !(obs.type === 'creeper' && obs.defused) &&
-                obs.type !== 'portal' && // 傳送門是安全的
                 state.player.x + 5 < obs.x + obs.w - 5 &&
                 state.player.x + state.player.w - 5 > obs.x + 5 &&
                 state.player.y + 5 < obs.y + obs.h - 5 &&
                 state.player.y + state.player.h > obs.y + 5
             ) {
-                if (obs.type === 'stone' || obs.type === 'netherrack_block') {
+                if (obs.type === 'stone') {
                     if (state.player.dy > 0 && prevBottom <= obs.y + 15) {
                         state.player.y = obs.y - state.player.h;
                         state.player.dy = 0;
                         state.player.jumps = 0; 
                     } else dead = true; 
-                } else {
-                    dead = true;
-                    if (obs.type === 'creeper') killedByCreeper = true;
-                }
+                }else {
+                     dead = true;
+                      if (obs.type === 'creeper') killedByCreeper = true;
+                    }
             }
         }
 
@@ -380,55 +289,41 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                 state.player.y + state.player.h > d.y
             ) {
                 d.collected = true;
-                state.score += 1;
-                setScore(state.score);
+                state.collectedDiamonds += 1; // ✨ 記錄撿到的鑽石
             }
         });
 
         if (dead) {
-            if (killedByCreeper) {
-                if (explodeSfxRef.current) {
-                    explodeSfxRef.current.currentTime = 0;
-                    explodeSfxRef.current.play().catch(e => console.log(e));
-                }
-                ctx.fillStyle = 'rgba(255, 100, 0, 0.8)';
-                ctx.beginPath();
-                ctx.arc(state.player.x + state.player.w / 2, state.player.y + state.player.h / 2, 80, 0, Math.PI * 2);
-                ctx.fill();
-                
-                ctx.fillStyle = 'rgba(255, 200, 0, 0.9)';
-                ctx.beginPath();
-                ctx.arc(state.player.x + state.player.w / 2, state.player.y + state.player.h / 2, 50, 0, Math.PI * 2);
-                ctx.fill();
+        if (killedByCreeper) {
+            if (explodeSfxRef.current) {
+                explodeSfxRef.current.currentTime = 0;
+                explodeSfxRef.current.play().catch(e => console.log(e));
             }
-            endGame(killedByCreeper);
-            return;
-        }   
+            ctx.fillStyle = 'rgba(255, 100, 0, 0.8)';
+            ctx.beginPath();
+            ctx.arc(state.player.x + state.player.w / 2, state.player.y + state.player.h / 2, 80, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = 'rgba(255, 200, 0, 0.9)';
+            ctx.beginPath();
+            ctx.arc(state.player.x + state.player.w / 2, state.player.y + state.player.h / 2, 50, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        endGame(killedByCreeper);
+        return;
+         }   
 
         state.frames++;
         if (state.frames % 100 === 0 && state.speed < 15) state.speed += 0.2;
 
         let spawnInterval = Math.max(40, 100 - state.speed * 4);
         
-        // 傳送門生成邏輯 (洞穴尾聲)
-        if (cyclePos === 1750) {
-            state.obstacles.push({ type: 'portal', x: LOG_W, y: state.groundY - 100, w: 70, h: 100 });
-        }
-
         if (state.frames - state.lastSpawnFrame > spawnInterval) {
             if (Math.random() < 0.55) { 
                 state.lastSpawnFrame = state.frames;
                 let rand = Math.random();
                 
-                if (state.isNether) {
-                    // 地獄不會出現苦力怕
-                    if (rand < 0.25) state.obstacles.push({ type: 'ghast', x: LOG_W, y: 30 + Math.random() * 60, w: 50, h: 50 });
-                    else if (rand < 0.5) state.obstacles.push({ type: 'magma', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
-                    else if (rand < 0.75) {
-                        let hType = Math.random() < 0.5 ? 40 : 80;
-                        state.obstacles.push({ type: 'netherrack_block', x: LOG_W, y: state.groundY - hType, w: 40, h: 40 });
-                    } else state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 100 + 100, h: 100 });
-                } else if (state.isCave) {
+                if (state.isCave) {
                     if (rand < 0.2) state.obstacles.push({ type: 'spider', x: LOG_W, y: state.groundY - 40, w: 40, h: 30, dy: 0 });
                     else if (rand < 0.4) state.obstacles.push({ type: 'silverfish', x: LOG_W, y: state.groundY - 20, w: 30, h: 20 });
                     else if (rand < 0.55) state.obstacles.push({ type: 'creeper', x: LOG_W, y: state.groundY - 40, w: 30, h: 40, defused: false });
@@ -447,65 +342,39 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
             }
         }
         
-        // 鑽石生成：地獄頻率增加 50%
         if (state.frames >= state.nextDiamondFrame) {
             let dY = state.groundY - 50 - Math.random() * 70;
-            if ((state.isCave || state.isNether) && dY < 80) dY = 80; 
+            if (state.isCave && dY < 80) dY = 80; 
             state.diamonds.push({ x: LOG_W, y: dY, w: 24, h: 24, collected: false });
-            
-            // 地獄頻率增加 50%：縮短生成間隔
-            let baseInterval = Math.floor(Math.random() * 240 + 120);
-            if (state.isNether) {
-                baseInterval = Math.floor(baseInterval * 0.5); 
-            }
-            state.nextDiamondFrame = state.frames + baseInterval;
+            state.nextDiamondFrame = state.frames + Math.floor(Math.random() * 240 + 120);
         }
 
         ctx.clearRect(0, 0, LOG_W, LOG_H);
         
-        ctx.fillStyle = state.isNether ? '#3a0000' : (state.isCave ? '#222222' : '#6bc0ff');
+        ctx.fillStyle = state.isCave ? '#222222' : '#6bc0ff';
         ctx.fillRect(0, 0, LOG_W, LOG_H);
 
-        if (state.isNether) {
-            ctx.fillStyle = '#550000'; 
-            ctx.fillRect(0, 0, LOG_W, 50 + Math.sin(state.frames * 0.05) * 10);
-        } else if (state.isCave) {
+        if (state.isCave) {
             ctx.fillStyle = '#333333'; 
             ctx.fillRect(0, 0, LOG_W, 40);
         }
 
-        if (state.isNether) {
-             ctx.fillStyle = '#5A1111';
-             ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
-             ctx.fillStyle = '#3A0A0A'; 
-             ctx.fillRect(0, state.groundY, LOG_W, 8);
-        } else {
-            ctx.fillStyle = state.isCave ? '#4a4a4a' : '#5A5A5A';
-            ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
-            ctx.fillStyle = state.isCave ? '#2d2d2d' : '#4A4A4A'; 
-            ctx.fillRect(0, state.groundY, LOG_W, 8);
-        }
+        ctx.fillStyle = state.isCave ? '#4a4a4a' : '#5A5A5A';
+        ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
+        ctx.fillStyle = state.isCave ? '#2d2d2d' : '#4A4A4A'; 
+        ctx.fillRect(0, state.groundY, LOG_W, 8);
         
         state.obstacles.forEach(obs => {
             if (obs.type === 'pit') {
                 ctx.clearRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
-                if (state.isNether) {
-                    ctx.fillStyle = '#3a0000';
-                    ctx.fillRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
-                    ctx.fillStyle = '#ff5500'; // 岩漿坑
-                    ctx.fillRect(obs.x, LOG_H - 20, obs.w, 20);
-                } else {
-                    ctx.fillStyle = state.isCave ? '#222222' : '#6bc0ff';
-                    ctx.fillRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
-                }
+                ctx.fillStyle = state.isCave ? '#222222' : '#6bc0ff';
+                ctx.fillRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
             }
         });
 
         state.obstacles.forEach(obs => {
             if (obs.type === 'stone') {
                 drawImgSafe(images.current.stone, obs.x, obs.y, obs.w, obs.h, '#888');
-            } else if (obs.type === 'netherrack_block') {
-                drawImgSafe(images.current.netherrack, obs.x, obs.y, obs.w, obs.h, '#600');
             } else if (obs.type === 'zombie') {
                 drawImgSafe(images.current.zombie, obs.x, obs.y, obs.w, obs.h, '#005500');
             } else if (obs.type === 'spider' || obs.type === 'ceiling_spider') {
@@ -514,19 +383,6 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                 drawImgSafe(images.current.silverfish, obs.x, obs.y, obs.w, obs.h, '#999');
             } else if (obs.type === 'dragon') {
                 drawImgSafe(images.current.dragon, obs.x, obs.y, obs.w, obs.h, '#000');
-            } else if (obs.type === 'ghast') {
-                drawImgSafe(images.current.ghast, obs.x, obs.y, obs.w, obs.h, '#fff');
-            } else if (obs.type === 'fireball') {
-                drawImgSafe(images.current.fireball, obs.x, obs.y, obs.w, obs.h, '#ffaa00');
-            } else if (obs.type === 'magma') {
-                drawImgSafe(images.current.magma, obs.x, obs.y, obs.w, obs.h, '#ff5500');
-                ctx.fillStyle = '#ffaa00';
-                if (Math.floor(state.frames / 10) % 2 === 0) ctx.fillRect(obs.x + 8, obs.y - 15, 6, 15);
-                if (Math.floor(state.frames / 8) % 2 === 0) ctx.fillRect(obs.x + 24, obs.y - 25, 6, 25);
-            } else if (obs.type === 'portal') {
-                ctx.globalAlpha = 0.8;
-                drawImgSafe(images.current.portal, obs.x, obs.y, obs.w, obs.h, '#aa00ff');
-                ctx.globalAlpha = 1.0;
             } else if (obs.type === 'creeper') {
                 if (obs.defused) {
                     ctx.globalAlpha = 0.3;
@@ -547,19 +403,10 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
         drawImgSafe(images.current.minecart, state.player.x - 4, state.player.y + state.player.h - 15, state.player.w + 8, 20, '#555');
         drawImgSafe(images.current.steve, state.player.x + 2, state.player.y - 5, state.player.w - 4, state.player.h - 5, '#ffccaa');
 
-        // 階段提示文字
-        if (state.isCave && cyclePos < 1000) {
+        if (state.isCave && state.frames % 900 < 100) {
             ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.font = 'bold 20px Courier New';
-            ctx.fillText("你進入了危險的窄洞穴...", LOG_W/2 - 120, LOG_H/2);
-        } else if (cyclePos >= 1700 && cyclePos < 1800) {
-            ctx.fillStyle = 'rgba(180,0,255,0.8)';
-            ctx.font = 'bold 20px Courier New';
-            ctx.fillText("前方出現了地獄傳送門！", LOG_W/2 - 120, LOG_H/2);
-        } else if (state.isNether && cyclePos < 1900) {
-            ctx.fillStyle = 'rgba(255,50,50,0.8)';
-            ctx.font = 'bold 20px Courier New';
-            ctx.fillText("🔥 歡迎來到地獄！ 🔥", LOG_W/2 - 110, LOG_H/2);
+            ctx.fillText("你進入了危險的洞穴...", LOG_W/2 - 120, LOG_H/2);
         }
 
         state.reqId = requestAnimationFrame(loop);
@@ -574,38 +421,20 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
             deadSfxRef.current.play().catch(e=>console.log("音效阻擋", e));
         }
         
-        const finalScore = gameRef.current.score;
-        onGameOver(finalScore); 
-        if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
+        // ✨ 結算邏輯：每跑 10m 轉換為 1 顆鑽石，並加上沿途吃到的鑽石
+        const finalDistance = Math.floor(gameRef.current.distance);
+        const distanceBonus = Math.floor(finalDistance / 100);
+        const totalEarnedDiamonds = gameRef.current.collectedDiamonds + distanceBonus;
+        
+        // ✨ 更新給結算畫面的狀態
+        setRunStats({
+            distance: finalDistance,
+            diamonds: gameRef.current.collectedDiamonds,
+            totalEarned: totalEarnedDiamonds
+        });
 
-        // --- 遊戲結束時上傳分數 ---
-        if (user && userProfile && finalScore > 0) {
-            const sysRef = window.db.collection('system').doc('minecart');
-            sysRef.get().then(doc => {
-                const data = doc.exists ? doc.data() : { week: getWeekString(), scores: {} };
-                
-                // 防呆檢查：如果剛好跨週
-                if (data.week !== getWeekString()) {
-                    data.lastWeek = data.scores || {};
-                    data.scores = {};
-                    data.week = getWeekString();
-                }
-                if (!data.scores) data.scores = {};
-                
-                const previousBest = data.scores[user.uid]?.score || 0;
-                if (finalScore > previousBest) {
-                    data.scores[user.uid] = { name: userProfile.displayName, score: finalScore };
-                    sysRef.set(data);
-                    setHighScore(finalScore);
-                    
-                    // 更新畫面上的排行榜
-                    const currentRanks = Object.entries(data.scores)
-                        .map(([uid, info]) => ({ uid, ...info }))
-                        .sort((a, b) => b.score - a.score);
-                    setLeaderboard(currentRanks);
-                }
-            });
-        }
+        onGameOver(totalEarnedDiamonds); // ✨ 確實把總獎勵鑽石回傳，讓使用者的資料庫有進帳
+        if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
     };
 
     const handlePointerDown = (e) => {
@@ -634,8 +463,7 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                     clickY >= obs.y - 30 && clickY <= obs.y + obs.h + 30) {
                     obs.defused = true;
                     hitCreeper = true;
-                    state.score += 1; 
-                    setScore(state.score);
+                    state.collectedDiamonds += 1; // ✨ 解除苦力怕也算撿到一顆鑽石當作獎勵
                     break;
                 }
             }
@@ -647,8 +475,15 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
     return (
         <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4">
             <div className="bg-gray-800 p-2 border-4 border-gray-600 no-round w-full max-w-4xl relative shadow-2xl">
+                {/* ✨ 更新上方資訊欄位，同時顯示距離與鑽石 */}
                 <div className="flex justify-between text-white font-bold mb-2 font-mono px-2 text-xl">
-                    <span className="flex items-center"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png" fallback="💎" className="w-6 h-6 mr-2 pixelated" /> {score}</span>
+                    <span className="flex items-center space-x-4">
+                        <span className="text-green-400">🏃 {runStats.distance} m</span>
+                        <span className="flex items-center text-blue-300">
+                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png" fallback="💎" className="w-5 h-5 mr-1 pixelated" /> 
+                            {runStats.diamonds}
+                        </span>
+                    </span>
                     <button onClick={onQuit} className="text-red-400 hover:text-red-300 transition-colors">✖ 離開</button>
                 </div>
                 
@@ -661,38 +496,29 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                     
                     {gameState === 'start' && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60">
-                            {/* --- 新增：左側排行榜 --- */}
-                            <div className="absolute left-2 sm:left-4 top-2 sm:top-4 bottom-2 sm:bottom-4 w-44 sm:w-56 bg-gray-900 bg-opacity-90 border-2 border-yellow-600 rounded p-2 flex flex-col z-20 pointer-events-auto shadow-2xl" onPointerDown={(e) => e.stopPropagation()}>
-                                <h3 className="text-yellow-400 font-bold text-center border-b border-gray-600 mb-2 pb-1 text-sm sm:text-base">🏆 礦車排行榜<br/><span className="text-[10px] sm:text-xs text-gray-400">週日結算 (100/60/30💎)</span></h3>
-                                <div className="flex-grow overflow-y-auto custom-scrollbar space-y-1">
-                                    {leaderboard.length === 0 ? (
-                                        <p className="text-gray-400 text-center text-xs py-4">本週尚無人挑戰，搶下第一吧！</p>
-                                    ) : (
-                                        leaderboard.map((lb, i) => (
-                                            <div key={i} className={`flex justify-between items-center px-1 sm:px-2 py-1 rounded border ${lb.uid === user?.uid ? 'bg-yellow-900 bg-opacity-50 border-yellow-700' : 'bg-gray-800 border-gray-700'}`}>
-                                                <span className="font-bold text-xs sm:text-sm text-white truncate max-w-[65%]">
-                                                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`} {lb.name}
-                                                </span>
-                                                <span className="text-green-400 font-bold text-[10px] sm:text-xs shrink-0">{lb.score} 💎</span>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                                <div className="text-center mt-2 text-xs sm:text-sm text-gray-400 border-t border-gray-600 pt-2 shrink-0">
-                                    我的本週最高: <span className="text-white font-bold">{highScore}</span>
-                                </div>
-                            </div>
-                            
-                            <button className="mc-btn px-6 sm:px-8 py-3 sm:py-4 text-xl sm:text-2xl animate-pulse pointer-events-none z-10 ml-32 sm:ml-48 shadow-lg">🛻 點擊開始</button>
+                            <button className="mc-btn px-8 py-4 text-2xl animate-pulse pointer-events-none">🛻 點擊開始</button>
                         </div>
                     )}
                     
                     {gameState === 'gameover' && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-80 text-white">
                             <h2 className="text-4xl font-black mb-2 text-red-500 drop-shadow-md">GAME OVER</h2>
-                            <p className="mb-8 font-bold text-xl flex items-center">
-                                獲得了 {score} <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png" fallback="💎" className="w-6 h-6 ml-2 pixelated" />
-                            </p>
+                            
+                            {/* ✨ 清晰的結算面板 */}
+                            <div className="flex flex-col items-center bg-black bg-opacity-50 p-4 rounded-lg mb-6 border-2 border-gray-600">
+                                <p className="mb-2 font-bold text-xl flex items-center">
+                                    🏃 奔跑距離: <span className="text-green-400 ml-2">{runStats.distance} m</span>
+                                </p>
+                                <p className="mb-2 font-bold text-xl flex items-center">
+                                    💎 收集鑽石: <span className="text-blue-400 ml-2">{runStats.diamonds} 顆</span>
+                                </p>
+                                <div className="h-px w-full bg-gray-500 my-2"></div>
+                                <p className="font-black text-2xl flex items-center text-yellow-400">
+                                    總共獲得 {runStats.totalEarned} <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png" fallback="💎" className="w-6 h-6 ml-2 pixelated" />
+                                </p>
+                                <p className="text-xs text-gray-400 mt-1">(每跑 10m 將額外換算 1 顆 💎)</p>
+                            </div>
+
                             <div className="flex space-x-6 z-10">
                                 <button onClick={(e) => { e.stopPropagation(); startGame(); }} className="mc-btn px-6 py-3 text-lg">🔄 再玩</button>
                                 <button onClick={(e) => { e.stopPropagation(); onQuit(); }} className="mc-btn px-6 py-3 text-lg bg-gray-400">🔙 返回</button>
