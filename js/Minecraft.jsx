@@ -24,7 +24,8 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
     const canvasRef = useRef(null);
     const [gameState, setGameState] = useState('start'); 
     const [score, setScore] = useState(0);
-    const [distance, setDistance] = useState(0); // ✨ 新增距離顯示
+    const [distance, setDistance] = useState(0); 
+    const [isAudioLoaded, setIsAudioLoaded] = useState(false); // ✨ 新增：音效載入狀態
     
     // --- 排行榜狀態 ---
     const [leaderboard, setLeaderboard] = useState([]);
@@ -58,8 +59,7 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
     const images = useRef({ 
         steve: new Image(), stone: new Image(), diamond: new Image(),
         zombie: new Image(), spider: new Image(), silverfish: new Image(),
-        creeper: new Image(), dragon: new Image(), minecart: new Image(),
-        netherrack: new Image(), magma: new Image(), ghast: new Image(),
+creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherrack: new Image(), magma: new Image(), ghast: new Image(),
         fireball: new Image(), portal: new Image()
     });
 
@@ -78,15 +78,36 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
         images.current.spider.src = "https://minotar.net/helm/MHF_Spider/64.png";
         images.current.silverfish.src = "https://minotar.net/helm/MHF_Silverfish/64.png";
         images.current.creeper.src = "https://minotar.net/helm/MHF_Creeper/64.png";
-        images.current.dragon.src = "https://minotar.net/helm/MHF_EnderDragon/64.png";
-        images.current.minecart.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/minecart.png";
+        // ✨ 更新終界龍整體貼圖
+// ✨ 終界龍改為蜘蛛網
+        images.current.cobweb.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/cobweb.png";        images.current.minecart.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/minecart.png";
         
         images.current.netherrack.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/netherrack.png";
         images.current.magma.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/magma.png";
         images.current.ghast.src = "https://minotar.net/helm/MHF_Ghast/64.png";
-        images.current.fireball.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/fire_charge.png";
-        images.current.portal.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_portal.png";
+        // ✨ 更新火球加上火焰貼圖
+        images.current.fireball.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/fire_0.png";
+       images.current.portal.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_portal.png";
         
+        // ✨ 新增：核心音效強制預載機制
+        const requiredAudioUrls = [
+            "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3",
+            "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/Pou%20Game%20over%20Effects.mp3",
+            "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/exEXP.mp3",
+            "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/creeper/death.ogg" // ✨ 更換為穩定的 1.16.5 音效庫
+        ];
+        let loadedCount = 0;
+        requiredAudioUrls.forEach(url => {
+            const a = new Audio(url);
+            a.addEventListener('canplaythrough', () => {
+                loadedCount++;
+                if (loadedCount >= requiredAudioUrls.length) setIsAudioLoaded(true);
+            }, { once: true });
+            a.load();
+            if (!audioCache[url]) audioCache[url] = a; // 順便丟進快取池
+        });
+        setTimeout(() => setIsAudioLoaded(true), 4000); // ✨ 4秒超時保底，避免網路卡住永遠不能玩
+
         bgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3");
         bgmRef.current.loop = true;
         bgmRef.current.volume = 0.4;
@@ -133,10 +154,11 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                     }
                 }
 
-                // 載入當前排行顯示
+                // 載入當前排行顯示 (確保依據距離數字大小排序並取前6名)
                 const currentRanks = Object.entries(data.scores || {})
                     .map(([uid, info]) => ({ uid, ...info }))
-                    .sort((a, b) => (b.distance || 0) - (a.distance || 0));
+                    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+                    .slice(0, 6);
                     
                 setLeaderboard(currentRanks);
                 setHighScore(data.scores?.[user.uid]?.score || 0);
@@ -181,6 +203,9 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
 
         gameRef.current = {
             reqId: null,
+            // ✨ 載入玩家擁有的劍與圖騰
+            activeSword: mcData.activeSword ? { ...mcData.activeSword } : null,
+            hasTotem: mcData.hasTotem || false,
             player: { x: 50, y: 150, w: 36, h: 40, dy: 0, jumps: 0 },
             obstacles: [],
             diamonds: [],
@@ -212,6 +237,30 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
             p.jumps++;
         }
     };
+
+    // ✨ 新增空白鍵跳躍支援
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                jump();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown, { passive: false });
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    // ✨ 新增空白鍵跳躍支援
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                jump();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown, { passive: false });
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     const loop = (currentTime) => {
         const cvs = canvasRef.current;
@@ -253,19 +302,32 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
         state.isCave = cyclePos >= 900 && cyclePos < 1800;
         state.isNether = cyclePos >= 1800;
 
+        // ✨ 紀錄真實的捲動距離，避免加速時造成地形突然位移 (解決刷新感)
+        state.worldOffset = (state.worldOffset || 0) + state.speed;
+
+        // ✨ 地獄連續波浪地形核心數學函數 (結合多重正弦波讓起伏更自然)
+        const getNetherWaveY = (x, frames, speed) => {
+            let worldX = x + state.worldOffset; // 改用真實偏移量
+            return 210 + Math.sin(worldX * 0.004) * 45 + Math.cos(worldX * 0.0025) * 25;
+        };
+
         if (state.isCave) {
             if (state.frames % 150 === 0) {
                 state.targetGroundY = 180 + Math.random() * 100;
             }
+            state.groundY += (state.targetGroundY - state.groundY) * 0.05;
         } else if (state.isNether) {
-            if (state.frames % 40 === 0) { // 地獄地形更凹凸不平
-                state.targetGroundY = 160 + Math.random() * 110;
+            // ✨ 地獄中，腳下的地板高度加入漸進式過渡
+            let targetY = getNetherWaveY(state.player.x + state.player.w / 2, state.frames, state.speed);
+            if (cyclePos < 1830) {
+                state.groundY += (targetY - state.groundY) * 0.1;
+            } else {
+                state.groundY = targetY;
             }
         } else {
             state.targetGroundY = 250; 
+            state.groundY += (state.targetGroundY - state.groundY) * 0.05;
         }
-        
-        state.groundY += (state.targetGroundY - state.groundY) * 0.05;
 
         let inPit = false;
         let dead = false;
@@ -285,7 +347,9 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
 
         if (state.player.y + state.player.h >= state.groundY) {
             if (!inPit) {
-                if (prevBottom <= state.groundY + 15) {
+                // ✨ 波浪地形落差較大，增加地獄著陸的寬容度
+                let tolerance = state.isNether ? 35 : 15; 
+                if (prevBottom <= state.groundY + tolerance) {
                     state.player.y = state.groundY - state.player.h;
                     state.player.dy = 0;
                     state.player.jumps = 0;
@@ -307,15 +371,18 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                 continue;
             }
 
-            if (obs.type === 'dragon') {
-                obs.x -= (state.speed + 2.5);
-            } else if (obs.type === 'ghast') {
-                obs.x -= Math.max(1, state.speed - 3.5); 
+            if (obs.type === 'ghast') {
+                // ✨ 幽靈停留在畫面右側，加上存在時間
+                obs.life = (obs.life || 0) + 1;
+                if (obs.life > 240) obs.x -= (state.speed + 5); // 4秒後飛走
+                else obs.x = LOG_W - 80; 
+
                 obs.y += Math.sin(state.frames * 0.05) * 1.5; 
                 
-                // 幽靈發射火球 (已降低發射機率至 0.008)
-                if (Math.random() < 0.008 && obs.x > state.player.x && obs.x < LOG_W - 50) {
+                // 幽靈發射火球
+                if (Math.random() < 0.012 && obs.x > state.player.x) {
                     playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/ghast/fireball4.ogg');
+                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/ghast/moan1.ogg'); // ✨ 幽靈自己的專屬聲音
                     state.obstacles.push({
                         type: 'fireball',
                         x: obs.x - 10,
@@ -354,11 +421,15 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                 } else {
                     obs.x -= state.speed; 
                 }
-            } else if (obs.type === 'magma' || obs.type === 'netherrack_block' || obs.type === 'stone' || obs.type === 'zombie' || obs.type === 'ceiling_spider') {
-                obs.x -= state.speed;
+} else if (obs.type === 'magma' || obs.type === 'netherrack_block' || obs.type === 'stone' || obs.type === 'zombie' || obs.type === 'ceiling_spider' || obs.type === 'cobweb') {                obs.x -= state.speed;
+                // ✨ 讓岩漿塊自動貼合地獄起伏的表面，不會懸空
+                if (obs.type === 'magma' && state.isNether) {
+                    obs.y = getNetherWaveY(obs.x + obs.w / 2, state.frames, state.speed) - obs.h + 5; 
+                }
             }
 
             if (
+                !obs.killed && // ✨ 如果怪物已經被劍殺死，不再判定碰撞
                 !(obs.type === 'creeper' && obs.defused) &&
                 obs.type !== 'portal' && // 傳送門是安全的
                 state.player.x + 5 < obs.x + obs.w - 5 &&
@@ -373,8 +444,46 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                         state.player.jumps = 0; 
                     } else dead = true; 
                 } else {
-                    dead = true;
-                    if (obs.type === 'creeper') killedByCreeper = true;
+                    // ✨ 檢查是否為可以被砍的怪物
+                    // ✨ 檢查是否為可以被砍的怪物
+                    const isMob = obs.type === 'zombie' || obs.type === 'spider' || obs.type === 'ceiling_spider' || obs.type === 'silverfish';
+                    
+                    if (isMob && state.activeSword && state.activeSword.durability > 0) {
+                        obs.killed = true; 
+                        state.activeSword.durability -= 1;
+                        playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/attack/sweep1.ogg"); // 揮劍斬殺音效
+                        
+                        // ✨ 新增：播放對應怪物的受傷/死亡音效
+                        if (obs.type === 'zombie') {
+                            playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/zombie/hurt1.ogg");
+                        } else if (obs.type === 'spider' || obs.type === 'ceiling_spider') {
+                            playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/spider/death.ogg");
+                        } else if (obs.type === 'silverfish') {
+                            playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/silverfish/hurt1.ogg");
+                        }
+                        
+                        if (state.activeSword.durability <= 0) {
+                            // ✨ 改為 MC 原版工具碎裂音效，並移除 showAlert 中斷彈窗
+                            playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/random/break.ogg"); 
+                            state.activeSword = null;
+                            updateMcData({ activeSword: null }, true);
+                        } else {
+                            updateMcData({ activeSword: state.activeSword }, true);
+                        }
+                    } else {
+                        // 碰到非生物或是沒有劍可以砍
+                        if (state.hasTotem) {
+                            // ✨ 不死圖騰發動
+                            obs.killed = true; 
+                            state.hasTotem = false;
+                            updateMcData({ hasTotem: false }, true);
+                            playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
+                            showAlert("🗿 不死圖騰發動！為你擋下了一次致命傷害！");
+                        } else {
+                            dead = true;
+                            if (obs.type === 'creeper') killedByCreeper = true;
+                        }
+                    }
                 }
             }
         }
@@ -433,28 +542,43 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                 state.lastSpawnFrame = state.frames;
                 let rand = Math.random();
                 
-                if (state.isNether) {
-                    // 地獄不會出現苦力怕
-                    if (rand < 0.25) state.obstacles.push({ type: 'ghast', x: LOG_W, y: 30 + Math.random() * 60, w: 50, h: 50 });
-                    else if (rand < 0.5) state.obstacles.push({ type: 'magma', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
-                    else if (rand < 0.75) {
-                        let hType = Math.random() < 0.5 ? 40 : 80;
-                        state.obstacles.push({ type: 'netherrack_block', x: LOG_W, y: state.groundY - hType, w: 40, h: 40 });
-                    } else state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 100 + 100, h: 100 });
+               if (state.isNether) {
+                    // ✨ 替換為適應波浪地形的生成，徹底移除醜方塊柱子
+                    let currentY = getNetherWaveY(LOG_W, state.frames, state.speed);
+                    if (rand < 0.2) state.obstacles.push({ type: 'ghast', x: LOG_W, y: 30 + Math.random() * 60, w: 50, h: 50 }); // 幽靈機率降為 10%
+                    else if (rand < 0.5) state.obstacles.push({ type: 'magma', x: LOG_W, y: currentY - 40, w: 40, h: 40 });
+                    else state.obstacles.push({ type: 'pit', x: LOG_W, y: currentY, w: Math.random() * 120 + 80, h: 100 });
                 } else if (state.isCave) {
                     if (rand < 0.2) state.obstacles.push({ type: 'spider', x: LOG_W, y: state.groundY - 40, w: 40, h: 30, dy: 0 });
                     else if (rand < 0.4) state.obstacles.push({ type: 'silverfish', x: LOG_W, y: state.groundY - 20, w: 30, h: 20 });
-                    else if (rand < 0.55) state.obstacles.push({ type: 'creeper', x: LOG_W, y: state.groundY - 40, w: 30, h: 40, defused: false });
-                    else if (rand < 0.75) {
+else if (rand < 0.55) {
+                        playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/random/fuse.ogg");
+                        // ✨ 延遲 0.5 秒才讓苦力怕出現在畫面右側
+                        let spawnFrame = state.frames;
+                        setTimeout(() => {
+                            // 確保遊戲沒有重新開始才生成
+                            if (gameRef.current && gameRef.current.frames >= spawnFrame) {
+                                gameRef.current.obstacles.push({ type: 'creeper', x: LOG_W, y: gameRef.current.groundY - 40, w: 30, h: 40, defused: false });
+                            }
+                        }, 500);
+                    }              else if (rand < 0.75) {
                         let hType = Math.random() < 0.5 ? 40 : 80;
                         state.obstacles.push({ type: 'stone', x: LOG_W, y: state.groundY - hType, w: 40, h: 40 });
                     } else if (rand < 0.9) state.obstacles.push({ type: 'ceiling_spider', x: LOG_W, y: 40, w: 40, h: 30 });
                     else state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 100 + 100, h: 100 });
                 } else {
                     if (rand < 0.25) state.obstacles.push({ type: 'zombie', x: LOG_W, y: state.groundY - 40, w: 30, h: 40 });
-                    else if (rand < 0.4) state.obstacles.push({ type: 'creeper', x: LOG_W, y: state.groundY - 40, w: 30, h: 40, defused: false });
-                    else if (rand < 0.6) state.obstacles.push({ type: 'dragon', x: LOG_W, y: state.groundY - 120 - Math.random() * 50, w: 60, h: 40 });
-                    else if (rand < 0.85) state.obstacles.push({ type: 'stone', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
+                    else if (rand < 0.4) {
+                        playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/random/fuse.ogg");
+                        // ✨ 延遲 0.5 秒才讓苦力怕出現在畫面右側
+                        let spawnFrame = state.frames;
+                        setTimeout(() => {
+                            if (gameRef.current && gameRef.current.frames >= spawnFrame) {
+                                gameRef.current.obstacles.push({ type: 'creeper', x: LOG_W, y: gameRef.current.groundY - 40, w: 30, h: 40, defused: false });
+                            }
+                        }, 500);
+                    }
+else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.groundY - 120 - Math.random() * 50, w: 60, h: 60 });                    else if (rand < 0.85) state.obstacles.push({ type: 'stone', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
                     else state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 150 + 100, h: 100 });
                 }
             }
@@ -491,10 +615,26 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
         }
 
         if (state.isNether) {
+             // ✨ 畫出向左捲動、連續起伏的波浪地獄地形
              ctx.fillStyle = '#5A1111';
-             ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
-             ctx.fillStyle = '#3A0A0A'; 
-             ctx.fillRect(0, state.groundY, LOG_W, 8);
+             ctx.beginPath();
+             ctx.moveTo(0, LOG_H);
+             for (let x = 0; x <= LOG_W + 20; x += 20) {
+                 ctx.lineTo(x, getNetherWaveY(x, state.frames, state.speed));
+             }
+             ctx.lineTo(LOG_W, LOG_H);
+             ctx.fill();
+             
+             // ✨ 畫出頂部的深色邊緣
+             ctx.strokeStyle = '#3A0A0A';
+             ctx.lineWidth = 8;
+             ctx.beginPath();
+             for (let x = 0; x <= LOG_W + 20; x += 20) {
+                 let y = getNetherWaveY(x, state.frames, state.speed);
+                 if (x === 0) ctx.moveTo(x, y);
+                 else ctx.lineTo(x, y);
+             }
+             ctx.stroke();
         } else {
             ctx.fillStyle = state.isCave ? '#4a4a4a' : '#5A5A5A';
             ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
@@ -504,10 +644,12 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
         
         state.obstacles.forEach(obs => {
             if (obs.type === 'pit') {
-                ctx.clearRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
+                // ✨ 自動切除波浪地形，讓岩漿坑完美融合
+                let pitY = state.isNether ? getNetherWaveY(obs.x, state.frames, state.speed) - 20 : state.groundY;
+                ctx.clearRect(obs.x, pitY, obs.w, LOG_H - pitY);
                 if (state.isNether) {
                     ctx.fillStyle = '#3a0000';
-                    ctx.fillRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
+                    ctx.fillRect(obs.x, pitY, obs.w, LOG_H - pitY);
                     ctx.fillStyle = '#ff5500'; // 岩漿坑
                     ctx.fillRect(obs.x, LOG_H - 20, obs.w, 20);
                 } else {
@@ -518,6 +660,8 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
         });
 
         state.obstacles.forEach(obs => {
+            if (obs.killed) return; // ✨ 被殺死或被圖騰無效化的怪物不畫出來
+
             if (obs.type === 'stone') {
                 drawImgSafe(images.current.stone, obs.x, obs.y, obs.w, obs.h, '#888');
             } else if (obs.type === 'netherrack_block') {
@@ -529,8 +673,8 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
             } else if (obs.type === 'silverfish') {
                 drawImgSafe(images.current.silverfish, obs.x, obs.y, obs.w, obs.h, '#999');
             } else if (obs.type === 'dragon') {
-                drawImgSafe(images.current.dragon, obs.x, obs.y, obs.w, obs.h, '#000');
-            } else if (obs.type === 'ghast') {
+} else if (obs.type === 'cobweb') {
+                drawImgSafe(images.current.cobweb, obs.x, obs.y, obs.w, obs.h, '#fff');            } else if (obs.type === 'ghast') {
                 drawImgSafe(images.current.ghast, obs.x, obs.y, obs.w, obs.h, '#fff');
             } else if (obs.type === 'fireball') {
                 drawImgSafe(images.current.fireball, obs.x, obs.y, obs.w, obs.h, '#ffaa00');
@@ -585,7 +729,8 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
         setGameState('gameover');
         if (bgmRef.current) bgmRef.current.pause();
         
-        if (!isExploded && deadSfxRef.current) {
+        // ✨ 移除 !isExploded 限制，讓苦力怕炸死時也能播正常死法音效
+        if (deadSfxRef.current) {
             deadSfxRef.current.currentTime = 0;
             deadSfxRef.current.play().catch(e=>console.log("音效阻擋", e));
         }
@@ -619,10 +764,11 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                     sysRef.set(data);
                     setHighScore(finalDistance);
                     
-                    // 更新畫面上的排行榜
+                    // 更新畫面上的排行榜 (確保依據距離數字大小排序並取前6名)
                     const currentRanks = Object.entries(data.scores)
                         .map(([uid, info]) => ({ uid, ...info }))
-                        .sort((a, b) => b.score - a.score);
+                        .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+                        .slice(0, 6);
                     setLeaderboard(currentRanks);
                 }
             });
@@ -632,6 +778,7 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
     const handlePointerDown = (e) => {
         e.preventDefault(); 
         if (gameState === 'start') {
+            if (!isAudioLoaded) return; // ✨ 確保音效載入完成才給點擊開始
             startGame();
             return;
         }
@@ -657,6 +804,8 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                     hitCreeper = true;
                     state.score += 1; 
                     setScore(state.score);
+                    // ✨ 點掉苦力怕會出現死亡音效 (移除原本不小心的錯字)
+                    playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/creeper/death.ogg"); 
                     break;
                 }
             }
@@ -707,7 +856,9 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                                 </div>
                             </div>
                             
-                            <button className="mc-btn px-6 sm:px-8 py-3 sm:py-4 text-xl sm:text-2xl animate-pulse pointer-events-none z-10 ml-32 sm:ml-48 shadow-lg">🛻 點擊開始</button>
+                            <button className={`mc-btn px-6 sm:px-8 py-3 sm:py-4 text-xl sm:text-2xl pointer-events-none z-10 ml-32 sm:ml-48 shadow-lg transition-opacity ${isAudioLoaded ? 'animate-pulse opacity-100' : 'opacity-50'}`}>
+                                {isAudioLoaded ? '🛻 點擊開始' : '⏳ 音效載入中...'}
+                            </button>
                         </div>
                     )}
                     
@@ -1017,6 +1168,10 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     const [villagerSpeech, setVillagerSpeech] = useState("哼嗯... 看看這些好東西！");
     const [villagerAnim, setVillagerAnim] = useState("");
     const [openedPackResult, setOpenedPackResult] = useState(null); // ✨ 新增：記錄開箱結果的狀態
+    
+    // ✨ 新增：商店分類標籤狀態
+    const [storeCat, setStoreCat] = useState('全部');
+    const STORE_CATEGORIES = ['全部', '食物藥水', '裝備道具', '盲盒禮包'];
 
     // ✨ 修正：確保 mcData 的數值不為 NaN
     const rawMcData = userProfile.mcData || {};
@@ -1044,19 +1199,24 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     const imgDiamond = `${mcBase}/diamond.png`;
     const imgSteve = "https://minotar.net/helm/Steve/64.png";
 
-    // ✨ 更新：精簡商品，加入方塊禮包
+    // ✨ 更新：加入武器、不死圖騰與分類
     const storeItems = [
-        { id: 'apple', name: '蘋果 (+3 飽食)', type: 'food', cost: 10, value: 3, img: `${mcBase}/apple.png`, icon: '🍎' },
-        { id: 'bread', name: '麵包 (+5 飽食)', type: 'food', cost: 15, value: 5, img: `${mcBase}/bread.png`, icon: '🍞' },
-        { id: 'beef', name: '烤牛肉 (+8 飽食)', type: 'food', cost: 25, value: 8, img: `${mcBase}/cooked_beef.png`, icon: '🥩' },
-        { id: 'golden_apple', name: '金蘋果 (+10飽食/EXP)', type: 'food_exp', cost: 50, value: 10, exp: 10, img: `${mcBase}/golden_apple.png`, icon: '🍏' },
-        { id: 'laxative', name: '瀉藥 (多拉2坨水便)', type: 'medicine', cost: 30, value: 2, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/ghast_tear.png', icon: '💊' },
-        { id: 'pack_basic', name: '村莊木箱 (隨機基礎方塊)', type: 'pack', cost: 100, img: 'https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg', icon: '📦' },
-        { id: 'pack_rare', name: '廢棄礦井箱 (進階隨機方塊)', type: 'pack', cost: 300, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/barrel_side.png', icon: '🎁' },
-        { id: 'pack_epic', name: '地獄遺跡箱 (珍稀隨機方塊)', type: 'pack', cost: 600, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_bricks.png', icon: '🔮' },
-        { id: 'pack_legendary', name: '終界寶箱 (極稀有隨機方塊)', type: 'pack', cost: 1000, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/respawn_anchor_top.png', icon: '🌟' },
-        // ✨ 新增簽到寶箱 (設定 hide: true 讓它不會出現在商店中)
-        { id: 'pack_checkin', name: '每日簽到箱 (普通隨機方塊)', type: 'pack', cost: 0, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/beehive_side.png', icon: '🛢️', hide: true }
+        { id: 'apple', name: '蘋果 (+3 飽食)', cat: '食物藥水', type: 'food', cost: 10, value: 3, img: `${mcBase}/apple.png`, icon: '🍎' },
+        { id: 'bread', name: '麵包 (+5 飽食)', cat: '食物藥水', type: 'food', cost: 15, value: 5, img: `${mcBase}/bread.png`, icon: '🍞' },
+        { id: 'beef', name: '烤牛肉 (+8 飽食)', cat: '食物藥水', type: 'food', cost: 25, value: 8, img: `${mcBase}/cooked_beef.png`, icon: '🥩' },
+        { id: 'golden_apple', name: '金蘋果 (+10飽食/EXP)', cat: '食物藥水', type: 'food_exp', cost: 50, value: 10, exp: 10, img: `${mcBase}/golden_apple.png`, icon: '🍏' },
+        { id: 'laxative', name: '瀉藥 (多拉2坨水便)', cat: '食物藥水', type: 'medicine', cost: 30, value: 2, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/ghast_tear.png', icon: '💊' },
+        
+        { id: 'stone_sword', name: '石劍 (礦車擋1次怪)', cat: '裝備道具', type: 'weapon', cost: 10, durability: 1, img: `${mcBase}/stone_sword.png`, icon: '🗡️' },
+        { id: 'iron_sword', name: '鐵劍 (礦車擋2次怪)', cat: '裝備道具', type: 'weapon', cost: 25, durability: 2, img: `${mcBase}/iron_sword.png`, icon: '🗡️' },
+        { id: 'diamond_sword', name: '鑽石劍 (礦車擋3次怪)', cat: '裝備道具', type: 'weapon', cost: 60, durability: 3, img: `${mcBase}/diamond_sword.png`, icon: '🗡️' },
+        { id: 'totem', name: '不死圖騰 (礦車免死1次)', cat: '裝備道具', type: 'magic', cost: 40, img: `${mcBase}/totem_of_undying.png`, icon: '🗿' },
+
+        { id: 'pack_basic', name: '村莊木箱 (隨機方塊)', cat: '盲盒禮包', type: 'pack', cost: 100, img: 'https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg', icon: '📦' },
+        { id: 'pack_rare', name: '廢棄礦井箱 (進階方塊)', cat: '盲盒禮包', type: 'pack', cost: 300, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/barrel_side.png', icon: '🎁' },
+        { id: 'pack_epic', name: '地獄遺跡箱 (珍稀方塊)', cat: '盲盒禮包', type: 'pack', cost: 600, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_bricks.png', icon: '🔮' },
+        { id: 'pack_legendary', name: '終界寶箱 (極稀有方塊)', cat: '盲盒禮包', type: 'pack', cost: 1000, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/respawn_anchor_top.png', icon: '🌟' },
+        { id: 'pack_checkin', name: '每日簽到箱 (普通方塊)', cat: '盲盒禮包', type: 'pack', cost: 0, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/beehive_side.png', icon: '🛢️', hide: true }
     ];
 
     useEffect(() => {
@@ -1162,6 +1322,18 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
             updates.packs = { ...(mcData.packs || {}) };
             updates.packs[item.id] = (updates.packs[item.id] || 0) + 1;
             showAlert(`📦 購買成功！【${item.name}】已為您存入「終界儲物箱」中！`);
+        } else if (item.type === 'weapon') {
+            if (mcData.activeSword) {
+                return showAlert(`❌ 你的背包裡已經有一把【${mcData.activeSword.name}】了，請先在礦車遊戲中消耗掉它！`);
+            }
+            updates.activeSword = { id: item.id, name: item.name, durability: item.durability };
+            showAlert(`🗡️ 購買成功！【${item.name}】已自動裝備，將在礦車遊戲中為你斬殺怪物！`);
+        } else if (item.type === 'magic') {
+            if (mcData.hasTotem) {
+                return showAlert(`❌ 你已經擁有一個【不死圖騰】了，請先消耗掉它再買！`);
+            }
+            updates.hasTotem = true;
+            showAlert(`🗿 購買成功！【不死圖騰】已自動裝備，將在礦車遊戲中為你擋下一次致命傷害！`);
         }
 
         playVillagerSound('yes');
@@ -1398,9 +1570,18 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                             </div>
                         </div>
 
+                        {/* ✨ 商店分類標籤 */}
+                        <div className="flex flex-wrap gap-2 mb-3">
+                            {STORE_CATEGORIES.map(cat => (
+                                <button key={cat} onClick={() => setStoreCat(cat)} className={`px-2 py-1 text-xs font-bold border-2 ${storeCat === cat ? 'bg-yellow-600 border-yellow-400 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'}`}>
+                                    {cat}
+                                </button>
+                            ))}
+                        </div>
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[20rem] overflow-y-auto custom-scrollbar pr-2">
-                            {/* ✨ 過濾掉被標記為 hide 的商品 (例如簽到箱) */}
-                            {storeItems.filter(item => !item.hide).map((item) => (
+                            {/* ✨ 過濾並套用分類 */}
+                            {storeItems.filter(item => !item.hide && (storeCat === '全部' || item.cat === storeCat)).map((item) => (
                                 <button key={item.id} onClick={() => handleBuy(item)} className="mc-btn py-2 flex justify-between px-3 items-center hover:bg-[#b0b0b0]">
                                     <span className="flex items-center text-sm truncate pr-2">
                                         <McImg src={item.img} fallback={item.icon} className="w-5 h-5 mr-2 pixelated shrink-0"/> 
