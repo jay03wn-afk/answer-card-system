@@ -2074,6 +2074,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [isRegrading, setIsRegrading] = useState(false); // ✨ 新增：重新算分的載入畫面狀態
     const [wrongBookAddingItem, setWrongBookAddingItem] = useState(null);
     const [explanationModalItem, setExplanationModalItem] = useState(null); // ✨ 新增詳解彈窗狀態
+    const [isEditLoading, setIsEditLoading] = useState(false); // ✨ 新增：編輯模式的載入狀態
 
     // ✨ 新增：點進試題時，自動檢查答案是否更新的監聽器
     useEffect(() => {
@@ -2321,6 +2322,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     };
 
    const handleSaveEdit = async () => {
+        setIsEditLoading(true); // ✨ 開啟載入，防止按鈕點擊後毫無反應
         // ✨ 取得原始資料進行比對 (省流量關鍵)
         const myDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
         const oldData = myDoc.data() || {};
@@ -2342,12 +2344,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         if (explanationHtml !== (oldData.explanationHtml || '')) updates.explanationHtml = explanationHtml;
         if (cleanKey !== (oldData.correctAnswersInput || '')) updates.correctAnswersInput = cleanKey;
 
+        setIsEditLoading(false); // ✨ 準備彈出視窗前先關閉載入
+
         // 如果完全沒改動，直接返回
         if (Object.keys(updates).length === 0) {
             return showAlert("ℹ️ 資料無變動，無需儲存。");
         }
 
-        const confirmMsg = syncCount > 0 
+        const confirmMsg = syncCount > 0
             ? `⚠️ 確定要儲存嗎？\n將為 ${syncCount} 位好友同步更新並重新計算他們的分數。` 
             : `確定要儲存目前的修改嗎？`;
 
@@ -2458,9 +2462,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         setStarred(newStar);
     };
 
-    const handleGrade = async () => {
-        // ✨ 修改：交卷時保留大小寫，僅允許 A-D, a-d, Z
-        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
+    const handleGrade = async (overrideKey = null) => {
+        // ✨ 修改：交卷時保留大小寫，僅允許 A-D, a-d, Z。並支援強制帶入最新 Key
+        const sourceKey = overrideKey !== null ? overrideKey : correctAnswersInput;
+        const cleanKey = (sourceKey || '').replace(/[^a-dA-DZz,]/g, '');
         if (!cleanKey && !isTask && !isShared) return showAlert('請輸入標準答案後再批改！');
         
         // ✨ 加入智慧辨識：交卷時若沒有逗號，也能正確拆分大寫與連續小寫
@@ -2583,11 +2588,32 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         }
     };
 
-    // ✨ 新增：手動/自動重新批改邏輯，負責比對差異並跳出提示 (加入錯題本同步與載入畫面)
+   // ✨ 新增：手動/自動重新批改邏輯，負責比對差異並跳出提示 (加入錯題本同步與載入畫面)
     const handleManualRegrade = async (isAuto = false) => {
         if (!results || !results.data) return;
 
-        const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
+        setIsRegrading(true); // ✨ 提早開啟全螢幕載入畫面，避免畫面卡死
+
+        let latestKey = correctAnswersInput || '';
+        try {
+            // ✨ 強制從雲端抓取最新資料，解決按下重新算分卻沒抓到新資料的問題
+            const doc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get({ source: 'server' });
+            if (doc.exists) {
+                const data = doc.data();
+                latestKey = data.correctAnswersInput || '';
+                if (data.isTask && data.taskId) {
+                    const taskDoc = await window.db.collection('publicTasks').doc(data.taskId).get({ source: 'server' });
+                    if (taskDoc.exists) {
+                        latestKey = taskDoc.data().correctAnswersInput || latestKey;
+                    }
+                }
+                setCorrectAnswersInput(latestKey);
+            }
+        } catch (e) {
+            console.error("無法抓取最新解答", e);
+        }
+
+        const cleanKey = latestKey.replace(/[^a-dA-DZz,]/g, '');
         let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
         
         let changedDetails = [];
@@ -2604,15 +2630,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
         // 情況 A：沒有任何更動
         if (changedDetails.length === 0) {
-            if (isAuto !== true) showAlert("ℹ️ 目前沒有偵測到標準答案有任何更動喔！");
+            setIsRegrading(false);
+            if (isAuto !== true) showAlert("ℹ️ 目前雲端沒有偵測到標準答案有任何更動喔！");
             return;
         }
 
-        setIsRegrading(true); // ✨ 開啟全螢幕載入畫面
-
         // 情況 B：有更動，執行原本的批改邏輯更新分數
         try {
-            await handleGrade();
+            await handleGrade(latestKey); // 將最新解答傳入批改系統
 
             // ✨ 同步更新錯題本中的答案
             const wbSnapshot = await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').where('quizId', '==', quizId).get();
@@ -2847,6 +2872,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             return onBackToDashboard();
         }
 
+        setIsEditLoading(true); // ✨ 開啟載入，防止按鈕卡死無反應
         // ✨ 修復：如果是從作答/結果頁面進入編輯的，退出時必須先將狀態「還原」回資料庫原本的樣子，
         // 否則退出編輯模式的瞬間，會觸發作答頁面的「自動存檔」把未保存的草稿覆蓋進去！
         try {
@@ -2866,6 +2892,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             console.error("還原編輯狀態失敗", e);
         }
 
+        setIsEditLoading(false); // ✨ 關閉載入
         setStep(results ? 'results' : 'answering');
     };
     
@@ -2958,6 +2985,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     )}
                 </div>
             </div>
+            {/* ✨ 新增：編輯模式的載入遮罩，解決按鈕無法互動的錯覺 */}
+            {isEditLoading && (
+                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-purple-500">
+                        <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-700 border-t-purple-500 rounded-full animate-spin mx-auto mb-6"></div>
+                        <h3 className="text-xl font-black mb-2 dark:text-white">⏳ 正在處理中...</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">正在與雲端同步資料，請稍候</p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 
@@ -3135,7 +3172,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
            {viewMode === 'interactive' ? (
                 /* ✨ 修改：沉浸式作答介面 - 支援暗色模式的白底黑字/黑底白字自動切換 */
                 <div className="flex-grow flex flex-col w-full bg-slate-50 dark:bg-slate-950 transition-colors mt-2 overflow-hidden relative">
-                    /* ✨ 重新視覺設計：沉浸式作答與富文本自適應 */
+                    {/* ✨ 重新視覺設計：沉浸式作答與富文本自適應 */}
 <style dangerouslySetInnerHTML={{__html: `
     .preview-rich-text {
         word-break: break-word;
@@ -4145,7 +4182,25 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                     <h2 className="text-xl font-black text-pink-600 dark:text-pink-400 flex items-center">⚡ 快問快答挑戰</h2>
                     {!targetQaId && (
                         <button 
-                            onClick={() => { setLoading(true); setRefreshTrigger(prev => prev + 1); }} 
+                            onClick={async () => { 
+                                setLoading(true); 
+                                try {
+                                    // ✨ 強制繞過快取，直接向伺服器請求最新資料
+                                    const snapshot = await window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get({ source: 'server' });
+                                    const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                    const now = new Date().getTime();
+                                    const validQas = isAdmin ? qas : qas.filter(q => !q.endTime || q.endTime > now);
+                                    setQaList(validQas);
+                                    setActiveQA(prev => {
+                                        if (prev) return validQas.find(q => q.id === prev.id) || prev;
+                                        return prev;
+                                    });
+                                } catch(e) {
+                                    console.error("快問快答更新失敗", e);
+                                }
+                                setLoading(false);
+                                setRefreshTrigger(prev => prev + 1); 
+                            }} 
                             className="text-xs bg-white hover:bg-pink-50 text-pink-600 border border-pink-200 px-2 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round"
                             title="手動同步雲端最新題目"
                         >
