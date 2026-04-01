@@ -18,6 +18,7 @@ const playCachedSound = (url) => {
     audioClone.play().catch(e => console.log("音效播放被阻擋", e));
 };
 // --- 礦車跑酷小遊戲組件 ---
+// --- 礦車跑酷小遊戲組件 ---
 function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
     const canvasRef = useRef(null);
     const [gameState, setGameState] = useState('start'); 
@@ -43,6 +44,7 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         groundY: 250,
         targetGroundY: 250, 
         isCave: false,
+        isNether: false,
         lastJumpTime: 0, 
         lastFrameTime: 0
     });
@@ -50,7 +52,9 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
     const images = useRef({ 
         steve: new Image(), stone: new Image(), diamond: new Image(),
         zombie: new Image(), spider: new Image(), silverfish: new Image(),
-        creeper: new Image(), dragon: new Image(), minecart: new Image()
+        creeper: new Image(), dragon: new Image(), minecart: new Image(),
+        netherrack: new Image(), magma: new Image(), ghast: new Image(),
+        fireball: new Image(), portal: new Image()
     });
 
     useEffect(() => {
@@ -63,6 +67,12 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         images.current.creeper.src = "https://minotar.net/helm/MHF_Creeper/64.png";
         images.current.dragon.src = "https://minotar.net/helm/MHF_EnderDragon/64.png";
         images.current.minecart.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/minecart.png";
+        
+        images.current.netherrack.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/netherrack.png";
+        images.current.magma.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/magma.png";
+        images.current.ghast.src = "https://minotar.net/helm/MHF_Ghast/64.png";
+        images.current.fireball.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/fire_charge.png";
+        images.current.portal.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_portal.png";
         
         bgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3");
         bgmRef.current.loop = true;
@@ -117,6 +127,7 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             groundY: 250,
             targetGroundY: 250,
             isCave: false,
+            isNether: false,
             lastJumpTime: 0,
             lastFrameTime: performance.now()
         };
@@ -170,11 +181,18 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         state.player.dy += 0.7; 
         state.player.y += state.player.dy;
 
-        state.isCave = Math.floor(state.frames / 900) % 2 !== 0;
+        // 階段計算：草原 (900) -> 洞穴 (900) -> 地獄 (900) 循環
+        let cyclePos = state.frames % 2700;
+        state.isCave = cyclePos >= 900 && cyclePos < 1800;
+        state.isNether = cyclePos >= 1800;
 
         if (state.isCave) {
             if (state.frames % 150 === 0) {
                 state.targetGroundY = 180 + Math.random() * 100;
+            }
+        } else if (state.isNether) {
+            if (state.frames % 40 === 0) { // 地獄地形更凹凸不平
+                state.targetGroundY = 160 + Math.random() * 110;
             }
         } else {
             state.targetGroundY = 250; 
@@ -217,13 +235,32 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
 
         for (let i = 0; i < state.obstacles.length; i++) {
             let obs = state.obstacles[i];
-            if (obs.type === 'pit') {
+            if (obs.type === 'pit' || obs.type === 'portal') {
                 obs.x -= state.speed;
                 continue;
             }
 
             if (obs.type === 'dragon') {
                 obs.x -= (state.speed + 2.5);
+            } else if (obs.type === 'ghast') {
+                obs.x -= Math.max(1, state.speed - 3.5); 
+                obs.y += Math.sin(state.frames * 0.05) * 1.5; 
+                
+                // 幽靈發射火球
+                if (Math.random() < 0.015 && obs.x > state.player.x && obs.x < LOG_W - 50) {
+                    state.obstacles.push({
+                        type: 'fireball',
+                        x: obs.x,
+                        y: obs.y + obs.h / 2,
+                        w: 20,
+                        h: 20,
+                        dx: - (state.speed + 3),
+                        dy: (state.player.y - obs.y) * 0.02
+                    });
+                }
+            } else if (obs.type === 'fireball') {
+                obs.x += obs.dx;
+                obs.y += obs.dy;
             } else if (obs.type === 'spider') {
                 obs.x -= (state.speed + 1.5); 
                 if (Math.random() < 0.01 && obs.y >= state.groundY - obs.h - 5) obs.dy = -8; 
@@ -243,27 +280,31 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
                 if (!obs.defused && obs.x < state.player.x + 10) {
                     dead = true;
                     killedByCreeper = true; 
-                     } else {
-                obs.x -= state.speed; 
-            }}
+                } else {
+                    obs.x -= state.speed; 
+                }
+            } else if (obs.type === 'magma' || obs.type === 'netherrack_block' || obs.type === 'stone' || obs.type === 'zombie' || obs.type === 'ceiling_spider') {
+                obs.x -= state.speed;
+            }
 
             if (
                 !(obs.type === 'creeper' && obs.defused) &&
+                obs.type !== 'portal' && // 傳送門是安全的
                 state.player.x + 5 < obs.x + obs.w - 5 &&
                 state.player.x + state.player.w - 5 > obs.x + 5 &&
                 state.player.y + 5 < obs.y + obs.h - 5 &&
                 state.player.y + state.player.h > obs.y + 5
             ) {
-                if (obs.type === 'stone') {
+                if (obs.type === 'stone' || obs.type === 'netherrack_block') {
                     if (state.player.dy > 0 && prevBottom <= obs.y + 15) {
                         state.player.y = obs.y - state.player.h;
                         state.player.dy = 0;
                         state.player.jumps = 0; 
                     } else dead = true; 
-                }else {
-                     dead = true;
-                      if (obs.type === 'creeper') killedByCreeper = true;
-                    }
+                } else {
+                    dead = true;
+                    if (obs.type === 'creeper') killedByCreeper = true;
+                }
             }
         }
 
@@ -282,36 +323,48 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         });
 
         if (dead) {
-        if (killedByCreeper) {
-            if (explodeSfxRef.current) {
-                explodeSfxRef.current.currentTime = 0;
-                explodeSfxRef.current.play().catch(e => console.log(e));
+            if (killedByCreeper) {
+                if (explodeSfxRef.current) {
+                    explodeSfxRef.current.currentTime = 0;
+                    explodeSfxRef.current.play().catch(e => console.log(e));
+                }
+                ctx.fillStyle = 'rgba(255, 100, 0, 0.8)';
+                ctx.beginPath();
+                ctx.arc(state.player.x + state.player.w / 2, state.player.y + state.player.h / 2, 80, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = 'rgba(255, 200, 0, 0.9)';
+                ctx.beginPath();
+                ctx.arc(state.player.x + state.player.w / 2, state.player.y + state.player.h / 2, 50, 0, Math.PI * 2);
+                ctx.fill();
             }
-            ctx.fillStyle = 'rgba(255, 100, 0, 0.8)';
-            ctx.beginPath();
-            ctx.arc(state.player.x + state.player.w / 2, state.player.y + state.player.h / 2, 80, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.fillStyle = 'rgba(255, 200, 0, 0.9)';
-            ctx.beginPath();
-            ctx.arc(state.player.x + state.player.w / 2, state.player.y + state.player.h / 2, 50, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        endGame(killedByCreeper);
-        return;
-         }   
+            endGame(killedByCreeper);
+            return;
+        }   
 
         state.frames++;
         if (state.frames % 100 === 0 && state.speed < 15) state.speed += 0.2;
 
         let spawnInterval = Math.max(40, 100 - state.speed * 4);
         
+        // 傳送門生成邏輯 (洞穴尾聲)
+        if (cyclePos === 1750) {
+            state.obstacles.push({ type: 'portal', x: LOG_W, y: state.groundY - 100, w: 70, h: 100 });
+        }
+
         if (state.frames - state.lastSpawnFrame > spawnInterval) {
             if (Math.random() < 0.55) { 
                 state.lastSpawnFrame = state.frames;
                 let rand = Math.random();
                 
-                if (state.isCave) {
+                if (state.isNether) {
+                    if (rand < 0.25) state.obstacles.push({ type: 'ghast', x: LOG_W, y: 30 + Math.random() * 60, w: 50, h: 50 });
+                    else if (rand < 0.5) state.obstacles.push({ type: 'magma', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
+                    else if (rand < 0.75) {
+                        let hType = Math.random() < 0.5 ? 40 : 80;
+                        state.obstacles.push({ type: 'netherrack_block', x: LOG_W, y: state.groundY - hType, w: 40, h: 40 });
+                    } else state.obstacles.push({ type: 'pit', x: LOG_W, y: state.groundY, w: Math.random() * 100 + 100, h: 100 });
+                } else if (state.isCave) {
                     if (rand < 0.2) state.obstacles.push({ type: 'spider', x: LOG_W, y: state.groundY - 40, w: 40, h: 30, dy: 0 });
                     else if (rand < 0.4) state.obstacles.push({ type: 'silverfish', x: LOG_W, y: state.groundY - 20, w: 30, h: 20 });
                     else if (rand < 0.55) state.obstacles.push({ type: 'creeper', x: LOG_W, y: state.groundY - 40, w: 30, h: 40, defused: false });
@@ -332,37 +385,56 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         
         if (state.frames >= state.nextDiamondFrame) {
             let dY = state.groundY - 50 - Math.random() * 70;
-            if (state.isCave && dY < 80) dY = 80; 
+            if ((state.isCave || state.isNether) && dY < 80) dY = 80; 
             state.diamonds.push({ x: LOG_W, y: dY, w: 24, h: 24, collected: false });
             state.nextDiamondFrame = state.frames + Math.floor(Math.random() * 240 + 120);
         }
 
         ctx.clearRect(0, 0, LOG_W, LOG_H);
         
-        ctx.fillStyle = state.isCave ? '#222222' : '#6bc0ff';
+        ctx.fillStyle = state.isNether ? '#3a0000' : (state.isCave ? '#222222' : '#6bc0ff');
         ctx.fillRect(0, 0, LOG_W, LOG_H);
 
-        if (state.isCave) {
+        if (state.isNether) {
+            ctx.fillStyle = '#550000'; 
+            ctx.fillRect(0, 0, LOG_W, 50 + Math.sin(state.frames * 0.05) * 10);
+        } else if (state.isCave) {
             ctx.fillStyle = '#333333'; 
             ctx.fillRect(0, 0, LOG_W, 40);
         }
 
-        ctx.fillStyle = state.isCave ? '#4a4a4a' : '#5A5A5A';
-        ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
-        ctx.fillStyle = state.isCave ? '#2d2d2d' : '#4A4A4A'; 
-        ctx.fillRect(0, state.groundY, LOG_W, 8);
+        if (state.isNether) {
+             ctx.fillStyle = '#5A1111';
+             ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
+             ctx.fillStyle = '#3A0A0A'; 
+             ctx.fillRect(0, state.groundY, LOG_W, 8);
+        } else {
+            ctx.fillStyle = state.isCave ? '#4a4a4a' : '#5A5A5A';
+            ctx.fillRect(0, state.groundY, LOG_W, LOG_H - state.groundY);
+            ctx.fillStyle = state.isCave ? '#2d2d2d' : '#4A4A4A'; 
+            ctx.fillRect(0, state.groundY, LOG_W, 8);
+        }
         
         state.obstacles.forEach(obs => {
             if (obs.type === 'pit') {
                 ctx.clearRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
-                ctx.fillStyle = state.isCave ? '#222222' : '#6bc0ff';
-                ctx.fillRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
+                if (state.isNether) {
+                    ctx.fillStyle = '#3a0000';
+                    ctx.fillRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
+                    ctx.fillStyle = '#ff5500'; // 岩漿坑
+                    ctx.fillRect(obs.x, LOG_H - 20, obs.w, 20);
+                } else {
+                    ctx.fillStyle = state.isCave ? '#222222' : '#6bc0ff';
+                    ctx.fillRect(obs.x, state.groundY, obs.w, LOG_H - state.groundY);
+                }
             }
         });
 
         state.obstacles.forEach(obs => {
             if (obs.type === 'stone') {
                 drawImgSafe(images.current.stone, obs.x, obs.y, obs.w, obs.h, '#888');
+            } else if (obs.type === 'netherrack_block') {
+                drawImgSafe(images.current.netherrack, obs.x, obs.y, obs.w, obs.h, '#600');
             } else if (obs.type === 'zombie') {
                 drawImgSafe(images.current.zombie, obs.x, obs.y, obs.w, obs.h, '#005500');
             } else if (obs.type === 'spider' || obs.type === 'ceiling_spider') {
@@ -371,6 +443,19 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
                 drawImgSafe(images.current.silverfish, obs.x, obs.y, obs.w, obs.h, '#999');
             } else if (obs.type === 'dragon') {
                 drawImgSafe(images.current.dragon, obs.x, obs.y, obs.w, obs.h, '#000');
+            } else if (obs.type === 'ghast') {
+                drawImgSafe(images.current.ghast, obs.x, obs.y, obs.w, obs.h, '#fff');
+            } else if (obs.type === 'fireball') {
+                drawImgSafe(images.current.fireball, obs.x, obs.y, obs.w, obs.h, '#ffaa00');
+            } else if (obs.type === 'magma') {
+                drawImgSafe(images.current.magma, obs.x, obs.y, obs.w, obs.h, '#ff5500');
+                ctx.fillStyle = '#ffaa00';
+                if (Math.floor(state.frames / 10) % 2 === 0) ctx.fillRect(obs.x + 8, obs.y - 15, 6, 15);
+                if (Math.floor(state.frames / 8) % 2 === 0) ctx.fillRect(obs.x + 24, obs.y - 25, 6, 25);
+            } else if (obs.type === 'portal') {
+                ctx.globalAlpha = 0.8;
+                drawImgSafe(images.current.portal, obs.x, obs.y, obs.w, obs.h, '#aa00ff');
+                ctx.globalAlpha = 1.0;
             } else if (obs.type === 'creeper') {
                 if (obs.defused) {
                     ctx.globalAlpha = 0.3;
@@ -391,10 +476,19 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         drawImgSafe(images.current.minecart, state.player.x - 4, state.player.y + state.player.h - 15, state.player.w + 8, 20, '#555');
         drawImgSafe(images.current.steve, state.player.x + 2, state.player.y - 5, state.player.w - 4, state.player.h - 5, '#ffccaa');
 
-        if (state.isCave && state.frames % 900 < 100) {
+        // 階段提示文字
+        if (state.isCave && cyclePos < 1000) {
             ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.font = 'bold 20px Courier New';
-            ctx.fillText("你進入了危險的洞穴...", LOG_W/2 - 120, LOG_H/2);
+            ctx.fillText("你進入了危險的窄洞穴...", LOG_W/2 - 120, LOG_H/2);
+        } else if (cyclePos >= 1700 && cyclePos < 1800) {
+            ctx.fillStyle = 'rgba(180,0,255,0.8)';
+            ctx.font = 'bold 20px Courier New';
+            ctx.fillText("前方出現了地獄傳送門！", LOG_W/2 - 120, LOG_H/2);
+        } else if (state.isNether && cyclePos < 1900) {
+            ctx.fillStyle = 'rgba(255,50,50,0.8)';
+            ctx.font = 'bold 20px Courier New';
+            ctx.fillText("🔥 歡迎來到地獄！ 🔥", LOG_W/2 - 110, LOG_H/2);
         }
 
         state.reqId = requestAnimationFrame(loop);
