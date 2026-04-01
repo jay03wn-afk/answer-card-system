@@ -3090,10 +3090,11 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
     if (step === 'answering') return (
         <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
-            <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10 transition-colors">
-                <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
-                    <button onClick={onBackToDashboard} className="mr-3 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">← 返回</button>
-                    <div className="overflow-hidden flex-grow flex flex-col justify-center">
+            {/* ✨ 修正：加入 flex-wrap 與 w-full，並調整為 lg 斷點，避免平板尺寸時按鈕被擠壓到畫面外 */}
+            <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center no-round gap-3 shrink-0 z-10 transition-colors w-full">
+                <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
+                    <button onClick={onBackToDashboard} className="mr-3 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold text-sm whitespace-nowrap px-3 py-1.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shrink-0">← 返回</button>
+                    <div className="overflow-hidden flex-grow flex flex-col justify-center min-w-0">
                         <div className="flex items-center space-x-2">
     <h2 className="font-bold truncate text-base dark:text-white">{renderTestName(testName, false)}</h2>
     {hasTimer && (
@@ -3103,7 +3104,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                             )}
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex flex-wrap items-center gap-2">
-                            <span>進度: <span className="font-bold text-black dark:text-white">{userAnswers.filter(a=>a).length}</span> / {numQuestions}</span>
+                            <span className="shrink-0">進度: <span className="font-bold text-black dark:text-white">{userAnswers.filter(a=>a).length}</span> / {numQuestions}</span>
                             {starredIndices.length > 0 && (
                                 <span className="text-orange-500 dark:text-orange-400 font-bold flex items-center bg-orange-50 dark:bg-gray-700 px-1.5 py-0.5 rounded max-w-[150px] sm:max-w-xs overflow-x-auto custom-scrollbar whitespace-nowrap">
                                     <span className="mr-1 shrink-0">★</span> 
@@ -3127,7 +3128,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
+                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
                     {/* ✨ 新增：沉浸式作答切換按鈕 (偵測到有題目格式才顯示) */}
                     {(questionHtml || questionText)?.match(/\[Q\.?0*\d+\]/i) && (
                         <button onClick={() => setViewMode(prev => prev === 'split' ? 'interactive' : 'split')} className="bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-3 py-1.5 no-round font-bold border border-blue-200 dark:border-blue-700 text-xs hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors">
@@ -3478,14 +3479,15 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
     if (step === 'results') return (
         <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
-            <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center no-round gap-3 shrink-0 z-10 transition-colors">
-                <div className="flex items-center flex-grow mr-2 w-full md:w-auto overflow-hidden">
-    <h2 className="font-bold truncate text-base pr-4 dark:text-white flex items-center gap-2">
-        {renderTestName(testName, true)} <span>- 測驗結果</span>
+            {/* ✨ 修正：加入 flex-wrap 與 w-full，並調整為 lg 斷點，避免平板尺寸時按鈕被擠壓到畫面外 */}
+            <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center no-round gap-3 shrink-0 z-10 transition-colors w-full">
+                <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
+    <h2 className="font-bold truncate text-base pr-4 dark:text-white flex items-center gap-2 min-w-0">
+        {renderTestName(testName, true)} <span className="shrink-0">- 測驗結果</span>
     </h2>
 </div>
 
-                <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto justify-end">
+                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
                     {!isShared && !isTask && !/\[#(op|m?nm?st)\]/i.test(testName) && (
                         <button onClick={async () => {
                             if (shortCode) {
@@ -4182,23 +4184,9 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                     <h2 className="text-xl font-black text-pink-600 dark:text-pink-400 flex items-center">⚡ 快問快答挑戰</h2>
                     {!targetQaId && (
                         <button 
-                            onClick={async () => { 
+                            onClick={() => { 
+                                // ✨ 提速：直接觸發 useEffect 重新掛載監聽器，秒載入並同步最新資料
                                 setLoading(true); 
-                                try {
-                                    // ✨ 強制繞過快取，直接向伺服器請求最新資料
-                                    const snapshot = await window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get({ source: 'server' });
-                                    const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                                    const now = new Date().getTime();
-                                    const validQas = isAdmin ? qas : qas.filter(q => !q.endTime || q.endTime > now);
-                                    setQaList(validQas);
-                                    setActiveQA(prev => {
-                                        if (prev) return validQas.find(q => q.id === prev.id) || prev;
-                                        return prev;
-                                    });
-                                } catch(e) {
-                                    console.error("快問快答更新失敗", e);
-                                }
-                                setLoading(false);
                                 setRefreshTrigger(prev => prev + 1); 
                             }} 
                             className="text-xs bg-white hover:bg-pink-50 text-pink-600 border border-pink-200 px-2 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round"
