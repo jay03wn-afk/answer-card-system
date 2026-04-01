@@ -418,6 +418,7 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
     const [folder, setFolder] = useState(initialData?.folder || '未分類');
     const [newFolder, setNewFolder] = useState('');
     const [qText, setQText] = useState(initialData?.qText || '');
+    const [qHtml] = useState(initialData?.qHtml || ''); // ✨ 新增：富文本唯讀狀態
     const [qImage, setQImage] = useState(initialData?.qImage || null);
     const [nText, setNText] = useState(initialData?.nText || '');
     const [nImage, setNImage] = useState(initialData?.nImage || null);
@@ -426,7 +427,8 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
     const handleSave = async () => {
         const finalFolder = (folder === '新增資料夾' ? newFolder.trim() : folder) || '未分類';
         setIsSaving(true);
-        await onSave({ folder: finalFolder, qText: qText.trim(), qImage, nText: nText.trim(), nImage });
+        // ✨ 修改：儲存時一併帶上 qHtml
+        await onSave({ folder: finalFolder, qText: qText.trim(), qHtml, qImage, nText: nText.trim(), nImage });
         setIsSaving(false);
     };
 
@@ -450,7 +452,36 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
                     )}
                 </div>
 
-                <RichInput label="📝 題目內容" text={qText} setText={setQText} image={qImage} setImage={setQImage} maxLength={300} showAlert={showAlert} />
+               {/* ✨ 智慧判斷：如果有富文本，就顯示唯讀排版；如果沒有，就維持舊版的純文字編輯器 */}
+                {qHtml ? (
+                    <div className="mb-4">
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">📝 題目內容 (系統自動擷取，原稿保護中不可編輯)</label>
+                        <div className="border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 p-3 max-h-48 overflow-y-auto custom-scrollbar no-round shadow-inner">
+                            <style dangerouslySetInnerHTML={{__html: `
+                                .modal-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.875rem; line-height: 1.6; }
+                                .modal-rich-text * { color: inherit !important; background-color: transparent !important; }
+                                /* ✨ 修復：強制富文本內的圖片與畫布保持正常比例與白底，避免縮小 */
+                                .modal-rich-text img {
+                                    display: block !important;
+                                    max-width: 100% !important;
+                                    height: auto !important;
+                                    margin: 10px 0 !important;
+                                    background-color: #ffffff !important;
+                                    opacity: 1 !important;
+                                    visibility: visible !important;
+                                    border-radius: 4px;
+                                }
+                                .modal-rich-text canvas {
+                                    background-color: #ffffff !important;
+                                }
+                            `}} />
+                            <div className="modal-rich-text text-black dark:text-white font-medium" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(qHtml) }} />
+                        </div>
+                    </div>
+                ) : (
+                    <RichInput label="📝 題目內容" text={qText} setText={setQText} image={qImage} setImage={setQImage} maxLength={300} showAlert={showAlert} />
+                )}
+                
                 <RichInput label="💡 我的筆記 / 詳解" text={nText} setText={setNText} image={nImage} setImage={setNImage} maxLength={300} showAlert={showAlert} />
                 
                 <div className="flex justify-end space-x-3 mt-6 border-t border-gray-100 dark:border-gray-700 pt-4">
@@ -598,7 +629,8 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
 
                 filteredItems.forEach((item, index) => {
                     const qNum = index + 1;
-                    let qContent = item.qText || '無題目文字';
+                    // ✨ 智慧繼承：錯題重測時優先抓取原汁原味的富文本，保證排版不走鐘
+                    let qContent = item.qHtml ? item.qHtml : (item.qText || '無題目文字');
                     if (item.qImage) {
                         qContent += `<br/><br/><img src="${item.qImage}" style="max-width:100%; border-radius:8px;" />`;
                     }
@@ -713,12 +745,37 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                             <span className="text-sm font-bold text-green-600 dark:text-green-400">正確答案: {item.correctAns}</span>
                          </div>
                          
-                         {(item.qText || item.qImage) && (
+                         {(item.qHtml || item.qText || item.qImage) && (
                              <div className="mb-3">
                                  <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">📝 題目</p>
-                                 <div className="bg-white p-3 text-sm text-gray-900 whitespace-pre-wrap border-l-4 border-blue-500 font-bold shadow-sm">
-                                     {item.qText && <p>{item.qText}</p>}
-                                     {item.qImage && <img src={item.qImage} onClick={() => setPreviewImage(item.qImage)} className="mt-2 max-h-40 object-contain border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity" alt="題目附圖" title="點擊放大" />}
+                                 <div className="bg-white dark:bg-gray-900 p-3 text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap border-l-4 border-blue-500 font-bold shadow-sm">
+                                     {/* ✨ 雙軌顯示：優先渲染富文本及化學式，若無則降級為純文字 */}
+                                     {item.qHtml ? (
+                                         <>
+                                             <style dangerouslySetInnerHTML={{__html: `
+                                                 .wb-rich-text { word-break: break-word; white-space: pre-wrap; }
+                                                 .wb-rich-text * { color: inherit !important; background-color: transparent !important; }
+                                                 /* ✨ 修復：強制富文本內的圖片與畫布保持正常比例與白底，避免縮小 */
+                                                 .wb-rich-text img {
+                                                     display: block !important;
+                                                     max-width: 100% !important;
+                                                     height: auto !important;
+                                                     margin: 10px 0 !important;
+                                                     background-color: #ffffff !important;
+                                                     opacity: 1 !important;
+                                                     visibility: visible !important;
+                                                     border-radius: 4px;
+                                                 }
+                                                 .wb-rich-text canvas {
+                                                     background-color: #ffffff !important;
+                                                 }
+                                             `}} />
+                                             <div className="wb-rich-text" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(item.qHtml) }} />
+                                         </>
+                                     ) : (
+                                         item.qText && <p>{item.qText}</p>
+                                     )}
+                                     {item.qImage && <img src={item.qImage} onClick={() => setPreviewImage(item.qImage)} className="mt-2 max-h-[300px] w-full object-contain border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity bg-white" alt="題目附圖" title="點擊放大" />}
                                  </div>
                              </div>
                          )}
@@ -728,7 +785,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                  <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">💡 筆記</p>
                                  <div className="bg-yellow-50 dark:bg-gray-900 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap border-l-4 border-yellow-400 font-bold">
                                      {(item.nText || item.note) && <p>{item.nText || item.note}</p>}
-                                     {item.nImage && <img src={item.nImage} onClick={() => setPreviewImage(item.nImage)} className="mt-2 max-h-40 object-contain border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity" alt="筆記附圖" title="點擊放大" />}
+                                    {item.nImage && <img src={item.nImage} onClick={() => setPreviewImage(item.nImage)} className="mt-2 max-h-[300px] w-full object-contain border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity bg-white" alt="筆記附圖" title="點擊放大" />}
                                  </div>
                              </div>
                          )}
@@ -792,6 +849,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                         folder: editingItem.folder || '未分類',
                         userFolders: folders.filter(f => f !== '全部'),
                         qText: editingItem.qText || '',
+                        qHtml: editingItem.qHtml || '', // ✨ 傳入富文本
                         qImage: editingItem.qImage || null,
                         nText: editingItem.nText || editingItem.note || '',
                         nImage: editingItem.nImage || null
@@ -801,6 +859,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                         await window.db.collection('users').doc(user.uid).collection('wrongBook').doc(editingItem.id).update({
                             folder: data.folder || '未分類',
                             qText: data.qText,
+                            qHtml: data.qHtml || '', // ✨ 儲存富文本
                             qImage: data.qImage,
                             nText: data.nText,
                             nImage: data.nImage,
@@ -2198,7 +2257,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, total: 0 });
     const [isCreating, setIsCreating] = useState(false); // ✨ 新增：建立試題時的載入狀態    
     const [isRegrading, setIsRegrading] = useState(false); // ✨ 新增：重新算分的載入畫面狀態
-    const [wrongBookAddingItem, setWrongBookAddingItem] = useState(null);
+  const [wrongBookAddingItem, setWrongBookAddingItem] = useState(null);
+    const [loadingWrongBookNum, setLoadingWrongBookNum] = useState(null); // ✨ 新增：收錄錯題時的載入狀態
     const [explanationModalItem, setExplanationModalItem] = useState(null); // ✨ 新增詳解彈窗狀態
     const [isEditLoading, setIsEditLoading] = useState(false); // ✨ 新增：編輯模式的載入狀態
 
@@ -2964,30 +3024,50 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         }
     };
 
-    const handleAddToWrongBook = async (item) => {
+   const handleAddToWrongBook = async (item) => {
         try {
-            // ✨ 新增：先檢查資料庫是否已經有這份試卷的這一題
+            setLoadingWrongBookNum(item.number); // ✨ 顯示按鈕載入中
+            
+            if (!quizId) throw new Error("遺失試卷 ID，請重新載入頁面");
+
             const snapshot = await window.db.collection('users').doc(currentUser.uid).collection('wrongBook')
                 .where('quizId', '==', quizId)
                 .where('questionNum', '==', item.number)
                 .get();
                 
             if (!snapshot.empty) {
-                // 如果找到了，就跳出警告並停止動作
+                setLoadingWrongBookNum(null);
                 return showAlert(`⚠️ 第 ${item.number} 題已經收錄在錯題本中了！`);
             }
             
-            // 如果沒找到，繼續原本的收錄動作
-            // ✨ 修改：自動解析並擷取該題的題目內容與詳解 (自動填入筆記)
-            const extractedText = extractSpecificQuestion(questionHtml || questionText, item.number, !!questionHtml);
-            const extractedExp = extractSpecificExplanation(explanationHtml, item.number);
+            // ✨ 智慧擷取：判斷是否為富文本，並精準保留
+            let extractedText = '';
+            let extractedHtml = '';
             
-            // 將詳解的 HTML 標籤去除，轉換為純文字供筆記區使用
+            if (questionHtml) {
+                const regexStr = `\\[Q\\.?0*${item.number}\\]([\\s\\S]*?)(?=\\[Q\\.?\\d+\\]|\\[End\\]|$)`;
+                const match = questionHtml.match(new RegExp(regexStr, 'i'));
+                if (match) {
+                    extractedHtml = match[1].trim(); 
+                }
+            } else {
+                extractedText = extractSpecificQuestion(questionText, item.number, false);
+            }
+
+            const extractedExp = extractSpecificExplanation(explanationHtml, item.number);
             const plainExp = extractedExp ? extractedExp.replace(/<[^>]+>/g, '').trim() : '';
 
-            setWrongBookAddingItem({ ...item, extractedQText: extractedText, extractedExp: plainExp });
+            setWrongBookAddingItem({ 
+                ...item, 
+                extractedQText: extractedText, 
+                extractedQHtml: extractedHtml,
+                extractedExp: plainExp 
+            });
         } catch (error) {
+            console.error("收錄錯題發生錯誤:", error);
             showAlert("檢查錯題本失敗：" + error.message);
+        } finally {
+            setLoadingWrongBookNum(null); // ✨ 無論成功失敗都關閉載入動畫
         }
     };
 
@@ -3936,11 +4016,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                     💡 查看詳解
                                                 </button>
                                             )}
-                                            <button 
+                                           <button 
+                                                disabled={loadingWrongBookNum === item.number}
                                                 onClick={(e) => { e.stopPropagation(); handleAddToWrongBook(item); }} 
-                                                className="text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                                                className={`text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm ${loadingWrongBookNum === item.number ? 'opacity-50 cursor-wait' : ''}`}
                                             >
-                                                📓 收錄錯題
+                                                {loadingWrongBookNum === item.number ? '⏳ 處理中...' : '📓 收錄錯題'}
                                             </button>
                                         </div>
                                     </div>
@@ -4104,11 +4185,11 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             {wrongBookAddingItem && (
                 <WrongBookModal
                     title={`收錄第 ${wrongBookAddingItem.number} 題`}
-                    // ✨ 修改：帶入剛剛自動擷取的該題純文字、詳解純文字(預設為筆記)與使用者的資料夾列表
                     initialData={{ 
                         qText: wrongBookAddingItem.extractedQText || '', 
+                        qHtml: wrongBookAddingItem.extractedQHtml || '', // ✨ 帶入富文本
                         nText: wrongBookAddingItem.extractedExp || '', 
-                        userFolders: Array.from(new Set(userProfile.folders || ['未分類'])) 
+                        userFolders: Array.from(new Set(userProfile?.folders || ['未分類']))
                     }}
                     onClose={() => setWrongBookAddingItem(null)}
                     onSave={async (data) => {
@@ -4120,7 +4201,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 questionNum: wrongBookAddingItem.number,
                                 userAns: wrongBookAddingItem.userAns || '未填寫',
                                 correctAns: wrongBookAddingItem.correctAns,
-                                qText: data.qText,
+                                qText: data.qText || '',
+                                qHtml: data.qHtml || '', // ✨ 將富文本存入資料庫
                                 qImage: data.qImage,
                                 nText: data.nText,
                                 nImage: data.nImage,
