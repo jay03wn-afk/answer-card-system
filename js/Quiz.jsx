@@ -1201,6 +1201,21 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     const [searchQuery, setSearchQuery] = useState('');
     const [pendingShareCode, setPendingShareCode] = useState(() => new URLSearchParams(window.location.search).get('shareCode'));
 
+    // --- 新增自動背景重新整理 (我的題庫)，每 3 秒同步一次 ---
+    useEffect(() => {
+        const timer = setInterval(() => {
+            if (!isRefreshing) {
+                window.db.collection('users').doc(user.uid).collection('quizzes')
+                    .orderBy('createdAt', 'desc')
+                    .limit(visibleLimit)
+                    .get({ source: 'server' })
+                    .then(() => setRefreshTrigger(prev => prev + 1))
+                    .catch(e => console.log('背景同步略過', e));
+            }
+        }, 3000);
+        return () => clearInterval(timer);
+    }, [isRefreshing, user.uid, visibleLimit]);
+
     const specialFolders = ['我建立的試題', '未分類', '任務牆'];
     const rawUserFolders = (userProfile.folders || []).filter(f => !specialFolders.includes(f));
     const userFolders = [...specialFolders, ...rawUserFolders];
@@ -3514,7 +3529,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-4 text-center">請輸入正確答案以進行批改</h3>
                         <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} showConfirm={showConfirm} />
                         
-                        <button onClick={handleGrade} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors mt-4">開始批改</button>
+                        <button onClick={() => handleGrade()} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors mt-4">開始批改</button>
                     </div>
                 </div>
             );
@@ -4008,10 +4023,23 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [qaLimit, setQaLimit] = useState(30); // ✨ 新增：快問快答動態載入數量的狀態
     const [refreshTrigger, setRefreshTrigger] = useState(0); // ✨ 新增：重新整理觸發器
     const [isRefreshing, setIsRefreshing] = useState(false); // ✨ 新增：靜默重整狀態
-    const [jumpingQaId, setJumpingQaId] = useState(null); // ✨ 新增：進入題目的載入狀態
+   const [jumpingQaId, setJumpingQaId] = useState(null); // ✨ 新增：進入題目的載入狀態
     const [showAdminMode, setShowAdminMode] = useState(false);
     const [isEditExpanded, setIsEditExpanded] = useState(false);
     
+    // --- 新增自動背景重新整理 (快問快答)，每 3 秒同步一次 ---
+    useEffect(() => {
+        if (targetQaId) return; // 單題模式不輪詢
+        const timer = setInterval(() => {
+            if (!isRefreshing) {
+                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get({ source: 'server' })
+                    .then(() => setRefreshTrigger(prev => prev + 1))
+                    .catch(e => console.log('背景同步略過', e));
+            }
+        }, 3000);
+        return () => clearInterval(timer);
+    }, [isRefreshing, targetQaId, qaLimit]);
+
     const isAdmin = user && user.email === 'jay03wn@gmail.com';
     
     // 管理員表單狀態 (升級自訂功能)
