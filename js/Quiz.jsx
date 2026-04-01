@@ -259,7 +259,80 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
         const clipboardData = e.clipboardData || window.clipboardData;
         if (!clipboardData) return;
 
-        // 情況 1：處理純粹的圖片複製 (例如 Line 截圖、直接按 PrintScreen)
+        // 1. 先取得 HTML 資料，判斷是否為 Word 或網頁複製過來的內容
+        const htmlData = clipboardData.getData('text/html');
+
+        // ==========================================
+        // 情況 2：優先處理從 Word 或網頁複製的「圖文混排」(含大量 Base64 圖片)
+        // ==========================================
+        if (htmlData && htmlData.includes('data:image')) {
+            e.preventDefault();
+            setIsUploading(true);
+            const tempId = 'paste-' + Date.now();
+            document.execCommand('insertHTML', false, `<div id="${tempId}" style="color:blue; font-weight:bold;">🔄 圖片正在並行壓縮與上傳，請稍候...</div>`);
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlData, 'text/html');
+            const images = Array.from(doc.querySelectorAll('img[src^="data:image"]'));
+
+            try {
+                await Promise.all(images.map(async (img) => {
+                    const src = img.getAttribute('src');
+                    const imgObj = new Image();
+                    imgObj.src = src;
+                    await new Promise(r => imgObj.onload = r);
+
+                    const canvas = document.createElement('canvas');
+                    let w = imgObj.width, h = imgObj.height;
+                    // 壓縮圖片大小
+                    if (w > 800) { h *= 800 / w; w = 800; }
+                    canvas.width = w; canvas.height = h;
+                    canvas.getContext('2d').drawImage(imgObj, 0, 0, w, h);
+
+                    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.6));
+                    const path = `uploads/${window.auth.currentUser.uid}/paste_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+                    const ref = window.storage.ref(path);
+
+                    await new Promise((resolve, reject) => {
+                        const task = ref.put(blob);
+                        task.on('state_changed', 
+                            (snap) => console.log(`上傳中: ${Math.round((snap.bytesTransferred/snap.totalBytes)*100)}%`),
+                            reject,
+                            async () => {
+                                const url = await task.snapshot.ref.getDownloadURL();
+                                img.setAttribute('src', url);
+                                img.style.maxWidth = "100%";
+                                resolve();
+                            }
+                        );
+                    });
+                }));
+
+                const finalHtml = doc.body.innerHTML;
+                const editor = document.querySelector('[contenteditable="true"]');
+                if (editor) {
+                    editor.innerHTML = editor.innerHTML.replace(new RegExp(`<div id="${tempId}".*?</div>`), finalHtml);
+                }
+            } catch (err) {
+                console.error("上傳失敗", err);
+                alert("圖片處理失敗，請檢查網路連接");
+            } finally {
+                setIsUploading(false);
+            }
+            return; // ✨ 處理完直接結束，不要往下走
+        }
+
+        // ==========================================
+        // ✨ 新增防呆：如果是從 Word/網頁 複製純文字或帶格式文字 (但沒有 Base64 圖片)
+        // ==========================================
+        // 必須直接 return，讓瀏覽器「預設貼上文字」，『絕對不要』進入下面的單張截圖判斷
+        if (htmlData && htmlData.trim().length > 0) {
+            return; 
+        }
+
+        // ==========================================
+        // 情況 1：最後才處理「純粹的圖片複製」(例如 Line 截圖、PrintScreen)
+        // ==========================================
         const items = clipboardData.items;
         let hasImageItem = false;
         for (let i = 0; i < items.length; i++) {
@@ -292,70 +365,7 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                 break; // 處理完單張圖片就跳出
             }
         }
-
-        if (hasImageItem) return;
-
-        // 情況 2：處理從 Word 或網頁複製的「圖文混排」(最容易塞爆資料庫的元凶)
-        // ✨ 修正後的 handlePaste 邏輯 (只截取 htmlData 處理部分)
-const htmlData = clipboardData.getData('text/html');
-if (htmlData && htmlData.includes('data:image')) {
-            e.preventDefault();
-            setIsUploading(true);
-            const tempId = 'paste-' + Date.now();
-            document.execCommand('insertHTML', false, `<div id="${tempId}" style="color:blue; font-weight:bold;">🔄 圖片正在並行壓縮與上傳，請稍候...</div>`);
-
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(htmlData, 'text/html');
-            const images = Array.from(doc.querySelectorAll('img[src^="data:image"]'));
-
-            try {
-                // 💡 改成 Promise.all 同時處理，速度快 3 倍
-                await Promise.all(images.map(async (img) => {
-                    const src = img.getAttribute('src');
-                    const imgObj = new Image();
-                    imgObj.src = src;
-                    await new Promise(r => imgObj.onload = r);
-
-                    const canvas = document.createElement('canvas');
-                    let w = imgObj.width, h = imgObj.height;
-                    if (w > 800) { h *= 800 / w; w = 800; }
-                    canvas.width = w; canvas.height = h;
-                    canvas.getContext('2d').drawImage(imgObj, 0, 0, w, h);
-
-                    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.6));
-                    const path = `uploads/${window.auth.currentUser.uid}/paste_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
-                    const ref = window.storage.ref(path);
-
-                    // 💡 加入監控，確保一張卡住不會全部死掉
-                    await new Promise((resolve, reject) => {
-                        const task = ref.put(blob);
-                        task.on('state_changed', 
-                            (snap) => console.log(`上傳中: ${Math.round((snap.bytesTransferred/snap.totalBytes)*100)}%`),
-                            reject,
-                            async () => {
-                                const url = await task.snapshot.ref.getDownloadURL();
-                                img.setAttribute('src', url);
-                                img.style.maxWidth = "100%";
-                                resolve();
-                            }
-                        );
-                    });
-                }));
-
-                const finalHtml = doc.body.innerHTML;
-                const editor = document.querySelector('[contenteditable="true"]');
-                if (editor) {
-                    editor.innerHTML = editor.innerHTML.replace(new RegExp(`<div id="${tempId}".*?</div>`), finalHtml);
-                }
-            } catch (err) {
-                console.error("上傳失敗", err);
-                alert("圖片處理失敗，請檢查網路連接");
-            } finally {
-                setIsUploading(false);
-            }
-        }
     };
-
     return (
         <div className={wrapperClassName}>
             {!value && !isFocused && !isUploading && (
