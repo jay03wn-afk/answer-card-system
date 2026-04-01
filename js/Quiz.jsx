@@ -33,21 +33,73 @@ const renderTestName = (rawName, isCompleted = false) => {
     return <div className="break-all sm:break-words min-w-0 w-full">{cleanName}</div>;
 };
 
+// --- 新增：載入並初始化 SmilesDrawer (自動繪製高畫質化學式引擎) ---
+if (typeof window !== 'undefined' && !window.smilesDrawerObserverInit) {
+    window.smilesDrawerObserverInit = true;
+    const script = document.createElement('script');
+    script.src = "https://unpkg.com/smiles-drawer@1.0.10/dist/smiles-drawer.min.js";
+    script.onload = () => {
+        const drawAllSmiles = () => {
+            if (!window.SmilesDrawer) return;
+            // 找出所有還沒畫過的 canvas 畫布
+            const canvases = document.querySelectorAll('canvas.smiles-canvas:not([data-drawn="true"])');
+            if (canvases.length === 0) return;
+            
+            // ✨ 秘密武器：設定高畫質畫布，並強制覆蓋主題為「純黑白」，徹底擺脫舊 API 的彩色廉價感！
+            const drawer = new window.SmilesDrawer.Drawer({ 
+                width: 300, 
+                height: 150, 
+                padding: 2, 
+                compactDrawing: false,
+                themes: {
+                    light: { C: '#000', O: '#000', N: '#000', F: '#000', Cl: '#000', Br: '#000', I: '#000', P: '#000', S: '#000', B: '#000', Si: '#000', H: '#000', BACKGROUND: '#ffffff' }
+                }
+            });
+            
+            canvases.forEach(canvas => {
+                const smiles = canvas.getAttribute('data-smiles');
+                window.SmilesDrawer.parse(smiles, (tree) => {
+                    drawer.draw(tree, canvas, 'light', false); // 畫上黑線
+                    canvas.setAttribute('data-drawn', 'true');
+                }, (err) => {
+                    console.error("SmilesDrawer 解析失敗:", err);
+                    const span = document.createElement('span');
+                    span.className = "text-red-500 font-bold bg-red-50 px-1 text-xs";
+                    span.textContent = `[解析失敗: ${smiles}]`;
+                    canvas.parentNode.replaceChild(span, canvas);
+                });
+            });
+        };
+
+        drawAllSmiles();
+        // 建立 DOM 觀察者：不論是跳轉畫面、載入新題目、還是貼上文字，只要出現新的化學式就立刻畫圖！
+        const observer = new MutationObserver((mutations) => {
+            let shouldDraw = false;
+            for (let m of mutations) {
+                if (m.addedNodes.length > 0) {
+                    shouldDraw = true;
+                    break;
+                }
+            }
+            if (shouldDraw) setTimeout(drawAllSmiles, 50);
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    };
+    document.head.appendChild(script);
+}
+
 // --- 新增：全域 SMILES 化學式轉換輔助函式 ---
 const parseSmilesToHtml = (content) => {
     if (!content) return content;
-    // ✨ 修改：不允許跨行，但容許內部夾帶隱藏的 HTML 標籤
     const regex = /\{([^}\n\r]{2,})\}/g;
     return content.replace(regex, (match, rawSmiles) => {
-        // ✨ 終極淨化 1：先把大括號內不小心包到的 HTML 標籤 (如 <span style="...">) 整個連根拔除
         let cleanSmiles = rawSmiles.replace(/<[^>]*>/g, '');
-        // ✨ 終極淨化 2：再拔除所有隱形字元、中文字與無效符號，只保留純化學符號
         cleanSmiles = cleanSmiles.replace(/[^A-Za-z0-9@+\-\[\]\(\)\\\/=#$:\.%*]/g, '');
-        
         if (!cleanSmiles) return match;
 
-        const imgUrl = `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(cleanSmiles)}/image`;
-        return `<img src="${imgUrl}" alt="${cleanSmiles}" title="SMILES: ${cleanSmiles}" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #ffffff !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-white" onerror="this.outerHTML='<span class=\\'text-red-500 font-bold bg-red-50 px-1 text-xs\\'>[解析失敗: ${cleanSmiles}]</span>'" />`;
+        // ✨ 改變策略：不再呼叫 API 圖片，而是原地建立一張 SmilesDrawer 專用的高畫質 Canvas 畫布
+        const uniqueId = 'smiles-' + Math.random().toString(36).substr(2, 9);
+        return `<canvas id="${uniqueId}" class="smiles-canvas shadow-sm" data-smiles="${cleanSmiles}" width="300" height="150" style="height: 40px; width: auto; max-width: 100%; display: inline-block; vertical-align: middle; background-color: #ffffff !important; border-radius: 4px; border: 1px solid #ddd; margin: 0 2px;"></canvas>`;
     });
 };
 
@@ -56,6 +108,8 @@ const processQuestionContent = (content, isHtml) => {
     let processed = content;
     if (isHtml) {
         processed = processed.replace(/\[Q\.?0*(\d+)\]/gi, '<span id="q-marker-$1" class="q-marker inline-block font-black text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-blue-200 dark:border-blue-700 mx-1">[Q.$1]</span>');
+        // ✨ 修正：清除 editor 殘留的化學式繪製標記，確保進入測驗時能重新繪製
+        processed = processed.replace(/data-drawn="true"/gi, '');
     }
     // ✨ 讓一般測驗與預覽畫面支援 SMILES 顯示
     return parseSmilesToHtml(processed);
@@ -66,6 +120,8 @@ const processExplanationContent = (content, isHtml) => {
     let processed = content;
     if (isHtml) {
         processed = processed.replace(/\[A\.?0*(\d+)\]/gi, '<span id="a-marker-$1" class="a-marker inline-block font-black text-green-800 dark:text-green-200 bg-green-100 dark:bg-green-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-green-200 dark:border-green-700 mx-1">[A.$1]</span>');
+        // ✨ 修正：清除 editor 殘留的化學式繪製標記，確保詳解畫面能重新繪製
+        processed = processed.replace(/data-drawn="true"/gi, '');
     }
     // ✨ 讓詳解畫面支援 SMILES 顯示
     return parseSmilesToHtml(processed);
@@ -2073,6 +2129,9 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             // 2. ✨ 暗黑模式修復 1：提早抹除 Word 貼上時強制加上的「黑色」樣式，讓暗色模式的白字能正常顯示！
             cleaned = cleaned.replace(/color:\s*(black|#000000|#000|rgb\(0,\s*0,\s*0\)|windowtext);?/gi, '');
 
+            // ✨ 修正：清除 editor 殘留的化學式繪製標記，確保進入沉浸式測驗時能重新繪製！
+            cleaned = cleaned.replace(/data-drawn="true"/gi, '');
+
             // 3. 遞迴拔除尾部的空行、空段落、無意義標籤 (解決 D 選項多一行的問題)
             let prev;
             do {
@@ -3299,6 +3358,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         color: inherit !important;
         background-color: transparent !important;
     }
+    /* ✨ 強制修復：確保所有圖片正常顯示，不會變成透明或白色方塊 */
+    .preview-rich-text img {
+        display: block !important;
+        max-width: 100% !important;
+        height: auto !important;
+        margin: 10px 0 !important;
+        background-color: #ffffff !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+    }
     /* 🚀 修正：強制消除「選項按鈕」內部富文本的白底與巨大邊距 */
     button .preview-rich-text {
         padding: 0 !important;
@@ -3713,7 +3782,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                         />
                                     ) : (
                                         <div className="absolute inset-0 w-full h-full p-4 custom-scrollbar bg-gray-50 dark:bg-gray-900 text-black dark:text-white overflow-y-auto">
-                                            <style dangerouslySetInnerHTML={{__html: `
+                                           <style dangerouslySetInnerHTML={{__html: `
                                                 .preview-rich-text { 
     word-break: break-word; 
     white-space: pre-wrap; 
@@ -3727,6 +3796,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 .preview-rich-text * {
     color: inherit !important;
     background-color: transparent !important;
+}
+/* ✨ 強制修復：確保所有圖片正常顯示 */
+.preview-rich-text img {
+    display: block !important;
+    max-width: 100% !important;
+    height: auto !important;
+    margin: 10px 0 !important;
+    background-color: #ffffff !important;
+    opacity: 1 !important;
+    visibility: visible !important;
 }
                                             `}} />
                                             <div 
