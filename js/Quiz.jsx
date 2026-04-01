@@ -1182,6 +1182,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isJumping, setIsJumping] = useState(false); // ✨ 新增：跳轉載入狀態
+    const [isRefreshing, setIsRefreshing] = useState(false); // ✨ 新增：背景整理狀態
     
     // 🚀 終極提速：加入題庫顯示數量限制，大幅降低網路下載量
     const [visibleLimit, setVisibleLimit] = useState(15);
@@ -1520,9 +1521,20 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
    const handleEnterQuiz = async (rec) => {
         setIsJumping(true); // ✨ 開啟跳轉載入畫面
         
-        // ✨ 終極同步機制：只要是從任務牆下載的題目，點擊進入前瞬間去雲端核對最新版本
         let finalRec = { ...rec };
-        if (rec.isTask && rec.taskId) {
+
+        // ✨ 點擊進入時，強制向伺服器要「這份特定試卷」的最新資料 (秒速更新，不拖累列表)
+        try {
+            const docSnap = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).get({ source: 'server' });
+            if (docSnap.exists) {
+                finalRec = { ...finalRec, ...docSnap.data() };
+            }
+        } catch (e) {
+            console.warn("無法取得最新試卷資料，使用本地快取", e);
+        }
+
+        // ✨ 終極同步機制：如果是從任務牆下載的題目，再額外核對公版答案
+        if (finalRec.isTask && finalRec.taskId) {
             try {
                 const taskDoc = await window.db.collection('publicTasks').doc(rec.taskId).get();
                 if (taskDoc.exists) {
@@ -1582,19 +1594,21 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     <h1 className="text-2xl font-black dark:text-white shrink-0">我的題庫</h1>
                     <button 
                         onClick={() => { 
-                            setLoading(true); 
-                            // ✨ 真正的手動同步：強制背景向伺服器要資料更新快取，完成後自動觸發畫面渲染
+                            setIsRefreshing(true); 
+                            // ✨ 改為靜默背景同步，不干擾畫面，同步完自動更新列表
                             window.db.collection('users').doc(user.uid).collection('quizzes')
                                 .orderBy('createdAt', 'desc')
                                 .limit(visibleLimit)
                                 .get({ source: 'server' })
                                 .then(() => setRefreshTrigger(prev => prev + 1))
-                                .catch(e => { console.error(e); setLoading(false); });
+                                .catch(e => console.error(e))
+                                .finally(() => setIsRefreshing(false));
                         }} 
-                        className="text-sm bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 px-3 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round"
+                        disabled={isRefreshing}
+                        className="text-sm bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 px-3 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round disabled:opacity-50"
                         title="手動同步雲端最新資料"
                     >
-                        🔄 重新整理
+                        {isRefreshing ? <div className="w-4 h-4 border-2 border-gray-400 border-t-black dark:border-t-white rounded-full animate-spin"></div> : '🔄'} 重新整理
                     </button>
                 </div>
                 <button onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 shadow-sm transition-colors whitespace-nowrap shrink-0">+ 新測驗</button>
@@ -3968,6 +3982,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [loading, setLoading] = useState(true);
     const [qaLimit, setQaLimit] = useState(30); // ✨ 新增：快問快答動態載入數量的狀態
     const [refreshTrigger, setRefreshTrigger] = useState(0); // ✨ 新增：重新整理觸發器
+    const [isRefreshing, setIsRefreshing] = useState(false); // ✨ 新增：靜默重整狀態
+    const [jumpingQaId, setJumpingQaId] = useState(null); // ✨ 新增：進入題目的載入狀態
     const [showAdminMode, setShowAdminMode] = useState(false);
     const [isEditExpanded, setIsEditExpanded] = useState(false);
     
@@ -4194,21 +4210,18 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                     {!targetQaId && (
                         <button 
                             onClick={() => { 
-                                setLoading(true); 
-                                // ✨ 真正的手動同步：背景向伺服器強制要資料，拿到後再解除 Loading，保證最新又不卡死
+                                setIsRefreshing(true); 
+                                // ✨ 靜默背景同步，列表不消失，只轉小圈圈
                                 window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get({ source: 'server' })
-                                    .then(() => {
-                                        setRefreshTrigger(prev => prev + 1);
-                                    })
-                                    .catch(e => {
-                                        console.error("快問快答更新失敗", e);
-                                        setLoading(false);
-                                    });
+                                    .then(() => setRefreshTrigger(prev => prev + 1))
+                                    .catch(e => console.error(e))
+                                    .finally(() => setIsRefreshing(false));
                             }} 
-                            className="text-xs bg-white hover:bg-pink-50 text-pink-600 border border-pink-200 px-2 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round"
+                            disabled={isRefreshing}
+                            className="text-xs bg-white hover:bg-pink-50 text-pink-600 border border-pink-200 px-2 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round disabled:opacity-50"
                             title="手動同步雲端最新題目"
                         >
-                            🔄 重新整理
+                            {isRefreshing ? <div className="w-3 h-3 border-2 border-pink-400 border-t-pink-600 rounded-full animate-spin"></div> : '🔄'} 重新整理
                         </button>
                     )}
                 </div>
@@ -4335,7 +4348,29 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                                         <button onClick={() => handleDeleteQA(qa.id)} className="text-red-500 text-xs border border-red-500 px-1">刪除</button>
                                                     </>
                                                 )}
-                                                <button onClick={() => { setActiveQA(qa); setSelectedAns(null); setShowResult(!!rec); }} className="bg-pink-500 hover:bg-pink-600 text-white px-3 py-1.5 text-sm font-bold no-round">
+                                                <button 
+                                                    disabled={jumpingQaId === qa.id}
+                                                    onClick={async () => { 
+                                                        setJumpingQaId(qa.id);
+                                                        try {
+                                                            // ✨ 點擊挑戰時，強制向伺服器要這一題的最新資料
+                                                            const docSnap = await window.db.collection('fastQA').doc(qa.id).get({ source: 'server' });
+                                                            if (docSnap.exists) {
+                                                                setActiveQA({ id: docSnap.id, ...docSnap.data() });
+                                                            } else {
+                                                                setActiveQA(qa);
+                                                            }
+                                                        } catch (e) {
+                                                            console.warn(e);
+                                                            setActiveQA(qa);
+                                                        }
+                                                        setSelectedAns(null); 
+                                                        setShowResult(!!rec); 
+                                                        setJumpingQaId(null);
+                                                    }} 
+                                                    className="bg-pink-500 hover:bg-pink-600 text-white px-3 py-1.5 text-sm font-bold no-round flex items-center gap-1 disabled:opacity-70"
+                                                >
+                                                    {jumpingQaId === qa.id ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : null}
                                                     {(user && rec) ? '查看紀錄' : '立即挑戰'}
                                                 </button>
                                             </div>
