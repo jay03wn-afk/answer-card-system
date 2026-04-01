@@ -2504,37 +2504,53 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     };
 
     const handleGrade = async (overrideKey = null) => {
-        // ✨ 修改：交卷時保留大小寫，僅允許 A-D, a-d, Z。並支援強制帶入最新 Key
-        const sourceKey = overrideKey !== null ? overrideKey : correctAnswersInput;
+        // ✨ 終極修復 1：嚴格檢查 overrideKey 型別，防止誤收 React Event 物件導致 .replace 崩潰
+        const sourceKey = typeof overrideKey === 'string' ? overrideKey : correctAnswersInput;
         const cleanKey = (sourceKey || '').replace(/[^a-dA-DZz,]/g, '');
+        
         if (!cleanKey && !isTask && !isShared) return showAlert('請輸入標準答案後再批改！');
         
         // ✨ 加入智慧辨識：交卷時若沒有逗號，也能正確拆分大寫與連續小寫
         let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
         let correctCount = 0;
-        const data = userAnswers.map((ans, idx) => {
+        
+        // ✨ 終極修復 2：防禦解壓縮失敗或非預期的資料型態，確保 userAnswers 絕對是陣列
+        const safeUserAnswers = Array.isArray(userAnswers) ? userAnswers : [];
+        const safeNumQuestions = Number(numQuestions) || 1; // 防止除以 0 導致 NaN
+
+        const data = safeUserAnswers.map((ans, idx) => {
             const key = keyArray[idx] || '-';
+            // ✨ 終極修復 3：強制將答案轉為字串，防止 null 或 undefined 呼叫 .toLowerCase() 導致畫面卡死
+            const safeAns = String(ans || ''); 
             let isCorrect = false;
 
-            // ✨ 新增：多選與送分的批改邏輯
+            // ✨ 多選與送分的批改邏輯
             if (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') {
                 isCorrect = true; // Z 或 abcd 代表送分，有填沒填都給分
-            } else if (key !== '-' && key !== '' && ans !== '') {
+            } else if (key !== '-' && key !== '' && safeAns !== '') {
                 if (key === key.toUpperCase()) {
                     // 單選大寫
-                    isCorrect = (ans === key);
+                    isCorrect = (safeAns === key);
                 } else {
                     // 複選小寫 (只要使用者的答案包含在小寫字串內就給分，例如填 A，答案是 ab，就給分)
-                    isCorrect = key.toLowerCase().includes(ans.toLowerCase());
+                    isCorrect = key.toLowerCase().includes(safeAns.toLowerCase());
                 }
             }
 
             if (isCorrect) correctCount++;
-            return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: starred[idx] };
+            return { 
+                number: idx + 1, 
+                userAns: safeAns || '未填', 
+                correctAns: key, 
+                isCorrect, 
+                isStarred: (starred && starred[idx]) || false 
+            };
         });
 
-        const scoreVal = Math.round((correctCount/numQuestions)*100);
-        const newResults = { score: scoreVal, correctCount, total: numQuestions, data };
+        const scoreVal = Math.round((correctCount / safeNumQuestions) * 100);
+        const newResults = { score: scoreVal, correctCount, total: safeNumQuestions, data };
+        
+        // 確保狀態正常更新，切換畫面
         setResults(newResults);
         setStep('results');
 
