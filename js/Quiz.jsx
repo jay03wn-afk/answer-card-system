@@ -2488,73 +2488,82 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     };
 
     const handleGrade = async (overrideKey = null) => {
-        // ✨ 強制開啟載入狀態，防止重複點擊
         setIsRegrading(true);
         
         try {
+            // 1. 取得原始輸入並清理（保留逗號與字母，其餘過濾）
             const sourceKey = overrideKey !== null ? overrideKey : correctAnswersInput;
-            const cleanKey = (sourceKey || '').replace(/[^a-dA-DZz,]/g, '');
-            
-            // 如果是個人私有試卷且沒填答案，提示使用者
-            if (!cleanKey && !isTask && !isShared) {
+            if (!sourceKey || sourceKey.trim() === '') {
                 setIsRegrading(false);
                 return showAlert('請輸入標準答案後再批改！');
             }
+
+            // 2. 智慧拆分邏輯：優先判斷逗號，其次判斷連續字母
+            let keyArray = [];
+            if (sourceKey.includes(',')) {
+                keyArray = sourceKey.split(',').map(s => s.trim().replace(/[^a-dA-DZz]/g, ''));
+            } else {
+                // 如果沒有逗號，就將所有非字母字元刪除後，一個字母切成一題
+                const superClean = sourceKey.replace(/[^a-dA-DZz]/g, '');
+                keyArray = superClean.split('');
+            }
             
-            // 智慧拆分答案
-            let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
             let correctCount = 0;
-            
-            const data = userAnswers.map((ans, idx) => {
-                const key = keyArray[idx] || '-';
+            // 確保 numQuestions 是數字，避免計算錯誤
+            const totalQ = Number(numQuestions);
+
+            const data = Array.from({ length: totalQ }).map((_, idx) => {
+                const ans = userAnswers[idx] || '';
+                const key = keyArray[idx] || '';
                 let isCorrect = false;
 
-                if (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') {
+                // Z 判定為送分
+                if (key.toUpperCase() === 'Z' || key.toLowerCase() === 'abcd') {
                     isCorrect = true; 
-                } else if (key !== '-' && key !== '' && ans !== '') {
+                } else if (key !== '' && ans !== '') {
+                    // 大寫 key 代表單選，小寫 key 代表複選（包含即對）
                     if (key === key.toUpperCase()) {
-                        isCorrect = (ans === key);
+                        isCorrect = (ans.toUpperCase() === key.toUpperCase());
                     } else {
                         isCorrect = key.toLowerCase().includes(ans.toLowerCase());
                     }
                 }
+                
                 if (isCorrect) correctCount++;
-                return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: starred[idx] };
+                return { 
+                    number: idx + 1, 
+                    userAns: ans || '未填', 
+                    correctAns: key || '-', 
+                    isCorrect, 
+                    isStarred: !!starred[idx] 
+                };
             });
 
-            const scoreVal = Math.round((correctCount/numQuestions)*100);
-            const newResults = { score: scoreVal, correctCount, total: numQuestions, data };
+            const scoreVal = Math.round((correctCount / totalQ) * 100);
+            const newResults = { score: scoreVal, correctCount, total: totalQ, data };
             
-            // ✨ 先更新狀態讓 UI 畫面切換
+            // 更新本地顯示
             setResults(newResults);
             setStep('results');
 
-            // ✨ 背景非同步儲存至資料庫
-            window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
-                correctAnswersInput: cleanKey,
-                results: window.jzCompress(newResults)
-            }).catch(e => console.error("成績儲存失敗", e));
+            // 同步到資料庫
+            await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
+                correctAnswersInput: keyArray.join(','), // 統一格式儲存
+                results: window.jzCompress(newResults),
+                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp() // 觸發 B 電腦更新
+            });
 
-            // 如果是任務牆題目，同步回公版 (僅限作者)
-            if (!isShared && !isTask && (testName.includes('[#mnst]') || testName.includes('[#op]'))) {
-                window.db.collection('publicTasks').doc(quizId).set({
-                    correctAnswersInput: cleanKey,
-                    updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true }).catch(e => console.error("任務牆更新失敗", e));
-            }
-
-            // 獎勵鑽石邏輯 (維持原樣)
+            // 任務牆同步獎勵邏輯 (維持原樣)
             if ((isTask || isShared) && !initialRecord.results) {
-                 const mcData = userProfile.mcData || { diamonds: 0 };
                  const reward = scoreVal >= 60 ? 200 : 30;
                  window.db.collection('users').doc(currentUser.uid).update({
-                     "mcData.diamonds": window.firebase.firestore.FieldValue.increment(isTask ? reward : 50)
+                     "mcData.diamonds": window.firebase.firebase.firestore.FieldValue.increment(isTask ? reward : 50)
                  }).catch(e => console.error(e));
             }
 
         } catch (e) {
-            console.error("批改過程發生錯誤:", e);
-            showAlert("❌ 批改失敗，請檢查答案格式是否正確！");
+            console.error("批改錯誤詳情:", e);
+            showAlert(`❌ 批改失敗：${e.message}\n請確認題目數量與答案數量是否一致。`);
         } finally {
             setIsRegrading(false);
         }
