@@ -261,6 +261,8 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
 
         // 1. 先取得 HTML 資料，判斷是否為 Word 或網頁複製過來的內容
         const htmlData = clipboardData.getData('text/html');
+        // 新增：取得純文字資料，用於判斷是否為 Word 複製的複合內容
+        const plainText = clipboardData.getData('text/plain');
 
         // ==========================================
         // 情況 2：優先處理從 Word 或網頁複製的「圖文混排」(含大量 Base64 圖片)
@@ -309,13 +311,14 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                 }));
 
                 const finalHtml = doc.body.innerHTML;
-                const editor = document.querySelector('[contenteditable="true"]');
-                if (editor) {
-                    editor.innerHTML = editor.innerHTML.replace(new RegExp(`<div id="${tempId}".*?</div>`), finalHtml);
+                // ✨ 改用 editorRef.current 防止抓錯元素
+                if (editorRef.current) {
+                    editorRef.current.innerHTML = editorRef.current.innerHTML.replace(new RegExp(`<div id="${tempId}".*?</div>`), finalHtml);
+                    handleInput();
                 }
             } catch (err) {
                 console.error("上傳失敗", err);
-                alert("圖片處理失敗，請檢查網路連接");
+                if (showAlert) showAlert("圖片處理失敗，請檢查網路連接");
             } finally {
                 setIsUploading(false);
             }
@@ -325,19 +328,33 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
         // ==========================================
         // ✨ 新增防呆：如果是從 Word/網頁 複製純文字或帶格式文字 (但沒有 Base64 圖片)
         // ==========================================
-        // 必須直接 return，讓瀏覽器「預設貼上文字」，『絕對不要』進入下面的單張截圖判斷
         if (htmlData && htmlData.trim().length > 0) {
+            return; 
+        }
+
+        // ==========================================
+        // ✨ 終極修復：避免 Word 圖文混排變成「單張圖片」
+        // ==========================================
+        const items = clipboardData.items;
+        let hasImageItem = false;
+        let hasTextItem = plainText && plainText.trim().length > 0;
+
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) hasImageItem = true;
+            if (items[i].type === 'text/plain') hasTextItem = true;
+        }
+
+        // 💡 如果同時有文字和圖片，這就是 Word 產生的複合內容，
+        // 我們直接 return 交給瀏覽器處理，這樣文字就不會消失變成一張截圖！
+        if (hasImageItem && hasTextItem) {
             return; 
         }
 
         // ==========================================
         // 情況 1：最後才處理「純粹的圖片複製」(例如 Line 截圖、PrintScreen)
         // ==========================================
-        const items = clipboardData.items;
-        let hasImageItem = false;
         for (let i = 0; i < items.length; i++) {
             if (items[i].type.indexOf('image') !== -1) {
-                hasImageItem = true;
                 e.preventDefault(); 
                 const file = items[i].getAsFile();
                 if (!file) continue;
