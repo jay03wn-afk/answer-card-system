@@ -522,7 +522,10 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                     setLoading(false);
                 });
             } else {
-                unsubNews = window.db.collection('newsletters').orderBy('createdAt', 'desc').onSnapshot(snap => {
+                unsubNews = window.db.collection('newsletters')
+                .orderBy('createdAt', 'desc')
+                .limit(10) // 👈 新增這行
+                .onSnapshot(snap => {
                     setNewsList(snap.docs.map(d => ({id: d.id, ...d.data()})));
                     setLoading(false);
                 });
@@ -741,12 +744,6 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
         showAlert(`✅ 已複製電子報專屬連結！快貼給朋友吧！\n${url}`);
     };
 
-    if (loading) return (
-        <div className="flex flex-col items-center justify-center p-16">
-            <div className="text-4xl mb-4 animate-spin">📰</div>
-            <div className="text-gray-500 font-bold animate-pulse">電子報派送中...</div>
-        </div>
-    );
 
     // 決定顯示的文章列表
     const displayedNews = activeFeedTab === 'subscribed' ? newsList.filter(n => subs.includes(n.category) || isAdmin) : newsList;
