@@ -1520,19 +1520,20 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     });
 
    const handleEnterQuiz = async (rec) => {
-        setIsJumping(true); // ✨ 開啟跳轉載入畫面
-        
-        let finalRec = { ...rec };
+                setIsJumping(true); // ✨ 開啟跳轉載入畫面
+                
+                let finalRec = { ...rec };
 
-        // ✨ 點擊進入時，強制向伺服器要「這份特定試卷」的最新資料 (秒速更新，不拖累列表)
-        try {
-            const docSnap = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).get({ source: 'server' });
-            if (docSnap.exists) {
-                finalRec = { ...finalRec, ...docSnap.data() };
-            }
-        } catch (e) {
-            console.warn("無法取得最新試卷資料，使用本地快取", e);
-        }
+                // ✨ 點擊進入時，向伺服器要「這份特定試卷」的最新資料
+                // (移除強制死等伺服器的指令，改用預設：優先抓伺服器最新版，網路卡住才用快取)
+                try {
+                    const docSnap = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).get();
+                    if (docSnap.exists) {
+                        finalRec = { ...finalRec, ...docSnap.data() };
+                    }
+                } catch (e) {
+                    console.warn("無法取得最新試卷資料，使用本地快取", e);
+                }
 
         // ✨ 終極同步機制：如果是從任務牆下載的題目，再額外核對公版答案
         if (finalRec.isTask && finalRec.taskId) {
@@ -4376,8 +4377,9 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                                     onClick={async () => { 
                                                         setJumpingQaId(qa.id);
                                                         try {
-                                                            // ✨ 點擊挑戰時，強制向伺服器要這一題的最新資料
-                                                            const docSnap = await window.db.collection('fastQA').doc(qa.id).get({ source: 'server' });
+                                                            // ✨ 點擊挑戰時，向伺服器要這一題的最新資料
+                                                            // (移除強制死等伺服器的指令，改用預設：優先抓伺服器最新版，網路卡住才用快取)
+                                                            const docSnap = await window.db.collection('fastQA').doc(qa.id).get();
                                                             if (docSnap.exists) {
                                                                 setActiveQA({ id: docSnap.id, ...docSnap.data() });
                                                             } else {
