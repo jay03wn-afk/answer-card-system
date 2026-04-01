@@ -181,7 +181,7 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
         state.player.dy += 0.7; 
         state.player.y += state.player.dy;
 
-        // 階段計算：草原 (900) -> 洞穴 (900) -> 地獄 (900) 循環
+       // 階段計算：草原 (900) -> 洞穴 (900) -> 地獄 (900) 循環
         let cyclePos = state.frames % 2700;
         state.isCave = cyclePos >= 900 && cyclePos < 1800;
         state.isNether = cyclePos >= 1800;
@@ -246,21 +246,24 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
                 obs.x -= Math.max(1, state.speed - 3.5); 
                 obs.y += Math.sin(state.frames * 0.05) * 1.5; 
                 
-                // 幽靈發射火球
+                // 幽靈發射火球 (加大特效與發射音效)
                 if (Math.random() < 0.015 && obs.x > state.player.x && obs.x < LOG_W - 50) {
+                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/ghast/fireball4.ogg');
                     state.obstacles.push({
                         type: 'fireball',
-                        x: obs.x,
-                        y: obs.y + obs.h / 2,
-                        w: 20,
-                        h: 20,
-                        dx: - (state.speed + 3),
-                        dy: (state.player.y - obs.y) * 0.02
+                        x: obs.x - 10,
+                        y: obs.y + obs.h / 2 - 10,
+                        w: 30, // 火球變大
+                        h: 30,
+                        dx: - (state.speed + 3.5), // 火球速度微調
+                        dy: (state.player.y - obs.y) * 0.025
                     });
                 }
             } else if (obs.type === 'fireball') {
                 obs.x += obs.dx;
                 obs.y += obs.dy;
+                // 添加一點火球的上下飄浮感
+                obs.y += Math.sin(state.frames * 0.2) * 2;
             } else if (obs.type === 'spider') {
                 obs.x -= (state.speed + 1.5); 
                 if (Math.random() < 0.01 && obs.y >= state.groundY - obs.h - 5) obs.dy = -8; 
@@ -275,7 +278,8 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             } else if (obs.type === 'silverfish') {
                 obs.x -= (state.speed + 1.2);
             } else if (obs.type === 'creeper') {
-                obs.x -= Math.max(2, state.speed - 2.5); 
+                // 苦力怕速度降低 20% (原本是 state.speed - 2.5)
+                obs.x -= Math.max(1.5, (state.speed - 2.5) * 0.8); 
                 
                 if (!obs.defused && obs.x < state.player.x + 10) {
                     dead = true;
@@ -358,6 +362,7 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
                 let rand = Math.random();
                 
                 if (state.isNether) {
+                    // 地獄不會出現苦力怕
                     if (rand < 0.25) state.obstacles.push({ type: 'ghast', x: LOG_W, y: 30 + Math.random() * 60, w: 50, h: 50 });
                     else if (rand < 0.5) state.obstacles.push({ type: 'magma', x: LOG_W, y: state.groundY - 40, w: 40, h: 40 });
                     else if (rand < 0.75) {
@@ -383,11 +388,18 @@ function MinecartGame({ mcData, updateMcData, showAlert, onGameOver, onQuit }) {
             }
         }
         
+        // 鑽石生成：地獄頻率增加 50%
         if (state.frames >= state.nextDiamondFrame) {
             let dY = state.groundY - 50 - Math.random() * 70;
             if ((state.isCave || state.isNether) && dY < 80) dY = 80; 
             state.diamonds.push({ x: LOG_W, y: dY, w: 24, h: 24, collected: false });
-            state.nextDiamondFrame = state.frames + Math.floor(Math.random() * 240 + 120);
+            
+            // 地獄頻率增加 50%：縮短生成間隔
+            let baseInterval = Math.floor(Math.random() * 240 + 120);
+            if (state.isNether) {
+                baseInterval = Math.floor(baseInterval * 0.5); 
+            }
+            state.nextDiamondFrame = state.frames + baseInterval;
         }
 
         ctx.clearRect(0, 0, LOG_W, LOG_H);
