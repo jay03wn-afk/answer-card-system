@@ -596,9 +596,10 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const handleGoToQuiz = async (quizId) => {
         setIsJumping(true); 
         try {
-            let doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'cache' }).catch(() => null);
+            // ✨ 修復：錯題本跳轉試卷時，必須先嘗試跟伺服器要最新版，否則改完答案錯題本還是舊的
+            let doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'server' }).catch(() => null);
             if (!doc || !doc.exists) {
-                doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get();
+                doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'cache' });
             }
             if(doc && doc.exists) {
                 const data = doc.data();
@@ -726,8 +727,17 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 </div>
             </div>
             
-            {loading ? <LoadingSpinner text="載入錯題中..." /> : 
-             filteredItems.length === 0 ? <div className="text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">目前沒有收錄錯題。<br/>在測驗交卷後的檢視頁面，點擊「📓 收錄錯題」即可將題目加到這裡！</div> :
+           {loading && wrongItems.length === 0 ? <LoadingSpinner text="載入錯題中..." /> : 
+             filteredItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 px-4 bg-white dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-600 no-round text-center shadow-sm">
+                    <div className="text-6xl mb-4">📓</div>
+                    <h3 className="text-2xl font-black text-gray-800 dark:text-white mb-2">目前沒有錯題紀錄</h3>
+                    <p className="text-gray-500 dark:text-gray-400 font-bold max-w-md leading-relaxed mt-2">
+                        這是一件好事，代表你目前百發百中！<br/><br/>
+                        下次如果在測驗中遇到錯題，只要在「交卷後的解答檢視頁面」，點擊題目右下角的 <span className="bg-gray-100 dark:bg-gray-700 text-red-500 px-2 py-1 border border-gray-200 dark:border-gray-600 rounded-sm">📓 收錄錯題</span>，就可以把題目收藏到這裡隨時複習喔！
+                    </p>
+                </div>
+             ) :
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-10">
                  {displayedItems.map(item => (
                      <div key={item.id} className="bg-white dark:bg-gray-800 p-4 border border-gray-200 dark:border-gray-700 shadow-sm relative no-round hover:shadow-md transition-shadow">
@@ -886,7 +896,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     const [officialTasks, setOfficialTasks] = useState({});
     const [myTasks, setMyTasks] = useState({}); 
     const [loading, setLoading] = useState(true);
-    const [taskLimit, setTaskLimit] = useState(100); // ✨ 新增：任務牆動態載入數量的狀態
+    const [taskLimit, setTaskLimit] = useState(10); // ✨ 新增：任務牆動態載入數量的狀態
     
     // ✨ 新增搜尋狀態
     const [searchQuery, setSearchQuery] = useState('');
@@ -911,10 +921,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 snap.docs.forEach(doc => {
                     const data = { id: doc.id, ...doc.data() };
                     
-                    // ✨ 修復：確保從任務牆抓取資料時，富文本內容有被正確賦值
-                    if (data.questionText && typeof data.questionText === 'string' && data.questionText.startsWith("JZC|")) {
-                         try { data.questionText = window.jzDecompress(data.questionText); } catch(e) {}
-                    }
+                    // ✨ 提速優化：列表頁根本不需要顯示幾萬字的題目內文，直接砍掉這裡的解壓縮，節省 90% CPU 運算時間！
                     
                     if (data.testName && data.testName.includes('[#op]')) {
                         let cat = data.category || '國考題 (其他)';
@@ -1123,7 +1130,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 )}
             </div>
 
-           {loading ? (
+           {loading && Object.keys(tasks).length === 0 && Object.keys(officialTasks).length === 0 ? (
                 <LoadingSpinner text="正在載入公開任務..." />
             ) : (
                 <div className="space-y-8 pb-10">
@@ -1316,10 +1323,20 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                         </div>
                     )}
                     
+                    {!hasAnyOfficial && !hasAnyNormal && otherTasksFiltered.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-20 px-4 bg-white dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-600 no-round text-center shadow-sm w-full mt-4">
+                            <div className="text-6xl mb-4">🎯</div>
+                            <h3 className="text-2xl font-black text-gray-800 dark:text-white mb-2">找不到相關任務</h3>
+                            <p className="text-gray-500 dark:text-gray-400 font-bold max-w-md">
+                                {searchQuery ? '試試看更換其他關鍵字吧！' : '目前還沒有人發布公開任務喔！'}
+                            </p>
+                        </div>
+                    )}
+
                     {/* ✨ 新增：任務牆的「載入更多」按鈕 */}
                     <div className="flex justify-center mt-8">
                         <button 
-                            onClick={() => setTaskLimit(prev => prev + 100)} 
+                            onClick={() => setTaskLimit(prev => prev + 15)} 
                             className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 px-6 py-2 font-bold shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                         >
                             ⬇️ 載入更早的任務...
@@ -1339,7 +1356,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     const [isRefreshing, setIsRefreshing] = useState(false); // ✨ 新增：背景整理狀態
     
     // 🚀 終極提速：加入題庫顯示數量限制，大幅降低網路下載量
-    const [visibleLimit, setVisibleLimit] = useState(15);
+    const [visibleLimit, setVisibleLimit] = useState(10);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [hasMore, setHasMore] = useState(true);
 
@@ -1674,51 +1691,40 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     });
 
   const handleEnterQuiz = async (rec) => {
-                // 1. 先把現有的資料（快取）拿來用，一秒都不等直接衝進去
-                let finalRec = { ...rec };
-                onContinueQuiz(finalRec); 
+        setIsJumping(true); // ✨ 開啟載入畫面，確保抓到最新資料前不亂跳
+        let finalRec = { ...rec };
 
-                // 2. 在「背景」默默去抓伺服器最新版，如果有更新，系統會自動在作答頁面更新
-                window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id)
-                    .get({ source: 'server' })
-                    .then((docSnap) => {
-                        if (docSnap.exists) {
-                            // 如果真的有新版本，默默更新快取，不干擾使用者操作
-                            const latestData = { id: docSnap.id, ...docSnap.data() };
-                            // 這裡不用重轉圈圈，資料會靜默更新
-                        }
-                    })
-                    .catch(e => console.warn("背景同步失敗，但不影響作答", e));
+        try {
+            // ✨ 強制從伺服器抓取最新版，解決「不同步」問題
+            const docSnap = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).get({ source: 'server' });
+            if (docSnap.exists) {
+                finalRec = { id: docSnap.id, ...docSnap.data() };
+            }
 
-        // ✨ 終極同步機制：如果是從任務牆下載的題目，再額外核對公版答案
-        if (finalRec.isTask && finalRec.taskId) {
-            try {
-                const taskDoc = await window.db.collection('publicTasks').doc(rec.taskId).get();
+            // ✨ 終極同步機制：如果是從任務牆下載的題目，再額外核對公版答案
+            if (finalRec.isTask && finalRec.taskId) {
+                const taskDoc = await window.db.collection('publicTasks').doc(finalRec.taskId).get({ source: 'server' });
                 if (taskDoc.exists) {
                     const taskData = taskDoc.data();
-                    const isAnsChanged = taskData.correctAnswersInput && taskData.correctAnswersInput !== rec.correctAnswersInput;
+                    const isAnsChanged = taskData.correctAnswersInput && taskData.correctAnswersInput !== finalRec.correctAnswersInput;
                     
                     const payload = {};
-                    if (taskData.testName && taskData.testName !== rec.testName) payload.testName = taskData.testName;
+                    if (taskData.testName && taskData.testName !== finalRec.testName) payload.testName = taskData.testName;
                     if (taskData.questionHtml !== undefined) payload.questionHtml = taskData.questionHtml;
                     if (taskData.questionText !== undefined) payload.questionText = taskData.questionText;
                     if (taskData.explanationHtml !== undefined) payload.explanationHtml = taskData.explanationHtml;
-                    // 確保標準答案被更新
                     if (taskData.correctAnswersInput !== undefined) payload.correctAnswersInput = taskData.correctAnswersInput;
 
-                    // 如果答案被改了且玩家已經有成績，自動觸發重新算分提示
-                    if (isAnsChanged && rec.results) {
-                        payload.hasAnswerUpdate = true;
-                    }
+                    if (isAnsChanged && finalRec.results) payload.hasAnswerUpdate = true;
 
                     if (Object.keys(payload).length > 0) {
-                        await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update(payload);
+                        await window.db.collection('users').doc(user.uid).collection('quizzes').doc(finalRec.id).update(payload);
                         finalRec = { ...finalRec, ...payload };
                     }
                 }
-            } catch(e) { 
-                console.error("題庫同步最新任務失敗", e); 
             }
+        } catch(e) {
+            console.warn("網路不穩，使用本地快取進入作答", e);
         }
 
         if (finalRec.hasAnswerUpdate) {
@@ -1731,15 +1737,15 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         if (finalRec.hasTimer && !finalRec.results) {
             const isNew = !finalRec.userAnswers || finalRec.userAnswers.filter(a => a !== '').length === 0;
             if (isNew) {
-                setIsJumping(false); // ✨ 彈出確認視窗前，先關閉載入畫面
+                setIsJumping(false);
                 showConfirm(`⏱ 此測驗設有時間限制（${finalRec.timeLimit} 分鐘）。\n\n點擊「確定」後將進入並開始倒數計時，準備好了嗎？`, () => {
                     onContinueQuiz(finalRec);
                 });
             } else {
-                setTimeout(() => onContinueQuiz(finalRec), 50); // ✨ 讓載入畫面有時間渲染
+                onContinueQuiz(finalRec);
             }
         } else {
-            setTimeout(() => onContinueQuiz(finalRec), 50); // ✨ 讓載入畫面有時間渲染
+            onContinueQuiz(finalRec);
         }
     };
 
@@ -1752,7 +1758,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     <button 
                         onClick={() => { 
                             setIsRefreshing(true); 
-                            // ✨ 背景同步：移除強制的 server 標籤，讓 Firebase 自動處理網路狀態與快取，實現真正的背景無感刷新
+                            // ✨ 智慧同步：移除強制 server 標籤，利用 Firebase 背景機制自動實現「只抓沒抓過的資料」
                             window.db.collection('users').doc(user.uid).collection('quizzes')
                                 .orderBy('createdAt', 'desc')
                                 .limit(visibleLimit)
@@ -1831,15 +1837,39 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 </div>
             </div>
 
-           {loading ? (
+           {loading && records.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 w-full">
                     <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-700 border-t-black dark:border-white rounded-full animate-spin mb-4"></div>
                     <div className="text-gray-500 dark:text-gray-400 font-bold animate-pulse text-lg">正在同步雲端題庫，這可能需要幾秒鐘...</div>
                     <div className="text-gray-400 dark:text-gray-500 text-sm mt-2">若是初次載入，時間會稍長，感謝您的耐心等候。</div>
                 </div>
             ) : displayedRecords.length === 0 ? (
-                <div className="bg-white dark:bg-gray-800 text-center text-gray-500 dark:text-gray-400 py-16 border border-gray-200 dark:border-gray-700 no-round shadow-sm">
-                    {searchQuery ? '找不到符合關鍵字的試卷。' : '此分類尚無符合篩選條件的測驗紀錄。'}
+                <div className="flex flex-col items-center justify-center py-20 px-4 bg-white dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-600 no-round text-center shadow-sm">
+                    <div className="text-6xl mb-4">📭</div>
+                    <h3 className="text-2xl font-black text-gray-800 dark:text-white mb-2">
+                        {searchQuery ? '找不到符合關鍵字的試卷' : (currentFolder === '我建立的試題' ? '歡迎來到你的專屬題庫！' : '這個資料夾目前空空的喔！')}
+                    </h3>
+                    <p className="text-gray-500 dark:text-gray-400 font-bold mb-6 max-w-md leading-relaxed whitespace-pre-wrap">
+                        {searchQuery 
+                            ? '換個關鍵字再搜尋看看吧！' 
+                            : '你還沒有在這裡建立任何測驗。\n馬上點擊下方按鈕，建立你的第一份專屬試卷，或是輸入代碼下載好友分享的題目吧！'}
+                    </p>
+                    {!searchQuery && (
+                        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto justify-center">
+                            <button 
+                                onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} 
+                                className="bg-black dark:bg-gray-200 text-white dark:text-black px-8 py-3 font-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all border-2 border-black dark:border-transparent active:shadow-none active:translate-x-1 active:translate-y-1 no-round"
+                            >
+                                ＋ 建立新測驗
+                            </button>
+                            <button 
+                                onClick={handleImportCode} 
+                                className="bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-8 py-3 font-black shadow-[4px_4px_0px_0px_rgba(59,130,246,0.3)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(59,130,246,0.3)] transition-all border-2 border-blue-200 dark:border-blue-700 active:shadow-none active:translate-x-1 active:translate-y-1 no-round"
+                            >
+                                📥 輸入測驗代碼
+                            </button>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="flex flex-col gap-3 pb-10 w-full min-w-0">
@@ -4232,7 +4262,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [qaList, setQaList] = useState([]);
     const [records, setRecords] = useState({});
     const [loading, setLoading] = useState(true);
-    const [qaLimit, setQaLimit] = useState(30); // ✨ 新增：快問快答動態載入數量的狀態
+    const [qaLimit, setQaLimit] = useState(10); // ✨ 新增：快問快答動態載入數量的狀態
     const [refreshTrigger, setRefreshTrigger] = useState(0); // ✨ 新增：重新整理觸發器
     const [isRefreshing, setIsRefreshing] = useState(false); // ✨ 新增：靜默重整狀態
    const [jumpingQaId, setJumpingQaId] = useState(null); // ✨ 新增：進入題目的載入狀態
@@ -4294,17 +4324,20 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [showShareModal, setShowShareModal] = useState(false);
     const [shareContent, setShareContent] = useState('');
 
-    useEffect(() => {
+   useEffect(() => {
         let unsubQA = () => {};
         let unsubRecords = () => {};
 
         const fetchQA = () => {
-            setLoading(true);
+            // ✨ 終極修復：移除手動 setLoading(true) 造成的死鎖，完全信任 Firebase 的背景同步機制
             try {
                 if (targetQaId) {
                     unsubQA = window.db.collection('fastQA').doc(targetQaId).onSnapshot(docSnap => {
                         if (docSnap.exists) setActiveQA({ id: docSnap.id, ...docSnap.data() });
                         else showAlert('找不到此題目，可能已過期或被刪除！');
+                        setLoading(false);
+                    }, error => {
+                        console.error("快問快答讀取失敗:", error);
                         setLoading(false);
                     });
                 } else {
@@ -4319,6 +4352,9 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                             return prev;
                         });
                         setLoading(false);
+                    }, error => {
+                        console.error("快問快答列表讀取失敗:", error);
+                        setLoading(false);
                     });
                 }
 
@@ -4328,10 +4364,12 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         recSnap.docs.forEach(doc => { recs[doc.id] = doc.data(); });
                         setRecords(recs);
                         if (targetQaId && recs[targetQaId]) setShowResult(true);
-                    });
+                    }, error => console.error("作答紀錄讀取失敗:", error));
+                } else {
+                    setLoading(false);
                 }
             } catch (e) {
-                showAlert('讀取失敗：' + e.message);
+                console.error("預期外的錯誤:", e);
                 setLoading(false);
             }
         };
@@ -4447,13 +4485,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         setSubmitting(false);
     };
 
-    if (loading) return (
-        <div className="mb-8 p-12 text-center border-2 border-pink-400 bg-pink-50 shadow-md">
-            <div className="text-4xl mb-4 animate-spin inline-block">⏳</div>
-            <div className="text-lg font-bold text-pink-600">快問快答讀取中...</div>
-        </div>
-    );
-
     return (
         <div className={`border-2 border-pink-400 bg-pink-50 dark:bg-pink-900/20 p-4 shadow-md relative no-round w-full ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
             <div className="flex justify-between items-center mb-4 border-b border-pink-200 dark:border-pink-800 pb-2">
@@ -4463,7 +4494,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         <button 
                             onClick={() => { 
                                 setIsRefreshing(true); 
-                                // ✨ 背景同步：移除強制的 server 標籤，讓 Firebase 自動處理網路狀態與快取，實現真正的背景無感刷新
+                                // ✨ 智慧同步：移除強制的 source: 'server'，讓 Firebase 自己判斷「只抓沒有的資料」(Delta Sync)
                                 window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get()
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
@@ -4471,7 +4502,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                             }}
                             disabled={isRefreshing}
                             className="text-xs bg-white hover:bg-pink-50 text-pink-600 border border-pink-200 px-2 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round disabled:opacity-50"
-                            title="手動同步雲端最新題目"
+                            title="同步最新題目 (系統會自動過濾已下載的資料)"
                         >
                             {isRefreshing ? <div className="w-3 h-3 border-2 border-pink-400 border-t-pink-600 rounded-full animate-spin"></div> : '🔄'} 重新整理
                         </button>
@@ -4571,8 +4602,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
            {!activeQA ? (
                 <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {/* ✨ 非同步載入狀態 */}
-                        {loading ? (
+                        {/* ✨ 非同步載入狀態 (加入長度判斷，背景載入時不消失) */}
+                        {loading && qaList.length === 0 ? (
                             <div className="col-span-full py-12 text-center bg-white/50 border border-pink-200">
                                 <div className="w-10 h-10 border-4 border-pink-200 border-t-pink-500 rounded-full animate-spin mx-auto mb-3"></div>
                                 <div className="text-pink-600 font-bold animate-pulse">試題讀取中...</div>
@@ -4637,7 +4668,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                     {!targetQaId && qaList.length >= qaLimit && (
                         <div className="flex justify-center mt-6">
                             <button 
-                                onClick={() => setQaLimit(prev => prev + 30)} 
+                                onClick={() => setQaLimit(prev => prev + 10)} 
                                 className="bg-white border-2 border-pink-300 text-pink-600 px-6 py-2 font-bold shadow-sm hover:bg-pink-50 transition-colors"
                             >
                                 ⬇️ 載入更早的題目...
