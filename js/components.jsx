@@ -739,9 +739,10 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
     };
 
     const handleShareNews = (news) => {
-        const url = `${window.location.origin}${window.location.pathname}?newsId=${news.id}`;
-        navigator.clipboard.writeText(url);
-        showAlert(`✅ 已複製電子報專屬連結！快貼給朋友吧！\n${url}`);
+        const url = `${window.location.origin}/?newsId=${news.id}`;
+        const text = `📰 JJay 日報推薦\n【${news.category}】${news.title}\n\n👇 點擊下方連結，立即閱讀完整內容！\n${url}`;
+        navigator.clipboard.writeText(text);
+        showAlert(`✅ 已複製電子報專屬連結與文案！快貼給朋友吧！`);
     };
 
 
