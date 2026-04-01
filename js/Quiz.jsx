@@ -1524,10 +1524,9 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 
                 let finalRec = { ...rec };
 
-                // ✨ 點擊進入時，向伺服器要「這份特定試卷」的最新資料
-                // (移除強制死等伺服器的指令，改用預設：優先抓伺服器最新版，網路卡住才用快取)
+                // ✨ 點擊進入時，強制向伺服器要「這份特定試卷」的最新資料 (確保絕不拿到舊答案)
                 try {
-                    const docSnap = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).get();
+                    const docSnap = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).get({ source: 'server' });
                     if (docSnap.exists) {
                         finalRec = { ...finalRec, ...docSnap.data() };
                     }
@@ -4374,12 +4373,11 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                                 )}
                                                 <button 
                                                     disabled={jumpingQaId === qa.id}
-                                                    onClick={async () => { 
+                                                   onClick={async () => { 
                                                         setJumpingQaId(qa.id);
                                                         try {
-                                                            // ✨ 點擊挑戰時，向伺服器要這一題的最新資料
-                                                            // (移除強制死等伺服器的指令，改用預設：優先抓伺服器最新版，網路卡住才用快取)
-                                                            const docSnap = await window.db.collection('fastQA').doc(qa.id).get();
+                                                            // ✨ 點擊挑戰時，強制向伺服器要這一題的最新資料 (確保絕不拿到舊題目)
+                                                            const docSnap = await window.db.collection('fastQA').doc(qa.id).get({ source: 'server' });
                                                             if (docSnap.exists) {
                                                                 setActiveQA({ id: docSnap.id, ...docSnap.data() });
                                                             } else {
