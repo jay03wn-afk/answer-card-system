@@ -805,7 +805,7 @@ else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.g
                     state.score += 1; 
                     setScore(state.score);
                     // ✨ 點掉苦力怕會出現死亡音效 (移除原本不小心的錯字)
-                    playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/creeper/death.ogg"); 
+                    playCachedSound("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/sound-effect-for-editing.mp3");
                     break;
                 }
             }
