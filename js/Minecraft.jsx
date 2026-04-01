@@ -473,12 +473,11 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                     } else {
                         // 碰到非生物或是沒有劍可以砍
                         if (state.hasTotem) {
-                            // ✨ 不死圖騰發動
+                            // ✨ 不死圖騰發動 (移除彈窗中斷，僅保留音效)
                             obs.killed = true; 
                             state.hasTotem = false;
                             updateMcData({ hasTotem: false }, true);
                             playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
-                            showAlert("🗿 不死圖騰發動！為你擋下了一次致命傷害！");
                         } else {
                             dead = true;
                             if (obs.type === 'creeper') killedByCreeper = true;
