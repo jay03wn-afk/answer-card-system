@@ -1581,7 +1581,16 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 <div className="flex items-center gap-3">
                     <h1 className="text-2xl font-black dark:text-white shrink-0">我的題庫</h1>
                     <button 
-                        onClick={() => { setLoading(true); setRefreshTrigger(prev => prev + 1); }} 
+                        onClick={() => { 
+                            setLoading(true); 
+                            // ✨ 真正的手動同步：強制背景向伺服器要資料更新快取，完成後自動觸發畫面渲染
+                            window.db.collection('users').doc(user.uid).collection('quizzes')
+                                .orderBy('createdAt', 'desc')
+                                .limit(visibleLimit)
+                                .get({ source: 'server' })
+                                .then(() => setRefreshTrigger(prev => prev + 1))
+                                .catch(e => { console.error(e); setLoading(false); });
+                        }} 
                         className="text-sm bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 px-3 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round"
                         title="手動同步雲端最新資料"
                     >
@@ -4185,9 +4194,16 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                     {!targetQaId && (
                         <button 
                             onClick={() => { 
-                                // ✨ 提速：直接觸發 useEffect 重新掛載監聽器，秒載入並同步最新資料
                                 setLoading(true); 
-                                setRefreshTrigger(prev => prev + 1); 
+                                // ✨ 真正的手動同步：背景向伺服器強制要資料，拿到後再解除 Loading，保證最新又不卡死
+                                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get({ source: 'server' })
+                                    .then(() => {
+                                        setRefreshTrigger(prev => prev + 1);
+                                    })
+                                    .catch(e => {
+                                        console.error("快問快答更新失敗", e);
+                                        setLoading(false);
+                                    });
                             }} 
                             className="text-xs bg-white hover:bg-pink-50 text-pink-600 border border-pink-200 px-2 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round"
                             title="手動同步雲端最新題目"
