@@ -2846,10 +2846,26 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         }
     };
 
-    const handleAddToWrongBook = (item) => {
-        // ✨ 修改：自動解析並擷取該題的題目內容
-        const extractedText = extractSpecificQuestion(questionHtml || questionText, item.number, !!questionHtml);
-        setWrongBookAddingItem({ ...item, extractedQText: extractedText });
+    const handleAddToWrongBook = async (item) => {
+        try {
+            // ✨ 新增：先檢查資料庫是否已經有這份試卷的這一題
+            const snapshot = await window.db.collection('users').doc(currentUser.uid).collection('wrongBook')
+                .where('quizId', '==', quizId)
+                .where('questionNum', '==', item.number)
+                .get();
+                
+            if (!snapshot.empty) {
+                // 如果找到了，就跳出警告並停止動作
+                return showAlert(`⚠️ 第 ${item.number} 題已經收錄在錯題本中了！`);
+            }
+            
+            // 如果沒找到，繼續原本的收錄動作
+            // ✨ 修改：自動解析並擷取該題的題目內容
+            const extractedText = extractSpecificQuestion(questionHtml || questionText, item.number, !!questionHtml);
+            setWrongBookAddingItem({ ...item, extractedQText: extractedText });
+        } catch (error) {
+            showAlert("檢查錯題本失敗：" + error.message);
+        }
     };
 
     const shareScoreToFriend = (friend) => {
