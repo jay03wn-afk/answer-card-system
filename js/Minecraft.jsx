@@ -136,7 +136,7 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                 // 載入當前排行顯示
                 const currentRanks = Object.entries(data.scores || {})
                     .map(([uid, info]) => ({ uid, ...info }))
-                    .sort((a, b) => b.score - a.score);
+                    .sort((a, b) => (b.distance || 0) - (a.distance || 0));
                     
                 setLeaderboard(currentRanks);
                 setHighScore(data.scores?.[user.uid]?.score || 0);
@@ -162,14 +162,18 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
     }, []);
 
     const startGame = () => {
+        // 先檢查飽食度，不夠就擋下並退回開始畫面
+        if (mcData.hunger < 1) {
+            showAlert("🍖 史蒂夫太餓了！請先去商店買點東西吃，再來玩礦車吧！");
+            setGameState('start'); 
+            return; 
+        }
+        
         setGameState('playing');
         setScore(0);
         setDistance(0); // ✨ 距離歸零
-        if (mcData.hunger < 1) {
-            showAlert("🍖 史蒂夫太餓了！請先去商店買點東西吃，再來玩礦車吧！");
-            return; 
-        }
-        updateMcData({ hunger: mcData.hunger - 1 }, true);
+        updateMcData({ hunger: mcData.hunger - 1 }, true); // 扣除1點飽食度
+        
         if (bgmRef.current) {
             bgmRef.current.currentTime = 0;
             bgmRef.current.play().catch(e => console.log("BGM 被阻擋", e));
@@ -309,8 +313,8 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                 obs.x -= Math.max(1, state.speed - 3.5); 
                 obs.y += Math.sin(state.frames * 0.05) * 1.5; 
                 
-                // 幽靈發射火球 (加大特效與發射音效)
-                if (Math.random() < 0.015 && obs.x > state.player.x && obs.x < LOG_W - 50) {
+                // 幽靈發射火球 (已降低發射機率至 0.008)
+                if (Math.random() < 0.008 && obs.x > state.player.x && obs.x < LOG_W - 50) {
                     playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/ghast/fireball4.ogg');
                     state.obstacles.push({
                         type: 'fireball',
@@ -586,15 +590,17 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
             deadSfxRef.current.play().catch(e=>console.log("音效阻擋", e));
         }
         
-        // ✨ 計算最終總分：沿途撿到的鑽石(score) + 奔跑距離獎勵(每100公尺1顆)
-        const finalScore = gameRef.current.score + Math.floor(gameRef.current.distance / 100);
+        // ✨ 計算獎勵鑽石：沿途撿到的鑽石(score) + 奔跑距離獎勵(每100公尺1顆)
+        const earnedDiamonds = gameRef.current.score + Math.floor(gameRef.current.distance / 100);
+        // ✨ 排行榜記錄「距離」
+        const finalDistance = gameRef.current.distance;
         
-        onGameOver(finalScore); 
+        onGameOver(earnedDiamonds); 
         if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
     
 
-        // --- 遊戲結束時上傳分數 ---
-        if (user && userProfile && finalScore > 0) {
+        // --- 遊戲結束時上傳分數 (改為記錄距離) ---
+        if (user && userProfile && finalDistance > 0) {
             const sysRef = window.db.collection('system').doc('minecart');
             sysRef.get().then(doc => {
                 const data = doc.exists ? doc.data() : { week: getWeekString(), scores: {} };
@@ -608,10 +614,10 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                 if (!data.scores) data.scores = {};
                 
                 const previousBest = data.scores[user.uid]?.score || 0;
-                if (finalScore > previousBest) {
-                    data.scores[user.uid] = { name: userProfile.displayName, score: finalScore };
+                if (finalDistance > previousBest) {
+                    data.scores[user.uid] = { name: userProfile.displayName, score: finalDistance };
                     sysRef.set(data);
-                    setHighScore(finalScore);
+                    setHighScore(finalDistance);
                     
                     // 更新畫面上的排行榜
                     const currentRanks = Object.entries(data.scores)
@@ -691,7 +697,7 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                                                 <span className="font-bold text-xs sm:text-sm text-white truncate max-w-[65%]">
                                                     {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`} {lb.name}
                                                 </span>
-                                                <span className="text-green-400 font-bold text-[10px] sm:text-xs shrink-0">{lb.score} 💎</span>
+                                                <span className="text-green-400 font-bold text-[10px] sm:text-xs shrink-0">{lb.score} m</span>
                                             </div>
                                         ))
                                     )}
@@ -724,9 +730,9 @@ function MinecartGame({ user, userProfile, mcData, updateMcData, showAlert, onGa
                                 <p className="text-xs text-gray-400 mt-1">(每跑 100m 額外換算 1 顆 💎)</p>
                             </div>
 
-                            <div className="flex space-x-6 z-10">
+                           <div className="flex space-x-6 z-10">
                                 <button onClick={(e) => { e.stopPropagation(); startGame(); }} className="mc-btn px-6 py-3 text-lg">🔄 再玩</button>
-                                <button onClick={(e) => { e.stopPropagation(); onQuit(); }} className="mc-btn px-6 py-3 text-lg bg-gray-400">🔙 返回</button>
+                                <button onClick={(e) => { e.stopPropagation(); setGameState('start'); }} className="mc-btn px-6 py-3 text-lg bg-gray-400">🔙 返回</button>
                             </div>
                         </div>
                     )}
