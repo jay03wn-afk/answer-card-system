@@ -1359,6 +1359,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             const codeToImport = pendingShareCode;
             setPendingShareCode(null);
             window.history.replaceState({}, document.title, window.location.pathname);
+            
             executeImport(codeToImport);
         }
     }, [loading, pendingShareCode, records]);
@@ -3513,22 +3514,28 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
                     {!isShared && !isTask && !/\[#(op|m?nm?st)\]/i.test(testName) && (
                         <button onClick={async () => {
+                            const generateShareText = (code) => {
+                                const link = `${window.location.origin}/?shareCode=${code}`;
+                                return `🔥 快來挑戰我的試卷！\n📝 試卷名稱：${testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}\n\n👇 點擊下方連結，立即將試卷自動加入你的題庫：\n${link}`;
+                            };
                             if (shortCode) {
-                                navigator.clipboard.writeText(shortCode);
-                                showAlert(`✅ 測驗代碼已複製！\n\n您的代碼：\n${shortCode}\n\n將此代碼傳給朋友，他們可在題庫點擊「📥 輸入代碼」直接下載。`);
+                                const text = generateShareText(shortCode);
+                                navigator.clipboard.writeText(text);
+                                showAlert(`✅ 已複製邀請連結與文案！快去貼給朋友吧！`);
                             } else {
                                 const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
                                 try {
                                     await window.db.collection('shareCodes').doc(newCode).set({ ownerId: currentUser.uid, quizId: quizId });
                                     await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({ shortCode: newCode });
                                     setShortCode(newCode);
-                                    navigator.clipboard.writeText(newCode);
-                                    showAlert(`✅ 測驗代碼已生成並複製！\n\n您的代碼：\n${newCode}\n\n將此代碼傳給朋友，他們可在題庫點擊「📥 輸入代碼」直接下載。`);
+                                    const text = generateShareText(newCode);
+                                    navigator.clipboard.writeText(text);
+                                    showAlert(`✅ 測驗代碼已生成！\n已複製邀請連結與文案！快去貼給朋友吧！`);
                                 } catch (e) {
                                     showAlert('生成代碼失敗：' + e.message);
                                 }
                             }
-                        }} className="text-sm font-bold bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-4 py-1.5 no-round border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-800 whitespace-nowrap transition-colors">🔑 複製代碼</button>
+                        }} className="text-sm font-bold bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-4 py-1.5 no-round border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-800 whitespace-nowrap transition-colors">🔑 複製邀請連結</button>
                     )}
 
                     {!isShared && !isTask && (
@@ -4129,7 +4136,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     };
 
     const handleShare = () => {
-        const shareUrl = `${window.location.origin}${window.location.pathname}?qaId=${activeQA.id}`;
+        const shareUrl = `${window.location.origin}/?qaId=${activeQA.id}`;
         const plainQ = activeQA.question.replace(/<img[^>]*>/gi, '(圖片)').replace(/<[^>]+>/g, '').trim();
         const shortQ = plainQ.length > 25 ? plainQ.substring(0, 25) + '...' : plainQ;
         const text = `⚡ 快問快答挑戰！\n【${activeQA.subject}】${activeQA.difficulty}\n🎁 獎勵：${activeQA.reward} 鑽石\n\n📝 ${shortQ}\n\n👇 點此連結立即挑戰 👇\n${shareUrl}`;
