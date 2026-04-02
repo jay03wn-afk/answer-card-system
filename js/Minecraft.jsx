@@ -81,6 +81,11 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
         // ✨ 更新終界龍整體貼圖
 // ✨ 終界龍改為蜘蛛網
         images.current.cobweb.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/cobweb.png";        images.current.minecart.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/minecart.png";
+        // ✨ 新增 UI 貼圖：鑽石劍與不死圖騰
+        images.current.diamond_sword = new Image();
+        images.current.diamond_sword.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond_sword.png";
+        images.current.totem_of_undying = new Image();
+        images.current.totem_of_undying.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/totem_of_undying.png";
         
         images.current.netherrack.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/netherrack.png";
         images.current.magma.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/magma.png";
@@ -507,17 +512,28 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                         }
                     } else {
                        // 碰到非生物或是沒有劍可以砍
-                        if (state.hasTotem) {
-                            // ✨ 不死圖騰發動
-                            obs.killed = true; 
-                            state.hasTotem = false;
-                            updateMcData({ hasTotem: false }, true);
-                            playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
-                            state.totemEffectTimer = 60; // ✨ 啟動圖騰特效
-                        } else {
-                            dead = true;
-                            if (obs.type === 'creeper') killedByCreeper = true;
-                        }
+                        // ✨ 碰到怪物或障礙物時的處理邏輯，確保不死圖騰優先保護
+                // 碰到苦力怕的特殊處理 (圖騰保護)
+                if (obs.type === 'creeper' && state.hasTotem) {
+                    // ✨ 不死圖騰發動，將苦力怕"炸死"移除，玩家沒事
+                    obs.killed = true; 
+                    state.hasTotem = false;
+                    updateMcData({ hasTotem: false }, true);
+                    playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
+                    state.totemEffectTimer = 60; // 啟動圖騰特效
+                } else if (state.hasTotem) {
+                    // 碰到非苦力怕或是沒有特別處理的生物
+                    // ✨ 不死圖騰發動，將障礙物破壞/生物擊殺
+                    obs.killed = true; 
+                    state.hasTotem = false;
+                    updateMcData({ hasTotem: false }, true);
+                    playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
+                    state.totemEffectTimer = 60; // ✨ 啟動圖騰特效
+                } else {
+                    // 沒有劍可以砍且沒有圖騰保護 -> 死亡
+                    dead = true;
+                    if (obs.type === 'creeper') killedByCreeper = true; // ✨ 標記是被苦力怕炸死
+                }
                     }
                 }
             }
@@ -757,7 +773,7 @@ else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.g
             ctx.fillText("🔥 歡迎來到地獄！ 🔥", LOG_W/2 - 110, LOG_H/2);
         }
 
-        // ✨ 繪製左上角裝備與耐久度狀態
+        // ✨ 繪製左上角裝備與耐久度狀態 (使用貼圖)
         let equipY = 30;
         ctx.textAlign = 'left';
         ctx.font = 'bold 16px Courier New';
@@ -765,14 +781,18 @@ else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.g
             ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
             ctx.fillRect(10, equipY - 18, 160, 24);
             ctx.fillStyle = '#ffffff';
-            ctx.fillText(`🗡️ 劍耐久度: ${state.activeSword.durability}`, 15, equipY);
+            // ✨ 繪製鑽石劍貼圖
+            ctx.drawImage(images.current.diamond_sword, 15, equipY - 16, 16, 16);
+            ctx.fillText(` 劍耐久度: ${state.activeSword.durability}`, 35, equipY);
             equipY += 30;
         }
         if (state.hasTotem) {
             ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
             ctx.fillRect(10, equipY - 18, 160, 24);
             ctx.fillStyle = '#ffaa00';
-            ctx.fillText(`🗿 不死圖騰: 1`, 15, equipY);
+            // ✨ 繪製不死圖騰貼圖
+            ctx.drawImage(images.current.totem_of_undying, 15, equipY - 16, 16, 16);
+            ctx.fillText(` 不死圖騰: 1`, 35, equipY);
         }
 
         // ✨ 不死圖騰全螢幕發動特效
