@@ -1,5 +1,332 @@
 const { useState, useEffect, useRef } = React;
 
+const parseMinecraftQuizData = (rawText, category = 'medChem') => {
+    // 支援原本的 [x結構x] 以及新的 {結構}
+    const regex = /\[=(.*?)=\]\s*(?:\[x|\{)(.*?)(?:x\]|\})\s*\[\+(.*?)\+\]\s*\[-(.*?)-\]/gs;
+    const results = [];
+    let match;
+    while ((match = regex.exec(rawText)) !== null) {
+        results.push({
+            id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+            name: match[1].trim(),
+            structure: match[2].trim(),
+            mechanism: match[3].trim(),
+            sideEffect: match[4].trim(),
+            category: category,
+            createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        });
+    }
+    return results;
+};
+
+function MinecraftQuizAdmin({ user, showAlert }) {
+    const ADMIN_UID = "QZ9rtAPxZ3fSe87FabmbIyDepUZ2"; 
+    const isAdmin = user && user.uid === ADMIN_UID;
+    
+    const [isGameOpen, setIsGameOpen] = useState(false);
+    const [showAdminModal, setShowAdminModal] = useState(false);
+    const [rawInput, setRawInput] = useState('');
+    const [elements, setElements] = useState([]);
+    const [selectedCategory, setSelectedCategory] = useState('medChem');
+
+    // --- 遊戲核心狀態 ---
+    const [gameMode, setGameMode] = useState(0); 
+    const [actualMode, setActualMode] = useState(1); 
+    const [currentQ, setCurrentQ] = useState(null);
+    const [options, setOptions] = useState([]);
+    const [score, setScore] = useState(0);
+    const [round, setRound] = useState(1); // 新增：紀錄目前題數
+    const [feedback, setFeedback] = useState(null); 
+    const [previewSmiles, setPreviewSmiles] = useState(null); // 新增：用於預覽放大的結構圖片
+
+    useEffect(() => {
+        const unsubscribe = window.db.collection('mcElements')
+            .orderBy('createdAt', 'desc')
+            .onSnapshot(snap => {
+                const data = snap.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+                setElements(data);
+            });
+        return () => unsubscribe();
+    }, []);
+
+    const handleBulkImport = async () => {
+        if (!rawInput.trim()) return showAlert("請輸入內容！");
+        const parsedData = parseMinecraftQuizData(rawInput, selectedCategory);
+        if (parsedData.length === 0) return showAlert("解析失敗，請確認格式！");
+
+        try {
+            const batch = window.db.batch();
+            parsedData.forEach(item => {
+                const docRef = window.db.collection('mcElements').doc(item.id);
+                batch.set(docRef, item);
+            });
+            await batch.commit();
+            showAlert(`✅ 成功匯入 ${parsedData.length} 筆元素！`);
+            setRawInput('');
+        } catch (error) {
+            console.error(error);
+            showAlert("❌ 匯入失敗");
+        }
+    };
+
+    const handleDelete = async (docId) => {
+        if (window.confirm("確定要刪除這個元素嗎？")) {
+            await window.db.collection('mcElements').doc(docId).delete();
+            showAlert("🗑️ 已刪除");
+        }
+    };
+
+    const startGame = (mode) => {
+        if (elements.length < 4) return showAlert("⚠️ 題庫數量不足，請至少建立 4 個元素！");
+        setGameMode(mode);
+        setScore(0);
+        setRound(1); // 遊戲開始時重置題數
+        nextQuestion(mode);
+    };
+
+    const nextQuestion = (mode, delay = 0) => {
+        setTimeout(() => {
+            setFeedback(null);
+            const pool = [...elements].sort(() => 0.5 - Math.random());
+            const target = pool[0];
+            const wrongs = pool.slice(1, 4);
+            let qMode = mode;
+            if (mode === 6) qMode = Math.floor(Math.random() * 5) + 1;
+            setActualMode(qMode);
+            setCurrentQ(target);
+            setOptions([target, ...wrongs].sort(() => 0.5 - Math.random()));
+        }, delay);
+    };
+
+   const handleAnswer = (el) => {
+        if (feedback) return; 
+        if (el.id === currentQ.id) {
+            // 🌟 播放正確音效
+            if (typeof playCachedSound === 'function') {
+                playCachedSound('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3');
+            }
+            setFeedback('correct');
+            setScore(s => s + 10);
+            nextQuestion(gameMode, 1000); 
+            setTimeout(() => setRound(r => r + 1), 1000); 
+        } else {
+            // 🌟 播放錯誤音效
+            if (typeof playCachedSound === 'function') {
+                playCachedSound('https://assets.mixkit.co/active_storage/sfx/2997/2997-preview.mp3');
+            }
+            setFeedback('wrong');
+            setTimeout(() => setFeedback(null), 1000); 
+        }
+    };
+
+    // 🌟 升級版：支援三層防護與點擊放大的結構圖渲染器
+    const SmilesImg = ({ smiles, isPreview = false }) => {
+        const [stage, setStage] = useState(0); 
+        if (!smiles || smiles === '無') return <span className="text-gray-600 font-bold">無結構</span>;
+
+        const imgClass = isPreview 
+            ? "w-full max-h-[60vh] object-contain bg-white border-4 border-gray-400 p-2" 
+            : "w-full h-28 sm:h-36 object-contain bg-white border-2 border-gray-400 p-1 cursor-pointer hover:border-blue-500 transition-all hover:scale-105";
+
+        const handleClick = (e) => {
+            e.stopPropagation(); 
+            if (!isPreview) setPreviewSmiles(smiles);
+        };
+
+        if (stage === 0) {
+            return <img src={`https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(smiles)}/image?width=600&height=600`} alt="結構圖" className={imgClass} onError={() => setStage(1)} onClick={handleClick} title="點擊放大預覽" />;
+        } 
+        else if (stage === 1) {
+            return <img src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smiles)}/PNG`} alt="結構圖" className={imgClass} onError={() => setStage(2)} onClick={handleClick} title="點擊放大預覽" />;
+        } 
+        else {
+            return (
+                <div className={`${isPreview ? 'h-64' : 'h-28 sm:h-36'} w-full flex flex-col items-center justify-center bg-gray-900 border-2 border-red-500 p-2 cursor-pointer hover:bg-gray-800`} onClick={handleClick} title="點擊放大並複製語法">
+                    <span className="text-red-400 text-xs mb-1 font-bold">⚠️ 圖片API失效</span>
+                    <span className="break-all text-xs font-mono text-green-400 overflow-y-auto w-full text-center custom-scrollbar">{smiles}</span>
+                    {!isPreview && <span className="text-gray-400 text-[10px] mt-1">(點擊放大並複製)</span>}
+                </div>
+            );
+        }
+    };
+
+    const renderQuestionContent = () => {
+        if (!currentQ) return null;
+        switch(actualMode) {
+            case 1: return <p className="text-xl">「我需要能處理 <span className="text-green-400 font-bold underline">[{currentQ.mechanism}]</span> 的藥物！」</p>;
+            case 2: return <div className="text-center w-full"><p className="text-xl mb-4">「請問這張結構圖是哪個藥物？」</p><div className="bg-white p-2 rounded"><SmilesImg smiles={currentQ.structure} /></div></div>;
+            case 3: return <p className="text-xl">「請問 <span className="text-yellow-400 font-bold text-2xl">[{currentQ.name}]</span> 的主要機轉是什麼？」</p>;
+            case 4: return <p className="text-xl text-red-300">「小心！哪種藥物會造成 <span className="font-bold underline text-red-400">[{currentQ.sideEffect}]</span> 的副作用？」</p>;
+            case 5: return <p className="text-xl">「請給我 <span className="text-yellow-400 font-bold text-2xl">[{currentQ.name}]</span> 的化學結構圖！」</p>;
+            default: return null;
+        }
+    };
+
+    const renderOptionContent = (el) => {
+        switch(actualMode) {
+            case 1: case 2: case 4: return <span className="font-black text-xl tracking-wider">{el.name}</span>;
+            case 3: return <span className="font-bold text-sm sm:text-base leading-tight">{el.mechanism}</span>;
+            case 5: return <SmilesImg smiles={el.structure} />;
+            default: return null;
+        }
+    };
+
+    return (
+        <div className="w-full flex justify-center mb-4 mt-2 shrink-0">
+            <button onClick={() => setIsGameOpen(true)} className="bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-6 border-4 border-green-900 active:border-b-0 active:translate-y-1 shadow-lg text-lg flex items-center gap-2 pixelated-border">
+                🧪 打開藥水學：村民交易測驗
+            </button>
+
+            {isGameOpen && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[50] p-4">
+                    <div className="bg-gray-800 border-4 border-[#5e3a1f] w-full max-w-4xl p-6 relative min-h-[500px] flex flex-col custom-scrollbar overflow-y-auto">
+                        <button onClick={() => {setIsGameOpen(false); setGameMode(0);}} className="absolute top-2 right-4 text-4xl text-gray-400 hover:text-white font-bold z-50">×</button>
+                        
+                        {isAdmin && (
+                            <button onClick={() => setShowAdminModal(true)} className="absolute top-4 left-4 bg-gray-700 hover:bg-gray-600 text-yellow-400 px-3 py-1 border-2 border-gray-500 z-10 shadow flex items-center gap-2 pixelated-border">
+                                ⚙️ 編輯題庫
+                            </button>
+                        )}
+
+                        <div className="flex-1 flex flex-col items-center justify-center mt-8 w-full">
+                            {gameMode === 0 ? (
+                                <div className="w-full flex flex-col items-center">
+                                    <h2 className="text-4xl font-black mb-8 text-green-400 tracking-widest drop-shadow-md">⚔️ 藥劑師的試煉 ⚔️</h2>
+                                    
+                                    {/* 🌟 全新 Minecraft 貼圖版選單 */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-3xl">
+                                        <button onClick={()=>startGame(1)} className="bg-blue-800 hover:bg-blue-700 p-4 border-4 border-b-8 border-blue-400 text-white font-bold flex flex-col items-center active:translate-y-2 active:border-b-4 transition-all">
+                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/potion.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="🤒" />
+                                            <span className="text-lg">對症下藥</span><span className="text-xs text-blue-300 mt-1">機轉 ➔ 學名</span>
+                                        </button>
+                                        <button onClick={()=>startGame(2)} className="bg-purple-800 hover:bg-purple-700 p-4 border-4 border-b-8 border-purple-400 text-white font-bold flex flex-col items-center active:translate-y-2 active:border-b-4 transition-all">
+                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/brewing_stand.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="🔬" />
+                                            <span className="text-lg">結構鑑定</span><span className="text-xs text-purple-300 mt-1">結構圖 ➔ 學名</span>
+                                        </button>
+                                        <button onClick={()=>startGame(3)} className="bg-green-800 hover:bg-green-700 p-4 border-4 border-b-8 border-green-400 text-white font-bold flex flex-col items-center active:translate-y-2 active:border-b-4 transition-all">
+                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/writable_book.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="🧩" />
+                                            <span className="text-lg">藥理拼圖</span><span className="text-xs text-green-300 mt-1">學名 ➔ 機轉</span>
+                                        </button>
+                                        <button onClick={()=>startGame(4)} className="bg-red-800 hover:bg-red-700 p-4 border-4 border-b-8 border-red-400 text-white font-bold flex flex-col items-center active:translate-y-2 active:border-b-4 transition-all">
+                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/spider_eye.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="☠️" />
+                                            <span className="text-lg">毒性排雷</span><span className="text-xs text-red-300 mt-1">副作用 ➔ 學名</span>
+                                        </button>
+                                        <button onClick={()=>startGame(5)} className="bg-yellow-800 hover:bg-yellow-700 p-4 border-4 border-b-8 border-yellow-400 text-white font-bold flex flex-col items-center active:translate-y-2 active:border-b-4 transition-all">
+                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/filled_map.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="🖼️" />
+                                            <span className="text-lg">認清藥貌</span><span className="text-xs text-yellow-300 mt-1">學名 ➔ 結構圖</span>
+                                        </button>
+                                        <button onClick={()=>startGame(6)} className="bg-gray-800 hover:bg-gray-700 p-4 border-4 border-b-8 border-red-500 text-white font-bold flex flex-col items-center animate-pulse active:translate-y-2 active:border-b-4 transition-all">
+                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/diamond_sword.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="⚔️" />
+                                            <span className="text-lg text-red-400">無盡生存</span><span className="text-xs text-gray-400 mt-1">綜合隨機大亂鬥</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="w-full max-w-3xl bg-[#c6c6c6] p-4 border-4 border-white border-b-gray-500 border-r-gray-500 text-black shadow-2xl flex flex-col relative">
+                                    <div className="flex justify-between items-center mb-4 bg-gray-900 text-white p-2 border-2 border-gray-700">
+                                        <button onClick={() => setGameMode(0)} className="bg-red-600 px-4 py-1 hover:bg-red-500 font-bold border-b-4 border-red-900 active:border-b-0 active:translate-y-1 text-sm">↩ 返回選單</button>
+                                        <span className="text-lg font-bold text-blue-300 tracking-wider">第 {round} 題</span>
+                                        <span className="text-xl font-black text-yellow-400 tracking-wider">分數：{score}</span>
+                                    </div>
+
+                                    <div className="bg-gray-900 text-white p-6 mb-6 font-bold flex flex-col items-center justify-center border-2 border-gray-700 min-h-[200px] relative overflow-hidden">
+                                        {/* 🌟 替換為 Minecraft 村民頭像 */}
+                                        <McImg src="https://minotar.net/helm/MHF_Villager/100.png" className="absolute top-3 left-3 w-16 h-16 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="🙎‍♂️" />
+                                        
+                                        <div className="text-center w-full max-w-xl mt-4 z-10 flex flex-col items-center">
+                                            {renderQuestionContent()}
+                                        </div>
+                                        
+                                        {/* 🌟 替換為綠寶石 (答對) */}
+                                        {feedback === 'correct' && (
+                                            <div className="absolute inset-0 bg-green-500/80 flex items-center justify-center z-20 animate-bounce">
+                                                <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/emerald.png" className="w-32 h-32 drop-shadow-2xl" style={{imageRendering: 'pixelated'}} fallback="⭕" />
+                                            </div>
+                                        )}
+                                        
+                                        {/* 🌟 替換為紅石方塊 (答錯) */}
+                                        {feedback === 'wrong' && (
+                                            <div className="absolute inset-0 bg-red-600/80 flex items-center justify-center z-20 animate-pulse">
+                                                <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/block/redstone_block.png" className="w-32 h-32 drop-shadow-2xl" style={{imageRendering: 'pixelated'}} fallback="❌" />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {options.map((el, i) => (
+                                            <button 
+                                                key={i} 
+                                                onClick={() => handleAnswer(el)}
+                                                className="bg-[#8b8b8b] hover:bg-[#a0a0a0] active:bg-[#6b6b6b] border-4 border-white border-b-[#555] border-r-[#555] p-4 flex items-center justify-center text-center shadow-sm transition-transform active:scale-95 text-white shadow-black drop-shadow-md min-h-[120px]"
+                                            >
+                                                {renderOptionContent(el)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 🌟 新增：結構圖放大預覽 Modal */}
+            {previewSmiles && (
+                <div className="fixed inset-0 bg-black/90 flex flex-col items-center justify-center z-[200] p-4" onClick={() => setPreviewSmiles(null)}>
+                    <div className="bg-gray-800 border-4 border-gray-500 p-4 w-full max-w-2xl relative flex flex-col items-center" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => setPreviewSmiles(null)} className="absolute top-2 right-4 text-4xl text-gray-400 hover:text-white font-bold">×</button>
+                        <h3 className="text-xl font-bold text-yellow-400 mb-4">🔍 結構圖預覽</h3>
+                        
+                        <SmilesImg smiles={previewSmiles} isPreview={true} />
+                        
+                        <div className="mt-4 w-full bg-black p-3 border border-gray-600">
+                            <p className="text-gray-400 text-sm mb-1">原始 SMILES 語法 (可複製貼上至外部畫圖工具)：</p>
+                            <p className="text-green-400 font-mono break-all text-sm select-all">{previewSmiles}</p>
+                        </div>
+                        
+                        <button onClick={() => setPreviewSmiles(null)} className="mt-4 bg-blue-600 px-6 py-2 text-white font-bold border-b-4 border-blue-900 hover:bg-blue-500 active:border-b-0 active:translate-y-1">
+                            關閉預覽
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {isAdmin && showAdminModal && (
+                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4">
+                    <div className="bg-gray-900 border-4 border-gray-600 w-full max-w-3xl p-6 relative max-h-[90vh] overflow-hidden flex flex-col">
+                        <button onClick={() => setShowAdminModal(false)} className="absolute top-2 right-4 text-3xl text-gray-400 hover:text-white font-bold">×</button>
+                        <h2 className="text-xl font-bold mb-4 text-green-400">⛏️ 元素鍛造爐</h2>
+                        <div className="flex gap-2 mb-2">
+                            <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className="p-2 bg-gray-800 text-white border border-gray-500 flex-shrink-0">
+                                <option value="medChem">🧪 藥物化學</option>
+                                <option value="pharmacognosy">🌿 生藥學</option>
+                            </select>
+                            <button onClick={handleBulkImport} className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 font-bold border-b-4 border-green-900 active:border-b-0 active:translate-y-1">
+                                ⚡ 批量鍛造
+                            </button>
+                        </div>
+                        <textarea value={rawInput} onChange={e => setRawInput(e.target.value)} placeholder="貼上格式：&#10;[=學名=] {結構SMILES} [+機轉/疾病+] [-副作用/禁忌-]" className="w-full h-32 p-3 bg-gray-800 border-2 border-gray-500 text-green-300 outline-none resize-none custom-scrollbar mb-4 shrink-0" />
+                        <h3 className="font-bold text-yellow-400 mb-2">📦 現有元素 ({elements.length})</h3>
+                        <div className="overflow-y-auto custom-scrollbar bg-gray-800 p-2 border border-gray-600 flex-1">
+                            {elements.map(el => (
+                                <div key={el.docId} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gray-700 mb-2 p-2 text-sm border-l-4 border-blue-500 gap-2">
+                                    <div className="flex flex-col flex-1 min-w-0">
+                                        <span className="font-bold text-blue-300">{el.name}</span>
+                                        <span className="text-gray-300 truncate w-full">結構: {el.structure}</span>
+                                        <span className="text-green-300 truncate w-full">+: {el.mechanism}</span>
+                                        <span className="text-red-300 truncate w-full">-: {el.sideEffect}</span>
+                                    </div>
+                                    <button onClick={() => handleDelete(el.docId)} className="bg-red-600 px-3 py-1 hover:bg-red-500 font-bold border-b-4 border-red-900 active:border-b-0 active:translate-y-1 shrink-0">刪除</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 const McImg = ({ src, fallback, className, ...props }) => {
     const [error, setError] = useState(false);
     if (error) return <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{fallback}</span>;
