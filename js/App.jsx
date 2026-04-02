@@ -23,10 +23,21 @@ function Main() {
         window.history.replaceState({}, document.title, window.location.pathname);
         setCurrentNewsId(null);
     };
-    const [userProfile, setUserProfile] = useState({ displayName: '載入中...', folders: [] });
+   const [userProfile, setUserProfile] = useState({ displayName: '載入中...', folders: [] });
     const [activeTab, setActiveTab] = useState('dashboard');
     const [activeQuizRecord, setActiveQuizRecord] = useState(null);
+    
+    // ✨ 修改：加入載入進度條相關狀態
     const [loading, setLoading] = useState(true);
+    const [loadingStep, setLoadingStep] = useState('步驟 1/3：抓取雲端數據...');
+    const [loadingProgress, setLoadingProgress] = useState(0);
+
+    // 將進度條更新方法綁定到全域，讓其他資料夾的非同步函數可以輕易呼叫
+    useEffect(() => {
+        window.setGlobalLoading = setLoading;
+        window.setGlobalLoadingStep = setLoadingStep;
+        window.setGlobalLoadingProgress = setLoadingProgress;
+    }, []);
 
     // 夜間模式狀態 (從 localStorage 讀取記憶)
     const [isDark, setIsDark] = useState(localStorage.getItem('darkMode') === 'true');
@@ -184,9 +195,21 @@ function Main() {
     );
 
     if (loading) return (
-        <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white font-mono">
-            <div className="text-2xl mb-4 animate-bounce">💊</div>
-            <div>載入中...</div>
+        <div className="h-[100dvh] flex flex-col items-center justify-center bg-gray-900 text-white font-mono p-6">
+            <div className="text-5xl mb-8 animate-bounce">💊</div>
+            <div className="text-lg font-bold mb-3 tracking-widest text-cyan-400 drop-shadow-md">{loadingStep}</div>
+            
+            {/* 視覺化進度條 */}
+            <div className="w-full max-w-sm bg-gray-800 border-2 border-gray-600 p-1 no-round mb-2 relative h-8 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                <div className="bg-cyan-500 h-full transition-all duration-200 ease-out" style={{ width: `${loadingProgress}%` }}></div>
+                <div className="absolute inset-0 flex items-center justify-center text-xs font-black mix-blend-difference text-white tracking-widest">
+                    {loadingProgress}%
+                </div>
+            </div>
+            
+            <div className="text-xs text-gray-500 font-bold mt-6 animate-pulse">
+                {loadingProgress === 100 ? '即將完成...' : '巨量資料處理中，請稍候...'}
+            </div>
         </div>
     );
 
