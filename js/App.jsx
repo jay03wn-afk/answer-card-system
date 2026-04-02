@@ -107,7 +107,21 @@ function Main() {
     };
 
     useEffect(() => {
+        // 🚀 終極防卡死：1.5 秒內 Auth 沒反應，就直接強行關閉載入畫面，顯示登入表單！
+        let isAuthResolved = false;
+        const forceLoginTimer = setTimeout(() => {
+            if (!isAuthResolved) {
+                isAuthResolved = true;
+                setLoading(false);
+            }
+        }, 1500);
+
         const unsubscribe = window.auth.onAuthStateChanged(u => {
+            if (!isAuthResolved) {
+                isAuthResolved = true;
+                clearTimeout(forceLoginTimer);
+            }
+
             if (u) {
                 setUser(u);
                 // 🚀 極速啟動：增加 1.2 秒強制超時，確保「步驟 1/3」不會因為網路小抖動而卡死
@@ -129,7 +143,10 @@ function Main() {
                 setLoading(false);
             }
         });
-        return () => unsubscribe();
+        return () => {
+            unsubscribe();
+            clearTimeout(forceLoginTimer);
+        };
     }, []);
 
 
