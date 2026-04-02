@@ -1786,6 +1786,17 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除。", "載入失敗");
             }
             
+            // 🚀 核心修復：直接向雲端資料庫全域搜索是否已經擁有該試卷！
+            // 避免因為本地 records 數量限制 (limit 10) 導致找不到舊試卷而重複下載
+            const duplicateCheck = await window.db.collection('users').doc(user.uid).collection('quizzes')
+                .where('creatorQuizId', '==', targetQuizId)
+                .limit(1)
+                .get();
+
+            if (!duplicateCheck.empty) {
+                return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
+            }
+            
             let data = doc.data();
 
             // ✨ 新增：如果原作者使用了分離儲存，必須把真實的題目內容從 quizContents 抓出來
@@ -1800,6 +1811,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 }
             }
 
+            // 本地名稱比對防呆 (輔助用，擋掉那些不是透過代碼分享，但名字一模一樣的手動建立試卷)
             const isContentDuplicate = records.some(r => {
                 const localName = cleanQuizName(r.testName).split(' (來自')[0].trim();
                 const incomingName = cleanQuizName(data.testName).split(' (來自')[0].trim();
