@@ -1722,14 +1722,15 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     };
 
     useEffect(() => {
-        if (!loading && pendingShareCode) {
+        // ✨ 提速優化：拔除 !loading 限制，只要網址有代碼就立刻優先執行匯入，絕生死等畫面載入！
+        if (pendingShareCode) {
             const codeToImport = pendingShareCode;
             setPendingShareCode(null);
             window.history.replaceState({}, document.title, window.location.pathname);
             
             executeImport(codeToImport);
         }
-    }, [loading, pendingShareCode, records]);
+    }, [pendingShareCode]);
 
     const executeImport = async (code, retryCount = 0) => {
         const cleanCode = code?.trim().toUpperCase();
