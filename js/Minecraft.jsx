@@ -225,7 +225,8 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
             isCave: false,
             isNether: false,
             lastJumpTime: 0,
-            lastFrameTime: performance.now()
+            lastFrameTime: performance.now(),
+            totemEffectTimer: 0 // ✨ 初始化圖騰特效計時器
         };
         gameRef.current.reqId = requestAnimationFrame(loop);
     };
@@ -359,15 +360,16 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                     state.player.jumps = 0;
                 } else {
                     if (state.hasTotem) {
-                        state.hasTotem = false;
-                        updateMcData({ hasTotem: false }, true);
-                        playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
-                        state.player.y = state.groundY - state.player.h;
-                        state.player.dy = 0;
-                        state.player.jumps = 0;
-                    } else {
-                        dead = true; 
-                    }
+                            state.hasTotem = false;
+                            updateMcData({ hasTotem: false }, true);
+                            playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
+                            state.totemEffectTimer = 60; // ✨ 啟動圖騰特效
+                            state.player.y = state.groundY - state.player.h;
+                            state.player.dy = 0;
+                            state.player.jumps = 0;
+                        } else {
+                            dead = true; 
+                        }
                 }
             }
         }
@@ -470,6 +472,7 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                             state.hasTotem = false;
                             updateMcData({ hasTotem: false }, true);
                             playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
+                            state.totemEffectTimer = 60; // ✨ 啟動圖騰特效
                             obs.killed = true; // 將牆壁破壞
                         } else {
                             dead = true; 
@@ -503,13 +506,14 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                             updateMcData({ activeSword: state.activeSword }, true);
                         }
                     } else {
-                        // 碰到非生物或是沒有劍可以砍
+                       // 碰到非生物或是沒有劍可以砍
                         if (state.hasTotem) {
-                            // ✨ 不死圖騰發動 (移除彈窗中斷，僅保留音效)
+                            // ✨ 不死圖騰發動
                             obs.killed = true; 
                             state.hasTotem = false;
                             updateMcData({ hasTotem: false }, true);
                             playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
+                            state.totemEffectTimer = 60; // ✨ 啟動圖騰特效
                         } else {
                             dead = true;
                             if (obs.type === 'creeper') killedByCreeper = true;
@@ -738,8 +742,7 @@ else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.g
 
         drawImgSafe(images.current.minecart, state.player.x - 4, state.player.y + state.player.h - 15, state.player.w + 8, 20, '#555');
         drawImgSafe(images.current.steve, state.player.x + 2, state.player.y - 5, state.player.w - 4, state.player.h - 5, '#ffccaa');
-
-        // 階段提示文字
+// 階段提示文字
         if (state.isCave && cyclePos < 1000) {
             ctx.fillStyle = 'rgba(255,255,255,0.8)';
             ctx.font = 'bold 20px Courier New';
@@ -752,6 +755,38 @@ else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.g
             ctx.fillStyle = 'rgba(255,50,50,0.8)';
             ctx.font = 'bold 20px Courier New';
             ctx.fillText("🔥 歡迎來到地獄！ 🔥", LOG_W/2 - 110, LOG_H/2);
+        }
+
+        // ✨ 繪製左上角裝備與耐久度狀態
+        let equipY = 30;
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 16px Courier New';
+        if (state.activeSword) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(10, equipY - 18, 160, 24);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`🗡️ 劍耐久度: ${state.activeSword.durability}`, 15, equipY);
+            equipY += 30;
+        }
+        if (state.hasTotem) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(10, equipY - 18, 160, 24);
+            ctx.fillStyle = '#ffaa00';
+            ctx.fillText(`🗿 不死圖騰: 1`, 15, equipY);
+        }
+
+        // ✨ 不死圖騰全螢幕發動特效
+        if (state.totemEffectTimer > 0) {
+            state.totemEffectTimer--;
+            ctx.fillStyle = `rgba(255, 200, 0, ${state.totemEffectTimer / 120})`; // 閃亮金光
+            ctx.fillRect(0, 0, LOG_W, LOG_H);
+            
+            const size = 80 + (60 - state.totemEffectTimer) * 3;
+            ctx.globalAlpha = state.totemEffectTimer / 60;
+            ctx.font = `${size}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.fillText('🗿', LOG_W / 2, LOG_H / 2 + size / 3);
+            ctx.globalAlpha = 1.0;
         }
 
         state.reqId = requestAnimationFrame(loop);
