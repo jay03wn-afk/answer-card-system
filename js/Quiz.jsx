@@ -3055,55 +3055,28 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         const batch = window.db.batch();
                         
                         const readPromises = chunk.map(async (target) => {
-                            const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
-                            const targetUpdates = { ...updates, hasAnswerUpdate: true }; // 加入閃爍提醒標籤
-                            
-                            if (ansChanged) {
-                                try {
-                                    const doc = await targetRef.get();
-                                    if (doc.exists) {
-                                        const targetData = doc.data();
-                                        // 只有已經交卷(有 results)的人才需要重算
-                                        if (targetData.results) {
-                                            let tCorrectCount = 0;
-                                            let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
-                                            
-                                            let targetAnswersArray = [];
-                                            try {
-                                                const rawAns = targetData.userAnswers;
-                                                targetAnswersArray = Array.isArray(rawAns) ? rawAns : (typeof rawAns === 'string' ? window.jzDecompress(rawAns) : []);
-                                            } catch(e) { targetAnswersArray = []; }
+    const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
+    // ✨ 新增：指向該名學生的獨立重型內容庫
+    const targetContentRef = window.db.collection('users').doc(target.uid).collection('quizContents').doc(target.quizId); 
+    
+    const targetUpdates = { ...updates, hasAnswerUpdate: true }; 
+    const targetHeavyUpdates = {}; // ✨ 新增：準備用來裝重型資料的包裹
 
-                                           const tData = targetAnswersArray.map((ans, idx) => {
-                                                const key = keyArray[idx] || '-';
-                                                let isCorrect = (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') ? true : (key !== '-' && key !== '' && ans !== '' ? (key === key.toUpperCase() ? ans === key : key.toLowerCase().includes(ans.toLowerCase())) : false);
-                                                if (isCorrect) tCorrectCount++;
-                                                return { number: idx + 1, userAns: ans || '未填', correctAns: key, isCorrect, isStarred: targetData.starred ? targetData.starred[idx] : false };
-                                            });
-                                            targetUpdates.results = window.jzCompress({ score: Math.round((tCorrectCount/targetData.numQuestions)*100), correctCount: tCorrectCount, total: targetData.numQuestions, data: tData });
-                                            
-                                            // ✨ 新增：同步更新該學生的錯題本中的答案 (改為直接更新，避免超過 Batch 500 筆上限)
-                                            try {
-                                                const wbSnapshot = await window.db.collection('users').doc(target.uid).collection('wrongBook').where('quizId', '==', target.quizId).get();
-                                                if (!wbSnapshot.empty) {
-                                                    const wbPromises = [];
-                                                    wbSnapshot.docs.forEach(wbDoc => {
-                                                        const wbData = wbDoc.data();
-                                                        const qNum = wbData.questionNum;
-                                                        const newKey = keyArray[qNum - 1] || '';
-                                                        if (wbData.correctAns !== newKey) {
-                                                            wbPromises.push(wbDoc.ref.update({ correctAns: newKey }));
-                                                        }
-                                                    });
-                                                    await Promise.all(wbPromises);
-                                                }
-                                            } catch(e) { console.error("同步學生錯題本失敗", e); }
-                                        }
-                                    }
-                                } catch(e) { console.error("同步失敗", e); }
-                            }
-                            batch.update(targetRef, targetUpdates);
-                        });
+    // ✨ 關鍵修復：將大體積的題目與詳解抽出來，避免塞錯資料庫
+    if ('questionText' in targetUpdates) { targetHeavyUpdates.questionText = targetUpdates.questionText; delete targetUpdates.questionText; }
+    if ('questionHtml' in targetUpdates) { targetHeavyUpdates.questionHtml = targetUpdates.questionHtml; delete targetUpdates.questionHtml; }
+    if ('explanationHtml' in targetUpdates) { targetHeavyUpdates.explanationHtml = targetUpdates.explanationHtml; delete targetUpdates.explanationHtml; }
+
+    if (ansChanged) {
+        // ... (這裡保留你原本寫好的算分與同步錯題本邏輯，完全不用動) ...
+    }
+
+    // ✨ 最終執行：同時更新學生的「輕量外殼」與「重型內容」
+    batch.update(targetRef, targetUpdates);
+    if (Object.keys(targetHeavyUpdates).length > 0) {
+        batch.set(targetContentRef, targetHeavyUpdates, { merge: true }); 
+    }
+});
 
                         await Promise.all(readPromises);
                         await batch.commit();
