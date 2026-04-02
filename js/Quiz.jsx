@@ -1696,7 +1696,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         });
     };
     
-    const handleGenerateCode = async (quiz) => {
+   const handleGenerateCode = async (quiz) => {
         if (quiz.shortCode) {
             navigator.clipboard.writeText(quiz.shortCode);
             showAlert(`✅ 已複製代碼：${quiz.shortCode}`);
@@ -1705,9 +1705,18 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         setIsGeneratingCode(true);
         const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
         try {
+            let contentData = {};
+            if (quiz.hasSeparatedContent) {
+                const contentDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(quiz.id).get();
+                if (contentDoc.exists) {
+                    contentData = contentDoc.data();
+                }
+            }
             await window.db.collection('shareCodes').doc(newCode).set({
                 ownerId: user.uid,
-                quizId: quiz.id
+                quizId: quiz.id,
+                quizData: quiz,
+                contentData: contentData
             });
             await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quiz.id).update({
                 shortCode: newCode
@@ -1753,16 +1762,11 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
             }
 
-            const { ownerId, quizId: targetQuizId } = codeDoc.data();
+            const codeDocData = codeDoc.data();
+            const { ownerId, quizId: targetQuizId, quizData, contentData } = codeDocData;
 
             if (ownerId === user.uid) {
                 return showAlert("⚠️ 你已經擁有此試卷！", "重複擁有");
-            }
-
-            const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get();
-
-            if (!doc.exists) {
-                return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除。", "載入失敗");
             }
             
             // 🚀 核心修復：直接向雲端資料庫全域搜索是否已經擁有該試卷！
@@ -1775,13 +1779,28 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
             }
             
-            let data = doc.data();
+            let data = quizData;
 
-            // ✨ 如果原作者使用了分離儲存，把真實的題目內容從 quizContents 抓出來
-            if (data.hasSeparatedContent) {
-                const contentDoc = await window.db.collection('users').doc(ownerId).collection('quizContents').doc(targetQuizId).get();
-                if (contentDoc.exists) {
-                    const contentData = contentDoc.data();
+            if (!data) {
+                const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get();
+
+                if (!doc.exists) {
+                    return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除，或對方資料庫權限未開放。", "載入失敗");
+                }
+                data = doc.data();
+
+                // ✨ 如果原作者使用了分離儲存，把真實的題目內容從 quizContents 抓出來
+                if (data.hasSeparatedContent) {
+                    const contentDoc = await window.db.collection('users').doc(ownerId).collection('quizContents').doc(targetQuizId).get();
+                    if (contentDoc.exists) {
+                        const oldContentData = contentDoc.data();
+                        data.questionText = oldContentData.questionText || '';
+                        data.questionHtml = oldContentData.questionHtml || '';
+                        data.explanationHtml = oldContentData.explanationHtml || '';
+                    }
+                }
+            } else {
+                if (contentData) {
                     data.questionText = contentData.questionText || '';
                     data.questionHtml = contentData.questionHtml || '';
                     data.explanationHtml = contentData.explanationHtml || '';
