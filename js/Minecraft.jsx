@@ -446,8 +446,17 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                 obs.x -= Math.max(1.5, (state.speed - 2.5) * 0.8); 
                 
                 if (!obs.defused && obs.x < state.player.x + 10) {
-                    dead = true;
-                    killedByCreeper = true; 
+                    // ✨ 修正：引爆前先檢查是否有不死圖騰保護
+                    if (state.hasTotem) {
+                        obs.defused = true; // 視為已解除，避免重複觸發
+                        state.hasTotem = false;
+                        updateMcData({ hasTotem: false }, true);
+                        playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
+                        state.totemEffectTimer = 60; // 啟動圖騰特效
+                    } else {
+                        dead = true;
+                        killedByCreeper = true; 
+                    }
                 } else {
                     obs.x -= state.speed; 
                 }
@@ -796,6 +805,7 @@ else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.g
         }
 
         // ✨ 不死圖騰全螢幕發動特效
+        // ✨ 不死圖騰全螢幕發動特效
         if (state.totemEffectTimer > 0) {
             state.totemEffectTimer--;
             ctx.fillStyle = `rgba(255, 200, 0, ${state.totemEffectTimer / 120})`; // 閃亮金光
@@ -803,9 +813,17 @@ else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.g
             
             const size = 80 + (60 - state.totemEffectTimer) * 3;
             ctx.globalAlpha = state.totemEffectTimer / 60;
-            ctx.font = `${size}px Arial`;
-            ctx.textAlign = 'center';
-            ctx.fillText('🗿', LOG_W / 2, LOG_H / 2 + size / 3);
+            
+            // ✨ 修正：改用載入的不死圖騰真實貼圖，取代 Emoji
+            const totemImg = images.current.totem_of_undying;
+            if (totemImg && totemImg.complete) {
+                ctx.drawImage(totemImg, LOG_W / 2 - size / 2, LOG_H / 2 - size / 2, size, size);
+            } else {
+                // 備用防呆：若圖片沒載入成功顯示文字
+                ctx.font = `${size}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.fillText('🗿', LOG_W / 2, LOG_H / 2 + size / 3);
+            }
             ctx.globalAlpha = 1.0;
         }
 
@@ -1341,9 +1359,14 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     }, [userProfile.friends, mcData]);
 
     const updateMcData = (updates, silent = false) => {
-        window.db.collection('users').doc(user.uid).update({
-            mcData: { ...mcData, ...updates }
-        }).catch(e => {
+        // ✨ 改用 Firestore 的「點標記法」進行局部更新
+        // 這樣結算鑽石時，就不會把舊的裝備狀態又覆蓋回資料庫了
+        const dbUpdates = {};
+        for (const key in updates) {
+            dbUpdates[`mcData.${key}`] = updates[key];
+        }
+
+        window.db.collection('users').doc(user.uid).update(dbUpdates).catch(e => {
             if (!silent) showAlert('更新失敗：' + e.message);
         });
     };
