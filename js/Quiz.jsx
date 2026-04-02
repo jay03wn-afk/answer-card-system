@@ -1738,13 +1738,17 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 return showAlert("⚠️ 這是你自己的試卷！", "重複擁有");
             }
             
+            // ✨ 終極防呆：確保雲端資料有值，防止 undefined 造成 Firebase 崩潰
+            const safeOriginalQuizId = sharedData.originalQuizId || 'MISSING_ID';
+            const safeOwnerId = sharedData.ownerId || 'MISSING_OWNER';
+
             // 雲端重複檢查
             const duplicateCheck = await window.db.collection('users').doc(user.uid).collection('quizzes')
-                .where('creatorQuizId', '==', sharedData.originalQuizId)
+                .where('creatorQuizId', '==', safeOriginalQuizId)
                 .limit(1)
                 .get();
 
-            if (!duplicateCheck.empty) {
+            if (!duplicateCheck.empty && safeOriginalQuizId !== 'MISSING_ID') {
                 return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
             }
 
@@ -1766,8 +1770,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 timeLimit: sharedData.timeLimit || null,
                 timeRemaining: sharedData.hasTimer ? (sharedData.timeLimit * 60) : null,
                 isShared: true, 
-                creatorUid: sharedData.ownerId, 
-                creatorQuizId: sharedData.originalQuizId,
+                creatorUid: safeOwnerId, 
+                creatorQuizId: safeOriginalQuizId,
                 folder: '未分類', 
                 shortCode: cleanCode, 
                 hasSeparatedContent: true, // 新架構統一強制使用分離儲存
@@ -1783,12 +1787,14 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
 
             // 6. 嘗試通知原作者。如果因為對方權限沒開而報錯，我們用 catch 攔截並忽略，【絕對不影響匯入成功】！
             try {
-                await window.db.collection('users').doc(sharedData.ownerId).collection('quizzes').doc(sharedData.originalQuizId).update({
-                    sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
-                        uid: user.uid, 
-                        quizId: newDocRef.id 
-                    })
-                });
+                if (safeOwnerId !== 'MISSING_OWNER' && safeOriginalQuizId !== 'MISSING_ID') {
+                    await window.db.collection('users').doc(safeOwnerId).collection('quizzes').doc(safeOriginalQuizId).update({
+                        sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
+                            uid: user.uid, 
+                            quizId: newDocRef.id 
+                        })
+                    });
+                }
             } catch (syncErr) {
                 console.warn("無法更新原作者的紀錄，但不影響匯入作業:", syncErr);
             }
