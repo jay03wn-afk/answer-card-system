@@ -445,14 +445,15 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                 // 苦力怕速度降低 20%
                 obs.x -= Math.max(1.5, (state.speed - 2.5) * 0.8); 
                 
-                if (!obs.defused && obs.x < state.player.x + 10) {
-                    // ✨ 修正：引爆前先檢查是否有不死圖騰保護
+                // ✨ 修正：加入 !obs.killed 判斷，避免已經被圖騰擋掉的苦力怕還繼續引爆
+                if (!obs.defused && !obs.killed && obs.x < state.player.x + 10) {
                     if (state.hasTotem) {
-                        obs.defused = true; // 視為已解除，避免重複觸發
+                        obs.defused = true; // 解除爆炸
+                        obs.killed = true;  // 標記死亡
                         state.hasTotem = false;
                         updateMcData({ hasTotem: false }, true);
                         playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
-                        state.totemEffectTimer = 60; // 啟動圖騰特效
+                        state.totemEffectTimer = 60; 
                     } else {
                         dead = true;
                         killedByCreeper = true; 
@@ -460,6 +461,7 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                 } else {
                     obs.x -= state.speed; 
                 }
+            
 } else if (obs.type === 'magma' || obs.type === 'netherrack_block' || obs.type === 'stone' || obs.type === 'zombie' || obs.type === 'ceiling_spider' || obs.type === 'cobweb') {                obs.x -= state.speed;
                 // ✨ 讓岩漿塊自動貼合地獄起伏的表面，不會懸空
                 if (obs.type === 'magma' && state.isNether) {
@@ -523,9 +525,11 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                        // 碰到非生物或是沒有劍可以砍
                         // ✨ 碰到怪物或障礙物時的處理邏輯，確保不死圖騰優先保護
                 // 碰到苦力怕的特殊處理 (圖騰保護)
+                // 碰到苦力怕的特殊處理 (圖騰保護)
                 if (obs.type === 'creeper' && state.hasTotem) {
                     // ✨ 不死圖騰發動，將苦力怕"炸死"移除，玩家沒事
                     obs.killed = true; 
+                    obs.defused = true; // ✨ 補上這行，徹底讓前面的距離引爆失效
                     state.hasTotem = false;
                     updateMcData({ hasTotem: false }, true);
                     playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
