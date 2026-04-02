@@ -1741,53 +1741,31 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         }
 
         try {
-                const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
-                if (isDuplicateCode) {
-                    return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
-                }
+            const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
+            if (isDuplicateCode) {
+                return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
+            }
 
-                // ✨ 終極防斷線：無條件捕捉 server 獲取失敗 (不限於 offline 字眼)，並強制啟動自動重試
-                let codeDoc;
-                try {
-                    codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get({ source: 'server' });
-                } catch (err) {
-                    // 只要無法從伺服器抓取，代表連線還在喚醒，直接進入重試倒數
-                    if (retryCount < 3) {
-                        if (retryCount === 0) showAlert("⚠️ 正在與雲端建立安全連線，請稍候 2~3 秒...", "連線提示");
-                        setTimeout(() => executeImport(code, retryCount + 1), 1500);
-                        return; // 等待下一次執行
-                    }
-                    // 重試 3 次都失敗，才退而求其次使用快取
-                    codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
-                }
+            // ✨ 統一使用 get()，若遇到 offline 會被底下的 catch 捕獲並自動重試
+            const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
 
-                if (!codeDoc || !codeDoc.exists) {
-                    return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
-                }
+            if (!codeDoc || !codeDoc.exists) {
+                return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
+            }
 
-                const { ownerId, quizId: targetQuizId } = codeDoc.data();
+            const { ownerId, quizId: targetQuizId } = codeDoc.data();
 
             if (ownerId === user.uid) {
                 return showAlert("⚠️ 你已經擁有此試卷！", "重複擁有");
             }
 
-           // ✨ 終極防斷線：移除強制 { source: 'server' }，讓 Firebase 彈性等待 WebSocket 連線
-            let doc;
-            try {
-                doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get();
-            } catch (err) {
-                if (err.message.includes('offline')) {
-                    return showAlert("⚠️ 伺服器喚醒中：\n系統正在與雲端建立安全連線，請稍等 2~3 秒後「再點一次」即可！", "連線提示");
-                }
-                throw err;
-            }
+            const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get();
 
             if (!doc.exists) {
                 return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除。", "載入失敗");
             }
             
             // 🚀 核心修復：直接向雲端資料庫全域搜索是否已經擁有該試卷！
-            // 避免因為本地 records 數量限制 (limit 10) 導致找不到舊試卷而重複下載
             const duplicateCheck = await window.db.collection('users').doc(user.uid).collection('quizzes')
                 .where('creatorQuizId', '==', targetQuizId)
                 .limit(1)
@@ -1799,9 +1777,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             
             let data = doc.data();
 
-            // ✨ 新增：如果原作者使用了分離儲存，必須把真實的題目內容從 quizContents 抓出來
+            // ✨ 如果原作者使用了分離儲存，把真實的題目內容從 quizContents 抓出來
             if (data.hasSeparatedContent) {
-                // ✨ 這裡也一併移除 { source: 'server' }，防止抓取大檔時斷線
                 const contentDoc = await window.db.collection('users').doc(ownerId).collection('quizContents').doc(targetQuizId).get();
                 if (contentDoc.exists) {
                     const contentData = contentDoc.data();
@@ -1811,7 +1788,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 }
             }
 
-            // 本地名稱比對防呆 (輔助用，擋掉那些不是透過代碼分享，但名字一模一樣的手動建立試卷)
+            // 本地名稱比對防呆
             const isContentDuplicate = records.some(r => {
                 const localName = cleanQuizName(r.testName).split(' (來自')[0].trim();
                 const incomingName = cleanQuizName(data.testName).split(' (來自')[0].trim();
@@ -1825,7 +1802,6 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             const emptyAnswers = Array(Number(data.numQuestions)).fill('');
             const emptyStarred = Array(Number(data.numQuestions)).fill(false);
             
-            // ✨ 修正：依照新版架構，將外殼與內容分開儲存，確保不會遺失題目
             const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
                 testName: cleanQuizName(data.testName) + ' (來自代碼)',
                 numQuestions: data.numQuestions,
@@ -1842,11 +1818,10 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 creatorQuizId: targetQuizId,
                 folder: '未分類', 
                 shortCode: cleanCode, 
-                hasSeparatedContent: true, // ✨ 標記為分離儲存
+                hasSeparatedContent: true,
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
 
-            // ✨ 修正：將肥大的題目與詳解內容存入專屬的 quizContents
             await window.db.collection('users').doc(user.uid).collection('quizContents').doc(newDocRef.id).set({
                 questionText: data.questionText || '',
                 questionHtml: data.questionHtml || '',
@@ -1864,6 +1839,16 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
 
         } catch (e) {
             console.error(e);
+            // ✨ 終極防護：統一攔截 offline 錯誤並啟動全局自動重試
+            if (e.message && e.message.toLowerCase().includes('offline')) {
+                if (retryCount < 3) {
+                    if (retryCount === 0) showAlert("⚠️ 網路連線喚醒中，請稍候 2~3 秒...", "連線提示");
+                    setTimeout(() => executeImport(code, retryCount + 1), 1500);
+                    return;
+                } else {
+                    return showAlert("❌ 連線逾時：\n無法成功連接至雲端，請檢查您的網路狀態後再試一次。", "網路錯誤");
+                }
+            }
             showAlert('❌ 發生非預期錯誤：' + e.message, "系統錯誤");
         }
     };
