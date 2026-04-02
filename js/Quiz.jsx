@@ -358,8 +358,10 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                         .replace(/[\r\n]+/g, " ") // ✨ 關鍵修復1：替換成「半形空白」，防止圖片標籤屬性黏在一起導致破圖！
                         .replace(/<(xml|style|meta|link|title|o:|st1:)[^>]*>[\s\S]*?<\/\1>/gi, "") 
                         .replace(/<\!--[\s\S]*?-->/g, "") 
+                        .replace(/<!\[[^\]]+\]>/g, "") // ✨ 新增：抹除 Word 專屬的 <![if !vml]> 等條件標籤，修復圖片破圖問題
+                        .replace(/<\/?(html|head|body)[^>]*>/gi, "") // ✨ 新增：抹除不該出現的網頁外殼標籤
                         .replace(/\s*(style|class|lang|dir|align|width|height|cellpadding|cellspacing|valign|border)="[^"]*"/gi, "") 
-                        .replace(/<o:p>[\s\S]*?<\/o:p>/gi, "") 
+                        .replace(/<o:p>[\s\S]*?<\/o:p>/gi, "")
                         .replace(/<\/(p|div|h[1-6])>/gi, "<br>") // 💡 將段落結尾強制轉為單純換行
                         .replace(/<(p|div|h[1-6])[^>]*>/gi, "") // 💡 移除段落開頭，避免瀏覽器加上預設的上下間距
                         .replace(/<\/?(span|font)[^>]*>/gi, "") // 剝除字體與顏色標籤
@@ -2741,6 +2743,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             return html.replace(/[\r\n]+/g, " ") // ✨ 關鍵修復1：替換成「半形空白」，保護圖片 src 屬性
                        .replace(/<(xml|style|meta|link|title|o:|st1:)[^>]*>[\s\S]*?<\/\1>/gi, "")
                        .replace(/<\!--[\s\S]*?-->/g, "")
+                       .replace(/<!\[[^\]]+\]>/g, "") // ✨ 新增：抹除 Word 專屬的 <![if !vml]> 等條件標籤，修復圖片破圖問題
+                       .replace(/<\/?(html|head|body)[^>]*>/gi, "") // ✨ 新增：抹除不該出現的網頁外殼標籤
                        .replace(/\s*(style|class|lang|dir|align|width|height|cellpadding|cellspacing|valign|border)="[^"]*"/gi, "")
                        .replace(/<o:p>[\s\S]*?<\/o:p>/gi, "")
                        .replace(/<\/(p|div|h[1-6])>/gi, "<br>")
