@@ -1714,103 +1714,86 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         
         const codeRegex = /^[A-Z0-9]{6}$/;
         if (!codeRegex.test(cleanCode)) {
-            return showAlert("⚠️ 代碼格式錯誤！\n請確認您輸入的是剛好「6 碼」的英數組合（不可包含符號或空白）。", "輸入錯誤");
+            return showAlert("⚠️ 代碼格式錯誤！請輸入 6 碼英數字。", "輸入錯誤");
         }
 
         try {
+            // 1. 本地重複檢查
             const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
             if (isDuplicateCode) {
                 return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
             }
 
-            // 🚀 關鍵修復：移除 { source: 'server' }，避免客戶端休眠/離線時直接崩潰報錯
+            // 2. 直接去公共大廳 (shareCodes) 拿剛剛打包好的獨立包裹！
             const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
 
-            if (!codeDoc || !codeDoc.exists) {
-                return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
+            if (!codeDoc.exists) {
+                return showAlert("❌ 找不到該代碼，請確認代碼是否輸入正確，或代碼已失效。", "查無資料");
             }
 
-            const codeDocData = codeDoc.data();
-            const { ownerId, quizId: targetQuizId, quizData, contentData } = codeDocData;
+            const sharedData = codeDoc.data();
 
-            if (ownerId === user.uid) {
-                return showAlert("⚠️ 這是你自己建立的試卷喔！", "重複擁有");
+            // 防呆：不能匯入自己的試卷
+            if (sharedData.ownerId === user.uid) {
+                return showAlert("⚠️ 這是你自己的試卷！", "重複擁有");
             }
             
+            // 雲端重複檢查
             const duplicateCheck = await window.db.collection('users').doc(user.uid).collection('quizzes')
-                .where('creatorQuizId', '==', targetQuizId)
+                .where('creatorQuizId', '==', sharedData.originalQuizId)
                 .limit(1)
                 .get();
 
             if (!duplicateCheck.empty) {
                 return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
             }
+
+            // 3. 準備個人作答紀錄的空陣列
+            const numQ = Number(sharedData.numQuestions || 50);
+            const emptyAnswers = Array(numQ).fill('');
+            const emptyStarred = Array(numQ).fill(false);
             
-            let data = quizData;
-            let cData = contentData;
-
-            // 🚀 關鍵修復：如果代碼庫裡沒有打包好的資料，才退回舊版讀取方式 (向下相容舊代碼)
-            if (!data) {
-                try {
-                    const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get();
-                    if (!doc.exists) throw new Error("not_found");
-                    data = doc.data();
-
-                    if (data.hasSeparatedContent) {
-                        const contentDoc = await window.db.collection('users').doc(ownerId).collection('quizContents').doc(targetQuizId).get();
-                        if (contentDoc.exists) {
-                            cData = contentDoc.data();
-                        }
-                    }
-                } catch (err) {
-                    return showAlert("❌ 無法讀取試卷：原作者權限未開放或已刪除該試卷。");
-                }
-            }
-
-            if (cData) {
-                data.questionText = cData.questionText || '';
-                data.questionHtml = cData.questionHtml || '';
-                data.explanationHtml = cData.explanationHtml || '';
-            }
-
-            const emptyAnswers = Array(Number(data.numQuestions || 50)).fill('');
-            const emptyStarred = Array(Number(data.numQuestions || 50)).fill(false);
-            
+            // 4. 將試卷基本設定存入自己的 quizzes
             const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
-                testName: cleanQuizName(data.testName || '未命名試卷') + ' (來自代碼)',
-                numQuestions: data.numQuestions || 50,
-                questionFileUrl: data.questionFileUrl || '',
-                correctAnswersInput: data.correctAnswersInput || '', 
-                publishAnswers: data.publishAnswers !== false,
+                testName: cleanQuizName(sharedData.testName || '未命名試卷') + ' (來自代碼)',
+                numQuestions: numQ,
+                questionFileUrl: sharedData.questionFileUrl || '',
+                correctAnswersInput: sharedData.correctAnswersInput || '', 
+                publishAnswers: sharedData.publishAnswers !== false,
                 userAnswers: emptyAnswers,
                 starred: emptyStarred,
-                hasTimer: data.hasTimer || false,
-                timeLimit: data.timeLimit || null,
-                timeRemaining: data.hasTimer ? (data.timeLimit * 60) : null,
+                hasTimer: sharedData.hasTimer || false,
+                timeLimit: sharedData.timeLimit || null,
+                timeRemaining: sharedData.hasTimer ? (sharedData.timeLimit * 60) : null,
                 isShared: true, 
-                creatorUid: ownerId, 
-                creatorQuizId: targetQuizId,
+                creatorUid: sharedData.ownerId, 
+                creatorQuizId: sharedData.originalQuizId,
                 folder: '未分類', 
                 shortCode: cleanCode, 
-                hasSeparatedContent: true,
+                hasSeparatedContent: true, // 新架構統一強制使用分離儲存
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
 
+            // 5. 將獨立包裹裡的題目內容，存入自己的 quizContents
             await window.db.collection('users').doc(user.uid).collection('quizContents').doc(newDocRef.id).set({
-                questionText: data.questionText || '',
-                questionHtml: data.questionHtml || '',
-                explanationHtml: data.explanationHtml || ''
+                questionText: sharedData.questionText || '',
+                questionHtml: sharedData.questionHtml || '',
+                explanationHtml: sharedData.explanationHtml || ''
             });
 
-            // 記錄分享關係 (不強制要求成功，避免寫入權限報錯卡住整體流程)
-            window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).update({
-                sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
-                    uid: user.uid, 
-                    quizId: newDocRef.id 
-                })
-            }).catch(e => console.log("寫入分享者紀錄失敗，略過"));
+            // 6. 嘗試通知原作者。如果因為對方權限沒開而報錯，我們用 catch 攔截並忽略，【絕對不影響匯入成功】！
+            try {
+                await window.db.collection('users').doc(sharedData.ownerId).collection('quizzes').doc(sharedData.originalQuizId).update({
+                    sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
+                        uid: user.uid, 
+                        quizId: newDocRef.id 
+                    })
+                });
+            } catch (syncErr) {
+                console.warn("無法更新原作者的紀錄，但不影響匯入作業:", syncErr);
+            }
 
-            showAlert(`✅ 成功加入「${cleanQuizName(data.testName || '未命名試卷')}」！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
+            showAlert(`✅ 成功加入「${cleanQuizName(sharedData.testName || '未命名試卷')}」！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
 
         } catch (e) {
             console.error("匯入錯誤詳細資訊:", e);
@@ -1823,50 +1806,65 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     };
 
     // ✨ 新增：生成 6 碼分享代碼的完整功能 (解決權限問題的關鍵)
-    const handleGenerateCode = async (quizRecord) => {
-        if (isGeneratingCode) return;
+    const handleGenerateCode = async (quiz) => {
+        if (quiz.shortCode) {
+            navigator.clipboard.writeText(quiz.shortCode);
+            showAlert(`✅ 已複製代碼：${quiz.shortCode}`);
+            return;
+        }
         setIsGeneratingCode(true);
-        try {
-            const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-            let contentData = null;
+        const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-            // 抓取肥大內容資料，打包進 shareCodes，讓匯入者不需讀取你的隱私資料夾
-            if (quizRecord.hasSeparatedContent) {
-                const contentDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(quizRecord.id).get();
-                if (contentDoc.exists) contentData = contentDoc.data();
+        try {
+            // 1. 統一把題目內容抓出來（不管原本是分離儲存還是舊版合併儲存）
+            let fullQuestionsHtml = quiz.questionHtml || '';
+            let fullQuestionsText = quiz.questionText || '';
+            let fullExplanationHtml = quiz.explanationHtml || '';
+
+            if (quiz.hasSeparatedContent) {
+                const contentDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(quiz.id).get();
+                if (contentDoc.exists) {
+                    const cData = contentDoc.data();
+                    fullQuestionsHtml = cData.questionHtml || '';
+                    fullQuestionsText = cData.questionText || '';
+                    fullExplanationHtml = cData.explanationHtml || '';
+                }
             }
 
-            // 乾淨的 quizData (不含 userAnswers 等隱私個人作答)
-            const cleanQuizData = {
-                testName: quizRecord.testName,
-                numQuestions: quizRecord.numQuestions,
-                questionFileUrl: quizRecord.questionFileUrl || '',
-                correctAnswersInput: quizRecord.correctAnswersInput || '',
-                publishAnswers: quizRecord.publishAnswers !== false,
-                hasTimer: quizRecord.hasTimer || false,
-                timeLimit: quizRecord.timeLimit || null,
-                hasSeparatedContent: quizRecord.hasSeparatedContent || false
+            // 2. 製作一個「完全獨立」的快照包裹，不再依賴任何原作者的資料庫連結
+            const publicQuizPackage = {
+                ownerId: user.uid,
+                originalQuizId: quiz.id,
+                testName: quiz.testName || '未命名試卷',
+                numQuestions: quiz.numQuestions || 50,
+                questionFileUrl: quiz.questionFileUrl || '',
+                correctAnswersInput: quiz.correctAnswersInput || '',
+                hasTimer: quiz.hasTimer || false,
+                timeLimit: quiz.timeLimit || null,
+                publishAnswers: quiz.publishAnswers !== false,
+                // 直接把最純粹的題目內容塞進包裹
+                questionHtml: fullQuestionsHtml,
+                questionText: fullQuestionsText,
+                explanationHtml: fullExplanationHtml,
+                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             };
 
-            await window.db.collection('shareCodes').doc(newCode).set({ 
-                ownerId: user.uid, 
-                quizId: quizRecord.id,
-                quizData: cleanQuizData,
-                contentData: contentData,
-                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            // 3. 把包裹丟到公開的 shareCodes 集合中
+            await window.db.collection('shareCodes').doc(newCode).set(publicQuizPackage);
+
+            // 4. 在自己的試卷上記錄這組代碼
+            await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quiz.id).update({
+                shortCode: newCode
             });
 
-            // 更新自己的試卷，綁定這個代碼
-            await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizRecord.id).update({ shortCode: newCode });
-
-            // 更新 Modal 畫面
-            setShowShareModal({ ...quizRecord, shortCode: newCode });
-            showAlert(`✅ 代碼 ${newCode} 已成功生成！`);
-        } catch (e) {
+            setShowShareModal(prev => ({...prev, shortCode: newCode}));
+            navigator.clipboard.writeText(newCode);
+            showAlert(`✅ 成功生成並複製代碼：${newCode}`);
+        } catch(e) {
+            console.error("生成代碼失敗", e);
             showAlert('生成代碼失敗：' + e.message);
-        } finally {
-            setIsGeneratingCode(false);
         }
+        setIsGeneratingCode(false);
     };
 
     const shareToFriend = (friend) => {
