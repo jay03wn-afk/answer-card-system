@@ -127,3 +127,73 @@ window.jzDecompress = function(data) {
         try { return JSON.parse(finalStr); } catch(e) { return finalStr; }
     } catch (e) { return data; } 
 };
+
+// --- 新增功能：Web Worker 非同步解壓縮引擎 (含進度回報) ---
+const decompressWorkerCode = `
+    self.onmessage = function(e) {
+        const { data, id } = e.data;
+        if (typeof data !== 'string' || !data.startsWith("JZC|")) {
+            self.postMessage({ id, result: data, progress: 100 });
+            return;
+        }
+        try {
+            let outArr = data.substring(4).split('.').map(s => parseInt(s, 36));
+            let dict = new Map();
+            let nextCode = 1000000;
+            let phrase = String.fromCharCode(outArr[0]);
+            let oldPhrase = phrase;
+            let res = [phrase];
+            
+            let i = 1;
+            const total = outArr.length;
+            const chunkSize = 2000; // 每次處理兩千筆，避免卡死主線程
+
+            function processChunk() {
+                const end = Math.min(i + chunkSize, total);
+                for (; i < end; i++) {
+                    let currCode = outArr[i];
+                    if (currCode < 1000000) phrase = String.fromCharCode(currCode);
+                    else phrase = dict.has(currCode) ? dict.get(currCode) : (oldPhrase + oldPhrase[0]);
+                    res.push(phrase);
+                    dict.set(nextCode++, oldPhrase + phrase[0]);
+                    oldPhrase = phrase;
+                }
+                
+                const progress = Math.floor((i / total) * 100);
+                self.postMessage({ id, progress, status: 'decompressing' });
+
+                if (i < total) {
+                    setTimeout(processChunk, 0); // 讓出執行緒給畫面更新
+                } else {
+                    let finalStr = res.join("");
+                    let finalObj = finalStr;
+                    try { finalObj = JSON.parse(finalStr); } catch(e) {}
+                    self.postMessage({ id, result: finalObj, progress: 100, status: 'done' });
+                }
+            }
+            processChunk();
+        } catch (e) {
+            self.postMessage({ id, result: data, progress: 100, status: 'error' });
+        }
+    };
+`;
+const blob = new Blob([decompressWorkerCode], { type: 'application/javascript' });
+window.jzWorker = new Worker(URL.createObjectURL(blob));
+
+window.jzDecompressAsync = function(data, onProgress) {
+    return new Promise((resolve) => {
+        const id = Date.now() + Math.random();
+        const handler = (e) => {
+            if (e.data.id === id) {
+                if (e.data.status === 'decompressing' && onProgress) {
+                    onProgress(e.data.progress);
+                } else if (e.data.progress === 100) {
+                    window.jzWorker.removeEventListener('message', handler);
+                    resolve(e.data.result);
+                }
+            }
+        };
+        window.jzWorker.addEventListener('message', handler);
+        window.jzWorker.postMessage({ data, id });
+    });
+};
