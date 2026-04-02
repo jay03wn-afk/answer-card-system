@@ -110,9 +110,19 @@ function Main() {
         const unsubscribe = window.auth.onAuthStateChanged(u => {
             if (u) {
                 setUser(u);
-                window.db.collection('users').doc(u.uid).onSnapshot(doc => {
+                // 🚀 極速啟動：增加 1.2 秒強制超時，確保「步驟 1/3」不會因為網路小抖動而卡死
+                let hasResolved = false;
+                const profileTimeout = setTimeout(() => {
+                    if (!hasResolved) setLoading(false);
+                }, 1200);
+
+                window.db.collection('users').doc(u.uid).onSnapshot({ includeMetadataChanges: true }, doc => {
                     if (doc.exists) setUserProfile(doc.data());
-                    setLoading(false);
+                    if (!hasResolved) {
+                        hasResolved = true;
+                        setLoading(false);
+                        clearTimeout(profileTimeout);
+                    }
                 });
             } else {
                 setUser(null);
