@@ -3038,16 +3038,21 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     setSyncStatus(prev => ({ ...prev, current: 1 }));
 
                     // 2. 處理任務牆 (如果是國考/模擬題)
+                    // 2. 處理任務牆 (如果是國考/模擬題)
                     if (/\[#(op|m?nm?st)\]/i.test(testName)) {
                         const taskUpdates = { ...updates, creatorUid: currentUser.uid, numQuestions, hasTimer, timeLimit };
                         await window.db.collection('publicTasks').doc(quizId).set(taskUpdates, { merge: true });
                     }
 
-                    // 3. 同步給所有學生 (包含自動重算分數)
+                    // ✨ 新增：3. 同步更新分享代碼庫 (shareCodes) 的快照包裹！
+                    // 確保未來輸入代碼下載的學生，拿到的是最新修改的題目與詳解
+                    if (oldData.shortCode) {
+                        await window.db.collection('shareCodes').doc(oldData.shortCode).update(updates).catch(e => console.warn("代碼庫同步失敗(可能無此代碼):", e));
+                    }
 
-                // 3. 同步給所有學生 (包含自動重算分數)
-                if (syncCount > 0) {
-                    const ansChanged = !!updates.correctAnswersInput; // 檢查標答是否變動
+                    // 4. 同步給所有已經下載的學生 (包含自動重算分數)
+                    if (syncCount > 0) {
+                        const ansChanged = !!updates.correctAnswersInput; // 檢查標答是否變動
 
                     const chunkSize = 20;
                     for (let i = 0; i < syncCount; i += chunkSize) {
