@@ -1705,19 +1705,37 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         setIsGeneratingCode(true);
         const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
         try {
-            let contentData = {};
+            // 🚀 瘦身優化：只上傳必要的題目與設定，移除個人作答歷史，避免檔案過大導致別人下載時當機
+            const safeQuizData = {
+                testName: quiz.testName || '',
+                numQuestions: quiz.numQuestions || 50,
+                questionFileUrl: quiz.questionFileUrl || '',
+                correctAnswersInput: quiz.correctAnswersInput || '',
+                hasTimer: quiz.hasTimer || false,
+                timeLimit: quiz.timeLimit || null,
+                publishAnswers: quiz.publishAnswers !== false,
+            };
+
+            let safeContentData = {};
             if (quiz.hasSeparatedContent) {
                 const contentDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(quiz.id).get();
                 if (contentDoc.exists) {
-                    contentData = contentDoc.data();
+                    const cData = contentDoc.data();
+                    safeContentData = {
+                        questionText: cData.questionText || '',
+                        questionHtml: cData.questionHtml || '',
+                        explanationHtml: cData.explanationHtml || ''
+                    };
                 }
             }
+
             await window.db.collection('shareCodes').doc(newCode).set({
                 ownerId: user.uid,
                 quizId: quiz.id,
-                quizData: quiz,
-                contentData: contentData
+                quizData: safeQuizData,
+                contentData: safeContentData
             });
+
             await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quiz.id).update({
                 shortCode: newCode
             });
@@ -1740,7 +1758,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         }
     }, [loading, pendingShareCode, records]);
 
-    const executeImport = async (code, retryCount = 0) => {
+   const executeImport = async (code) => {
         const cleanCode = code?.trim().toUpperCase();
         if (!cleanCode) return;
         
@@ -1755,8 +1773,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
             }
 
-            // ✨ 統一使用 get()，若遇到 offline 會被底下的 catch 捕獲並自動重試
-            const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
+            // 🚀 關鍵修復：加入 source: 'server' 強制更新，避免快取壞掉
+            const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get({ source: 'server' });
 
             if (!codeDoc || !codeDoc.exists) {
                 return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
@@ -1769,7 +1787,6 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 return showAlert("⚠️ 你已經擁有此試卷！", "重複擁有");
             }
             
-            // 🚀 核心修復：直接向雲端資料庫全域搜索是否已經擁有該試卷！
             const duplicateCheck = await window.db.collection('users').doc(user.uid).collection('quizzes')
                 .where('creatorQuizId', '==', targetQuizId)
                 .limit(1)
@@ -1785,11 +1802,10 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get();
 
                 if (!doc.exists) {
-                    return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除，或對方資料庫權限未開放。", "載入失敗");
+                    return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除，或對方權限未開放。", "載入失敗");
                 }
                 data = doc.data();
 
-                // ✨ 如果原作者使用了分離儲存，把真實的題目內容從 quizContents 抓出來
                 if (data.hasSeparatedContent) {
                     const contentDoc = await window.db.collection('users').doc(ownerId).collection('quizContents').doc(targetQuizId).get();
                     if (contentDoc.exists) {
@@ -1807,23 +1823,12 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 }
             }
 
-            // 本地名稱比對防呆
-            const isContentDuplicate = records.some(r => {
-                const localName = cleanQuizName(r.testName).split(' (來自')[0].trim();
-                const incomingName = cleanQuizName(data.testName).split(' (來自')[0].trim();
-                return localName === incomingName && Number(r.numQuestions) === Number(data.numQuestions);
-            });
-
-            if (isContentDuplicate) {
-                return showAlert(`⚠️ 你已經擁有此試卷！`, "內容重複");
-            }
-
-            const emptyAnswers = Array(Number(data.numQuestions)).fill('');
-            const emptyStarred = Array(Number(data.numQuestions)).fill(false);
+            const emptyAnswers = Array(Number(data.numQuestions || 50)).fill('');
+            const emptyStarred = Array(Number(data.numQuestions || 50)).fill(false);
             
             const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
-                testName: cleanQuizName(data.testName) + ' (來自代碼)',
-                numQuestions: data.numQuestions,
+                testName: cleanQuizName(data.testName || '未命名試卷') + ' (來自代碼)',
+                numQuestions: data.numQuestions || 50,
                 questionFileUrl: data.questionFileUrl || '',
                 correctAnswersInput: data.correctAnswersInput || '', 
                 publishAnswers: data.publishAnswers !== false,
@@ -1854,19 +1859,13 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 })
             }).catch(e => console.error("建立同步連結失敗", e));
 
-            showAlert(`✅ 成功加入「${cleanQuizName(data.testName)}」！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
+            showAlert(`✅ 成功加入「${cleanQuizName(data.testName || '未命名試卷')}」！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
 
         } catch (e) {
-            console.error(e);
-            // ✨ 終極防護：統一攔截 offline 錯誤並啟動全局自動重試
+            console.error("匯入錯誤詳細資訊:", e);
+            // 🚀 關鍵修復：移除容易卡死的迴圈，直接溫馨提示重新點擊
             if (e.message && e.message.toLowerCase().includes('offline')) {
-                if (retryCount < 3) {
-                    if (retryCount === 0) showAlert("⚠️ 網路連線喚醒中，請稍候 2~3 秒...", "連線提示");
-                    setTimeout(() => executeImport(code, retryCount + 1), 1500);
-                    return;
-                } else {
-                    return showAlert("❌ 連線逾時：\n無法成功連接至雲端，請檢查您的網路狀態後再試一次。", "網路錯誤");
-                }
+                return showAlert("⚠️ 網路喚醒中：\n剛切換視窗導致連線休眠，請「再點擊一次輸入代碼」即可成功匯入！", "連線提示");
             }
             showAlert('❌ 發生非預期錯誤：' + e.message, "系統錯誤");
         }
