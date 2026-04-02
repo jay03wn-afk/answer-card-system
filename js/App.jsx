@@ -383,7 +383,12 @@ function Main() {
                     {activeTab === 'wrongbook' && <WrongBookDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     
                     {activeTab === 'social' && <SocialDashboard user={user} userProfile={userProfile} showAlert={showAlert} showPrompt={showPrompt} />}
-                    {activeTab === 'minecraft' && <MinecraftDashboard user={user} userProfile={userProfile} showAlert={showAlert} />}
+                    {activeTab === 'minecraft' && (
+                        <div className="h-full w-full flex flex-col overflow-y-auto custom-scrollbar">
+                            <MinecraftQuizAdmin user={user} showAlert={showAlert} />
+                            <MinecraftDashboard user={user} userProfile={userProfile} showAlert={showAlert} />
+                        </div>
+                    )}
                     {activeTab === 'profile' && <ProfilePage user={user} userProfile={userProfile} showAlert={showAlert} />}
                 </div>
             ) : (
