@@ -16,11 +16,17 @@ window.auth = auth; // 確保全域可用
 window.db = db;     // 確保全域可用
 window.storage = storage; // ✨ 確保全域可用
 
-try {
-    db.enablePersistence({ synchronizeTabs: true });
-} catch (err) {
-    console.warn("無法啟動離線快取：", err);
-}
+// 🚀 終極提速：將離線快取改為「非同步」背景執行，徹底解決首次載入卡死 20 秒的問題！
+db.enablePersistence({ synchronizeTabs: true })
+    .catch((err) => {
+        if (err.code == 'failed-precondition') {
+            console.warn("無法啟動離線快取：可能有多個分頁同時開啟");
+        } else if (err.code == 'unimplemented') {
+            console.warn("無法啟動離線快取：瀏覽器不支援");
+        } else {
+            console.warn("離線快取啟動失敗：", err);
+        }
+    });
 
 const { useState, useEffect, useRef } = React;
 
