@@ -512,6 +512,12 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
     const [isClaiming, setIsClaiming] = useState(false);
 
     useEffect(() => {
+        let isMounted = true;
+        // 🚀 提速優化：設定 1.5 秒安全超時，時間一到強制解除載入畫面，絕不卡死
+        let fallbackTimer = setTimeout(() => {
+            if (isMounted) setLoading(false);
+        }, 1500);
+
         let unsubNews = () => {};
         let unsubEvents = () => {};
         let unsubCats = () => {};
@@ -519,7 +525,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
         const loadData = async () => {
             setLoading(true);
             unsubCats = window.db.collection('settings').doc('newspaper').onSnapshot(doc => {
-                if (doc.exists && doc.data().categories) {
+                if (doc.exists && doc.data().categories && isMounted) {
                     const loadedCats = doc.data().categories;
                     if (!loadedCats.includes('未分類')) loadedCats.push('未分類');
                     setCategories(loadedCats);
@@ -528,7 +534,8 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
 
             if (targetNewsId) {
                 unsubNews = window.db.collection('newsletters').doc(targetNewsId).onSnapshot({ includeMetadataChanges: true }, doc => {
-                    if (doc.metadata.fromCache && !doc.exists) return; // ✨ 擋掉無效快取
+                    if (!isMounted) return;
+                    if (doc.metadata.fromCache && !doc.exists) return; 
                     if (doc.exists) {
                         const loaded = { id: doc.id, ...doc.data() };
                         setNewsList([loaded]);
@@ -537,23 +544,28 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                         showAlert('找不到此電子報，可能已被刪除！');
                     }
                     setLoading(false);
+                    clearTimeout(fallbackTimer);
                 });
             } else {
                 unsubNews = window.db.collection('newsletters')
                 .orderBy('createdAt', 'desc')
-                .limit(5) // 🚀 提速優化：先抓 5 份日報封面，減少網路負擔
+                .limit(5) 
                 .onSnapshot({ includeMetadataChanges: true }, snap => {
-                    if (snap.empty && snap.metadata.fromCache) return; // ✨ 擋掉空快取防閃爍
+                    if (!isMounted) return;
+                    // ✨ 放寬快取限制：讓畫面秒出！
+                    if (snap.empty && snap.metadata.fromCache && !snap.metadata.hasPendingWrites) return; 
+                    
                     setNewsList(snap.docs.map(d => ({id: d.id, ...d.data()})));
                     setLoading(false);
+                    clearTimeout(fallbackTimer);
                 });
                 unsubEvents = window.db.collection('calendarEvents').orderBy('date', 'asc').onSnapshot(snap => {
-                    setEvents(snap.docs.map(d => ({id: d.id, ...d.data()})));
+                    if (isMounted) setEvents(snap.docs.map(d => ({id: d.id, ...d.data()})));
                 });
             }
         };
         loadData();
-        return () => { unsubNews(); unsubEvents(); unsubCats(); };
+        return () => { isMounted = false; clearTimeout(fallbackTimer); unsubNews(); unsubEvents(); unsubCats(); };
     }, [targetNewsId]);
 
     // 監聽閱讀視窗中的留言與獎勵領取狀態
