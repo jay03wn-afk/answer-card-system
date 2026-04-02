@@ -323,9 +323,47 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
         return changed;
     };
 
+   const handleKeyDown = (e) => {
+        // ✨ 終極防當機：攔截「全選 + 刪除/打字」，手動瞬間清空，繞過瀏覽器在巨量扁平節點的底層卡死 Bug
+        const sel = window.getSelection();
+        if (!sel || !editorRef.current) return;
+        
+        const textLen = sel.toString().length;
+        const totalLen = editorRef.current.textContent.length;
+        
+        // 如果選取範圍超過 95% 且內容大於 100 字 (視為全選狀態)
+        if (textLen >= totalLen * 0.95 && totalLen > 100) {
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                e.preventDefault(); // 阻止瀏覽器執行卡死的原生刪除
+                editorRef.current.innerHTML = ''; // 瞬間清空！
+                handleInput();
+            } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                // 如果是直接打字覆蓋
+                e.preventDefault();
+                editorRef.current.innerHTML = e.key;
+                const newRange = document.createRange();
+                newRange.selectNodeContents(editorRef.current);
+                newRange.collapse(false); // 游標移到最後
+                sel.removeAllRanges();
+                sel.addRange(newRange);
+                handleInput();
+            }
+        }
+    };
+
     const handlePaste = async (e) => {
         const clipboardData = e.clipboardData || window.clipboardData;
         if (!clipboardData) return;
+
+        // ✨ 終極防當機：攔截「全選 + 貼上」，瞬間清空舊有龐大內容
+        const sel = window.getSelection();
+        if (sel && editorRef.current) {
+            const textLen = sel.toString().length;
+            const totalLen = editorRef.current.textContent.length;
+            if (textLen >= totalLen * 0.95 && totalLen > 100) {
+                editorRef.current.innerHTML = '';
+            }
+        }
 
         const htmlData = clipboardData.getData('text/html');
         const items = clipboardData.items;
@@ -355,20 +393,21 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                 try {
                     // ✨ 終極淨化：只保留排版與純文字，徹底消滅字體、顏色、無意義空行與 Word 專屬標籤
                     let cleanedHtml = htmlData
-                        .replace(/[\r\n]+/g, " ") // ✨ 關鍵修復1：替換成「半形空白」，防止圖片標籤屬性黏在一起導致破圖！
-                        .replace(/<(xml|style|meta|link|title|o:|st1:)[^>]*>[\s\S]*?<\/\1>/gi, "") 
+                        .replace(/[\r\n]+/g, " ") 
+                        // 🚀 終極修復：修正 Word 標籤正則匹配，防止無限迴圈與崩潰當機！
+                        .replace(/<(xml|style|meta|link|title|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "") 
                         .replace(/<\!--[\s\S]*?-->/g, "") 
-                        .replace(/<!\[[^\]]+\]>/g, "") // ✨ 新增：抹除 Word 專屬的 <![if !vml]> 等條件標籤，修復圖片破圖問題
-                        .replace(/<\/?(html|head|body)[^>]*>/gi, "") // ✨ 新增：抹除不該出現的網頁外殼標籤
+                        .replace(/<!\[[^\]]+\]>/g, "") 
+                        .replace(/<\/?(html|head|body)[^>]*>/gi, "") 
                         .replace(/\s*(style|class|lang|dir|align|width|height|cellpadding|cellspacing|valign|border)="[^"]*"/gi, "") 
                         .replace(/<o:p>[\s\S]*?<\/o:p>/gi, "")
-                        .replace(/<\/(p|div|h[1-6])>/gi, "<br>") // 💡 將段落結尾強制轉為單純換行
-                        .replace(/<(p|div|h[1-6])[^>]*>/gi, "") // 💡 移除段落開頭，避免瀏覽器加上預設的上下間距
-                        .replace(/<\/?(span|font)[^>]*>/gi, "") // 剝除字體與顏色標籤
+                        .replace(/<\/(p|div|h[1-6])>/gi, "<br>") 
+                        .replace(/<(p|div|h[1-6])[^>]*>/gi, "") 
+                        .replace(/<\/?(span|font)[^>]*>/gi, "") 
                         .replace(/&nbsp;/gi, " ") 
-                        .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") // ✨ 關鍵修復2：吸除換行旁邊的空白，徹底解決多餘換行
-                        .replace(/(<br>){3,}/gi, "<br><br>") // 💡 將過多的連續換行最多壓縮成兩個(保留段落感)
-                        .replace(/^(<br>)+|(<br>)+$/gi, ""); // 移除頭尾的無意義換行
+                        .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") 
+                        .replace(/(<br>){3,}/gi, "<br><br>") 
+                        .replace(/^(<br>)+|(<br>)+$/gi, "");
 
                     let finalHtml = cleanedHtml;
                     
@@ -461,10 +500,21 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
 
                     if (editorRef.current) {
                         const tempEl = editorRef.current.querySelector(`#${tempId}`);
-                        if (tempEl) tempEl.remove();
-                        const range = window.getSelection().getRangeAt(0);
-                        const fragment = range.createContextualFragment(finalHtml);
-                        range.insertNode(fragment);
+                        const fragment = document.createRange().createContextualFragment(finalHtml);
+                        
+                        // ✨ 終極修復：防止全選貼上時 Selection API 報錯崩潰！
+                        if (tempEl && tempEl.parentNode) {
+                            tempEl.parentNode.replaceChild(fragment, tempEl);
+                        } else {
+                            try {
+                                const range = window.getSelection().getRangeAt(0);
+                                range.insertNode(fragment);
+                            } catch (selectionErr) {
+                                // 萬一使用者全選導致游標遺失，安全地將內容附加到結尾，絕不當機！
+                                editorRef.current.appendChild(fragment);
+                            }
+                        }
+                        
                         processSmilesInDOM(editorRef.current);
                         handleInput();
                     }
@@ -525,6 +575,7 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                 onInput={handleInput}
                 onPaste={handlePaste}
                 onKeyUp={handleKeyUp}
+                onKeyDown={handleKeyDown} // ✨ 綁定剛剛做好的防卡死攔截器
                 className={`${editorClassName} rich-text-container`}
                 style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
             />
@@ -1052,7 +1103,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                     
                     // ✨ 提速優化：列表頁根本不需要顯示幾萬字的題目內文，直接砍掉這裡的解壓縮，節省 90% CPU 運算時間！
                     
-                    if (data.testName && data.testName.includes('[#op]')) {
+                    if (data.testName && /\[#op\]/i.test(data.testName)) {
                         let cat = data.category || '國考題 (其他)';
                         if (!opCategories.includes(cat)) {
                             if (data.testName.includes('藥理') || data.testName.includes('藥物化學')) cat = '1. 藥理學與藥物化學';
@@ -1061,6 +1112,9 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                             else cat = '國考題 (其他)';
                         }
                         if (groupedOfficial[cat] && groupedOfficial[cat].length < 10) groupedOfficial[cat].push(data);
+                    } else if (data.testName && /\[#(m?nm?st)\]/i.test(data.testName)) {
+                        const cat = data.category || '模擬試題 (其他)';
+                        if (groupedNormal[cat] && groupedNormal[cat].length < 5) groupedNormal[cat].push(data);
                     } else {
                         const cat = data.category || '模擬試題 (其他)';
                         if (groupedNormal[cat] && groupedNormal[cat].length < 5) groupedNormal[cat].push(data);
@@ -1085,12 +1139,9 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 snap.docs.forEach(doc => {
                     const data = doc.data();
                     if (data.taskId) {
-                        try {
-                            data.userAnswers = data.userAnswers ? window.jzDecompress(data.userAnswers) : [];
-                            data.results = data.results ? window.jzDecompress(data.results) : null;
-                        } catch (e) {
-                            console.error("解壓縮失敗", e);
-                        }
+                        // 🚀 套用安全解壓縮防當機
+                        data.userAnswers = safeDecompress(data.userAnswers, 'array');
+                        data.results = safeDecompress(data.results, 'object');
                         myTaskMap[data.taskId] = { id: doc.id, ...data };
                     }
                 });
@@ -1099,14 +1150,9 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 snap.docs.forEach(doc => {
                     const data = doc.data();
                     if (!data.isShared && !data.isTask) {
-                        // ✨ 修正：出題者本人的考卷也必須經過解壓縮，否則字串無法使用 filter
-                        try {
-                            data.userAnswers = Array.isArray(data.userAnswers) ? data.userAnswers : (data.userAnswers ? window.jzDecompress(data.userAnswers) : []);
-                            data.results = data.results && typeof data.results === 'string' ? window.jzDecompress(data.results) : data.results;
-                        } catch (e) {
-                            console.error("解壓縮失敗", e);
-                            data.userAnswers = Array.isArray(data.userAnswers) ? data.userAnswers : [];
-                        }
+                        // 🚀 套用安全解壓縮防當機
+                        data.userAnswers = safeDecompress(data.userAnswers, 'array');
+                        data.results = safeDecompress(data.results, 'object');
                         // 若是出題者本人自己的考卷，任務ID 就是該考卷的 doc.id
                         // 在此注入 isTask 與 taskId 以便讓後續 UI 可以判斷為任務模式 (如開放討論區)
                         myTaskMap[doc.id] = { id: doc.id, ...data, isTask: true, taskId: doc.id };
@@ -1542,15 +1588,13 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     // ✨ 優化：如果是本地端發出的變更，不需要重新 loading
                     const isLocal = snapshot.metadata.hasPendingWrites;
                     
-                    // ✨ 終極防卡死：將解壓縮推遲到背景執行，讓載入動畫能順暢轉動
+                    
                     setTimeout(() => {
                         setRecords(snapshot.docs.map(doc => {
                             const data = doc.data();
-                            try {
-                                data.results = data.results ? window.jzDecompress(data.results) : null;
-                            } catch (e) {
-                                console.error(e);
-                            }
+                            // 🚀 全面套用安全盾牌，徹底防止「載入或刪除試卷時」讀到壞資料導致整個網頁當機！
+                            data.results = safeDecompress(data.results, 'object');
+                            data.userAnswers = safeDecompress(data.userAnswers, 'array');
                             return { id: doc.id, ...data };
                         }));
                         setLoading(false);
@@ -1677,7 +1721,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         }
     }, [loading, pendingShareCode, records]);
 
-    const executeImport = async (code) => {
+    const executeImport = async (code, retryCount = 0) => {
         const cleanCode = code?.trim().toUpperCase();
         if (!cleanCode) return;
         
@@ -1692,8 +1736,22 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
                 }
 
-                const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
-                if (!codeDoc.exists) {
+                // ✨ 終極防斷線：無條件捕捉 server 獲取失敗 (不限於 offline 字眼)，並強制啟動自動重試
+                let codeDoc;
+                try {
+                    codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get({ source: 'server' });
+                } catch (err) {
+                    // 只要無法從伺服器抓取，代表連線還在喚醒，直接進入重試倒數
+                    if (retryCount < 3) {
+                        if (retryCount === 0) showAlert("⚠️ 正在與雲端建立安全連線，請稍候 2~3 秒...", "連線提示");
+                        setTimeout(() => executeImport(code, retryCount + 1), 1500);
+                        return; // 等待下一次執行
+                    }
+                    // 重試 3 次都失敗，才退而求其次使用快取
+                    codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
+                }
+
+                if (!codeDoc || !codeDoc.exists) {
                     return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
                 }
 
@@ -1820,11 +1878,33 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         }).catch(e => showAlert('分享失敗：' + e.message));
     };
 
-    const handleEditQuiz = (rec) => {
-        if (rec.hasNewSuggestion) {
-            window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update({ hasNewSuggestion: false });
+    const handleEditQuiz = async (rec) => {
+        setIsJumping(true);
+        try {
+            let finalRec = { ...rec };
+            
+            // ✨ 修復：如果試卷內容被分離了，必須從 quizContents 抓回來，否則從首頁進入編輯會是一片空白！
+            if (finalRec.hasSeparatedContent) {
+                const contentSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get();
+                if (contentSnap.exists) {
+                    const contentData = contentSnap.data();
+                    finalRec.questionText = contentData.questionText || '';
+                    finalRec.questionHtml = contentData.questionHtml || '';
+                    finalRec.explanationHtml = contentData.explanationHtml || '';
+                }
+            }
+
+            if (finalRec.hasNewSuggestion) {
+                window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update({ hasNewSuggestion: false });
+                finalRec.hasNewSuggestion = false;
+            }
+            onContinueQuiz({ ...finalRec, forceStep: 'edit' });
+        } catch (error) {
+            console.error(error);
+            showAlert('載入試卷失敗：' + error.message);
+        } finally {
+            setIsJumping(false);
         }
-        onContinueQuiz({ ...rec, forceStep: 'edit' });
     };
 
     const toggleFilter = (key) => setFilters(prev => ({ ...prev, [key]: !prev[key] }));
@@ -2325,6 +2405,18 @@ const AnswerGridInput = ({ value, onChange, maxQuestions, showConfirm }) => {
     );
 };
 
+// ✨ 終極防護：安全解壓縮函式 (改為 function 提升作用域，並攔截陣列/物件防當機)
+function safeDecompress(val, fallbackType = 'string') {
+    if (!val) return fallbackType === 'array' ? [] : (fallbackType === 'object' ? null : '');
+    if (typeof val === 'object') return val; // 🚀 關鍵防護：如果已經是陣列或物件，絕對不呼叫解壓縮，直接回傳！
+    try {
+        const res = window.jzDecompress(val);
+        return res || (fallbackType === 'array' ? [] : (fallbackType === 'object' ? null : ''));
+    } catch (e) {
+        return val; // 如果解壓縮失敗，代表它原本就沒有被壓縮過，直接原樣回傳！
+    }
+}
+
 function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard: originalBack, showAlert, showConfirm, showPrompt }) {
     // ✨ 安全退出機制：微延遲 50 毫秒，讓存檔與解壓縮動作錯開，避免畫面卡死
     const onBackToDashboard = () => setTimeout(originalBack, 50);
@@ -2336,15 +2428,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [step, setStep] = useState(initialRecord.forceStep || (initialRecord.results ? 'results' : (initialRecord.id ? 'answering' : 'setup')));
     const [testName, setTestName] = useState(initialRecord.testName || '');
     const [numQuestions, setNumQuestions] = useState(initialRecord.numQuestions || 50);
-    const [userAnswers, setUserAnswers] = useState(window.jzDecompress(initialRecord.userAnswers) || []);
+    
+    // ✨ 套用安全解壓縮，徹底消滅點擊編輯時的當機與白屏問題
+    const [userAnswers, setUserAnswers] = useState(safeDecompress(initialRecord.userAnswers, 'array'));
     const [starred, setStarred] = useState(initialRecord.starred || []);
     const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
-    const [results, setResults] = useState(window.jzDecompress(initialRecord.results) || null);
+    const [results, setResults] = useState(safeDecompress(initialRecord.results, 'object'));
     const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
-    const [questionText, setQuestionText] = useState(window.jzDecompress(initialRecord.questionText) || '');
-    // 🚀 效能修復：進入測驗時，才進行富文本與詳解的解壓縮，拯救列表載入時的 CPU 效能
-    const [questionHtml, setQuestionHtml] = useState(window.jzDecompress(initialRecord.questionHtml) || ''); 
-    const [explanationHtml, setExplanationHtml] = useState(window.jzDecompress(initialRecord.explanationHtml) || '');
+    const [questionText, setQuestionText] = useState(safeDecompress(initialRecord.questionText, 'string'));
+    const [questionHtml, setQuestionHtml] = useState(safeDecompress(initialRecord.questionHtml, 'string')); 
+    const [explanationHtml, setExplanationHtml] = useState(safeDecompress(initialRecord.explanationHtml, 'string'));
     const [folder, setFolder] = useState(initialRecord.folder || '未分類');
     const [shortCode, setShortCode] = useState(initialRecord.shortCode || null);
     const [pdfZoom, setPdfZoom] = useState(1);
@@ -2404,13 +2497,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             cleaned = cleaned.replace(/data-drawn="true"/gi, '');
 
             // 3. 遞迴拔除尾部的空行、空段落、無意義標籤 (解決 D 選項多一行的問題)
+            // 3. 遞迴拔除尾部的空行、空段落、無意義標籤 (解決 D 選項多一行的問題)
             let prev;
             do {
                 prev = cleaned;
-                // 砍掉結尾的單純換行與各種網頁空白實體
-                cleaned = cleaned.replace(/(<br\s*\/?>|&nbsp;|&ensp;|&emsp;|\s)+$/gi, '');
-                // 砍掉結尾的空殼標籤，動態支援所有 HTML 標籤的「洋蔥式剝除法」(例如 <p><span><br></span></p> 會被層層剝除乾淨)
-                cleaned = cleaned.replace(/<([a-z0-9]+)[^>]*>(\s|&nbsp;|&ensp;|&emsp;|<br\s*\/?>)*<\/\1>$/gi, '');
+                cleaned = cleaned.replace(/(?:<br\s*\/?>|&nbsp;|&ensp;|&emsp;|\s)+$/gi, '');
+                // 🚀 終極防卡死：使用兩段式配對，徹底消滅正則迴溯災難 (Catastrophic Backtracking)！
+                cleaned = cleaned.replace(/<([a-z0-9]+)[^>]*>([\s\S]*?)<\/\1>$/gi, (match, tag, inner) => {
+                    if (/^(?:<br\s*\/?>|&nbsp;|&ensp;|&emsp;|\s)*$/gi.test(inner)) return '';
+                    return match;
+                });
             } while (cleaned !== prev);
             
             return cleaned.trim();
@@ -2655,12 +2751,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 explanationHtml: explanationHtml
             });
 
-            setQuizId(docRef.id);
+           setQuizId(docRef.id);
 
-            const isOp = testName.includes('[#op]');
-            const isMnst = testName.includes('[#mnst]') || testName.includes('[#nmst]');
-            
-            if (isOp || isMnst) {
+                const isOp = /\[#op\]/i.test(testName);
+                const isMnst = /\[#(m?nm?st)\]/i.test(testName);
+                
+                if (isOp || isMnst) {
                 let category = '模擬試題 (其他)';
                 if (isOp) {
                     if (testName.includes('藥理') || testName.includes('藥物化學')) category = '1. 藥理學與藥物化學';
@@ -2768,21 +2864,23 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         // ✨ 終極清洗：在存檔前，強制拔除所有隱形的 Word 格式垃圾與 XML 標籤，這能讓體積縮減 90%
         const ultraClean = (html) => {
             if(!html) return '';
-            return html.replace(/[\r\n]+/g, " ") // ✨ 關鍵修復1：替換成「半形空白」，保護圖片 src 屬性
-                       .replace(/<(xml|style|meta|link|title|o:|st1:)[^>]*>[\s\S]*?<\/\1>/gi, "")
+            return html.replace(/[\r\n]+/g, " ") 
+                       // 🚀 終極修復：修正 Word 標籤正則匹配，防止存檔時無限迴圈與崩潰當機！
+                       .replace(/<(xml|style|meta|link|title|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "")
                        .replace(/<\!--[\s\S]*?-->/g, "")
-                       .replace(/<!\[[^\]]+\]>/g, "") // ✨ 新增：抹除 Word 專屬的 <![if !vml]> 等條件標籤，修復圖片破圖問題
-                       .replace(/<\/?(html|head|body)[^>]*>/gi, "") // ✨ 新增：抹除不該出現的網頁外殼標籤
+                       .replace(/<!\[[^\]]+\]>/g, "") 
+                       .replace(/<\/?(html|head|body)[^>]*>/gi, "") 
                        .replace(/\s*(style|class|lang|dir|align|width|height|cellpadding|cellspacing|valign|border)="[^"]*"/gi, "")
                        .replace(/<o:p>[\s\S]*?<\/o:p>/gi, "")
                        .replace(/<\/(p|div|h[1-6])>/gi, "<br>")
                        .replace(/<(p|div|h[1-6])[^>]*>/gi, "")
                        .replace(/<\/?(span|font)[^>]*>/gi, "")
                        .replace(/&nbsp;/gi, " ")
-                       .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") // ✨ 關鍵修復2：吸除換行旁邊的空白
+                       .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") 
                        .replace(/(<br>){3,}/gi, "<br><br>")
                        .replace(/^(<br>)+|(<br>)+$/gi, "");
         };
+        
 
         // ✨ 終極優化：將富文本 HTML 也進行 JZ 壓縮存檔，這能讓 1000KB 的傳輸量瞬間降到 100KB 以下！
         const cleanAndCompress = (html, label) => {
@@ -2829,15 +2927,17 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(lightUpdates);
                 
                 if (Object.keys(heavyUpdates).length > 0) {
-                    await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).set(heavyUpdates, { merge: true });
-                }
-                setSyncStatus(prev => ({ ...prev, current: 1 }));
+                        await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).set(heavyUpdates, { merge: true });
+                    }
+                    setSyncStatus(prev => ({ ...prev, current: 1 }));
 
-                // 2. 處理任務牆 (如果是國考/模擬題)
-                if (testName.includes('[#mnst]') || testName.includes('[#nmst]') || testName.includes('[#op]')) {
-                    const taskUpdates = { ...updates, creatorUid: currentUser.uid, numQuestions, hasTimer, timeLimit };
-                    await window.db.collection('publicTasks').doc(quizId).set(taskUpdates, { merge: true });
-                }
+                    // 2. 處理任務牆 (如果是國考/模擬題)
+                    if (/\[#(op|m?nm?st)\]/i.test(testName)) {
+                        const taskUpdates = { ...updates, creatorUid: currentUser.uid, numQuestions, hasTimer, timeLimit };
+                        await window.db.collection('publicTasks').doc(quizId).set(taskUpdates, { merge: true });
+                    }
+
+                    // 3. 同步給所有學生 (包含自動重算分數)
 
                 // 3. 同步給所有學生 (包含自動重算分數)
                 if (syncCount > 0) {
@@ -2982,14 +3082,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
         try {
             await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
-                correctAnswersInput: cleanKey,
-                results: window.jzCompress(newResults)
-            });
+                    correctAnswersInput: cleanKey,
+                    results: window.jzCompress(newResults)
+                });
 
-            const isOp = testName.includes('[#op]');
-            const isMnst = testName.includes('[#mnst]') || testName.includes('[#nmst]');
-            
-            if (!isShared && !isTask && (isMnst || isOp)) {
+                const isOp = /\[#op\]/i.test(testName);
+                const isMnst = /\[#(m?nm?st)\]/i.test(testName);
+                
+                if (!isShared && !isTask && (isMnst || isOp)) {
                 let category = '模擬試題 (其他)';
                 
                 if (isOp) {
