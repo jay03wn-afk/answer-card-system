@@ -1841,6 +1841,17 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 finalRec = { id: docSnap.id, ...docSnap.data() };
             }
 
+            // ✨ 救星：把存在獨立資料庫的「龐大考卷內容」抓下來合併
+            if (finalRec.hasSeparatedContent) {
+                const contentSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get({ source: 'server' });
+                if (contentSnap.exists) {
+                    const contentData = contentSnap.data();
+                    finalRec.questionText = contentData.questionText || '';
+                    finalRec.questionHtml = contentData.questionHtml || '';
+                    finalRec.explanationHtml = contentData.explanationHtml || '';
+                }
+            }
+
             // ✨ 終極同步機制：如果是從任務牆下載的題目，再額外核對公版答案
             if (finalRec.isTask && finalRec.taskId) {
                 const taskDoc = await window.db.collection('publicTasks').doc(finalRec.taskId).get({ source: 'server' });
@@ -2485,16 +2496,22 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             const timer = setTimeout(() => {
                 const stateToSave = { 
                     testName, numQuestions, userAnswers: window.jzCompress(userAnswers), starred, correctAnswersInput, results: window.jzCompress(results), 
-                    questionFileUrl, questionText: window.jzCompress(questionText), 
-                    questionHtml, explanationHtml, // ✨ 修復：將富文本與詳解加入自動存檔，避免切換時消失
-                    hasTimer, timeLimit, folder,
+                    questionFileUrl, hasTimer, timeLimit, folder, hasSeparatedContent: true,
                     updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 };
                 if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
 
+                // 1. 儲存輕量外殼
                 window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
-                    .catch(e => console.error("自動儲存失敗", e));
-            }, 1500); 
+                    .catch(e => console.error("自動儲存外殼失敗", e));
+                
+                // 2. 儲存肥大內容
+                window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).set({
+                    questionText: window.jzCompress(questionText),
+                    questionHtml: questionHtml,
+                    explanationHtml: explanationHtml
+                }, { merge: true }).catch(e => console.error("自動儲存內容失敗", e));
+            }, 1500);
             
             return () => clearTimeout(timer); // 如果 1.5 秒內又有變動，就取消上一次的存檔，重新計時
         }
@@ -2587,19 +2604,25 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         setQuestionHtml(finalQuestionHtml);
 
         try {
+            // ✨ 1. 先在 quizzes 建立輕量級的「考卷外殼」，列表秒開就靠這個
             const docRef = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                 testName, numQuestions, userAnswers: window.jzCompress(initialAnswers), starred: initialStarred,
                 correctAnswersInput: cleanKey,
                 publishAnswers: true, 
                 questionFileUrl: finalFileUrl,
-                questionText: window.jzCompress(finalQuestionText),
-                questionHtml: finalQuestionHtml,
-                explanationHtml: explanationHtml,
                 hasTimer: hasTimer,
                 timeLimit: hasTimer ? Number(timeLimit) : null,
                 timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
                 folder: folder,
+                hasSeparatedContent: true, // 標記這份考卷的內容已經分離
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            // ✨ 2. 把又肥又大的題目與詳解，存到獨立的 quizContents 集合裡
+            await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(docRef.id).set({
+                questionText: window.jzCompress(finalQuestionText),
+                questionHtml: finalQuestionHtml,
+                explanationHtml: explanationHtml
             });
 
             setQuizId(docRef.id);
@@ -2683,6 +2706,18 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         // ✨ 取得原始資料進行比對 (省流量關鍵)
         const myDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
         const oldData = myDoc.data() || {};
+        
+        // ✨ 把分離的龐大內容抓回來組合，才能正確比對有沒有修改
+        if (oldData.hasSeparatedContent) {
+            const contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get();
+            if (contentDoc.exists) {
+                const contentData = contentDoc.data();
+                oldData.questionText = contentData.questionText || '';
+                oldData.questionHtml = contentData.questionHtml || '';
+                oldData.explanationHtml = contentData.explanationHtml || '';
+            }
+        }
+        
         const latestSharedTo = oldData.sharedTo || [];
         const syncCount = latestSharedTo.length;
 
@@ -2751,11 +2786,19 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             try {
                 setSyncStatus({ isSyncing: true, current: 0, total: syncCount + 1 });
                 
-                // 1. 儲存自己這份
-                await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
-                    ...updates,
-                    updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                });
+               // 1. 儲存自己這份 (拆分輕重資料)
+                const lightUpdates = { ...updates, updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(), hasSeparatedContent: true };
+                const heavyUpdates = {};
+                
+                if ('questionText' in lightUpdates) { heavyUpdates.questionText = lightUpdates.questionText; delete lightUpdates.questionText; }
+                if ('questionHtml' in lightUpdates) { heavyUpdates.questionHtml = lightUpdates.questionHtml; delete lightUpdates.questionHtml; }
+                if ('explanationHtml' in lightUpdates) { heavyUpdates.explanationHtml = lightUpdates.explanationHtml; delete lightUpdates.explanationHtml; }
+
+                await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(lightUpdates);
+                
+                if (Object.keys(heavyUpdates).length > 0) {
+                    await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).set(heavyUpdates, { merge: true });
+                }
                 setSyncStatus(prev => ({ ...prev, current: 1 }));
 
                 // 2. 處理任務牆 (如果是國考/模擬題)
@@ -3328,6 +3371,18 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             const doc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
             if (doc.exists) {
                 const data = doc.data();
+                
+                // ✨ 讀取獨立儲存的肥大內容
+                if (data.hasSeparatedContent) {
+                    const contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get();
+                    if (contentDoc.exists) {
+                        const contentData = contentDoc.data();
+                        data.questionText = contentData.questionText || '';
+                        data.questionHtml = contentData.questionHtml || '';
+                        data.explanationHtml = contentData.explanationHtml || '';
+                    }
+                }
+
                 setTestName(data.testName || '');
                 setCorrectAnswersInput(data.correctAnswersInput || '');
                 setQuestionFileUrl(data.questionFileUrl || '');
