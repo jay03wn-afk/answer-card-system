@@ -1687,28 +1687,50 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         }
 
         try {
-            const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
-            if (isDuplicateCode) {
-                return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
-            }
+                const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
+                if (isDuplicateCode) {
+                    return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
+                }
 
-            const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
-            if (!codeDoc.exists) {
-                return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
-            }
+                const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
+                if (!codeDoc.exists) {
+                    return showAlert("❌ 找不到該代碼：\n請確認代碼是否輸入正確，或該代碼已失效。", "查無資料");
+                }
 
-            const { ownerId, quizId: targetQuizId } = codeDoc.data();
+                const { ownerId, quizId: targetQuizId } = codeDoc.data();
 
             if (ownerId === user.uid) {
                 return showAlert("⚠️ 你已經擁有此試卷！", "重複擁有");
             }
 
-            const doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get({ source: 'server' });
+           // ✨ 終極防斷線：移除強制 { source: 'server' }，讓 Firebase 彈性等待 WebSocket 連線
+            let doc;
+            try {
+                doc = await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).get();
+            } catch (err) {
+                if (err.message.includes('offline')) {
+                    return showAlert("⚠️ 伺服器喚醒中：\n系統正在與雲端建立安全連線，請稍等 2~3 秒後「再點一次」即可！", "連線提示");
+                }
+                throw err;
+            }
+
             if (!doc.exists) {
                 return showAlert("❌ 試卷已不存在：\n原作者可能已將此試卷刪除。", "載入失敗");
             }
             
-            const data = doc.data();
+            let data = doc.data();
+
+            // ✨ 新增：如果原作者使用了分離儲存，必須把真實的題目內容從 quizContents 抓出來
+            if (data.hasSeparatedContent) {
+                // ✨ 這裡也一併移除 { source: 'server' }，防止抓取大檔時斷線
+                const contentDoc = await window.db.collection('users').doc(ownerId).collection('quizContents').doc(targetQuizId).get();
+                if (contentDoc.exists) {
+                    const contentData = contentDoc.data();
+                    data.questionText = contentData.questionText || '';
+                    data.questionHtml = contentData.questionHtml || '';
+                    data.explanationHtml = contentData.explanationHtml || '';
+                }
+            }
 
             const isContentDuplicate = records.some(r => {
                 const localName = cleanQuizName(r.testName).split(' (來自')[0].trim();
@@ -1723,13 +1745,11 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             const emptyAnswers = Array(Number(data.numQuestions)).fill('');
             const emptyStarred = Array(Number(data.numQuestions)).fill(false);
             
+            // ✨ 修正：依照新版架構，將外殼與內容分開儲存，確保不會遺失題目
             const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
                 testName: cleanQuizName(data.testName) + ' (來自代碼)',
                 numQuestions: data.numQuestions,
                 questionFileUrl: data.questionFileUrl || '',
-                questionText: data.questionText || '',
-                questionHtml: data.questionHtml || '',
-                explanationHtml: data.explanationHtml || '', 
                 correctAnswersInput: data.correctAnswersInput || '', 
                 publishAnswers: data.publishAnswers !== false,
                 userAnswers: emptyAnswers,
@@ -1742,7 +1762,15 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 creatorQuizId: targetQuizId,
                 folder: '未分類', 
                 shortCode: cleanCode, 
+                hasSeparatedContent: true, // ✨ 標記為分離儲存
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            // ✨ 修正：將肥大的題目與詳解內容存入專屬的 quizContents
+            await window.db.collection('users').doc(user.uid).collection('quizContents').doc(newDocRef.id).set({
+                questionText: data.questionText || '',
+                questionHtml: data.questionHtml || '',
+                explanationHtml: data.explanationHtml || ''
             });
 
             await window.db.collection('users').doc(ownerId).collection('quizzes').doc(targetQuizId).update({
