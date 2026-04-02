@@ -71,19 +71,18 @@ if (typeof window !== 'undefined' && !window.smilesDrawerObserverInit) {
             });
         };
 
-        drawAllSmiles();
-        // 建立 DOM 觀察者：不論是跳轉畫面、載入新題目、還是貼上文字，只要出現新的化學式就立刻畫圖！
-        const observer = new MutationObserver((mutations) => {
-            let shouldDraw = false;
-            for (let m of mutations) {
-                if (m.addedNodes.length > 0) {
-                    shouldDraw = true;
-                    break;
-                }
-            }
-            if (shouldDraw) setTimeout(drawAllSmiles, 50);
+       drawAllSmiles();
+        // 🚀 降溫優化：限制繪圖引擎的掃描頻率與範圍，避免在背景載入數據時拖慢整體效能
+        let drawTimer = null;
+        const observer = new MutationObserver(() => {
+            if (drawTimer) return;
+            drawTimer = setTimeout(() => {
+                drawAllSmiles();
+                drawTimer = null;
+            }, 300); // 頻率從 50ms 降至 300ms，大幅節省 CPU
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        const targetNode = document.getElementById('root') || document.body;
+        observer.observe(targetNode, { childList: true, subtree: true });
     };
     document.head.appendChild(script);
 }
