@@ -670,6 +670,7 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
 
 // --- 錯題整理組件 ---
 // --- 錯題整理組件 ---
+// --- 錯題整理組件 ---
 function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContinueQuiz }) {
     const [wrongItems, setWrongItems] = useState([]);
     const [customFolders, setCustomFolders] = useState([]);
@@ -678,25 +679,21 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const [currentFolder, setCurrentFolder] = useState('全部');
     const [previewImage, setPreviewImage] = useState(null);
 
-    // ✨ 跳轉試卷時的載入狀態
     const [isJumping, setIsJumping] = useState(false);
-    const [visibleLimit, setVisibleLimit] = useState(5); // 🚀 提速優化：錯題本初始只抓 5 題
+    const [visibleLimit, setVisibleLimit] = useState(5); 
     const [isSyncingWb, setIsSyncingWb] = useState(false);
 
     useEffect(() => {
         let isMounted = true;
-        // 🚀 提速優化：設定 1.5 秒安全超時，時間一到強制解除載入畫面，絕不卡死
         let fallbackTimer = setTimeout(() => {
             if (isMounted) setLoading(false);
         }, 1500);
 
-       // 抓取錯題資料
         const unsubItems = window.db.collection('users').doc(user.uid).collection('wrongBook')
             .orderBy('createdAt', 'desc')
             .limit(visibleLimit) 
             .onSnapshot({ includeMetadataChanges: true }, snap => {
                 if (!isMounted) return;
-                // ✨ 放寬快取限制：只要有資料或伺服器回應，瞬間渲染！
                 if (snap.empty && snap.metadata.fromCache && !snap.metadata.hasPendingWrites) return; 
                 
                 setWrongItems(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -717,7 +714,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const filteredItems = currentFolder === '全部' ? wrongItems : wrongItems.filter(item => (item.folder || '未分類') === currentFolder);
 
     useEffect(() => {
-        setVisibleLimit(5); // 🚀 配合初始值修改為 5
+        setVisibleLimit(5); 
     }, [currentFolder]);
 
     const displayedItems = filteredItems.slice(0, visibleLimit);
@@ -767,7 +764,6 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
             setIsSyncingWb(false);
         };
         
-        // 🚀 提速優化：將背景同步延遲到 2 秒後才開始，讓路給主要介面的渲染
         const timer = setTimeout(() => { checkUpdates(); }, 2000);
         return () => clearTimeout(timer);
         
@@ -779,10 +775,81 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
         });
     };
 
+    // ✨ 新增：刪除錯題資料夾功能
+    const handleDeleteWrongBookFolder = () => {
+        if (currentFolder === '全部' || currentFolder === '未分類') return;
+        showConfirm(`確定要刪除「${currentFolder}」資料夾嗎？\n裡面的錯題將會自動移至「未分類」。`, async () => {
+            try {
+                const snapshot = await window.db.collection('users').doc(user.uid).collection('wrongBook').where('folder', '==', currentFolder).get();
+                
+                if (!snapshot.empty) {
+                    const batches = [];
+                    let currentBatch = window.db.batch();
+                    let count = 0;
+
+                    snapshot.docs.forEach(doc => {
+                        currentBatch.update(doc.ref, { folder: '未分類' });
+                        count++;
+                        if (count === 490) { // Firebase batch 上限 500
+                            batches.push(currentBatch.commit());
+                            currentBatch = window.db.batch();
+                            count = 0;
+                        }
+                    });
+                    if (count > 0) batches.push(currentBatch.commit());
+                    await Promise.all(batches);
+                }
+                
+                await window.db.collection('users').doc(user.uid).set({
+                    wrongBookFolders: window.firebase.firestore.FieldValue.arrayRemove(currentFolder)
+                }, { merge: true });
+                
+                setCurrentFolder('全部');
+                showAlert(`✅ 已刪除「${currentFolder}」資料夾！`);
+            } catch (err) {
+                showAlert('刪除失敗：' + err.message);
+            }
+        });
+    };
+
+    // ✨ 新增：一鍵清空錯題功能
+    const handleClearWrongBookFolder = () => {
+        showConfirm(`確定要清空「${currentFolder}」內的所有錯題嗎？\n此動作無法復原！`, async () => {
+            try {
+                let query = window.db.collection('users').doc(user.uid).collection('wrongBook');
+                if (currentFolder !== '全部') {
+                    query = query.where('folder', '==', currentFolder);
+                }
+                
+                const snapshot = await query.get();
+                if (snapshot.empty) return showAlert(`「${currentFolder}」內已經沒有錯題了！`);
+
+                const batches = [];
+                let currentBatch = window.db.batch();
+                let count = 0;
+
+                snapshot.docs.forEach(doc => {
+                    currentBatch.delete(doc.ref);
+                    count++;
+                    if (count === 490) {
+                        batches.push(currentBatch.commit());
+                        currentBatch = window.db.batch();
+                        count = 0;
+                    }
+                });
+                if (count > 0) batches.push(currentBatch.commit());
+                await Promise.all(batches);
+                
+                showAlert(`✅ 已成功清空「${currentFolder}」的所有錯題！`);
+            } catch (err) {
+                showAlert('清空失敗：' + err.message);
+            }
+        });
+    };
+
     const handleGoToQuiz = async (quizId) => {
         setIsJumping(true); 
         try {
-            // ✨ 修復：錯題本跳轉試卷時，必須先嘗試跟伺服器要最新版，否則改完答案錯題本還是舊的
             let doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'server' }).catch(() => null);
             if (!doc || !doc.exists) {
                 doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'cache' });
@@ -802,7 +869,6 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
         }
     };
 
-    // ✨ 新增：錯題重測邏輯
     const handleRetakeWrong = async () => {
         if (filteredItems.length === 0) {
             return showAlert("此分類目前沒有錯題可供測驗喔！");
@@ -816,7 +882,6 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
 
                 filteredItems.forEach((item, index) => {
                     const qNum = index + 1;
-                    // ✨ 智慧繼承：錯題重測時優先抓取原汁原味的富文本，保證排版不走鐘
                     let qContent = item.qHtml ? item.qHtml : (item.qText || '無題目文字');
                     if (item.qImage) {
                         qContent += `<br/><br/><img src="${item.qImage}" style="max-width:100%; border-radius:8px;" />`;
@@ -852,7 +917,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
 
                 if (!customFolders.includes('錯題重測')) {
                     await window.db.collection('users').doc(user.uid).set({
-                        folders: window.firebase.firestore.FieldValue.arrayUnion('錯題重測')
+                        wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion('錯題重測')
                     }, { merge: true });
                 }
 
@@ -910,6 +975,26 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     >
                         + 新增錯題資料夾
                     </button>
+
+                    {/* ✨ 新增：一鍵清空錯題功能 */}
+                    {currentFolder !== '全部' && (
+                        <button 
+                            onClick={handleClearWrongBookFolder} 
+                            className="px-3 py-1.5 text-sm font-bold bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800 no-round whitespace-nowrap transition-colors shrink-0"
+                        >
+                            🧹 清空分類
+                        </button>
+                    )}
+                    
+                    {/* ✨ 新增：刪除錯題資料夾功能 */}
+                    {currentFolder !== '全部' && currentFolder !== '未分類' && (
+                        <button 
+                            onClick={handleDeleteWrongBookFolder} 
+                            className="px-3 py-1.5 text-sm font-bold bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors shrink-0"
+                        >
+                            🗑️ 刪除資料夾
+                        </button>
+                    )}
                 </div>
             </div>
             
@@ -945,13 +1030,11 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                              <div className="mb-3">
                                  <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">📝 題目</p>
                                  <div className="bg-white dark:bg-gray-900 p-3 text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap border-l-4 border-blue-500 font-bold shadow-sm">
-                                     {/* ✨ 雙軌顯示：優先渲染富文本及化學式，若無則降級為純文字 */}
                                      {item.qHtml ? (
                                          <>
                                              <style dangerouslySetInnerHTML={{__html: `
                                                  .wb-rich-text { word-break: break-word; white-space: pre-wrap; }
                                                  .wb-rich-text * { color: inherit !important; background-color: transparent !important; }
-                                                 /* ✨ 修復：強制富文本內的圖片與畫布保持正常比例與白底，避免縮小 */
                                                  .wb-rich-text img {
                                                      display: block !important;
                                                      max-width: 100% !important;
@@ -1045,7 +1128,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                         folder: editingItem.folder || '未分類',
                         userFolders: folders.filter(f => f !== '全部'),
                         qText: editingItem.qText || '',
-                        qHtml: editingItem.qHtml || '', // ✨ 傳入富文本
+                        qHtml: editingItem.qHtml || '', 
                         qImage: editingItem.qImage || null,
                         nText: editingItem.nText || editingItem.note || '',
                         nImage: editingItem.nImage || null
@@ -1055,7 +1138,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                         await window.db.collection('users').doc(user.uid).collection('wrongBook').doc(editingItem.id).update({
                             folder: data.folder || '未分類',
                             qText: data.qText,
-                            qHtml: data.qHtml || '', // ✨ 儲存富文本
+                            qHtml: data.qHtml || '', 
                             qImage: data.qImage,
                             nText: data.nText,
                             nImage: data.nImage,
@@ -1559,8 +1642,9 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     const [pendingShareCode, setPendingShareCode] = useState(() => new URLSearchParams(window.location.search).get('shareCode'));
 
     const specialFolders = ['我建立的試題', '未分類', '任務牆'];
-    const rawUserFolders = (userProfile.folders || []).filter(f => !specialFolders.includes(f));
-    const userFolders = [...specialFolders, ...rawUserFolders];
+    const dynamicFolders = records.map(r => r.folder).filter(f => f && !specialFolders.includes(f));
+    const rawUserFolders = [...(userProfile.folders || []), ...dynamicFolders].filter(f => !specialFolders.includes(f));
+    const userFolders = [...specialFolders, ...Array.from(new Set(rawUserFolders))];
     
     const [currentFolder, setCurrentFolder] = useState('我建立的試題');
     const [filters, setFilters] = useState({ todo: true, doing: true, done: true });
