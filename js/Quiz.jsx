@@ -5,11 +5,12 @@ const cleanQuizName = (name) => {
 };
 
 // --- 新增：特殊試卷名稱渲染輔助函式 ---
-const renderTestName = (rawName, isCompleted = false) => {
+const renderTestName = (rawName, isCompleted = false, type = null) => {
     if (!rawName) return '';
     const cleanName = cleanQuizName(rawName);
-    const isOp = /\[#op\]/i.test(rawName);
-    const isMnst = /\[#m?nm?st\]/i.test(rawName);
+    // ✨ 智慧偵測：如果字串裡有標籤，或是資料屬性 type 是 official/mock，就顯示標記
+    const isOp = /\[#op\]/i.test(rawName) || type === 'official';
+    const isMnst = /\[#m?nm?st\]/i.test(rawName) || type === 'mock';
 
     if (isOp) {
         return (
@@ -587,90 +588,7 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
 }
 
 // --- 新增：錯題編輯 Modal ---
-function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
-    const [folder, setFolder] = useState(initialData?.folder || '未分類');
-    const [newFolder, setNewFolder] = useState('');
-    const [qText, setQText] = useState(initialData?.qText || '');
-    const [qHtml] = useState(initialData?.qHtml || ''); // ✨ 新增：富文本唯讀狀態
-    const [qImage, setQImage] = useState(initialData?.qImage || null);
-    const [nText, setNText] = useState(initialData?.nText || '');
-    const [nImage, setNImage] = useState(initialData?.nImage || null);
-    const [isSaving, setIsSaving] = useState(false);
 
-    const handleSave = async () => {
-        const finalFolder = (folder === '新增資料夾' ? newFolder.trim() : folder) || '未分類';
-        setIsSaving(true);
-        // ✨ 修改：儲存時一併帶上 qHtml
-        await onSave({ folder: finalFolder, qText: qText.trim(), qHtml, qImage, nText: nText.trim(), nImage });
-        setIsSaving(false);
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100] p-4">
-            <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-lg no-round shadow-2xl transform transition-all max-h-[90dvh] overflow-y-auto custom-scrollbar border-t-4 border-black dark:border-gray-500">
-                <h3 className="font-black text-xl mb-4 flex justify-between items-center dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
-                    <span>{title}</span>
-                    <button onClick={onClose} className="text-gray-400 hover:text-red-500 font-bold transition-colors">✖</button>
-                </h3>
-                
-                <div className="mb-4">
-                    <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">📁 選擇資料夾</label>
-                    <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none text-sm mb-2">
-                        {initialData?.userFolders && initialData.userFolders.map(f => <option key={f} value={f}>{f}</option>)}
-                        {!initialData?.userFolders?.includes('未分類') && <option value="未分類">未分類</option>}
-                        <option value="新增資料夾">+ 新增資料夾</option>
-                    </select>
-                    {folder === '新增資料夾' && (
-                        <input type="text" placeholder="輸入新資料夾名稱..." value={newFolder} onChange={e => setNewFolder(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-black dark:text-white no-round outline-none text-sm" />
-                    )}
-                </div>
-
-               {/* ✨ 智慧判斷：如果有富文本，就顯示唯讀排版；如果沒有，就維持舊版的純文字編輯器 */}
-                {qHtml ? (
-                    <div className="mb-4">
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">📝 題目內容 (系統自動擷取，原稿保護中不可編輯)</label>
-                        <div className="border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 p-3 max-h-48 overflow-y-auto custom-scrollbar no-round shadow-inner">
-                            <style dangerouslySetInnerHTML={{__html: `
-                                .modal-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.875rem; line-height: 1.6; }
-                                .modal-rich-text * { color: inherit !important; background-color: transparent !important; }
-                                /* ✨ 修復：強制富文本內的圖片與畫布保持正常比例與白底，避免縮小 */
-                                .modal-rich-text img {
-                                    display: block !important;
-                                    max-width: 100% !important;
-                                    height: auto !important;
-                                    margin: 10px 0 !important;
-                                    background-color: #ffffff !important;
-                                    opacity: 1 !important;
-                                    visibility: visible !important;
-                                    border-radius: 4px;
-                                }
-                                .modal-rich-text canvas {
-                                    background-color: #ffffff !important;
-                                }
-                            `}} />
-                            <div className="modal-rich-text text-black dark:text-white font-medium" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(qHtml) }} />
-                        </div>
-                    </div>
-                ) : (
-                    <RichInput label="📝 題目內容" text={qText} setText={setQText} image={qImage} setImage={setQImage} maxLength={300} showAlert={showAlert} />
-                )}
-                
-                <RichInput label="💡 我的筆記 / 詳解" text={nText} setText={setNText} image={nImage} setImage={setNImage} maxLength={300} showAlert={showAlert} />
-                
-                <div className="flex justify-end space-x-3 mt-6 border-t border-gray-100 dark:border-gray-700 pt-4">
-                    <button onClick={onClose} className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 px-6 py-2 no-round font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">取消</button>
-                    <button onClick={handleSave} disabled={isSaving} className="bg-black dark:bg-gray-200 text-white dark:text-black px-8 py-2 no-round font-black text-sm hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors shadow-md">
-                        {isSaving ? '儲存中...' : '💾 儲存'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// --- 錯題整理組件 ---
-// --- 錯題整理組件 ---
-// --- 錯題整理組件 ---
 function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContinueQuiz }) {
     const [wrongItems, setWrongItems] = useState([]);
     const [customFolders, setCustomFolders] = useState([]);
@@ -1641,7 +1559,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     const [searchQuery, setSearchQuery] = useState('');
     const [pendingShareCode, setPendingShareCode] = useState(() => new URLSearchParams(window.location.search).get('shareCode'));
 
-    const specialFolders = ['我建立的試題', '未分類', '任務牆'];
+    // ✨ 新增：將 [公開試題管理] 設為固定分頁，方便你隨時點選
+    const specialFolders = ['我建立的試題', '[公開試題管理]', '未分類', '任務牆'];
     const dynamicFolders = records.map(r => r.folder).filter(f => f && !specialFolders.includes(f));
     const rawUserFolders = [...(userProfile.folders || []), ...dynamicFolders].filter(f => !specialFolders.includes(f));
     const userFolders = [...specialFolders, ...Array.from(new Set(rawUserFolders))];
@@ -2242,7 +2161,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                             {/* 上半部：標題與狀態資訊 */}
                             <div className="flex flex-col gap-2 min-w-0 w-full">
                                 <div className="font-bold text-sm sm:text-base dark:text-white leading-relaxed min-w-0 w-full relative inline-block">
-                                    {renderTestName(rec.testName, !!rec.results)}
+                                    {renderTestName(rec.testName, !!rec.results, rec.taskType)}
                                     {/* ✨ 新增：偵測到答案更新且重新算分時，顯示閃爍提醒 */}
                                     {rec.hasAnswerUpdate && (
                                         <span className="absolute -top-3 -right-2 sm:-right-4 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse shadow-md border border-white dark:border-gray-800 z-10 pointer-events-none">
@@ -2284,7 +2203,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                                     {!(rec.isTask || /\[#(op|m?nm?st)\]/i.test(rec.testName)) ? (
                                         <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 dark:text-blue-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis">📤分享</button>
                                     ) : <div />}
-                                    {!rec.isShared && !rec.isTask ? (
+                                    {/* ✨ 放寬權限：如果是出題者本人，就算發布成任務也允許編輯 */}
+                                    {!rec.isShared && (!rec.isTask || !rec.creatorUid || rec.creatorUid === currentUser.uid) ? (
                                         <button onClick={() => handleEditQuiz(rec)} className="text-xs text-purple-600 dark:text-purple-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis relative">
                                             📝編輯
                                             {rec.hasNewSuggestion && <span className="absolute top-1 right-0 sm:-top-1 sm:-right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
@@ -2523,13 +2443,47 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     // ✨ 安全退出機制：微延遲 50 毫秒，讓存檔與解壓縮動作錯開，避免畫面卡死
     const onBackToDashboard = () => setTimeout(originalBack, 50);
 
+    // ✨ 新增：判斷是否為管理員
+    const isAdmin = currentUser && (currentUser.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
+
     const initialRecord = activeQuizRecord || {};
     const userFolders = Array.from(new Set(['未分類', ...(userProfile.folders || [])]));
     
     const [quizId, setQuizId] = useState(initialRecord.id || null);
     const [step, setStep] = useState(initialRecord.forceStep || (initialRecord.results ? 'results' : (initialRecord.id ? 'answering' : 'setup')));
-    const [testName, setTestName] = useState(initialRecord.testName || '');
+    // ✨ 修正：如果標題有標籤，顯示給使用者編輯時要自動隱藏，讓畫面更乾淨
+    const [testName, setTestName] = useState(initialRecord.testName ? initialRecord.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim() : '');
     const [numQuestions, setNumQuestions] = useState(initialRecord.numQuestions || 50);
+    
+    // ✨ 新增：任務牆專用標籤系統狀態與歷史紀錄
+    const [taskType, setTaskType] = useState(initialRecord.taskType || (initialRecord.testName?.includes('[#op]') ? 'official' : initialRecord.testName?.match(/\[#(m?nm?st)\]/i) ? 'mock' : 'normal'));
+    const [examYear, setExamYear] = useState(initialRecord.examYear || '');
+    const [examSubject, setExamSubject] = useState(initialRecord.examSubject || ''); // 存儲為 "藥理,藥化"
+    const [examTag, setExamTag] = useState(initialRecord.examTag || '講義出題');
+    const [examRange, setExamRange] = useState(initialRecord.examRange || ''); // ✨ 新增：範圍狀態
+    const usedSubjects = userProfile?.usedSubjects || ['藥理學', '藥物化學', '藥物分析', '生藥學', '中藥學', '藥劑學', '生物藥劑學'];
+
+    // ✨ 新增：處理科目多選切換的函式
+    const toggleSubject = (subj) => {
+        let currentArr = examSubject ? examSubject.split(',').filter(s => s) : [];
+        if (currentArr.includes(subj)) {
+            currentArr = currentArr.filter(s => s !== subj);
+        } else {
+            currentArr.push(subj);
+        }
+        setExamSubject(currentArr.join(','));
+    };
+    const usedTags = userProfile?.usedTags || ['期中考', '期末考', '小考', '歷屆錯題', '講義出題', '考古出題', '空抓出題'];
+
+    const toggleTag = (tag) => {
+        let currentArr = examTag ? examTag.split(',').filter(s => s) : [];
+        if (currentArr.includes(tag)) {
+            currentArr = currentArr.filter(s => s !== tag);
+        } else {
+            currentArr.push(tag);
+        }
+        setExamTag(currentArr.join(','));
+    };
     
     // ✨ 套用安全解壓縮，徹底消滅點擊編輯時的當機與白屏問題
     const [userAnswers, setUserAnswers] = useState(safeDecompress(initialRecord.userAnswers, 'array'));
@@ -2816,7 +2770,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         if (numQuestions < 1 || numQuestions > 100) return showAlert('題數限制為 1-100 題！');
         if (hasTimer && (timeLimit < 1 || timeLimit > 999)) return showAlert('計時時間請設定在 1 到 999 分鐘之間。');
         
-        setIsCreating(true); // ✨ 開啟載入畫面
+        setIsCreating(true); 
         
         const initialAnswers = Array(Number(numQuestions)).fill('');
         const initialStarred = Array(Number(numQuestions)).fill(false);
@@ -2828,29 +2782,59 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         const finalQuestionHtml = inputType === 'richtext' ? questionHtml : '';
         
         const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
+
+        // ✨ 新增：自動組合帶有隱藏標籤的測驗名稱，並儲存標籤歷史
+        let finalTestName = testName.trim();
+        if (taskType === 'official') finalTestName += ' [#op]';
+        else if (taskType === 'mock') finalTestName += ' [#mnst]';
+
+        // ✨ 新增：自動強制分發到 [公開試題管理]
+        let finalFolder = folder;
+        if (taskType === 'official' || taskType === 'mock') {
+            finalFolder = '[公開試題管理]';
+            if (!userProfile?.folders?.includes('[公開試題管理]')) {
+                window.db.collection('users').doc(currentUser.uid).set({
+                    folders: window.firebase.firestore.FieldValue.arrayUnion('[公開試題管理]')
+                }, { merge: true }).catch(e=>console.warn(e));
+            }
+        }
+
+        if (taskType === 'mock' && (examSubject.trim() || examTag.trim())) {
+            const historyUpdates = {};
+            const newSubjects = examSubject.split(',').map(s => s.trim()).filter(s => s && !usedSubjects.includes(s));
+            if (newSubjects.length > 0) {
+                historyUpdates.usedSubjects = window.firebase.firestore.FieldValue.arrayUnion(...newSubjects);
+            }
+            const newTags = examTag.split(',').map(t => t.trim()).filter(t => t && !usedTags.includes(t));
+            if (newTags.length > 0) {
+                historyUpdates.usedTags = window.firebase.firestore.FieldValue.arrayUnion(...newTags);
+            }
+            if (Object.keys(historyUpdates).length > 0) {
+                window.db.collection('users').doc(currentUser.uid).set(historyUpdates, { merge: true }).catch(e=>console.warn(e));
+            }
+        }
         
         setQuestionFileUrl(finalFileUrl);
         setQuestionText(finalQuestionText);
         setQuestionHtml(finalQuestionHtml);
 
         try {
-            // ✨ 1. 先在 quizzes 建立輕量級的「考卷外殼」，列表秒開就靠這個
-            // 🚀 核心升級：新建考卷時 userAnswers 直接存陣列，不再壓縮，徹底釋放 CPU 效能！
             const docRef = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
-                testName, numQuestions, userAnswers: initialAnswers, starred: initialStarred,
+                testName: finalTestName,
+                numQuestions, userAnswers: initialAnswers, starred: initialStarred,
                 correctAnswersInput: cleanKey,
                 publishAnswers: true, 
                 questionFileUrl: finalFileUrl,
                 hasTimer: hasTimer,
                 timeLimit: hasTimer ? Number(timeLimit) : null,
                 timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
-                folder: folder,
-                hasSeparatedContent: true, // 標記這份考卷的內容已經分離
+                folder: finalFolder, // ✨ 修正：使用自動判斷後的 [公開試題管理]
+                hasSeparatedContent: true,
                 isCompleted: false,
+                taskType, examYear, examSubject, examTag, examRange, // ✨ 存入新標籤與範圍
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
 
-            // ✨ 2. 把又肥又大的題目與詳解，存到獨立的 quizContents 集合裡
             await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(docRef.id).set({
                 questionText: window.jzCompress(finalQuestionText),
                 questionHtml: finalQuestionHtml,
@@ -2859,30 +2843,13 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
            setQuizId(docRef.id);
 
-                const isOp = /\[#op\]/i.test(testName);
-                const isMnst = /\[#(m?nm?st)\]/i.test(testName);
-                
-                if (isOp || isMnst) {
-                let category = '模擬試題 (其他)';
-                if (isOp) {
-                    if (testName.includes('藥理') || testName.includes('藥物化學')) category = '1. 藥理學與藥物化學';
-                    else if (testName.includes('藥物分析') || testName.includes('生藥') || testName.includes('中藥')) category = '2. 藥物分析學與生藥學(含中藥學)';
-                    else if (testName.includes('藥劑') || testName.includes('生物藥劑')) category = '3. 藥劑學與生物藥劑學';
-                    else category = '國考題 (其他)';
-                } else {
-                    if (testName.includes('藥物分析')) category = '1. 藥物分析學';
-                    else if (testName.includes('生藥')) category = '2. 生藥學';
-                    else if (testName.includes('中藥')) category = '3. 中藥學';
-                    else if (testName.includes('藥物化學') || testName.includes('藥理')) category = '4. 藥物化學與藥理學';
-                    else if (testName.includes('生物藥劑')) category = '6. 生物藥劑學';
-                    else if (testName.includes('藥劑')) category = '5. 藥劑學';
-                }
-
-                // ✨ 非同步背景執行任務牆建立，不卡住使用者
+            if (taskType === 'official' || taskType === 'mock') {
                 window.db.collection('publicTasks').doc(docRef.id).set({
-                    testName, numQuestions, questionFileUrl: finalFileUrl, questionText: finalQuestionText, 
+                    testName: finalTestName, numQuestions, questionFileUrl: finalFileUrl, questionText: finalQuestionText, 
                     questionHtml: finalQuestionHtml, explanationHtml: explanationHtml, correctAnswersInput: cleanKey,
-                    hasTimer, timeLimit: hasTimer ? Number(timeLimit) : null, category, creatorUid: currentUser.uid,
+                    hasTimer, timeLimit: hasTimer ? Number(timeLimit) : null, 
+                    taskType, examYear, examSubject, examTag, // ✨ 存入新標籤
+                    creatorUid: currentUser.uid,
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 }).catch(e => console.error("任務牆同步失敗", e));
             }
@@ -2892,7 +2859,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 setDisplayTime(timeRemainingRef.current);
                 setIsTimeUp(false);
             }
-            setIsCreating(false); // ✨ 關閉載入畫面
+            setIsCreating(false); 
             setStep('answering');
         } catch(e) {
             setIsCreating(false);
@@ -2934,12 +2901,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     };
 
    const handleSaveEdit = async () => {
-        setIsEditLoading(true); // ✨ 開啟載入，防止按鈕點擊後毫無反應
-        // ✨ 取得原始資料進行比對 (省流量關鍵)
+        setIsEditLoading(true); 
         const myDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
         const oldData = myDoc.data() || {};
         
-        // ✨ 把分離的龐大內容抓回來組合，才能正確比對有沒有修改
         if (oldData.hasSeparatedContent) {
             const contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get();
             if (contentDoc.exists) {
@@ -2952,26 +2917,54 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         
         const latestSharedTo = oldData.sharedTo || [];
         const syncCount = latestSharedTo.length;
-
         const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
         
-        // 1. 建立「變動清單」：只抓取有改過的地方
+        // ✨ 新增：組合測驗名稱
+        let finalTestName = testName.trim();
+        if (taskType === 'official') finalTestName += ' [#op]';
+        else if (taskType === 'mock') finalTestName += ' [#mnst]';
+
         const updates = {};
-        if (testName.trim() !== (oldData.testName || '')) updates.testName = testName.trim() || '未命名測驗';
+        if (finalTestName !== (oldData.testName || '')) updates.testName = finalTestName || '未命名測驗';
+        if (taskType !== oldData.taskType) updates.taskType = taskType;
+        if (examYear !== oldData.examYear) updates.examYear = examYear;
+        if (examSubject !== oldData.examSubject) updates.examSubject = examSubject;
+        if (examTag !== oldData.examTag) updates.examTag = examTag;
+        if (examRange !== oldData.examRange) updates.examRange = examRange; // ✨ 更新範圍
         if (questionFileUrl.trim() !== (oldData.questionFileUrl || '')) updates.questionFileUrl = questionFileUrl.trim();
         if (publishAnswersToggle !== (oldData.publishAnswers !== false)) updates.publishAnswers = publishAnswersToggle;
         
-        // 檢查大型文字欄位是否變動 (最省流量的地方)
+        // ✨ 新增：編輯時若切換為公開任務，自動移動到 [公開試題管理]
+        if ((taskType === 'official' || taskType === 'mock') && oldData.folder !== '[公開試題管理]') {
+            updates.folder = '[公開試題管理]';
+            if (!userProfile?.folders?.includes('[公開試題管理]')) {
+                window.db.collection('users').doc(currentUser.uid).set({
+                    folders: window.firebase.firestore.FieldValue.arrayUnion('[公開試題管理]')
+                }, { merge: true }).catch(e=>console.warn(e));
+            }
+        }
+
+        if (taskType === 'mock' && (examSubject.trim() || examTag.trim())) {
+            const historyUpdates = {};
+            const newSubjects = examSubject.split(',').map(s => s.trim()).filter(s => s && !usedSubjects.includes(s));
+            if (newSubjects.length > 0) {
+                historyUpdates.usedSubjects = window.firebase.firestore.FieldValue.arrayUnion(...newSubjects);
+            }
+            const newTags = examTag.split(',').map(t => t.trim()).filter(t => t && !usedTags.includes(t));
+            if (newTags.length > 0) {
+                historyUpdates.usedTags = window.firebase.firestore.FieldValue.arrayUnion(...newTags);
+            }
+            if (Object.keys(historyUpdates).length > 0) {
+                window.db.collection('users').doc(currentUser.uid).set(historyUpdates, { merge: true }).catch(e=>console.warn(e));
+            }
+        }
+
         const newTextJZ = window.jzCompress(questionText);
         if (newTextJZ !== oldData.questionText) updates.questionText = newTextJZ;
         
-       // ✨ 終極清洗：保護圖片不被刪除的加強版
-        // ✨ 終極清洗：圖片完美守護版
-        // ✨ 終極清洗：在存檔前，強制拔除所有隱形的 Word 格式垃圾與 XML 標籤，這能讓體積縮減 90%
         const ultraClean = (html) => {
             if(!html) return '';
             return html.replace(/[\r\n]+/g, " ") 
-                       // 🚀 終極修復：修正 Word 標籤正則匹配，防止存檔時無限迴圈與崩潰當機！
                        .replace(/<(xml|style|meta|link|title|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "")
                        .replace(/<\!--[\s\S]*?-->/g, "")
                        .replace(/<!\[[^\]]+\]>/g, "") 
@@ -2986,15 +2979,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                        .replace(/(<br>){3,}/gi, "<br><br>")
                        .replace(/^(<br>)+|(<br>)+$/gi, "");
         };
-        
 
-        // ✨ 終極優化：將富文本 HTML 也進行 JZ 壓縮存檔，這能讓 1000KB 的傳輸量瞬間降到 100KB 以下！
         const cleanAndCompress = (html, label) => {
-            const cleaned = ultraClean(html); // 呼叫我們先前的清洗 Word 垃圾函式
-            if (cleaned.length > 900000) {
-                throw new Error(`❌ 【${label}】太大了，請檢查圖片是否成功轉存 Storage。`);
-            }
-            // 使用您系統原有的 window.jzCompress 進行壓縮
+            const cleaned = ultraClean(html);
+            if (cleaned.length > 900000) throw new Error(`❌ 【${label}】太大了，請檢查圖片是否成功轉存 Storage。`);
             return window.jzCompress(cleaned);
         };
 
@@ -3007,22 +2995,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         }
         if (cleanKey !== (oldData.correctAnswersInput || '')) updates.correctAnswersInput = cleanKey;
 
-        setIsEditLoading(false); // ✨ 準備彈出視窗前先關閉載入
+        setIsEditLoading(false); 
 
-        // 如果完全沒改動，直接返回
-        if (Object.keys(updates).length === 0) {
-            return showAlert("ℹ️ 資料無變動，無需儲存。");
-        }
+        if (Object.keys(updates).length === 0) return showAlert("ℹ️ 資料無變動，無需儲存。");
 
-        const confirmMsg = syncCount > 0
-            ? `⚠️ 確定要儲存嗎？\n將為 ${syncCount} 位好友同步更新並重新計算他們的分數。` 
-            : `確定要儲存目前的修改嗎？`;
+        const confirmMsg = syncCount > 0 ? `⚠️ 確定要儲存嗎？\n將為 ${syncCount} 位好友同步更新並重新計算他們的分數。` : `確定要儲存目前的修改嗎？`;
 
         showConfirm(confirmMsg, async () => {
             try {
                 setSyncStatus({ isSyncing: true, current: 0, total: syncCount + 1 });
                 
-               // 1. 儲存自己這份 (拆分輕重資料)
                 const lightUpdates = { ...updates, updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(), hasSeparatedContent: true };
                 const heavyUpdates = {};
                 
@@ -3033,68 +3015,65 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(lightUpdates);
                 
                 if (Object.keys(heavyUpdates).length > 0) {
-                        await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).set(heavyUpdates, { merge: true });
-                    }
-                    setSyncStatus(prev => ({ ...prev, current: 1 }));
+                    await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).set(heavyUpdates, { merge: true });
+                }
+                setSyncStatus(prev => ({ ...prev, current: 1 }));
 
-                    // 2. 處理任務牆 (如果是國考/模擬題)
-                    // 2. 處理任務牆 (如果是國考/模擬題)
-                    if (/\[#(op|m?nm?st)\]/i.test(testName)) {
-                        const taskUpdates = { ...updates, creatorUid: currentUser.uid, numQuestions, hasTimer, timeLimit };
-                        await window.db.collection('publicTasks').doc(quizId).set(taskUpdates, { merge: true });
-                    }
+                if (taskType === 'official' || taskType === 'mock') {
+                    const taskPayload = { 
+                        ...updates, 
+                        testName: finalTestName, 
+                        creatorUid: currentUser.uid, 
+                        numQuestions, 
+                        hasTimer, 
+                        timeLimit,
+                        taskType, examYear, examSubject, examTag,
+                        questionFileUrl: questionFileUrl || '',
+                        questionHtml: updates.questionHtml || oldData.questionHtml || '',
+                        questionText: updates.questionText || oldData.questionText || '',
+                        explanationHtml: updates.explanationHtml || oldData.explanationHtml || '',
+                        correctAnswersInput: cleanKey
+                    };
 
-                    // ✨ 新增：3. 同步更新分享代碼庫 (shareCodes) 的快照包裹！
-                    // 確保未來輸入代碼下載的學生，拿到的是最新修改的題目與詳解
-                    if (oldData.shortCode) {
-                        await window.db.collection('shareCodes').doc(oldData.shortCode).update(updates).catch(e => console.warn("代碼庫同步失敗(可能無此代碼):", e));
-                    }
-
-                    // 4. 同步給所有已經下載的學生 (包含自動重算分數)
-                // 4. 同步給所有已經下載的學生 (包含自動重算分數)
-if (syncCount > 0) {
-    const ansChanged = !!updates.correctAnswersInput; // 檢查標答是否變動
-
-    const chunkSize = 20;
-    for (let i = 0; i < syncCount; i += chunkSize) {
-        const chunk = latestSharedTo.slice(i, i + chunkSize);
-        
-        // ✨ 改用並行的 Promise.all 獨立更新，取代脆弱的 batch
-        const updatePromises = chunk.map(async (target) => {
-            try {
-                const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
-                const targetContentRef = window.db.collection('users').doc(target.uid).collection('quizContents').doc(target.quizId); 
-                
-                const targetUpdates = { ...updates, hasAnswerUpdate: true }; 
-                const targetHeavyUpdates = {}; 
-
-                if ('questionText' in targetUpdates) { targetHeavyUpdates.questionText = targetUpdates.questionText; delete targetUpdates.questionText; }
-                if ('questionHtml' in targetUpdates) { targetHeavyUpdates.questionHtml = targetUpdates.questionHtml; delete targetUpdates.questionHtml; }
-                if ('explanationHtml' in targetUpdates) { targetHeavyUpdates.explanationHtml = targetUpdates.explanationHtml; delete targetUpdates.explanationHtml; }
-
-                if (ansChanged) {
-                    // ... (這裡保留你原本寫好的算分與同步錯題本邏輯，完全不用動) ...
+                    taskPayload.createdAt = oldData.createdAt || window.firebase.firestore.FieldValue.serverTimestamp();
+                    await window.db.collection('publicTasks').doc(quizId).set(taskPayload, { merge: true });
+                    await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({ isTask: true, taskId: quizId });
+                } else if (oldData.isTask || oldData.taskId) {
+                    await window.db.collection('publicTasks').doc(quizId).delete().catch(e=>console.warn(e));
+                    await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
+                        isTask: window.firebase.firestore.FieldValue.delete(),
+                        taskId: window.firebase.firestore.FieldValue.delete()
+                    }).catch(e=>console.warn(e));
                 }
 
-                // ✨ 關鍵修復：直接 await 更新，不再放入 batch
-                await targetRef.update(targetUpdates);
-                if (Object.keys(targetHeavyUpdates).length > 0) {
-                    await targetContentRef.set(targetHeavyUpdates, { merge: true }); 
+                if (oldData.shortCode) {
+                    await window.db.collection('shareCodes').doc(oldData.shortCode).update(updates).catch(e => console.warn(e));
                 }
-                
-            } catch (error) {
-                // ✨ 攔截錯誤：如果出現 No document to update，代表該學生已經刪除了這份考卷
-                // 我們就默默略過他，不要讓系統當機！
-                console.warn(`略過同步：學生 ${target.uid} 可能已將考卷刪除。`);
-            }
-        });
 
-        // 等待這 20 個人的更新全部跑完 (不論成功或跳過)
-        await Promise.all(updatePromises);
-        
-        setSyncStatus(prev => ({ ...prev, current: Math.min(prev.current + chunk.length, syncCount + 1) }));
-    }
-}
+                if (syncCount > 0) {
+                    const ansChanged = !!updates.correctAnswersInput;
+                    const chunkSize = 20;
+                    for (let i = 0; i < syncCount; i += chunkSize) {
+                        const chunk = latestSharedTo.slice(i, i + chunkSize);
+                        const updatePromises = chunk.map(async (target) => {
+                            try {
+                                const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
+                                const targetContentRef = window.db.collection('users').doc(target.uid).collection('quizContents').doc(target.quizId); 
+                                const targetUpdates = { ...updates, hasAnswerUpdate: true }; 
+                                const targetHeavyUpdates = {}; 
+                                if ('questionText' in targetUpdates) { targetHeavyUpdates.questionText = targetUpdates.questionText; delete targetUpdates.questionText; }
+                                if ('questionHtml' in targetUpdates) { targetHeavyUpdates.questionHtml = targetUpdates.questionHtml; delete targetUpdates.questionHtml; }
+                                if ('explanationHtml' in targetUpdates) { targetHeavyUpdates.explanationHtml = targetUpdates.explanationHtml; delete targetUpdates.explanationHtml; }
+                                await targetRef.update(targetUpdates);
+                                if (Object.keys(targetHeavyUpdates).length > 0) await targetContentRef.set(targetHeavyUpdates, { merge: true }); 
+                            } catch (error) {
+                                console.warn(`略過同步：學生 ${target.uid} 可能已將考卷刪除。`);
+                            }
+                        });
+                        await Promise.all(updatePromises);
+                        setSyncStatus(prev => ({ ...prev, current: Math.min(prev.current + chunk.length, syncCount + 1) }));
+                    }
+                }
 
                 setSyncStatus({ isSyncing: false, current: 0, total: 0 });
                 showAlert("✅ 儲存成功！所有學生的分數已自動重新計算並更新。");
@@ -3630,7 +3609,7 @@ if (syncCount > 0) {
             <button onClick={handleBackFromEdit} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">← 返回</button>
 <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-4xl no-round border border-gray-200 dark:border-gray-700 mt-6 transition-colors">                <h2 className="font-bold mb-6 text-2xl dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">📝 編輯試題</h2>
                 
-                {/* 新增：測驗名稱編輯區塊 */}
+               {/* 新增：測驗名稱編輯區塊 */}
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗名稱</label>
                 <input 
                     type="text" 
@@ -3639,6 +3618,72 @@ if (syncCount > 0) {
                     value={testName} 
                     onChange={e => setTestName(e.target.value)} 
                 />
+                
+                {/* ✨ 任務牆屬性與標籤設定 (編輯模式) */}
+                <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗發布屬性</label>
+                    <div className="flex flex-wrap gap-4 mb-4">
+                        <label className="flex items-center gap-2 cursor-pointer text-sm font-bold dark:text-white">
+                            <input type="radio" checked={taskType==='normal'} onChange={()=>setTaskType('normal')} className="accent-black dark:accent-white" /> 一般測驗 (不公開)
+                        </label>
+                        {/* ✨ 只有管理員能看到下面兩個選項 */}
+                        {isAdmin && (
+                            <>
+                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-yellow-700 dark:text-yellow-400">
+                                    <input type="radio" checked={taskType==='official'} onChange={()=>setTaskType('official')} className="accent-yellow-600" /> 🏆 國考題
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-blue-700 dark:text-blue-400">
+                                    <input type="radio" checked={taskType==='mock'} onChange={()=>setTaskType('mock')} className="accent-blue-600" /> 📘 模擬試題
+                                </label>
+                            </>
+                        )}
+                    </div>
+
+                    {taskType === 'official' && (
+                        <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4 animate-fade-in">
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">國考年份期數 (由新到舊排序)</label>
+                            <input type="text" list="official-years" placeholder="例如: 114-1" value={examYear} onChange={e=>setExamYear(e.target.value)} className="w-full p-2 border border-yellow-300 bg-yellow-50 dark:bg-gray-800 text-black dark:text-white no-round text-sm font-bold" />
+                            <datalist id="official-years">
+                                {Array.from({length: 15}, (_, i) => 115 - i).flatMap(y => [`${y}-2`, `${y}-1`]).map(y => <option key={y} value={y} />)}
+                            </datalist>
+                        </div>
+                    )}
+
+                   {taskType === 'mock' && (
+                        <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4 space-y-4 animate-fade-in">
+                            {/* 科目多選區 */}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">科目名稱 (可複選)</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {usedSubjects.map(s => (
+                                        <button key={s} onClick={() => toggleSubject(s)} className={`px-3 py-1.5 text-xs font-bold no-round border transition-colors ${examSubject.split(',').includes(s) ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400'}`}>
+                                            {examSubject.split(',').includes(s) ? '✓ ' : ''}{s}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* 標籤多選區 */}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源標籤 (可複選)</label>
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                    {usedTags.map(t => (
+                                        <button key={t} onClick={() => toggleTag(t)} className={`px-3 py-1.5 text-xs font-bold no-round border transition-colors ${examTag.split(',').includes(t) ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400'}`}>
+                                            {examTag.split(',').includes(t) ? '✓ ' : ''}{t}
+                                        </button>
+                                    ))}
+                                </div>
+                                <input type="text" placeholder="手動輸入其他標籤 (多個標籤請用半形逗號 , 分隔)" value={examTag} onChange={e=>setExamTag(e.target.value)} className="w-full p-2 border border-indigo-300 bg-indigo-50 dark:bg-gray-800 text-black dark:text-white no-round text-sm font-bold" />
+                            </div>
+
+                            {/* 範圍自由輸入 */}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">出題範圍 (自由填寫)</label>
+                                <input type="text" placeholder="例如: 講義 P.1~P.50 或 全冊" value={examRange} onChange={e=>setExamRange(e.target.value)} className="w-full p-2 border border-blue-300 bg-blue-50 dark:bg-gray-800 text-black dark:text-white no-round text-sm font-bold" />
+                            </div>
+                        </div>
+                    )}
+                </div>
                 
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源 (單選)</label>
                 <div className="flex flex-wrap space-x-4 mb-4 dark:text-white">
@@ -3740,7 +3785,71 @@ if (syncCount > 0) {
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗名稱</label>
                 <input type="text" placeholder="例如: 藥理學期中考" className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
                 
-                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">題數 (1-100)</label>
+                {/* ✨ 任務牆屬性與標籤設定 */}
+                <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗發布屬性</label>
+                    <div className="flex flex-wrap gap-4 mb-4">
+                        <label className="flex items-center gap-2 cursor-pointer text-sm font-bold dark:text-white">
+                            <input type="radio" checked={taskType==='normal'} onChange={()=>setTaskType('normal')} className="accent-black dark:accent-white" /> 一般測驗 (不公開)
+                        </label>
+                        {/* ✨ 只有管理員能看到下面兩個選項，一般學生只能選「一般測驗」 */}
+                        {isAdmin && (
+                            <>
+                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-yellow-700 dark:text-yellow-400">
+                                    <input type="radio" checked={taskType==='official'} onChange={()=>setTaskType('official')} className="accent-yellow-600" /> 🏆 國考題
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-blue-700 dark:text-blue-400">
+                                    <input type="radio" checked={taskType==='mock'} onChange={()=>setTaskType('mock')} className="accent-blue-600" /> 📘 模擬試題
+                                </label>
+                            </>
+                        )}
+                    </div>
+
+                    {taskType === 'official' && (
+                        <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4 animate-fade-in">
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">國考年份期數 (由新到舊排序)</label>
+                            <input type="text" list="official-years" placeholder="例如: 114-1" value={examYear} onChange={e=>setExamYear(e.target.value)} className="w-full p-2 border border-yellow-300 bg-yellow-50 dark:bg-gray-800 text-black dark:text-white no-round text-sm font-bold" />
+                            <datalist id="official-years">
+                                {Array.from({length: 15}, (_, i) => 115 - i).flatMap(y => [`${y}-2`, `${y}-1`]).map(y => <option key={y} value={y} />)}
+                            </datalist>
+                        </div>
+                    )}
+
+                    {taskType === 'mock' && (
+                        <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4 space-y-4 animate-fade-in">
+                            {/* 科目多選區 */}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">科目名稱 (可複選)</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {usedSubjects.map(s => (
+                                        <button key={s} onClick={() => toggleSubject(s)} className={`px-3 py-1.5 text-xs font-bold no-round border transition-colors ${examSubject.split(',').includes(s) ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400'}`}>
+                                            {examSubject.split(',').includes(s) ? '✓ ' : ''}{s}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* 標籤多選區 */}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源標籤 (可複選)</label>
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                    {usedTags.map(t => (
+                                        <button key={t} onClick={() => toggleTag(t)} className={`px-3 py-1.5 text-xs font-bold no-round border transition-colors ${examTag.split(',').includes(t) ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400'}`}>
+                                            {examTag.split(',').includes(t) ? '✓ ' : ''}{t}
+                                        </button>
+                                    ))}
+                                </div>
+                                <input type="text" placeholder="手動輸入其他標籤 (多個標籤請用半形逗號 , 分隔)" value={examTag} onChange={e=>setExamTag(e.target.value)} className="w-full p-2 border border-indigo-300 bg-indigo-50 dark:bg-gray-800 text-black dark:text-white no-round text-sm font-bold" />
+                            </div>
+
+                            {/* 範圍自由輸入 */}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">出題範圍 (自由填寫)</label>
+                                <input type="text" placeholder="例如: 講義 P.1~P.50 或 全冊" value={examRange} onChange={e=>setExamRange(e.target.value)} className="w-full p-2 border border-blue-300 bg-blue-50 dark:bg-gray-800 text-black dark:text-white no-round text-sm font-bold" />
+                            </div>
+                        </div>
+                    )}
+                </div>
                 <input type="number" placeholder="50" className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
                 
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源 (單選)</label>
