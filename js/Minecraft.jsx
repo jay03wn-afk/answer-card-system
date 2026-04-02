@@ -89,24 +89,28 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
         images.current.fireball.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/fire_0.png";
        images.current.portal.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_portal.png";
         
-        // ✨ 新增：核心音效強制預載機制
+       // ✨ 新增：核心音效強制預載機制
         const requiredAudioUrls = [
             "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3",
             "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/Pou%20Game%20over%20Effects.mp3",
             "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/exEXP.mp3",
-            "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/creeper/death.ogg" // ✨ 更換為穩定的 1.16.5 音效庫
+            "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/creeper/death.ogg", // ✨ 更換為穩定的 1.16.5 音效庫
+            "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/item/pickup.ogg",
+            "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/block/portal/travel.ogg",
+            "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg"
         ];
         let loadedCount = 0;
         requiredAudioUrls.forEach(url => {
             const a = new Audio(url);
-            a.addEventListener('canplaythrough', () => {
+            const onLoadOrError = () => {
                 loadedCount++;
                 if (loadedCount >= requiredAudioUrls.length) setIsAudioLoaded(true);
-            }, { once: true });
+            };
+            a.addEventListener('canplaythrough', onLoadOrError, { once: true });
+            a.addEventListener('error', onLoadOrError, { once: true });
             a.load();
             if (!audioCache[url]) audioCache[url] = a; // 順便丟進快取池
         });
-        setTimeout(() => setIsAudioLoaded(true), 4000); // ✨ 4秒超時保底，避免網路卡住永遠不能玩
 
         bgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3");
         bgmRef.current.loop = true;
@@ -345,7 +349,7 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
             }
         });
 
-        if (state.player.y + state.player.h >= state.groundY) {
+       if (state.player.y + state.player.h >= state.groundY) {
             if (!inPit) {
                 // ✨ 波浪地形落差較大，增加地獄著陸的寬容度
                 let tolerance = state.isNether ? 35 : 15; 
@@ -354,7 +358,16 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                     state.player.dy = 0;
                     state.player.jumps = 0;
                 } else {
-                    dead = true; 
+                    if (state.hasTotem) {
+                        state.hasTotem = false;
+                        updateMcData({ hasTotem: false }, true);
+                        playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
+                        state.player.y = state.groundY - state.player.h;
+                        state.player.dy = 0;
+                        state.player.jumps = 0;
+                    } else {
+                        dead = true; 
+                    }
                 }
             }
         }
@@ -368,19 +381,29 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
             let obs = state.obstacles[i];
             if (obs.type === 'pit' || obs.type === 'portal') {
                 obs.x -= state.speed;
+                if (obs.type === 'portal' && !obs.passed && state.player.x > obs.x) {
+                    obs.passed = true;
+                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/block/portal/travel.ogg');
+                }
                 continue;
             }
 
             if (obs.type === 'ghast') {
-                // ✨ 幽靈停留在畫面右側，加上存在時間
+                // ✨ 幽靈停留在畫面右側，加上存在時間，若回到主世界則強制高速退場
                 obs.life = (obs.life || 0) + 1;
-                if (obs.life > 240) obs.x -= (state.speed + 5); // 4秒後飛走
-                else obs.x = LOG_W - 80; 
+                if (!state.isNether) {
+                    obs.x -= (state.speed + 15);
+                    obs.y -= 5;
+                } else if (obs.life > 240) {
+                    obs.x -= (state.speed + 5); // 4秒後飛走
+                } else {
+                    obs.x = LOG_W - 80; 
+                }
 
                 obs.y += Math.sin(state.frames * 0.05) * 1.5; 
                 
-                // 幽靈發射火球
-                if (Math.random() < 0.012 && obs.x > state.player.x) {
+                // 幽靈發射火球 (機率降低)
+                if (Math.random() < 0.005 && obs.x > state.player.x) {
                     playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/ghast/fireball4.ogg');
                     playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/ghast/moan1.ogg'); // ✨ 幽靈自己的專屬聲音
                     state.obstacles.push({
@@ -437,12 +460,21 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                 state.player.y + 5 < obs.y + obs.h - 5 &&
                 state.player.y + state.player.h > obs.y + 5
             ) {
-                if (obs.type === 'stone' || obs.type === 'netherrack_block') {
+               if (obs.type === 'stone' || obs.type === 'netherrack_block') {
                     if (state.player.dy > 0 && prevBottom <= obs.y + 15) {
                         state.player.y = obs.y - state.player.h;
                         state.player.dy = 0;
                         state.player.jumps = 0; 
-                    } else dead = true; 
+                    } else {
+                        if (state.hasTotem) {
+                            state.hasTotem = false;
+                            updateMcData({ hasTotem: false }, true);
+                            playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg");
+                            obs.killed = true; // 將牆壁破壞
+                        } else {
+                            dead = true; 
+                        }
+                    }
                 } else {
                     // ✨ 檢查是否為可以被砍的怪物
                     // ✨ 檢查是否為可以被砍的怪物
@@ -496,6 +528,7 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                 state.player.y + state.player.h > d.y
             ) {
                 d.collected = true;
+                playCachedSound("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/item/pickup.ogg");
                 state.score += 1;
                 setScore(state.score);
             }
@@ -541,10 +574,10 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                 state.lastSpawnFrame = state.frames;
                 let rand = Math.random();
                 
-               if (state.isNether) {
+              if (state.isNether) {
                     // ✨ 替換為適應波浪地形的生成，徹底移除醜方塊柱子
                     let currentY = getNetherWaveY(LOG_W, state.frames, state.speed);
-                    if (rand < 0.2) state.obstacles.push({ type: 'ghast', x: LOG_W, y: 30 + Math.random() * 60, w: 50, h: 50 }); // 幽靈機率降為 10%
+                    if (rand < 0.2 && !state.obstacles.some(o => o.type === 'ghast')) state.obstacles.push({ type: 'ghast', x: LOG_W, y: 30 + Math.random() * 60, w: 50, h: 50 }); // 幽靈機率降為 10% 且場上只能有一隻
                     else if (rand < 0.5) state.obstacles.push({ type: 'magma', x: LOG_W, y: currentY - 40, w: 40, h: 40 });
                     else state.obstacles.push({ type: 'pit', x: LOG_W, y: currentY, w: Math.random() * 120 + 80, h: 100 });
                 } else if (state.isCave) {
