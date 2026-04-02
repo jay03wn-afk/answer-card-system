@@ -1098,13 +1098,12 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     ];
 
     useEffect(() => {
+        setTimeout(() => setLoading(false), 800);
+
         const unsubTasks = window.db.collection('publicTasks')
             .orderBy('createdAt', 'desc')
             .limit(taskLimit) // ✨ 改吃我們設定的動態變數
             .onSnapshot({ includeMetadataChanges: true }, snap => {
-                // ✨ 核心修復：擋掉空快取，確保載入畫面不會提早消失
-                if (snap.empty && snap.metadata.fromCache) return;
-
                 const groupedNormal = normalCategories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
                 const groupedOfficial = opCategories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
                 
@@ -1571,7 +1570,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         let isMounted = true;
         let fallbackTimer = setTimeout(() => {
             if (isMounted) setLoading(false);
-        }, 3000);
+        }, 800);
 
         // 🚀 終極提速：利用 .limit() 讓 Firebase 每次只下載 15 份考卷，避開海量資料下載卡死
         const unsubscribe = window.db.collection('users').doc(user.uid).collection('quizzes')
@@ -1579,11 +1578,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             .limit(visibleLimit)
             .onSnapshot({ includeMetadataChanges: true }, snapshot => {
                 if (isMounted) {
-                    // ✨ 終極優化：確保 snapshot 是來自伺服器的最新資料，且不准在資料抵達前關閉 Loading
-                    if (snapshot.metadata.fromCache && snapshot.empty) return;
-                    
                     // 如果正在背景更新，且目前畫面是空的，則不准關閉 Loading
-                    if (snapshot.metadata.hasPendingWrites || (snapshot.metadata.fromCache && records.length === 0)) {
+                    if (snapshot.metadata.hasPendingWrites && records.length === 0) {
                         // 繼續等待雲端回應
                     } else {
                         setLoading(false);
@@ -4739,7 +4735,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                     });
                 } else {
                     unsubQA = window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).onSnapshot({ includeMetadataChanges: true }, snapshot => {
-                        if (snapshot.empty && snapshot.metadata.fromCache) return; // ✨ 核心修復：防止快問快答提早消失
                         const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         const now = new Date().getTime();
                         const validQas = isAdmin ? qas : qas.filter(q => !q.endTime || q.endTime > now);
