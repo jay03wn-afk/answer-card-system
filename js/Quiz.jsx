@@ -685,24 +685,34 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const [isSyncingWb, setIsSyncingWb] = useState(false);
 
     useEffect(() => {
-       // 抓取錯題資料 (你剛剛可能不小心刪到這段了！)
+        let isMounted = true;
+        // 🚀 提速優化：設定 1.5 秒安全超時，時間一到強制解除載入畫面，絕不卡死
+        let fallbackTimer = setTimeout(() => {
+            if (isMounted) setLoading(false);
+        }, 1500);
+
+       // 抓取錯題資料
         const unsubItems = window.db.collection('users').doc(user.uid).collection('wrongBook')
             .orderBy('createdAt', 'desc')
-            .limit(visibleLimit) // 🚀 終極防卡死：加上資料庫端的下載數量限制，避免千筆錯題瞬間癱瘓網路！
+            .limit(visibleLimit) 
             .onSnapshot({ includeMetadataChanges: true }, snap => {
-                if (snap.empty && snap.metadata.fromCache) return; // ✨ 擋掉空快取防閃爍
+                if (!isMounted) return;
+                // ✨ 放寬快取限制：只要有資料或伺服器回應，瞬間渲染！
+                if (snap.empty && snap.metadata.fromCache && !snap.metadata.hasPendingWrites) return; 
+                
                 setWrongItems(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 setLoading(false);
+                clearTimeout(fallbackTimer);
             });
             
         const unsubUser = window.db.collection('users').doc(user.uid).onSnapshot(doc => {
-            if (doc.exists && doc.data().wrongBookFolders) {
+            if (doc.exists && doc.data().wrongBookFolders && isMounted) {
                 setCustomFolders(doc.data().wrongBookFolders);
             }
         });
 
-        return () => { unsubItems(); unsubUser(); };
-    }, [user.uid, visibleLimit]); // ✨ 必須加入 visibleLimit，讓「載入更多」按鈕能真正向雲端要資料
+        return () => { isMounted = false; clearTimeout(fallbackTimer); unsubItems(); unsubUser(); };
+    }, [user.uid, visibleLimit]);
 
     const folders = ['全部', ...new Set([...customFolders, ...wrongItems.map(item => item.folder || '未分類')])];
     const filteredItems = currentFolder === '全部' ? wrongItems : wrongItems.filter(item => (item.folder || '未分類') === currentFolder);
