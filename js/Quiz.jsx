@@ -3051,43 +3051,50 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     }
 
                     // 4. 同步給所有已經下載的學生 (包含自動重算分數)
-                    if (syncCount > 0) {
-                        const ansChanged = !!updates.correctAnswersInput; // 檢查標答是否變動
+                // 4. 同步給所有已經下載的學生 (包含自動重算分數)
+if (syncCount > 0) {
+    const ansChanged = !!updates.correctAnswersInput; // 檢查標答是否變動
 
-                    const chunkSize = 20;
-                    for (let i = 0; i < syncCount; i += chunkSize) {
-                        const chunk = latestSharedTo.slice(i, i + chunkSize);
-                        const batch = window.db.batch();
-                        
-                        const readPromises = chunk.map(async (target) => {
-    const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
-    // ✨ 新增：指向該名學生的獨立重型內容庫
-    const targetContentRef = window.db.collection('users').doc(target.uid).collection('quizContents').doc(target.quizId); 
-    
-    const targetUpdates = { ...updates, hasAnswerUpdate: true }; 
-    const targetHeavyUpdates = {}; // ✨ 新增：準備用來裝重型資料的包裹
+    const chunkSize = 20;
+    for (let i = 0; i < syncCount; i += chunkSize) {
+        const chunk = latestSharedTo.slice(i, i + chunkSize);
+        
+        // ✨ 改用並行的 Promise.all 獨立更新，取代脆弱的 batch
+        const updatePromises = chunk.map(async (target) => {
+            try {
+                const targetRef = window.db.collection('users').doc(target.uid).collection('quizzes').doc(target.quizId);
+                const targetContentRef = window.db.collection('users').doc(target.uid).collection('quizContents').doc(target.quizId); 
+                
+                const targetUpdates = { ...updates, hasAnswerUpdate: true }; 
+                const targetHeavyUpdates = {}; 
 
-    // ✨ 關鍵修復：將大體積的題目與詳解抽出來，避免塞錯資料庫
-    if ('questionText' in targetUpdates) { targetHeavyUpdates.questionText = targetUpdates.questionText; delete targetUpdates.questionText; }
-    if ('questionHtml' in targetUpdates) { targetHeavyUpdates.questionHtml = targetUpdates.questionHtml; delete targetUpdates.questionHtml; }
-    if ('explanationHtml' in targetUpdates) { targetHeavyUpdates.explanationHtml = targetUpdates.explanationHtml; delete targetUpdates.explanationHtml; }
+                if ('questionText' in targetUpdates) { targetHeavyUpdates.questionText = targetUpdates.questionText; delete targetUpdates.questionText; }
+                if ('questionHtml' in targetUpdates) { targetHeavyUpdates.questionHtml = targetUpdates.questionHtml; delete targetUpdates.questionHtml; }
+                if ('explanationHtml' in targetUpdates) { targetHeavyUpdates.explanationHtml = targetUpdates.explanationHtml; delete targetUpdates.explanationHtml; }
 
-    if (ansChanged) {
-        // ... (這裡保留你原本寫好的算分與同步錯題本邏輯，完全不用動) ...
-    }
-
-    // ✨ 最終執行：同時更新學生的「輕量外殼」與「重型內容」
-    batch.update(targetRef, targetUpdates);
-    if (Object.keys(targetHeavyUpdates).length > 0) {
-        batch.set(targetContentRef, targetHeavyUpdates, { merge: true }); 
-    }
-});
-
-                        await Promise.all(readPromises);
-                        await batch.commit();
-                        setSyncStatus(prev => ({ ...prev, current: Math.min(prev.current + chunk.length, syncCount + 1) }));
-                    }
+                if (ansChanged) {
+                    // ... (這裡保留你原本寫好的算分與同步錯題本邏輯，完全不用動) ...
                 }
+
+                // ✨ 關鍵修復：直接 await 更新，不再放入 batch
+                await targetRef.update(targetUpdates);
+                if (Object.keys(targetHeavyUpdates).length > 0) {
+                    await targetContentRef.set(targetHeavyUpdates, { merge: true }); 
+                }
+                
+            } catch (error) {
+                // ✨ 攔截錯誤：如果出現 No document to update，代表該學生已經刪除了這份考卷
+                // 我們就默默略過他，不要讓系統當機！
+                console.warn(`略過同步：學生 ${target.uid} 可能已將考卷刪除。`);
+            }
+        });
+
+        // 等待這 20 個人的更新全部跑完 (不論成功或跳過)
+        await Promise.all(updatePromises);
+        
+        setSyncStatus(prev => ({ ...prev, current: Math.min(prev.current + chunk.length, syncCount + 1) }));
+    }
+}
 
                 setSyncStatus({ isSyncing: false, current: 0, total: 0 });
                 showAlert("✅ 儲存成功！所有學生的分數已自動重新計算並更新。");
