@@ -92,14 +92,26 @@ if (typeof window !== 'undefined' && !window.smilesDrawerObserverInit) {
 const parseSmilesToHtml = (content) => {
     if (!content) return content;
     const regex = /\{([^}\n\r]{2,})\}/g;
-    return content.replace(regex, (match, rawSmiles) => {
-        let cleanSmiles = rawSmiles.replace(/<[^>]*>/g, '');
-        cleanSmiles = cleanSmiles.replace(/[^A-Za-z0-9@+\-\[\]\(\)\\\/=#$:\.%*]/g, '');
-        if (!cleanSmiles) return match;
+    return content.replace(regex, (match, rawText) => {
+        // 清理 HTML 標籤，保留中英文藥物名稱
+        let cleanText = rawText.replace(/<[^>]*>/g, '').trim();
+        if (!cleanText) return match;
 
-        // ✨ 改變策略：不再呼叫 API 圖片，而是原地建立一張 SmilesDrawer 專用的高畫質 Canvas 畫布
+        // 當作化學式時的安全字元過濾 (給 Canvas 備用)
+        let fallbackSmiles = cleanText.replace(/[^A-Za-z0-9@+\-\[\]\(\)\\\/=#$:\.%*]/g, '');
         const uniqueId = 'smiles-' + Math.random().toString(36).substr(2, 9);
-        return `<canvas id="${uniqueId}" class="smiles-canvas shadow-sm" data-smiles="${cleanSmiles}" width="300" height="150" style="height: 40px; width: auto; max-width: 100%; display: inline-block; vertical-align: middle; background-color: #ffffff !important; border-radius: 4px; border: 1px solid #ddd; margin: 0 2px;"></canvas>`;
+        
+        // 備用的 Canvas 畫布 (當 PubChem 找不到藥物圖片時，觸發畫布渲染 SMILES)
+        const fallbackCanvasHtml = `<canvas id="${uniqueId}" class="smiles-canvas shadow-sm" data-smiles="${fallbackSmiles}" width="300" height="150" style="height: 40px; width: auto; max-width: 100%; display: inline-block; vertical-align: middle; background-color: #ffffff !important; border-radius: 4px; border: 1px solid #ddd; margin: 0 2px;"></canvas>`;
+        
+        // 處理 onerror 內的引號跳脫，確保語法安全
+        const safeFallback = fallbackCanvasHtml.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+        // 優先呼叫 PubChem API，利用名稱尋找結構圖
+        const pubChemUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(cleanText)}/PNG`;
+
+        // 先嘗試載入圖片，失敗(onerror)就自我替換成 Canvas 畫布
+        return `<img src="${pubChemUrl}" alt="${cleanText}" title="${cleanText}" style="height: 40px; width: auto; max-width: 100%; display: inline-block; vertical-align: middle; background-color: #ffffff !important; border-radius: 4px; border: 1px solid #ddd; margin: 0 2px;" onerror="this.outerHTML='${safeFallback}'" />`;
     });
 };
 
@@ -308,14 +320,25 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
             if(regex.test(n.nodeValue)) {
                 changed = true;
                 const span = document.createElement('span');
-                span.innerHTML = n.nodeValue.replace(regex, (match, rawSmiles) => {
-                    // ✨ 終極淨化：先挖除隱藏的 HTML 代碼，再清掉奇怪字元
-                    let cleanSmiles = rawSmiles.replace(/<[^>]*>/g, '');
-                    cleanSmiles = cleanSmiles.replace(/[^A-Za-z0-9@+\-\[\]\(\)\\\/=#$:\.%*]/g, '');
-                    if (!cleanSmiles) return match;
+                span.innerHTML = n.nodeValue.replace(regex, (match, rawText) => {
+                    // 挖除隱藏的 HTML 代碼，保留中英文藥物名稱
+                    let cleanText = rawText.replace(/<[^>]*>/g, '').trim();
+                    if (!cleanText) return match;
 
-                    const imgUrl = `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(cleanSmiles)}/image`;
-                    return `<img src="${imgUrl}" alt="${cleanSmiles}" title="SMILES: ${cleanSmiles}" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #ffffff !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-white" onerror="this.outerHTML='<span class=\\'text-red-500 font-bold bg-red-50 px-1 text-xs\\'>[解析失敗: ${cleanSmiles}]</span>'" />&nbsp;`;
+                    // 當作化學式時的安全字元過濾
+                    let fallbackSmiles = cleanText.replace(/[^A-Za-z0-9@+\-\[\]\(\)\\\/=#$:\.%*]/g, '');
+                    
+                    // 第三備案：連化學式都畫不出來時的錯誤文字標籤
+                    const errorSpan = `<span class="text-red-500 font-bold bg-red-50 px-1 text-xs">[解析失敗: ${cleanText}]</span>`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                    
+                    // 第二備案：利用舊版 Cactus API 繪製 SMILES (發生在藥物名稱找不到時)
+                    const cactusUrl = `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(fallbackSmiles)}/image`;
+                    const cactusImgHtml = `<img src="${cactusUrl}" alt="${fallbackSmiles}" title="SMILES: ${fallbackSmiles}" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #ffffff !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-white" onerror="this.outerHTML='${errorSpan}'" />`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+                    // 首選方案：呼叫 PubChem API 找藥物圖片，如果失敗就觸發 onerror 換成第二備案 Cactus
+                    const pubChemUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(cleanText)}/PNG`;
+
+                    return `<img src="${pubChemUrl}" alt="${cleanText}" title="藥物: ${cleanText}" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #ffffff !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-white" onerror="this.outerHTML='${cactusImgHtml}'" />&nbsp;`;
                 });
                 n.parentNode.replaceChild(span, n);
             }
