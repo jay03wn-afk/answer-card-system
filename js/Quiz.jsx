@@ -43,7 +43,8 @@ if (typeof window !== 'undefined' && !window.smilesDrawerObserverInit) {
         const drawAllSmiles = () => {
             if (!window.SmilesDrawer) return;
             // 找出所有還沒畫過的 canvas 畫布
-            const canvases = document.querySelectorAll('canvas.smiles-canvas:not([data-drawn="true"])');
+            // ✨ 修正：利用 :not([data-drawn]) 確保不會重複抓取處理中或已完成的畫布
+            const canvases = document.querySelectorAll('canvas.smiles-canvas:not([data-drawn])');
             if (canvases.length === 0) return;
             
             // ✨ 秘密武器：設定高畫質畫布，並強制覆蓋主題為「純黑白」，徹底擺脫舊 API 的彩色廉價感！
@@ -58,15 +59,36 @@ if (typeof window !== 'undefined' && !window.smilesDrawerObserverInit) {
             });
             
             canvases.forEach(canvas => {
-                // ✨ 修正：加入「防撞車」鎖定機制。如果畫布正在處理中，就跳過，避免重複解析導致成功後又被錯誤訊息蓋掉
-                if (canvas.dataset.isProcessing) return; 
-                canvas.dataset.isProcessing = "true";
+                const smiles = canvas.getAttribute('data-smiles');
+                // ✨ 立即標記為處理中，防止 MutationObserver 重複觸發導致無限迴圈或重疊
+                canvas.setAttribute('data-drawn', 'processing'); 
                 
+                window.SmilesDrawer.parse(smiles, (tree) => {
+                    drawer.draw(tree, canvas, 'light', false); // 畫上黑線
+                    canvas.setAttribute('data-drawn', 'true');
+                }, (err) => {
+                    console.error("SmilesDrawer 解析失敗:", err);
+                    // ✨ 終極修正：絕對不要用 replaceChild 破壞 React 的 DOM 結構 (會導致重複出現)
+                    // 改為直接在畫布上繪製「解析失敗」的提示！
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = "#fef2f2"; 
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = "#ef4444"; 
+                    ctx.font = "bold 20px sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText("[解析失敗]", canvas.width / 2, canvas.height / 2);
+                    
+                    canvas.setAttribute('data-drawn', 'true'); 
+                });
+            });
+            
+            canvases.forEach(canvas => {
                 const smiles = canvas.getAttribute('data-smiles');
                 window.SmilesDrawer.parse(smiles, (tree) => {
                     drawer.draw(tree, canvas, 'light', false); // 畫上黑線
                     canvas.setAttribute('data-drawn', 'true');
-                    delete canvas.dataset.isProcessing; // 畫完解除鎖定
                 }, (err) => {
                     console.error("SmilesDrawer 解析失敗:", err);
                     const span = document.createElement('span');
@@ -333,12 +355,12 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                     // 當作化學式時的安全字元過濾
                     let fallbackSmiles = cleanText.replace(/[^A-Za-z0-9@+\-\[\]\(\)\\\/=#$:\.%*]/g, '');
                     
-                    // 第三備案：連化學式都畫不出來時的錯誤文字標籤
-                    const errorSpan = `<span class="text-red-500 font-bold bg-red-50 px-1 text-xs">[解析失敗: ${cleanText}]</span>`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                    // ✨ 修正：移除會破壞 DOM 結構的 <span> 寫入，改為如果 Cactus 也失敗時，直接把圖片來源替換成一張帶有「解析失敗」字樣的 base64 圖片
+                    const errorSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="30"><rect width="80" height="30" fill="%23fef2f2" rx="4"/><text x="40" y="20" font-family="sans-serif" font-size="12" font-weight="bold" fill="%23ef4444" text-anchor="middle">解析失敗</text></svg>`;
                     
                     // 第二備案：利用舊版 Cactus API 繪製 SMILES (發生在藥物名稱找不到時)
                     const cactusUrl = `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(fallbackSmiles)}/image`;
-                    const cactusImgHtml = `<img src="${cactusUrl}" alt="${fallbackSmiles}" title="SMILES: ${fallbackSmiles}" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #ffffff !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-white" onerror="this.outerHTML='${errorSpan}'" />`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                    const cactusImgHtml = `<img src="${cactusUrl}" alt="${fallbackSmiles}" title="SMILES: ${fallbackSmiles}" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #ffffff !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-white" onerror="this.src='${errorSvg}'" />`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
                     // 首選方案：呼叫 PubChem API 找藥物圖片，如果失敗就觸發 onerror 換成第二備案 Cactus
                     const pubChemUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(cleanText)}/PNG`;
