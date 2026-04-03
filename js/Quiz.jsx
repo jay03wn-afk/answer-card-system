@@ -58,10 +58,15 @@ if (typeof window !== 'undefined' && !window.smilesDrawerObserverInit) {
             });
             
             canvases.forEach(canvas => {
+                // ✨ 修正：加入「防撞車」鎖定機制。如果畫布正在處理中，就跳過，避免重複解析導致成功後又被錯誤訊息蓋掉
+                if (canvas.dataset.isProcessing) return; 
+                canvas.dataset.isProcessing = "true";
+                
                 const smiles = canvas.getAttribute('data-smiles');
                 window.SmilesDrawer.parse(smiles, (tree) => {
                     drawer.draw(tree, canvas, 'light', false); // 畫上黑線
                     canvas.setAttribute('data-drawn', 'true');
+                    delete canvas.dataset.isProcessing; // 畫完解除鎖定
                 }, (err) => {
                     console.error("SmilesDrawer 解析失敗:", err);
                     const span = document.createElement('span');
