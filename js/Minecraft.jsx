@@ -332,17 +332,47 @@ const McImg = ({ src, fallback, className, ...props }) => {
     if (error) return <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{fallback}</span>;
     return <img src={src} className={className} onError={() => setError(true)} alt={fallback || "img"} {...props} />;
 };
-// ✨ 新增音效快取池
-const audioCache = {};
-const playCachedSound = (url) => {
-    if (!audioCache[url]) {
-        audioCache[url] = new Audio(url);
-        audioCache[url].preload = "auto";
+// ✨ 升級版：Web Audio API 核心系統 (無延遲引擎)
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const audioBufferCache = {};
+
+// 預先載入並將音檔解碼為記憶體緩衝區
+const preloadFastSound = async (url) => {
+    if (audioBufferCache[url]) return; 
+    try {
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        audioBufferCache[url] = audioBuffer;
+    } catch (e) {
+        console.warn("Web Audio API 載入失敗，退回傳統模式:", url, e);
     }
-    // 使用 cloneNode 允許多個相同音效重疊播放
-    const audioClone = audioCache[url].cloneNode();
-    audioClone.volume = 0.6;
-    audioClone.play().catch(e => console.log("音效播放被阻擋", e));
+};
+
+// 保持原函數名稱 playCachedSound，這樣你其他地方完全不用改！
+const playCachedSound = (url) => {
+    // 解決瀏覽器自動播放限制
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+
+    if (!audioBufferCache[url]) {
+        // 如果還沒載入完，退回使用傳統 Audio
+        const fallbackAudio = new Audio(url);
+        fallbackAudio.volume = 0.6;
+        fallbackAudio.play().catch(() => {});
+        return;
+    }
+
+    // 建立無延遲音源節點
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBufferCache[url];
+    const gainNode = audioCtx.createGain();
+    gainNode.gain.value = 0.6; // 統一音量 0.6
+    
+    source.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    source.start(0); // 🚀 零延遲立即播放
 };
 // --- 礦車跑酷小遊戲組件 ---
 // --- 礦車跑酷小遊戲組件 ---
@@ -421,7 +451,7 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
         images.current.fireball.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/fire_0.png";
        images.current.portal.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/nether_portal.png";
         
-       // ✨ 新增：核心音效強制預載機制
+       // ✨ 新增：核心音效強制 Web Audio API 預載機制
         const requiredAudioUrls = [
             "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3",
             "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/Pou%20Game%20over%20Effects.mp3",
@@ -431,18 +461,12 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
             "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/block/portal/travel.ogg",
             "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/totem/use.ogg"
         ];
-        let loadedCount = 0;
-        requiredAudioUrls.forEach(url => {
-            const a = new Audio(url);
-            const onLoadOrError = () => {
-                loadedCount++;
-                if (loadedCount >= requiredAudioUrls.length) setIsAudioLoaded(true);
-            };
-            a.addEventListener('canplaythrough', onLoadOrError, { once: true });
-            a.addEventListener('error', onLoadOrError, { once: true });
-            a.load();
-            if (!audioCache[url]) audioCache[url] = a; // 順便丟進快取池
-        });
+        
+        // 使用 Promise.all 確保所有音效解碼完成才允許開始遊戲
+        Promise.all(requiredAudioUrls.map(url => preloadFastSound(url)))
+            .then(() => {
+                setIsAudioLoaded(true); // 🚀 全部解碼完成，解鎖開始按鈕
+            });
 
         bgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3");
         bgmRef.current.loop = true;
