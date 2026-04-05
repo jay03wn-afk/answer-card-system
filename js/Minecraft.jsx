@@ -86,7 +86,9 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         if (!window.Peer) return showAlert("連線套件載入中，請稍後...");
         setNetMode('host');
         setConnStatus('建立房間中...');
-        const peer = new window.Peer();
+        // ✨ 修改：生成 5 位數字的簡單房號
+        const simpleId = Math.floor(10000 + Math.random() * 90000).toString();
+        const peer = new window.Peer(simpleId);
         peerRef.current = peer;
         peer.on('open', (id) => { setPeerId(id); setConnStatus('等待對手加入...'); });
         peer.on('connection', (conn) => {
@@ -786,6 +788,11 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                                        <span>整體大小比例</span>
                                        <input type="range" min="0.5" max="2" step="0.1" value={touchSettings.scale} onChange={e => setTouchSettings(p => ({...p, scale: parseFloat(e.target.value)}))} className="w-24" />
                                    </div>
+                                   {/* ✨ 新增：按鈕透明度調整 */}
+                                   <div className="flex justify-between text-xs text-gray-300 items-center">
+                                       <span>按鈕透明度</span>
+                                       <input type="range" min="0.1" max="1" step="0.1" value={touchSettings.opacity ?? 1} onChange={e => setTouchSettings(p => ({...p, opacity: parseFloat(e.target.value)}))} className="w-24" />
+                                   </div>
                                    <div className="flex justify-between text-xs text-gray-300 items-center">
                                        <span>移動鍵 X/Y微調</span>
                                        <div className="flex gap-2">
@@ -885,7 +892,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     {/* ✨ 觸控按鈕 (支援自定義位置大小與防反白) */}
                     {gameState === 'playing' && touchSettings.layout === 'overlay' && (
                         <div className="absolute inset-0 z-10 2xl:hidden pointer-events-none" style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'none' }}>
-                            <div className="absolute flex gap-2 pointer-events-auto" style={{ bottom: `${12 + touchSettings.dpadY}px`, left: `${12 + touchSettings.dpadX}px`, transform: `scale(${touchSettings.scale})`, transformOrigin: 'bottom left' }}>
+                            {/* 左側移動控制 (加入透明度 opacity 設定) */}
+                            <div className="absolute flex gap-2 pointer-events-auto" style={{ bottom: `${12 + touchSettings.dpadY}px`, left: `${12 + touchSettings.dpadX}px`, transform: `scale(${touchSettings.scale})`, transformOrigin: 'bottom left', opacity: touchSettings.opacity ?? 1 }}>
                                 <button 
                                     onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
                                     onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
@@ -899,7 +907,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                                     className="select-none touch-none bg-black/40 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-white/40 active:bg-black/60 flex items-center justify-center backdrop-blur-sm"
                                 >→</button>
                             </div>
-                            <div className="absolute flex gap-2 pointer-events-auto" style={{ bottom: `${12 + touchSettings.actionY}px`, right: `${12 - touchSettings.actionX}px`, transform: `scale(${touchSettings.scale})`, transformOrigin: 'bottom right' }}>
+                            {/* 右側技能控制 (加入透明度 opacity 設定) */}
+                            <div className="absolute flex gap-2 pointer-events-auto" style={{ bottom: `${12 + touchSettings.actionY}px`, right: `${12 - touchSettings.actionX}px`, transform: `scale(${touchSettings.scale})`, transformOrigin: 'bottom right', opacity: touchSettings.opacity ?? 1 }}>
                                 <button 
                                     onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
                                     onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
