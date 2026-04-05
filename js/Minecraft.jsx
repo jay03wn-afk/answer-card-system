@@ -1,328 +1,715 @@
 const { useState, useEffect, useRef } = React;
 
-const parseMinecraftQuizData = (rawText, category = 'medChem') => {
-    // 支援原本的 [x結構x] 以及新的 {結構}
-    const regex = /\[=(.*?)=\]\s*(?:\[x|\{)(.*?)(?:x\]|\})\s*\[\+(.*?)\+\]\s*\[-(.*?)-\]/gs;
-    const results = [];
-    let match;
-    while ((match = regex.exec(rawText)) !== null) {
-        results.push({
-            id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
-            name: match[1].trim(),
-            structure: match[2].trim(),
-            mechanism: match[3].trim(),
-            sideEffect: match[4].trim(),
-            category: category,
-            createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-        });
-    }
-    return results;
-};
+// --- 史萊姆排球小遊戲組件 ---
+// --- 史萊姆排球小遊戲組件 ---
+function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
+    const canvasRef = useRef(null);
+    const [gameState, setGameState] = useState('start');
+    const [score, setScore] = useState({ player: 0, opponent: 0 });
+    const [pointMessage, setPointMessage] = useState('');
 
-function MinecraftQuizAdmin({ user, showAlert }) {
-    const ADMIN_UID = "QZ9rtAPxZ3fSe87FabmbIyDepUZ2"; 
-    const isAdmin = user && user.uid === ADMIN_UID;
-    
-    const [isGameOpen, setIsGameOpen] = useState(false);
-    const [showAdminModal, setShowAdminModal] = useState(false);
-    const [rawInput, setRawInput] = useState('');
-    const [elements, setElements] = useState([]);
-    const [selectedCategory, setSelectedCategory] = useState('medChem');
+    // 自定義按鍵狀態
+    const [showSettings, setShowSettings] = useState(false);
+    const [bindingKey, setBindingKey] = useState(null);
+    const [keyBindings, setKeyBindings] = useState({
+        left: 'KeyA', right: 'KeyD', jump: 'Space', block: 'KeyE', spike: 'KeyF'
+    });
+    const bindingsRef = useRef(keyBindings);
 
-    // --- 遊戲核心狀態 ---
-    const [gameMode, setGameMode] = useState(0); 
-    const [actualMode, setActualMode] = useState(1); 
-    const [currentQ, setCurrentQ] = useState(null);
-    const [options, setOptions] = useState([]);
-    const [score, setScore] = useState(0);
-    const [round, setRound] = useState(1); // 新增：紀錄目前題數
-    const [feedback, setFeedback] = useState(null); 
-    const [previewSmiles, setPreviewSmiles] = useState(null); // 新增：用於預覽放大的結構圖片
+    // 新增：提示開關與 Ref (給動畫迴圈讀取)
+    const [showTips, setShowTips] = useState(true);
+    const tipsRef = useRef(true);
+    useEffect(() => { tipsRef.current = showTips; }, [showTips]);
+
+    const bgmRef = useRef(null);
+    const images = useRef({ steve: new Image(), villager: new Image(), slime: new Image() });
 
     useEffect(() => {
-        const unsubscribe = window.db.collection('mcElements')
-            .orderBy('createdAt', 'desc')
-            .onSnapshot(snap => {
-                const data = snap.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
-                setElements(data);
-            });
-        return () => unsubscribe();
+        bindingsRef.current = keyBindings;
+    }, [keyBindings]);
+
+    useEffect(() => {
+        images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
+        images.current.villager.src = "https://minotar.net/helm/Villager/64.png";
+        images.current.slime.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/slime_ball.png";
+
+        preloadFastSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/slime/attack1.ogg');
+        preloadFastSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/levelup.ogg');
+        preloadFastSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/no1.ogg');
+        // 預載新增音效
+        preloadFastSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
+        preloadFastSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/attack/sweep1.ogg');
+        preloadFastSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/generic/explode1.ogg');
+
+        bgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3"); 
+        bgmRef.current.loop = true;
+        bgmRef.current.volume = 0.3;
+        
+        return () => {
+            if (bgmRef.current) bgmRef.current.pause();
+            if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
+        };
     }, []);
 
-    const handleBulkImport = async () => {
-        if (!rawInput.trim()) return showAlert("請輸入內容！");
-        const parsedData = parseMinecraftQuizData(rawInput, selectedCategory);
-        if (parsedData.length === 0) return showAlert("解析失敗，請確認格式！");
+   const gameRef = useRef({
+        reqId: null,
+        w: 800,
+        h: 400,
+        groundY: 350,
+        net: { x: 395, y: 220, w: 10, h: 130 },
+        ball: { x: 200, y: 100, vx: 0, vy: 0, r: 25 },
+        player: { 
+            x: 200, y: 350, vx: 0, vy: 0, speed: 6.5, jump: -11.5, r: 30,
+            stamina: 100, blockCd: 0, spikeCd: 0, blockActive: 0, spikeActive: 0
+        },
+       opponent: { 
+            x: 600, y: 350, vx: 0, vy: 0, speed: 5.5, jump: -11.5, r: 30,
+            stamina: 100, blockCd: 0, spikeCd: 0, blockActive: 0, spikeActive: 0 
+        },
+        keys: { left: false, right: false, up: false, block: false, spike: false },
+        score: { p: 0, o: 0 },
+        touches: { p: 0, o: 0 },
+        lastHitTime: { p: 0, o: 0 },
+        serving: 'player', 
+        isServing: true,
+        isPointOver: false
+    });
 
-        try {
-            const batch = window.db.batch();
-            parsedData.forEach(item => {
-                const docRef = window.db.collection('mcElements').doc(item.id);
-                batch.set(docRef, item);
-            });
-            await batch.commit();
-            showAlert(`✅ 成功匯入 ${parsedData.length} 筆元素！`);
-            setRawInput('');
-        } catch (error) {
-            console.error(error);
-            showAlert("❌ 匯入失敗");
-        }
-    };
-
-    const handleDelete = async (docId) => {
-        if (window.confirm("確定要刪除這個元素嗎？")) {
-            await window.db.collection('mcElements').doc(docId).delete();
-            showAlert("🗑️ 已刪除");
-        }
-    };
-
-    const startGame = (mode) => {
-        if (elements.length < 4) return showAlert("⚠️ 題庫數量不足，請至少建立 4 個元素！");
-        setGameMode(mode);
-        setScore(0);
-        setRound(1); // 遊戲開始時重置題數
-        nextQuestion(mode);
-    };
-
-    const nextQuestion = (mode, delay = 0) => {
-        setTimeout(() => {
-            setFeedback(null);
-            const pool = [...elements].sort(() => 0.5 - Math.random());
-            const target = pool[0];
-            const wrongs = pool.slice(1, 4);
-            let qMode = mode;
-            if (mode === 6) qMode = Math.floor(Math.random() * 5) + 1;
-            setActualMode(qMode);
-            setCurrentQ(target);
-            setOptions([target, ...wrongs].sort(() => 0.5 - Math.random()));
-        }, delay);
-    };
-
-   const handleAnswer = (el) => {
-        if (feedback) return; 
-        if (el.id === currentQ.id) {
-            // 🌟 播放正確音效
-            if (typeof playCachedSound === 'function') {
-                playCachedSound('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3');
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (bindingKey) {
+                e.preventDefault();
+                setKeyBindings(prev => ({ ...prev, [bindingKey]: e.code }));
+                setBindingKey(null);
+                return;
             }
-            setFeedback('correct');
-            setScore(s => s + 10);
-            nextQuestion(gameMode, 1000); 
-            setTimeout(() => setRound(r => r + 1), 1000); 
-        } else {
-            // 🌟 播放錯誤音效
-            if (typeof playCachedSound === 'function') {
-                playCachedSound('https://assets.mixkit.co/active_storage/sfx/2997/2997-preview.mp3');
-            }
-            setFeedback('wrong');
-            setTimeout(() => setFeedback(null), 1000); 
-        }
+            const keys = gameRef.current.keys;
+            const binds = bindingsRef.current;
+            if (e.code === binds.left || e.code === 'ArrowLeft') keys.left = true;
+            if (e.code === binds.right || e.code === 'ArrowRight') keys.right = true;
+            if (e.code === binds.jump || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); keys.up = true; }
+            if (e.code === binds.block) keys.block = true;
+            if (e.code === binds.spike) keys.spike = true;
+        };
+        const handleKeyUp = (e) => {
+            if (bindingKey) return;
+            const keys = gameRef.current.keys;
+            const binds = bindingsRef.current;
+            if (e.code === binds.left || e.code === 'ArrowLeft') keys.left = false;
+            if (e.code === binds.right || e.code === 'ArrowRight') keys.right = false;
+            if (e.code === binds.jump || e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = false;
+            if (e.code === binds.block) keys.block = false;
+            if (e.code === binds.spike) keys.spike = false;
+        };
+        window.addEventListener('keydown', handleKeyDown, { passive: false });
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, [bindingKey]);
+
+   const resetPositions = () => {
+        const state = gameRef.current;
+        state.player.x = 200; state.player.y = state.groundY; state.player.vx = 0; state.player.vy = 0;
+        state.opponent.x = 600; state.opponent.y = state.groundY; state.opponent.vx = 0; state.opponent.vy = 0;
+        if (state.serving === 'player') { state.ball.x = 200; state.ball.y = 250; } 
+        else { state.ball.x = 600; state.ball.y = 250; }
+        state.ball.vx = 0; state.ball.vy = 0;
+        state.touches.p = 0; state.touches.o = 0;
+        state.isPointOver = false;
+        state.isServing = true;
+        setPointMessage('');
     };
 
-    // 🌟 升級版：支援三層防護與點擊放大的結構圖渲染器
-    const SmilesImg = ({ smiles, isPreview = false }) => {
-        const [stage, setStage] = useState(0); 
-        if (!smiles || smiles === '無') return <span className="text-gray-600 font-bold">無結構</span>;
+    const startGame = () => {
+        if (mcData.hunger < 1) {
+            showAlert("🍖 史蒂夫太餓了！請先去商店吃點東西再來打排球！");
+            return;
+        }
+        updateMcData({ hunger: mcData.hunger - 1 }, true);
+        setGameState('playing');
+        setScore({ player: 0, opponent: 0 });
+        setPointMessage('');
+        gameRef.current.score = { p: 0, o: 0 };
+        gameRef.current.serving = 'player';
+        gameRef.current.player.stamina = 100;
+        gameRef.current.opponent.stamina = 100; // 重置對手體力
+        resetPositions();
+        if (bgmRef.current) { bgmRef.current.currentTime = 0; bgmRef.current.play().catch(()=>{}); }
+        if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
+        gameRef.current.reqId = requestAnimationFrame(loop);
+    };
 
-        const imgClass = isPreview 
-            ? "w-full max-h-[60vh] object-contain bg-white border-4 border-gray-400 p-2" 
-            : "w-full h-28 sm:h-36 object-contain bg-white border-2 border-gray-400 p-1 cursor-pointer hover:border-blue-500 transition-all hover:scale-105";
+    const loop = () => {
+        const state = gameRef.current;
+        const cvs = canvasRef.current;
+        if (!cvs) return;
+        const ctx = cvs.getContext('2d');
 
-        const handleClick = (e) => {
-            e.stopPropagation(); 
-            if (!isPreview) setPreviewSmiles(smiles);
+       if (!state.isPointOver) {
+            if (!state.isServing) state.ball.vy += 0.35;
+            state.player.vy += 0.6;
+            state.opponent.vy += 0.6;
+
+           // 體力與技能邏輯
+            state.player.stamina = Math.min(100, state.player.stamina + 0.25);
+            if (state.player.blockCd > 0) state.player.blockCd--;
+            if (state.player.spikeCd > 0) state.player.spikeCd--;
+            if (state.player.blockActive > 0) state.player.blockActive--;
+            if (state.player.spikeActive > 0) state.player.spikeActive--;
+
+            // 對手體力與技能邏輯
+            state.opponent.stamina = Math.min(100, state.opponent.stamina + 0.25);
+            if (state.opponent.blockCd > 0) state.opponent.blockCd--;
+            if (state.opponent.spikeCd > 0) state.opponent.spikeCd--;
+            if (state.opponent.blockActive > 0) state.opponent.blockActive--;
+            if (state.opponent.spikeActive > 0) state.opponent.spikeActive--;
+
+            // 發球期間不可使用任何技能
+            if (!state.isServing) {
+                if (state.keys.block && state.player.blockCd === 0 && state.player.stamina >= 25) {
+                    state.player.stamina -= 25;
+                    state.player.blockActive = 20;
+                    state.player.blockCd = 90;
+                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
+                }
+                if (state.keys.spike && state.player.spikeCd === 0 && state.player.stamina >= 30) {
+                    state.player.stamina -= 30;
+                    state.player.spikeActive = 15;
+                    state.player.spikeCd = 120;
+                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/attack/sweep1.ogg');
+                }
+                
+                // 村民(AI) 使用技能的智慧判斷邏輯
+                let distToBall = Math.sqrt(Math.pow(state.ball.x - state.opponent.x, 2) + Math.pow(state.ball.y - state.opponent.y, 2));
+                
+                // AI殺球：球在對手半場高處，靠近網子，村民已跳起，且球在附近
+                if (state.ball.x > state.net.x + 10 && state.ball.y < state.net.y - 10 && state.opponent.y < state.groundY && distToBall < 130) {
+                    if (state.opponent.spikeCd === 0 && state.opponent.stamina >= 30) {
+                        state.opponent.stamina -= 30;
+                        state.opponent.spikeActive = 15;
+                        state.opponent.spikeCd = 120;
+                        playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/attack/sweep1.ogg');
+                    }
+                }
+                // AI攔網：球正從玩家那邊飛過來網子上方，且準備越界
+                else if (state.ball.x > state.net.x - 30 && state.ball.x < state.net.x + 60 && state.ball.vx > 0 && state.ball.y > 80 && state.ball.y < 280) {
+                    if (state.opponent.blockCd === 0 && state.opponent.stamina >= 25 && state.opponent.y >= state.groundY) {
+                        state.opponent.vy = state.opponent.jump * 0.8; // 攔網前稍微起跳
+                        state.opponent.stamina -= 25;
+                        state.opponent.blockActive = 20;
+                        state.opponent.blockCd = 90;
+                        playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
+                    }
+                }
+            }
+
+            if (state.keys.left) state.player.vx = -state.player.speed;
+            else if (state.keys.right) state.player.vx = state.player.speed;
+            else state.player.vx = 0;
+
+            if (state.keys.up && state.player.y >= state.groundY) {
+                state.player.vy = state.player.jump;
+            }
+
+            if (state.ball.x < state.net.x) state.touches.o = 0;
+            if (state.ball.x > state.net.x + state.net.w) state.touches.p = 0;
+
+            if (state.ball.x > state.w / 2) {
+                let targetX = state.ball.x + 15;
+                if (state.opponent.x < targetX - 10) state.opponent.vx = state.opponent.speed;
+                else if (state.opponent.x > targetX + 10) state.opponent.vx = -state.opponent.speed;
+                else state.opponent.vx = 0;
+                
+                if (state.ball.y > 100 && state.ball.y < 280 && Math.abs(state.ball.x - state.opponent.x) < 60 && state.opponent.y >= state.groundY) {
+                    state.opponent.vy = state.opponent.jump;
+                }
+            } else {
+                if (state.opponent.x < 600 - 10) state.opponent.vx = state.opponent.speed;
+                else if (state.opponent.x > 600 + 10) state.opponent.vx = -state.opponent.speed;
+                else state.opponent.vx = 0;
+            }
+
+            state.player.x += state.player.vx; state.player.y += state.player.vy;
+            state.opponent.x += state.opponent.vx; state.opponent.y += state.opponent.vy;
+            state.ball.x += state.ball.vx; state.ball.y += state.ball.vy;
+
+            if (state.player.y > state.groundY) { state.player.y = state.groundY; state.player.vy = 0; }
+            if (state.opponent.y > state.groundY) { state.opponent.y = state.groundY; state.opponent.vy = 0; }
+
+            if (state.player.x - state.player.r < 0) state.player.x = state.player.r;
+            if (state.player.x + state.player.r > state.net.x) state.player.x = state.net.x - state.player.r;
+            if (state.opponent.x - state.opponent.r < state.net.x + state.net.w) state.opponent.x = state.net.x + state.net.w + state.opponent.r;
+            if (state.opponent.x + state.opponent.r > state.w) state.opponent.x = state.w - state.opponent.r;
+
+            if (state.ball.x - state.ball.r < 0) { state.ball.x = state.ball.r; state.ball.vx *= -0.8; }
+            if (state.ball.x + state.ball.r > state.w) { state.ball.x = state.w - state.ball.r; state.ball.vx *= -0.8; }
+
+            const bx = state.ball.x, by = state.ball.y, br = state.ball.r;
+            const nx = state.net.x, ny = state.net.y, nw = state.net.w, nh = state.net.h;
+            if (bx + br > nx && bx - br < nx + nw && by + br > ny && by - br < ny + nh) {
+                if (by < ny + 5 && state.ball.vy > 0) {
+                    state.ball.y = ny - br; state.ball.vy *= -0.8;
+                } else {
+                    if (bx < nx + nw/2) { state.ball.x = nx - br; state.ball.vx *= -0.8; }
+                    else { state.ball.x = nx + nw + br; state.ball.vx *= -0.8; }
+                }
+            }
+
+           const checkHit = (p, isPlayer) => {
+                let now = performance.now();
+                let lastHit = isPlayer ? state.lastHitTime.p : state.lastHitTime.o;
+                if (now - lastHit < 100) return; // 冷卻中直接跳過，防止連續鬼畜判定
+
+                let isBlockingHit = isPlayer && p.blockActive > 0;
+                let isSpikingHit = isPlayer && p.spikeActive > 0;
+                
+                let hitOccurred = false;
+                let actualHitType = 'body'; 
+                let hitVectorX = state.ball.x - p.x;
+                let hitVectorY = state.ball.y - p.y;
+
+                // 1. 先判定「殺球手部」的精準碰撞 (範圍綁定在旋轉的手臂上)
+                if (isSpikingHit) {
+                    let progress = 1 - (p.spikeActive / 15);
+                    let angle = progress * Math.PI * 2;
+                    let dirMultiplier = isPlayer ? 1 : -1;
+                    // 以肩膀為基準，算出旋轉手臂前段的 x,y 座標 (對手會反向向左轉)
+                    let handX = p.x + (15 * dirMultiplier) + Math.sin(angle * dirMultiplier) * 20; 
+                    let handY = p.y - Math.cos(angle * dirMultiplier) * 20;
+                    
+                    let hdx = state.ball.x - handX;
+                    let hdy = state.ball.y - handY;
+                    let handDist = Math.sqrt(hdx*hdx + hdy*hdy);
+                    
+                    // ✨ 加大判定範圍到 35，讓殺球更容易命中！
+                    if (handDist < state.ball.r + 35) {
+                        hitOccurred = true;
+                        actualHitType = 'spike';
+                        hitVectorX = hdx;
+                        hitVectorY = hdy;
+                    }
+                }
+
+                // 2. 若沒被殺球判定到，判定「攔網手部」的矩形牆壁
+                if (isBlockingHit && !hitOccurred) {
+                    let blockLeft = p.x - 25;
+                    let blockRight = p.x + 25;
+                    let blockTop = p.y - p.r - 25;
+                    let blockBottom = p.y - p.r + 10;
+                    
+                    let testX = state.ball.x;
+                    let testY = state.ball.y;
+                    
+                    if (state.ball.x < blockLeft) testX = blockLeft;
+                    else if (state.ball.x > blockRight) testX = blockRight;
+                    
+                    if (state.ball.y < blockTop) testY = blockTop;
+                    else if (state.ball.y > blockBottom) testY = blockBottom;
+                    
+                    let bdx = state.ball.x - testX;
+                    let bdy = state.ball.y - testY;
+                    let blockDist = Math.sqrt(bdx*bdx + bdy*bdy);
+                    
+                    if (blockDist < state.ball.r) {
+                        hitOccurred = true;
+                        actualHitType = 'block';
+                        hitVectorX = state.ball.x - p.x;
+                        hitVectorY = state.ball.y - (p.y - 15);
+                    }
+                }
+
+                // 3. 若手都沒碰到，最後判定「身體」原本的圓形範圍
+                if (!hitOccurred) {
+                    let bdx = state.ball.x - p.x;
+                    let bdy = state.ball.y - p.y;
+                    let bodyDist = Math.sqrt(bdx*bdx + bdy*bdy);
+                    if (bodyDist < state.ball.r + p.r) {
+                        hitOccurred = true;
+                        actualHitType = 'body';
+                        hitVectorX = bdx;
+                        hitVectorY = bdy;
+                    }
+                }
+
+                if (hitOccurred) {
+                    if (isPlayer) state.lastHitTime.p = now;
+                    else state.lastHitTime.o = now;
+
+                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/slime/attack1.ogg');
+                    if (state.isServing) state.isServing = false;
+
+                    if (isPlayer) {
+                        state.touches.p += 1;
+                        if (state.touches.p >= 4) {
+                            state.isPointOver = true; state.score.o += 1; state.serving = 'opponent';
+                            playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/no1.ogg');
+                            setScore({ player: state.score.p, opponent: state.score.o });
+                            setPointMessage("❌ 史蒂夫連擊 4 次犯規！村民得分！");
+                            if (state.score.o >= 10) setTimeout(() => endGame(), 500);
+                            else setTimeout(() => resetPositions(), 800);
+                            return;
+                        }
+                    } else {
+                        state.touches.o += 1;
+                        if (state.touches.o >= 4) {
+                            state.isPointOver = true; state.score.p += 1; state.serving = 'player';
+                            playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/levelup.ogg');
+                            setScore({ player: state.score.p, opponent: state.score.o });
+                            setPointMessage("❌ 村民連擊 4 次犯規！史蒂夫得分！");
+                            if (state.score.p >= 10) setTimeout(() => endGame(), 500);
+                            else setTimeout(() => resetPositions(), 800);
+                            return;
+                        }
+                    }
+
+                    let dist = Math.sqrt(hitVectorX*hitVectorX + hitVectorY*hitVectorY) || 1;
+                    let nxVec = hitVectorX / dist; 
+                    let nyVec = hitVectorY / dist;
+                    let speed = Math.sqrt(state.ball.vx*state.ball.vx + state.ball.vy*state.ball.vy);
+                    let pSpeed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+                    let bounceSpeed = Math.max(7, speed * 0.7 + pSpeed * 0.5);
+
+                    if (actualHitType === 'spike') {
+                        // ✨ 殺球物理學升級：超高初速、淺平飛下壓 (保證過網不砸腳)
+                        bounceSpeed = 22; 
+                        nyVec = 0.3; // 微下壓，不直直往下
+                        nxVec = (isPlayer ? 1 : -1) * 2.0; // 強力往前衝
+                        playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/generic/explode1.ogg');
+                    } else if (actualHitType === 'block') {
+                        bounceSpeed = 12;
+                        nyVec = -1.2; 
+                        nxVec = (hitVectorX > 0 ? 1 : -1) * 0.5;
+                        playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
+                    } else {
+                        bounceSpeed = Math.min(bounceSpeed, 13);
+                        if (nyVec > 0) nyVec = -nyVec; 
+                    }
+
+                    let nMag = Math.sqrt(nxVec*nxVec + nyVec*nyVec);
+                    state.ball.vx = (nxVec / nMag) * bounceSpeed + (p.vx * 0.4);
+                    state.ball.vy = (nyVec / nMag) * bounceSpeed - 2; 
+                    
+                    if (actualHitType === 'spike') {
+                         state.ball.x += state.ball.vx * 0.5;
+                         state.ball.y += state.ball.vy * 0.5;
+                    } else if (actualHitType === 'block') {
+                         state.ball.x = p.x + (nxVec / nMag) * (state.ball.r + p.r + 10);
+                         state.ball.y = p.y - p.r - 20 - state.ball.r;
+                    } else {
+                         state.ball.x = p.x + (nxVec / nMag) * (state.ball.r + p.r);
+                         state.ball.y = p.y + (nyVec / nMag) * (state.ball.r + p.r);
+                    }
+                }
+            };
+            
+            if (!state.isPointOver) checkHit(state.player, true);
+            if (!state.isPointOver) checkHit(state.opponent, false);
+
+            if (!state.isPointOver && state.ball.y + state.ball.r > state.groundY) {
+                state.isPointOver = true;
+                if (state.ball.x < state.w / 2) {
+                    state.score.o += 1; state.serving = 'opponent';
+                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/no1.ogg');
+                    setPointMessage("👇 球落地了！村民得分！");
+                } else {
+                    state.score.p += 1; state.serving = 'player';
+                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/levelup.ogg');
+                    setPointMessage("👇 球落地了！史蒂夫得分！");
+                }
+                setScore({ player: state.score.p, opponent: state.score.o });
+                
+                if (state.score.p >= 10 || state.score.o >= 10) setTimeout(() => endGame(), 500);
+                else setTimeout(() => resetPositions(), 800); 
+            }}
+
+        ctx.clearRect(0, 0, state.w, state.h);
+        ctx.fillStyle = '#87CEEB'; ctx.fillRect(0, 0, state.w, state.h);
+        ctx.fillStyle = '#4CAF50'; ctx.fillRect(0, state.groundY, state.w, state.h - state.groundY);
+        ctx.fillStyle = '#388E3C'; ctx.fillRect(0, state.groundY, state.w, 10);
+
+        ctx.fillStyle = '#D3D3D3'; ctx.fillRect(state.net.x, state.net.y, state.net.w, state.net.h);
+        ctx.strokeStyle = '#A9A9A9'; ctx.strokeRect(state.net.x, state.net.y, state.net.w, state.net.h);
+
+        const drawImageSafe = (img, x, y, w, h) => {
+            if(img.complete && img.naturalWidth > 0) ctx.drawImage(img, x, y, w, h);
         };
 
-        if (stage === 0) {
-            return <img src={`https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(smiles)}/image?width=600&height=600`} alt="結構圖" className={imgClass} onError={() => setStage(1)} onClick={handleClick} title="點擊放大預覽" />;
-        } 
-        else if (stage === 1) {
-            return <img src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smiles)}/PNG`} alt="結構圖" className={imgClass} onError={() => setStage(2)} onClick={handleClick} title="點擊放大預覽" />;
-        } 
-        else {
-            return (
-                <div className={`${isPreview ? 'h-64' : 'h-28 sm:h-36'} w-full flex flex-col items-center justify-center bg-gray-900 border-2 border-red-500 p-2 cursor-pointer hover:bg-gray-800`} onClick={handleClick} title="點擊放大並複製語法">
-                    <span className="text-red-400 text-xs mb-1 font-bold">⚠️ 圖片API失效</span>
-                    <span className="break-all text-xs font-mono text-green-400 overflow-y-auto w-full text-center custom-scrollbar">{smiles}</span>
-                    {!isPreview && <span className="text-gray-400 text-[10px] mt-1">(點擊放大並複製)</span>}
-                </div>
-            );
+        // ===== 畫對手 (村民) 與技能特效 =====
+        ctx.save();
+        ctx.translate(state.opponent.x, state.opponent.y);
+        drawImageSafe(images.current.villager, -state.opponent.r, -state.opponent.r, state.opponent.r*2, state.opponent.r*2);
+        
+        ctx.fillStyle = '#6e4c34'; // 村民長袍顏色
+        if (state.opponent.blockActive > 0) {
+            ctx.fillRect(-20, -state.opponent.r - 20, 10, 30);
+            ctx.fillRect(10, -state.opponent.r - 20, 10, 30);
+            ctx.fillStyle = 'rgba(0, 150, 255, 0.3)';
+            ctx.fillRect(-25, -state.opponent.r - 25, 50, 35);
+            ctx.strokeStyle = 'rgba(0, 150, 255, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(-25, -state.opponent.r - 25, 50, 35);
+        } else if (state.opponent.spikeActive > 0) {
+            let progress = 1 - (state.opponent.spikeActive / 15); 
+            let angle = -(progress * Math.PI * 2); // 逆時針(左手)
+            ctx.save();
+            ctx.translate(-15, 0); // 左肩
+            ctx.rotate(angle);
+            ctx.fillRect(-5, -25, 10, 25);
+            
+            ctx.translate(0, -20);
+            ctx.fillStyle = 'rgba(255, 50, 0, 0.3)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 35, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 50, 0, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
         }
+        ctx.restore();
+        
+        // 村民體力條
+        ctx.fillStyle = '#555'; ctx.fillRect(state.opponent.x - 20, state.opponent.y + state.opponent.r + 5, 40, 6);
+        ctx.fillStyle = state.opponent.stamina > 30 ? '#00FF00' : '#FF0000';
+        ctx.fillRect(state.opponent.x - 20, state.opponent.y + state.opponent.r + 5, 40 * (state.opponent.stamina / 100), 6);
+
+
+        // ===== 畫玩家 (史蒂夫) 與技能特效 =====
+        ctx.save();
+        ctx.translate(state.player.x, state.player.y);
+        
+        // 1. 畫出身體
+        drawImageSafe(images.current.steve, -state.player.r, -state.player.r, state.player.r*2, state.player.r*2);
+
+        // 2. 畫出手臂 (設定史蒂夫皮膚顏色)
+        ctx.fillStyle = '#b08d6c';
+        
+        if (state.player.blockActive > 0) {
+            // 攔網手部
+            ctx.fillRect(-20, -state.player.r - 20, 10, 30);
+            ctx.fillRect(10, -state.player.r - 20, 10, 30);
+            
+            // ✨ 攔網可見判定箱
+            ctx.fillStyle = 'rgba(0, 150, 255, 0.3)';
+            ctx.fillRect(-25, -state.player.r - 25, 50, 35);
+            ctx.strokeStyle = 'rgba(0, 150, 255, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(-25, -state.player.r - 25, 50, 35);
+            
+        } else if (state.player.spikeActive > 0) {
+            let progress = 1 - (state.player.spikeActive / 15); 
+            let angle = progress * Math.PI * 2; 
+            
+            ctx.save();
+            ctx.translate(15, 0); // 右肩
+            ctx.rotate(angle);
+            ctx.fillRect(-5, -25, 10, 25);
+            
+            // ✨ 殺球可見判定圓形 (跟隨手臂旋轉)
+            ctx.translate(0, -20);
+            ctx.fillStyle = 'rgba(255, 50, 0, 0.3)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 35, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 50, 0, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            ctx.restore();
+        }
+        ctx.restore();
+
+        // ✨ 最佳擊球時機提示 (視覺化)
+        if (tipsRef.current) {
+            let dx = state.ball.x - state.player.x;
+            let dy = state.ball.y - state.player.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            
+            // 發球時不提示
+            if (!state.isServing) {
+                // 殺球時機：球高於網子，在玩家附近，且玩家跳起
+                if (state.ball.y < state.net.y - 10 && state.player.y < state.groundY && dist < 120 && state.ball.x < state.net.x) {
+                    ctx.fillStyle = 'rgba(255, 50, 0, 0.9)';
+                    ctx.font = 'bold 20px "Courier New"';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('💥 殺球!', state.player.x, state.player.y - state.player.r - 40);
+                    
+                    // 畫一個虛線大圓圈提示預期打擊點
+                    ctx.strokeStyle = 'rgba(255, 100, 0, 0.5)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.arc(state.player.x + 15, state.player.y - 20, 50, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]); 
+                }
+                // 攔網時機：球正在網子上方朝我方飛來，且高度適中
+                else if (state.ball.x > state.net.x - 60 && state.ball.x < state.net.x + 20 && state.ball.vx < 0 && state.ball.y > 100 && state.ball.y < 250) {
+                    ctx.fillStyle = 'rgba(0, 150, 255, 0.9)';
+                    ctx.font = 'bold 20px "Courier New"';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('🛡️ 攔網!', state.net.x - 30, state.net.y - 20);
+                }
+            }
+        }
+        
+        // 史蒂夫體力條
+        ctx.fillStyle = '#555'; ctx.fillRect(state.player.x - 20, state.player.y + state.player.r + 5, 40, 6);
+        ctx.fillStyle = state.player.stamina > 30 ? '#00FF00' : '#FF0000';
+        ctx.fillRect(state.player.x - 20, state.player.y + state.player.r + 5, 40 * (state.player.stamina / 100), 6);
+
+        ctx.save();
+
+        ctx.save();
+        ctx.translate(state.ball.x, state.ball.y);
+        ctx.rotate(state.ball.x * 0.05);
+        drawImageSafe(images.current.slime, -state.ball.r, -state.ball.r, state.ball.r*2, state.ball.r*2);
+        ctx.restore();
+
+        // 黑色箭頭天花板指標
+        if (state.ball.y + state.ball.r < 0) {
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.moveTo(state.ball.x, 25);
+            ctx.lineTo(state.ball.x - 10, 10);
+            ctx.lineTo(state.ball.x + 10, 10);
+            ctx.fill();
+            ctx.fillRect(state.ball.x - 4, 0, 8, 15);
+        }
+
+        state.reqId = requestAnimationFrame(loop);
     };
 
-    const renderQuestionContent = () => {
-        if (!currentQ) return null;
-        switch(actualMode) {
-            case 1: return <p className="text-xl">「我需要能處理 <span className="text-green-400 font-bold underline">[{currentQ.mechanism}]</span> 的藥物！」</p>;
-            case 2: return <div className="text-center w-full"><p className="text-xl mb-4">「請問這張結構圖是哪個藥物？」</p><div className="bg-white p-2 rounded"><SmilesImg smiles={currentQ.structure} /></div></div>;
-            case 3: return <p className="text-xl">「請問 <span className="text-yellow-400 font-bold text-2xl">[{currentQ.name}]</span> 的主要機轉是什麼？」</p>;
-            case 4: return <p className="text-xl text-red-300">「小心！哪種藥物會造成 <span className="font-bold underline text-red-400">[{currentQ.sideEffect}]</span> 的副作用？」</p>;
-            case 5: return <p className="text-xl">「請給我 <span className="text-yellow-400 font-bold text-2xl">[{currentQ.name}]</span> 的化學結構圖！」</p>;
-            default: return null;
+    const endGame = () => {
+        setGameState('gameover');
+        if (bgmRef.current) bgmRef.current.pause();
+        
+        if (gameRef.current.score.p > gameRef.current.score.o) {
+            const reward = 30; 
+            updateMcData({ diamonds: mcData.diamonds + reward }, true);
+            playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/ui/toast/challenge_complete.ogg');
+            showAlert(`🎉 恭喜你戰勝了村民！\n獲得 ${reward} 💎`);
+        } else {
+            showAlert(`💀 你輸給了村民... 再接再厲！`);
         }
-    };
-
-    const renderOptionContent = (el) => {
-        switch(actualMode) {
-            case 1: case 2: case 4: return <span className="font-black text-xl tracking-wider">{el.name}</span>;
-            case 3: return <span className="font-bold text-sm sm:text-base leading-tight">{el.mechanism}</span>;
-            case 5: return <SmilesImg smiles={el.structure} />;
-            default: return null;
-        }
+        if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
     };
 
     return (
-        <div className="w-full flex justify-center mb-4 mt-2 shrink-0">
-            <button onClick={() => setIsGameOpen(true)} className="bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-6 border-4 border-green-900 active:border-b-0 active:translate-y-1 shadow-lg text-lg flex items-center gap-2 pixelated-border">
-                🧪 打開藥水學：村民交易測驗
-            </button>
+        <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 touch-none">
+            
+            {showSettings && (
+               <div className="absolute inset-0 bg-black bg-opacity-80 z-[100] flex items-center justify-center pointer-events-auto">
+                   <div className="bg-gray-800 p-6 border-4 border-gray-600 text-white rounded-lg shadow-2xl max-w-sm w-full">
+                       <h3 className="mb-4 text-xl font-bold text-center text-yellow-400">⚙️ 自定義按鍵設定</h3>
+                       <p className="text-sm text-gray-400 mb-4 text-center">點擊按鈕後按下您想綁定的鍵</p>
+                       {Object.entries(keyBindings).map(([action, key]) => (
+                           <div key={action} className="mb-3 flex justify-between items-center bg-gray-900 p-2 rounded">
+                               <span className="font-bold text-gray-300">
+                                   {action === 'left' ? '⬅️ 左移' : action === 'right' ? '➡️ 右移' : action === 'jump' ? '⬆️ 跳躍' : action === 'block' ? '🛡️ 攔網' : '⚔️ 殺球'}
+                               </span>
+                               <button
+                                   onClick={() => setBindingKey(action)}
+                                   className={`px-4 py-1 font-bold rounded border ${bindingKey === action ? 'bg-yellow-600 border-yellow-400 text-white animate-pulse' : 'bg-gray-700 border-gray-500 hover:bg-gray-600'}`}
+                               >
+                                   {bindingKey === action ? '請按鍵...' : key.replace('Key', '').replace('Arrow', '')}
+                               </button>
+                           </div>
+                       ))}
+                       
+                       <div className="mb-3 flex justify-between items-center bg-gray-900 p-2 rounded mt-4 border-t-2 border-gray-700">
+                           <span className="font-bold text-gray-300">💡 顯示最佳擊球時機提示</span>
+                           <button 
+                               onClick={() => setShowTips(!showTips)}
+                               className={`px-4 py-1 font-bold rounded border ${showTips ? 'bg-green-600 border-green-400 text-white' : 'bg-red-600 border-red-400 text-white'}`}
+                           >
+                               {showTips ? '開 啟' : '關 閉'}
+                           </button>
+                       </div>
 
-            {isGameOpen && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[50] p-4">
-                    <div className="bg-gray-800 border-4 border-[#5e3a1f] w-full max-w-4xl p-6 relative min-h-[500px] flex flex-col custom-scrollbar overflow-y-auto">
-                        <button onClick={() => {setIsGameOpen(false); setGameMode(0);}} className="absolute top-2 right-4 text-4xl text-gray-400 hover:text-white font-bold z-50">×</button>
-                        
-                        {isAdmin && (
-                            <button onClick={() => setShowAdminModal(true)} className="absolute top-4 left-4 bg-gray-700 hover:bg-gray-600 text-yellow-400 px-3 py-1 border-2 border-gray-500 z-10 shadow flex items-center gap-2 pixelated-border">
-                                ⚙️ 編輯題庫
-                            </button>
-                        )}
-
-                        <div className="flex-1 flex flex-col items-center justify-center mt-8 w-full">
-                            {gameMode === 0 ? (
-                                <div className="w-full flex flex-col items-center">
-                                    <h2 className="text-4xl font-black mb-8 text-green-400 tracking-widest drop-shadow-md">⚔️ 藥劑師的試煉 ⚔️</h2>
-                                    
-                                    {/* 🌟 全新 Minecraft 貼圖版選單 */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-3xl">
-                                        <button onClick={()=>startGame(1)} className="bg-blue-800 hover:bg-blue-700 p-4 border-4 border-b-8 border-blue-400 text-white font-bold flex flex-col items-center active:translate-y-2 active:border-b-4 transition-all">
-                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/potion.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="🤒" />
-                                            <span className="text-lg">對症下藥</span><span className="text-xs text-blue-300 mt-1">機轉 ➔ 學名</span>
-                                        </button>
-                                        <button onClick={()=>startGame(2)} className="bg-purple-800 hover:bg-purple-700 p-4 border-4 border-b-8 border-purple-400 text-white font-bold flex flex-col items-center active:translate-y-2 active:border-b-4 transition-all">
-                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/brewing_stand.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="🔬" />
-                                            <span className="text-lg">結構鑑定</span><span className="text-xs text-purple-300 mt-1">結構圖 ➔ 學名</span>
-                                        </button>
-                                        <button onClick={()=>startGame(3)} className="bg-green-800 hover:bg-green-700 p-4 border-4 border-b-8 border-green-400 text-white font-bold flex flex-col items-center active:translate-y-2 active:border-b-4 transition-all">
-                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/writable_book.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="🧩" />
-                                            <span className="text-lg">藥理拼圖</span><span className="text-xs text-green-300 mt-1">學名 ➔ 機轉</span>
-                                        </button>
-                                        <button onClick={()=>startGame(4)} className="bg-red-800 hover:bg-red-700 p-4 border-4 border-b-8 border-red-400 text-white font-bold flex flex-col items-center active:translate-y-2 active:border-b-4 transition-all">
-                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/spider_eye.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="☠️" />
-                                            <span className="text-lg">毒性排雷</span><span className="text-xs text-red-300 mt-1">副作用 ➔ 學名</span>
-                                        </button>
-                                        <button onClick={()=>startGame(5)} className="bg-yellow-800 hover:bg-yellow-700 p-4 border-4 border-b-8 border-yellow-400 text-white font-bold flex flex-col items-center active:translate-y-2 active:border-b-4 transition-all">
-                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/filled_map.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="🖼️" />
-                                            <span className="text-lg">認清藥貌</span><span className="text-xs text-yellow-300 mt-1">學名 ➔ 結構圖</span>
-                                        </button>
-                                        <button onClick={()=>startGame(6)} className="bg-gray-800 hover:bg-gray-700 p-4 border-4 border-b-8 border-red-500 text-white font-bold flex flex-col items-center animate-pulse active:translate-y-2 active:border-b-4 transition-all">
-                                            <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/diamond_sword.png" className="w-12 h-12 mb-2 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="⚔️" />
-                                            <span className="text-lg text-red-400">無盡生存</span><span className="text-xs text-gray-400 mt-1">綜合隨機大亂鬥</span>
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="w-full max-w-3xl bg-[#c6c6c6] p-4 border-4 border-white border-b-gray-500 border-r-gray-500 text-black shadow-2xl flex flex-col relative">
-                                    <div className="flex justify-between items-center mb-4 bg-gray-900 text-white p-2 border-2 border-gray-700">
-                                        <button onClick={() => setGameMode(0)} className="bg-red-600 px-4 py-1 hover:bg-red-500 font-bold border-b-4 border-red-900 active:border-b-0 active:translate-y-1 text-sm">↩ 返回選單</button>
-                                        <span className="text-lg font-bold text-blue-300 tracking-wider">第 {round} 題</span>
-                                        <span className="text-xl font-black text-yellow-400 tracking-wider">分數：{score}</span>
-                                    </div>
-
-                                    <div className="bg-gray-900 text-white p-6 mb-6 font-bold flex flex-col items-center justify-center border-2 border-gray-700 min-h-[200px] relative overflow-hidden">
-                                        {/* 🌟 替換為 Minecraft 村民頭像 */}
-                                        <McImg src="https://minotar.net/helm/MHF_Villager/100.png" className="absolute top-3 left-3 w-16 h-16 drop-shadow-md" style={{imageRendering: 'pixelated'}} fallback="🙎‍♂️" />
-                                        
-                                        <div className="text-center w-full max-w-xl mt-4 z-10 flex flex-col items-center">
-                                            {renderQuestionContent()}
-                                        </div>
-                                        
-                                        {/* 🌟 替換為綠寶石 (答對) */}
-                                        {feedback === 'correct' && (
-                                            <div className="absolute inset-0 bg-green-500/80 flex items-center justify-center z-20 animate-bounce">
-                                                <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/emerald.png" className="w-32 h-32 drop-shadow-2xl" style={{imageRendering: 'pixelated'}} fallback="⭕" />
-                                            </div>
-                                        )}
-                                        
-                                        {/* 🌟 替換為紅石方塊 (答錯) */}
-                                        {feedback === 'wrong' && (
-                                            <div className="absolute inset-0 bg-red-600/80 flex items-center justify-center z-20 animate-pulse">
-                                                <McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/block/redstone_block.png" className="w-32 h-32 drop-shadow-2xl" style={{imageRendering: 'pixelated'}} fallback="❌" />
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        {options.map((el, i) => (
-                                            <button 
-                                                key={i} 
-                                                onClick={() => handleAnswer(el)}
-                                                className="bg-[#8b8b8b] hover:bg-[#a0a0a0] active:bg-[#6b6b6b] border-4 border-white border-b-[#555] border-r-[#555] p-4 flex items-center justify-center text-center shadow-sm transition-transform active:scale-95 text-white shadow-black drop-shadow-md min-h-[120px]"
-                                            >
-                                                {renderOptionContent(el)}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                       <button onClick={() => setShowSettings(false)} className="mt-4 bg-green-600 hover:bg-green-500 font-bold py-2 w-full rounded border-2 border-black">完成</button>
+                   </div>
+               </div>
             )}
 
-            {/* 🌟 新增：結構圖放大預覽 Modal */}
-            {previewSmiles && (
-                <div className="fixed inset-0 bg-black/90 flex flex-col items-center justify-center z-[200] p-4" onClick={() => setPreviewSmiles(null)}>
-                    <div className="bg-gray-800 border-4 border-gray-500 p-4 w-full max-w-2xl relative flex flex-col items-center" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => setPreviewSmiles(null)} className="absolute top-2 right-4 text-4xl text-gray-400 hover:text-white font-bold">×</button>
-                        <h3 className="text-xl font-bold text-yellow-400 mb-4">🔍 結構圖預覽</h3>
-                        
-                        <SmilesImg smiles={previewSmiles} isPreview={true} />
-                        
-                        <div className="mt-4 w-full bg-black p-3 border border-gray-600">
-                            <p className="text-gray-400 text-sm mb-1">原始 SMILES 語法 (可複製貼上至外部畫圖工具)：</p>
-                            <p className="text-green-400 font-mono break-all text-sm select-all">{previewSmiles}</p>
-                        </div>
-                        
-                        <button onClick={() => setPreviewSmiles(null)} className="mt-4 bg-blue-600 px-6 py-2 text-white font-bold border-b-4 border-blue-900 hover:bg-blue-500 active:border-b-0 active:translate-y-1">
-                            關閉預覽
-                        </button>
+            <div className="bg-gray-800 p-2 border-4 border-gray-600 w-full max-w-4xl relative shadow-2xl flex flex-col items-center pointer-events-auto">
+                <div className="w-full flex justify-between items-center text-white font-bold mb-2 font-mono px-2 text-xl">
+                    <span className="text-blue-400">史蒂夫: {score.player}</span>
+                    <span className="text-yellow-400 text-sm hidden sm:inline">先得 10 分者獲勝</span>
+                    <div className="flex gap-4 items-center">
+                        <span className="text-red-400">村民: {score.opponent}</span>
+                        <button onClick={() => setShowSettings(true)} className="text-gray-400 hover:text-white transition-colors text-lg">⚙️</button>
+                        <button onClick={onQuit} className="text-gray-400 hover:text-white transition-colors text-lg">✖</button>
                     </div>
                 </div>
-            )}
 
-            {isAdmin && showAdminModal && (
-                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4">
-                    <div className="bg-gray-900 border-4 border-gray-600 w-full max-w-3xl p-6 relative max-h-[90vh] overflow-hidden flex flex-col">
-                        <button onClick={() => setShowAdminModal(false)} className="absolute top-2 right-4 text-3xl text-gray-400 hover:text-white font-bold">×</button>
-                        <h2 className="text-xl font-bold mb-4 text-green-400">⛏️ 元素鍛造爐</h2>
-                        <div className="flex gap-2 mb-2">
-                            <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className="p-2 bg-gray-800 text-white border border-gray-500 flex-shrink-0">
-                                <option value="medChem">🧪 藥物化學</option>
-                                <option value="pharmacognosy">🌿 生藥學</option>
-                            </select>
-                            <button onClick={handleBulkImport} className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 font-bold border-b-4 border-green-900 active:border-b-0 active:translate-y-1">
-                                ⚡ 批量鍛造
-                            </button>
+                <div className="relative w-full overflow-hidden border-4 border-black" style={{ aspectRatio: '800/400' }}>
+                    <canvas ref={canvasRef} width={800} height={400} className="w-full h-full object-contain bg-[#87CEEB] pixelated"></canvas>
+                    
+                    {pointMessage && gameState === 'playing' && (
+                        <div className="absolute top-1/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black bg-opacity-70 text-white font-bold text-2xl sm:text-3xl px-6 py-3 rounded-lg border-2 border-yellow-400 z-10 whitespace-nowrap animate-bounce">
+                            {pointMessage}
                         </div>
-                        <textarea value={rawInput} onChange={e => setRawInput(e.target.value)} placeholder="貼上格式：&#10;[=學名=] {結構SMILES} [+機轉/疾病+] [-副作用/禁忌-]" className="w-full h-32 p-3 bg-gray-800 border-2 border-gray-500 text-green-300 outline-none resize-none custom-scrollbar mb-4 shrink-0" />
-                        <h3 className="font-bold text-yellow-400 mb-2">📦 現有元素 ({elements.length})</h3>
-                        <div className="overflow-y-auto custom-scrollbar bg-gray-800 p-2 border border-gray-600 flex-1">
-                            {elements.map(el => (
-                                <div key={el.docId} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gray-700 mb-2 p-2 text-sm border-l-4 border-blue-500 gap-2">
-                                    <div className="flex flex-col flex-1 min-w-0">
-                                        <span className="font-bold text-blue-300">{el.name}</span>
-                                        <span className="text-gray-300 truncate w-full">結構: {el.structure}</span>
-                                        <span className="text-green-300 truncate w-full">+: {el.mechanism}</span>
-                                        <span className="text-red-300 truncate w-full">-: {el.sideEffect}</span>
-                                    </div>
-                                    <button onClick={() => handleDelete(el.docId)} className="bg-red-600 px-3 py-1 hover:bg-red-500 font-bold border-b-4 border-red-900 active:border-b-0 active:translate-y-1 shrink-0">刪除</button>
-                                </div>
-                            ))}
+                    )}
+
+                    {gameState === 'start' && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-60 text-white">
+                            <h2 className="text-4xl font-black mb-4 text-pink-400 drop-shadow-md tracking-widest">🏐 史萊姆排球</h2>
+                            <p className="mb-6 font-bold text-center">把史萊姆球打過網得分！(支援自定義按鍵與手機觸控)<br/><span className="text-yellow-300">新增攔網與殺球機制 (需消耗體力)</span></p>
+                            <button onClick={startGame} className="bg-pink-600 hover:bg-pink-500 border-4 border-pink-800 text-white font-bold py-3 px-8 text-2xl active:translate-y-1 shadow-lg animate-bounce pixelated-border">點擊開始 (消耗1飽食)</button>
                         </div>
+                    )}
+                    {gameState === 'gameover' && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-80 text-white">
+                            <h2 className="text-5xl font-black mb-4 drop-shadow-md">{score.player > score.opponent ? '🏆 挑戰成功！' : '💀 挑戰失敗...'}</h2>
+                            <p className="text-2xl mb-8 font-bold">最終比分 - {score.player} : {score.opponent}</p>
+                            <div className="flex gap-4">
+                                <button onClick={startGame} className="bg-green-600 hover:bg-green-500 border-4 border-green-800 text-white font-bold py-2 px-6 text-lg active:translate-y-1 pixelated-border">🔄 再來一局</button>
+                                <button onClick={onQuit} className="bg-gray-600 hover:bg-gray-500 border-4 border-gray-800 text-white font-bold py-2 px-6 text-lg active:translate-y-1 pixelated-border">🔙 返回</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* 手機版觸控按鈕 (增強擴充攔網與殺球) */}
+                <div className="flex justify-between w-full mt-4 px-2 sm:hidden select-none gap-1">
+                    <div className="flex gap-1">
+                        <button 
+                            onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true;}}
+                            onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false;}}
+                            className="bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:translate-y-1 flex items-center justify-center"
+                        >←</button>
+                        <button 
+                            onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true;}}
+                            onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false;}}
+                            className="bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:translate-y-1 flex items-center justify-center"
+                        >→</button>
+                    </div>
+                    <div className="flex gap-1">
+                        <button 
+                            onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true;}}
+                            onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false;}}
+                            className="bg-purple-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-purple-800 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center"
+                        ><span>🛡️</span><span>攔網</span></button>
+                        <button 
+                            onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true;}}
+                            onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false;}}
+                            className="bg-red-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-red-800 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center"
+                        ><span>⚔️</span><span>殺球</span></button>
+                        <button 
+                            onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true;}}
+                            onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false;}}
+                            className="bg-blue-600 text-white w-14 h-14 font-bold text-xl rounded-lg border-b-4 border-blue-800 active:border-b-0 active:translate-y-1 flex items-center justify-center"
+                        >↑</button>
                     </div>
                 </div>
-            )}
+
+                <p className="text-gray-400 text-xs sm:text-sm mt-2 font-bold tracking-widest text-center hidden sm:block">
+                    預設控制：【A/D/方向鍵】移動，【W/空白鍵/↑】跳躍，【E】攔網，【F】殺球
+                </p>
+            </div>
         </div>
     );
 }
@@ -1618,10 +2005,11 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
 // --- Minecraft 養成遊戲面板組件 ---
 function MinecraftDashboard({ user, userProfile, showAlert }) {
-    const [leaderboard, setLeaderboard] = useState([]);
+   const [leaderboard, setLeaderboard] = useState([]);
     const [showMiniGame, setShowMiniGame] = useState(false);
     const [showMiningGame, setShowMiningGame] = useState(false); 
     const [showSandbox, setShowSandbox] = useState(false);
+    const [showVolleyball, setShowVolleyball] = useState(false);
     
     // ✨ 新增：村民狀態與終界儲物箱狀態
     const [showEnderChest, setShowEnderChest] = useState(false);
@@ -1914,6 +2302,16 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                     onQuit={() => setShowSandbox(false)}
              />
             )}
+            
+            {showVolleyball && (
+                <VolleyballGame 
+                    user={user}
+                    mcData={mcData}
+                    updateMcData={updateMcData}
+                    showAlert={showAlert}
+                    onQuit={() => setShowVolleyball(false)}
+                />
+            )}
 
             <div className="max-w-5xl mx-auto mc-ui p-6 flex flex-col space-y-6 bg-opacity-90 dark:bg-opacity-80">
                 
@@ -1931,11 +2329,14 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
             ⛏️ 挖礦
         </button>
         <button onClick={() => setShowMiniGame(true)} className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-blue-800 font-bold transition-colors whitespace-nowrap shadow-md">
-            🛻 礦車探險
-        </button>
-    </div>
+                        🛻 礦車探險
+                    </button>
+                    <button onClick={() => setShowVolleyball(true)} className="bg-pink-600 hover:bg-pink-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-pink-800 font-bold transition-colors whitespace-nowrap shadow-md">
+                        🏐 史萊姆排球
+                    </button>
+                </div>
 
-    <div className="mc-panel-dark w-full md:w-auto text-white">
+                <div className="mc-panel-dark w-full md:w-auto text-white">
                         <div className="flex space-x-6 text-sm items-center font-bold">
                             <div className="text-center">
                                 <p className="text-green-400 text-lg">Lv. {mcData.level}</p>
