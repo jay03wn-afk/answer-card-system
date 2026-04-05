@@ -1,12 +1,14 @@
 const { useState, useEffect, useRef } = React;
 
-// --- 史萊姆排球小遊戲組件 ---
-// --- 史萊姆排球小遊戲組件 ---
+// --- 史萊姆排球小遊戲組件 (WebRTC 雙人連線版) ---
 function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
     const canvasRef = useRef(null);
     const [gameState, setGameState] = useState('start');
     const [score, setScore] = useState({ player: 0, opponent: 0 });
     const [pointMessage, setPointMessage] = useState('');
+
+    // ✨ 1. 新增：觸控按鈕自定義設定狀態
+    const [touchSettings, setTouchSettings] = useState({ layout: 'overlay', scale: 1, dpadX: 0, dpadY: 0, actionX: 0, actionY: 0 });
 
     // 自定義按鍵狀態
     const [showSettings, setShowSettings] = useState(false);
@@ -72,7 +74,10 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         lastHitTime: { p: 0, o: 0 },
         serving: 'player', 
         isServing: true,
-        isPointOver: false
+        isPointOver: false,
+        serveTimer: 0,         // ✨ 新增：發球前喘息倒數
+        serveSkillLockP: false,// ✨ 新增：玩家技能發球鎖定
+        serveSkillLockO: false // ✨ 新增：對手技能發球鎖定
     });
 
     useEffect(() => {
@@ -119,6 +124,9 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         state.touches.p = 0; state.touches.o = 0;
         state.isPointOver = false;
         state.isServing = true;
+        state.serveTimer = 45; // ✨ 縮短喘息時間 (約0.75秒)
+        state.serveSkillLockP = false;
+        state.serveSkillLockO = false;
         setPointMessage('');
     };
 
@@ -148,7 +156,20 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         const ctx = cvs.getContext('2d');
 
        if (!state.isPointOver) {
-            if (!state.isServing) state.ball.vy += 0.35;
+            // ✨ 2. 發球喘息時間與吹哨聲
+            if (state.serveTimer > 0) {
+                state.serveTimer--;
+                if (state.serveTimer === 15) playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/block/bell/use.ogg');
+                // 喘息時間凍結球體
+                state.ball.vx = 0; state.ball.vy = 0;
+            } else {
+                if (!state.isServing) state.ball.vy += 0.35;
+            }
+
+            // ✨ 4. 發球過網前置技能鎖解除 (球超過網子一半就解鎖)
+            if (state.ball.x > state.net.x + state.net.w / 2) state.serveSkillLockP = false;
+            if (state.ball.x < state.net.x + state.net.w / 2) state.serveSkillLockO = false;
+
             state.player.vy += 0.6;
             state.opponent.vy += 0.6;
 
@@ -166,8 +187,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             if (state.opponent.blockActive > 0) state.opponent.blockActive--;
             if (state.opponent.spikeActive > 0) state.opponent.spikeActive--;
 
-           // 玩家技能執行
-            if (!state.isServing) {
+          // 玩家技能執行 (✨ 加上 serveSkillLockP 判定)
+            if (!state.isServing && !state.serveSkillLockP) {
                 if (state.keys.block && state.player.blockCd === 0 && state.player.stamina >= 25) {
                     state.player.stamina -= 25;
                     state.player.blockActive = 20;
@@ -257,8 +278,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 state.opponent.vy = state.opponent.jump;
             }
 
-            // 執行 AI 技能
-            if (!state.isServing) {
+            // 執行 AI 技能 (✨ 加上 serveSkillLockO 判定)
+            if (!state.isServing && !state.serveSkillLockO) {
                 if (aiTrySpike && state.opponent.spikeCd === 0 && state.opponent.stamina >= 30) {
                     state.opponent.stamina -= 30;
                     state.opponent.spikeActive = 15;
@@ -273,6 +294,14 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 }
             }
             // --- 🤖 AI 邏輯結束 ---
+
+            // ✨ 喘息期間，強制凍結雙方的移動與跳躍，避免村民亂跑
+            if (state.serveTimer > 0) {
+                state.player.vx = 0;
+                state.opponent.vx = 0;
+                if (state.player.y >= state.groundY) state.player.vy = 0;
+                if (state.opponent.y >= state.groundY) state.opponent.vy = 0;
+            }
 
             state.player.x += state.player.vx; state.player.y += state.player.vy;
             state.opponent.x += state.opponent.vx; state.opponent.y += state.opponent.vy;
@@ -382,7 +411,12 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
                     playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/slime/attack1.ogg');
                     let wasServing = state.isServing;
-                    if (state.isServing) state.isServing = false;
+                    // ✨ 發球瞬間將雙方技能鎖住，直到球過網才解鎖
+                    if (state.isServing) {
+                        state.isServing = false;
+                        state.serveSkillLockP = true;
+                        state.serveSkillLockO = true;
+                    }
 
                     if (isPlayer) {
                         state.touches.p += 1;
@@ -523,6 +557,13 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         ctx.fillStyle = '#555'; ctx.fillRect(state.opponent.x - 20, state.opponent.y + state.opponent.r + 5, 40, 6);
         ctx.fillStyle = state.opponent.stamina > 30 ? '#00FF00' : '#FF0000';
         ctx.fillRect(state.opponent.x - 20, state.opponent.y + state.opponent.r + 5, 40 * (state.opponent.stamina / 100), 6);
+        // ✨ 5. 村民技能冷卻條 (藍=攔網, 橘=殺球)
+        ctx.fillStyle = '#222'; ctx.fillRect(state.opponent.x - 20, state.opponent.y + state.opponent.r + 13, 19, 4);
+        ctx.fillStyle = state.opponent.blockCd === 0 ? '#00BFFF' : '#555';
+        ctx.fillRect(state.opponent.x - 20, state.opponent.y + state.opponent.r + 13, 19 * (1 - state.opponent.blockCd / 90), 4);
+        ctx.fillStyle = '#222'; ctx.fillRect(state.opponent.x + 1, state.opponent.y + state.opponent.r + 13, 19, 4);
+        ctx.fillStyle = state.opponent.spikeCd === 0 ? '#FF8C00' : '#555';
+        ctx.fillRect(state.opponent.x + 1, state.opponent.y + state.opponent.r + 13, 19 * (1 - state.opponent.spikeCd / 100), 4);
 
 
         // ===== 畫玩家 (史蒂夫) 與技能特效 =====
@@ -608,6 +649,13 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         ctx.fillStyle = '#555'; ctx.fillRect(state.player.x - 20, state.player.y + state.player.r + 5, 40, 6);
         ctx.fillStyle = state.player.stamina > 30 ? '#00FF00' : '#FF0000';
         ctx.fillRect(state.player.x - 20, state.player.y + state.player.r + 5, 40 * (state.player.stamina / 100), 6);
+        // ✨ 5. 史蒂夫技能冷卻條 (藍=攔網, 橘=殺球)
+        ctx.fillStyle = '#222'; ctx.fillRect(state.player.x - 20, state.player.y + state.player.r + 13, 19, 4);
+        ctx.fillStyle = state.player.blockCd === 0 ? '#00BFFF' : '#555';
+        ctx.fillRect(state.player.x - 20, state.player.y + state.player.r + 13, 19 * (1 - state.player.blockCd / 90), 4);
+        ctx.fillStyle = '#222'; ctx.fillRect(state.player.x + 1, state.player.y + state.player.r + 13, 19, 4);
+        ctx.fillStyle = state.player.spikeCd === 0 ? '#FF8C00' : '#555';
+        ctx.fillRect(state.player.x + 1, state.player.y + state.player.r + 13, 19 * (1 - state.player.spikeCd / 120), 4);
 
         ctx.save();
 
@@ -626,6 +674,16 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             ctx.lineTo(state.ball.x + 10, 10);
             ctx.fill();
             ctx.fillRect(state.ball.x - 4, 0, 8, 15);
+        }
+
+       // ✨ 繪製發球喘息倒數文字
+        if (state.serveTimer > 0) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.fillRect(0, 0, state.w, state.h);
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.9)';
+            ctx.font = 'bold 50px "Courier New"';
+            ctx.textAlign = 'center';
+            ctx.fillText(state.serveTimer > 15 ? 'READY...' : 'GO!', state.w/2, state.h/2);
         }
 
         state.reqId = requestAnimationFrame(loop);
@@ -650,8 +708,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         <div className="fixed inset-0 z-[80] bg-black bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 touch-none">
             
             {showSettings && (
-               <div className="absolute inset-0 bg-black bg-opacity-80 z-[100] flex items-center justify-center pointer-events-auto">
-                   <div className="bg-gray-800 p-6 border-4 border-gray-600 text-white rounded-lg shadow-2xl max-w-sm w-full">
+               <div className="absolute inset-0 bg-black bg-opacity-80 z-[100] flex items-center justify-center pointer-events-auto p-4">
+                   <div className="bg-gray-800 p-6 border-4 border-gray-600 text-white rounded-lg shadow-2xl max-w-sm w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
                        <h3 className="mb-4 text-xl font-bold text-center text-yellow-400">⚙️ 自定義按鍵設定</h3>
                        <p className="text-sm text-gray-400 mb-4 text-center">點擊按鈕後按下您想綁定的鍵</p>
                        {Object.entries(keyBindings).map(([action, key]) => (
@@ -678,7 +736,42 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                            </button>
                        </div>
 
-                       <button onClick={() => setShowSettings(false)} className="mt-4 bg-green-600 hover:bg-green-500 font-bold py-2 w-full rounded border-2 border-black">完成</button>
+                       {/* ✨ 觸控按鈕自定義 UI */}
+                       <div className="mb-3 bg-gray-900 p-2 rounded mt-2 border-t-2 border-gray-700">
+                           <div className="flex justify-between items-center mb-2">
+                               <span className="font-bold text-gray-300">📱 觸控按鈕佈局</span>
+                               <button 
+                                   onClick={() => setTouchSettings(p => ({...p, layout: p.layout === 'overlay' ? 'outside' : 'overlay'}))}
+                                   className="px-4 py-1 font-bold rounded border bg-blue-600 border-blue-400 text-white"
+                               >
+                                   {touchSettings.layout === 'overlay' ? '畫面內 (浮動)' : '畫面外 (下方)'}
+                               </button>
+                           </div>
+                           {touchSettings.layout === 'overlay' && (
+                               <div className="flex flex-col gap-3 mt-3 border-t border-gray-700 pt-3">
+                                   <div className="flex justify-between text-xs text-gray-300 items-center">
+                                       <span>整體大小比例</span>
+                                       <input type="range" min="0.5" max="2" step="0.1" value={touchSettings.scale} onChange={e => setTouchSettings(p => ({...p, scale: parseFloat(e.target.value)}))} className="w-24" />
+                                   </div>
+                                   <div className="flex justify-between text-xs text-gray-300 items-center">
+                                       <span>移動鍵 X/Y微調</span>
+                                       <div className="flex gap-2">
+                                           <input type="range" min="-100" max="200" value={touchSettings.dpadX} onChange={e => setTouchSettings(p => ({...p, dpadX: parseInt(e.target.value)}))} className="w-16"/>
+                                           <input type="range" min="-50" max="200" value={touchSettings.dpadY} onChange={e => setTouchSettings(p => ({...p, dpadY: parseInt(e.target.value)}))} className="w-16"/>
+                                       </div>
+                                   </div>
+                                   <div className="flex justify-between text-xs text-gray-300 items-center">
+                                       <span>技能鍵 X/Y微調</span>
+                                       <div className="flex gap-2">
+                                           <input type="range" min="-200" max="100" value={touchSettings.actionX} onChange={e => setTouchSettings(p => ({...p, actionX: parseInt(e.target.value)}))} className="w-16"/>
+                                           <input type="range" min="-50" max="200" value={touchSettings.actionY} onChange={e => setTouchSettings(p => ({...p, actionY: parseInt(e.target.value)}))} className="w-16"/>
+                                       </div>
+                                   </div>
+                               </div>
+                           )}
+                       </div>
+
+                       <button onClick={() => setShowSettings(false)} className="mt-4 bg-green-600 hover:bg-green-500 font-bold py-2 w-full rounded border-2 border-black active:translate-y-1">完成</button>
                    </div>
                </div>
             )}
@@ -695,8 +788,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     </div>
                 </div>
 
-               {/* ✨ 電腦版取消高度限制，手機版保留 55vh，讓電腦畫面能變大 */}
-                <div className="relative w-full overflow-hidden border-4 border-black shrink-0 max-h-[55vh] md:max-h-none" style={{ aspectRatio: '800/400' }}>
+               {/* ✨ 畫布區域與半透明覆蓋按鈕 */}
+                <div className="relative w-full overflow-hidden border-4 border-black shrink-0 max-h-[65vh] md:max-h-none" style={{ aspectRatio: '800/400' }}>
                     <canvas ref={canvasRef} width={800} height={400} className="w-full h-full object-contain bg-[#87CEEB] pixelated"></canvas>
                     
                     {pointMessage && gameState === 'playing' && (
@@ -706,14 +799,14 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     )}
 
                     {gameState === 'start' && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-60 text-white">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-60 text-white z-20">
                             <h2 className="text-4xl font-black mb-4 text-pink-400 drop-shadow-md tracking-widest">🏐 史萊姆排球</h2>
                             <p className="mb-6 font-bold text-center">把史萊姆球打過網得分！(支援自定義按鍵與手機觸控)<br/><span className="text-yellow-300">新增攔網與殺球機制 (需消耗體力)</span></p>
                             <button onClick={startGame} className="bg-pink-600 hover:bg-pink-500 border-4 border-pink-800 text-white font-bold py-3 px-8 text-2xl active:translate-y-1 shadow-lg animate-bounce pixelated-border">點擊開始 (消耗1飽食)</button>
                         </div>
                     )}
                     {gameState === 'gameover' && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-80 text-white">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-80 text-white z-20">
                             <h2 className="text-5xl font-black mb-4 drop-shadow-md">{score.player > score.opponent ? '🏆 挑戰成功！' : '💀 挑戰失敗...'}</h2>
                             <p className="text-2xl mb-8 font-bold">最終比分 - {score.player} : {score.opponent}</p>
                             <div className="flex gap-4">
@@ -722,40 +815,59 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                             </div>
                         </div>
                     )}
+
+                    {/* ✨ 觸控按鈕 (支援自定義位置大小與防反白) */}
+                    {gameState === 'playing' && touchSettings.layout === 'overlay' && (
+                        <div className="absolute inset-0 z-10 lg:hidden pointer-events-none" style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'none' }}>
+                            {/* 左側移動控制 */}
+                            <div className="absolute flex gap-2 pointer-events-auto" style={{ bottom: `${12 + touchSettings.dpadY}px`, left: `${12 + touchSettings.dpadX}px`, transform: `scale(${touchSettings.scale})`, transformOrigin: 'bottom left' }}>
+                                <button 
+                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true;}}
+                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false;}}
+                                    className="bg-black/40 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-white/40 active:bg-black/60 flex items-center justify-center backdrop-blur-sm"
+                                >←</button>
+                                <button 
+                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true;}}
+                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false;}}
+                                    className="bg-black/40 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-white/40 active:bg-black/60 flex items-center justify-center backdrop-blur-sm"
+                                >→</button>
+                            </div>
+                            {/* 右側技能控制 */}
+                            <div className="absolute flex gap-2 pointer-events-auto" style={{ bottom: `${12 + touchSettings.actionY}px`, right: `${12 - touchSettings.actionX}px`, transform: `scale(${touchSettings.scale})`, transformOrigin: 'bottom right' }}>
+                                <button 
+                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true;}}
+                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false;}}
+                                    className="bg-purple-600/60 text-white/90 w-12 h-12 font-bold text-xl rounded-full border-2 border-purple-300/60 active:bg-purple-600/90 flex flex-col items-center justify-center backdrop-blur-sm shadow-lg"
+                                >🛡️</button>
+                                <button 
+                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true;}}
+                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false;}}
+                                    className="bg-red-600/60 text-white/90 w-12 h-12 font-bold text-xl rounded-full border-2 border-red-300/60 active:bg-red-600/90 flex flex-col items-center justify-center backdrop-blur-sm shadow-lg"
+                                >⚔️</button>
+                                <button 
+                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true;}}
+                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false;}}
+                                    className="bg-blue-600/60 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-blue-300/60 active:bg-blue-600/90 flex items-center justify-center backdrop-blur-sm shadow-lg"
+                                >↑</button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                {/* 手機版觸控按鈕 (增強擴充攔網與殺球) */}
-                <div className="flex justify-between w-full mt-2 px-1 lg:hidden select-none gap-1 shrink-0">
-                    <div className="flex gap-1">
-                        <button 
-                            onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true;}}
-                            onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false;}}
-                            className="bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:translate-y-1 flex items-center justify-center"
-                        >←</button>
-                        <button 
-                            onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true;}}
-                            onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false;}}
-                            className="bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:translate-y-1 flex items-center justify-center"
-                        >→</button>
+                {/* 畫面外的按鈕模式 */}
+                {gameState === 'playing' && touchSettings.layout === 'outside' && (
+                    <div className="flex justify-between w-full mt-2 px-2 lg:hidden gap-1 shrink-0" style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'none' }}>
+                        <div className="flex gap-2">
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false;}} className="bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:translate-y-1 flex items-center justify-center">←</button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false;}} className="bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:translate-y-1 flex items-center justify-center">→</button>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false;}} className="bg-purple-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-purple-800 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center"><span>🛡️</span><span>攔網</span></button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false;}} className="bg-red-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-red-800 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center"><span>⚔️</span><span>殺球</span></button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false;}} className="bg-blue-600 text-white w-14 h-14 font-bold text-xl rounded-lg border-b-4 border-blue-800 active:border-b-0 active:translate-y-1 flex items-center justify-center">↑</button>
+                        </div>
                     </div>
-                    <div className="flex gap-1">
-                        <button 
-                            onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true;}}
-                            onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false;}}
-                            className="bg-purple-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-purple-800 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center"
-                        ><span>🛡️</span><span>攔網</span></button>
-                        <button 
-                            onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true;}}
-                            onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false;}}
-                            className="bg-red-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-red-800 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center"
-                        ><span>⚔️</span><span>殺球</span></button>
-                        <button 
-                            onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true;}}
-                            onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false;}}
-                            className="bg-blue-600 text-white w-14 h-14 font-bold text-xl rounded-lg border-b-4 border-blue-800 active:border-b-0 active:translate-y-1 flex items-center justify-center"
-                        >↑</button>
-                    </div>
-                </div>
+                )}
 
                 <p className="text-gray-400 text-xs sm:text-sm mt-2 font-bold tracking-widest text-center hidden lg:block">
                     預設控制：【A/D/方向鍵】移動，【W/空白鍵/↑】跳躍，【E】攔網，【F】殺球
@@ -1036,18 +1148,6 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
             p.jumps++;
         }
     };
-
-    // ✨ 新增空白鍵跳躍支援
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (e.code === 'Space') {
-                e.preventDefault();
-                jump();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown, { passive: false });
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
 
     // ✨ 新增空白鍵跳躍支援
     useEffect(() => {
