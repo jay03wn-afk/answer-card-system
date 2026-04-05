@@ -57,8 +57,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         reqId: null,
         w: 800,
         h: 400,
-        groundY: 350,
-        net: { x: 395, y: 220, w: 10, h: 130 },
+        groundY: 320, // ✨ 地面調高，讓下方留更多空間給按鈕
+        net: { x: 395, y: 190, w: 10, h: 130 }, // ✨ 配合地面，網子也往上調
         ball: { x: 200, y: 100, vx: 0, vy: 0, r: 25 },
         player: { 
             x: 200, y: 350, vx: 0, vy: 0, speed: 6.5, jump: -11.5, r: 30,
@@ -118,8 +118,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         const state = gameRef.current;
         state.player.x = 200; state.player.y = state.groundY; state.player.vx = 0; state.player.vy = 0;
         state.opponent.x = 600; state.opponent.y = state.groundY; state.opponent.vx = 0; state.opponent.vy = 0;
-        if (state.serving === 'player') { state.ball.x = 200; state.ball.y = 250; } 
-        else { state.ball.x = 600; state.ball.y = 250; }
+        if (state.serving === 'player') { state.ball.x = 200; state.ball.y = 220; } // ✨ 配合新地面高度
+        else { state.ball.x = 600; state.ball.y = 220; }
         state.ball.vx = 0; state.ball.vy = 0;
         state.touches.p = 0; state.touches.o = 0;
         state.isPointOver = false;
@@ -334,8 +334,9 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 let lastHit = isPlayer ? state.lastHitTime.p : state.lastHitTime.o;
                 if (now - lastHit < 100) return; // 冷卻中直接跳過，防止連續鬼畜判定
 
-                let isBlockingHit = isPlayer && p.blockActive > 0;
-                let isSpikingHit = isPlayer && p.spikeActive > 0;
+                // ✨ 修復：讓村民也能物理觸發技能判定 (原本只有動畫)
+                let isBlockingHit = p.blockActive > 0;
+                let isSpikingHit = p.spikeActive > 0;
                 
                 let hitOccurred = false;
                 let actualHitType = 'body'; 
@@ -449,9 +450,11 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     let pSpeed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
                     let bounceSpeed = Math.max(7, speed * 0.7 + pSpeed * 0.5);
 
-                    if (wasServing && !isPlayer) {
-                        bounceSpeed = Math.max(bounceSpeed, 12);
-                        nxVec = -1.5;
+                    // ✨ 修改：雙方發球統一給予強力的拋物線，保證過網，且解決村民發球像殺球的問題
+                    if (wasServing) {
+                        bounceSpeed = 14; 
+                        nyVec = -2.0; // 往上拋高
+                        nxVec = isPlayer ? 1.5 : -1.5; // 往前推
                     }
 
                     if (actualHitType === 'spike') {
@@ -466,7 +469,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                         nxVec = (hitVectorX > 0 ? 1 : -1) * 0.5;
                         playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
                     } else {
-                        bounceSpeed = Math.min(bounceSpeed, 13);
+                        // ✨ 修改：如果是發球，保留拋物線初速，不要被一般擊球邏輯降速
+                        bounceSpeed = wasServing ? bounceSpeed : Math.min(bounceSpeed, 13);
                         if (nyVec > 0) nyVec = -nyVec; 
                     }
 
@@ -818,18 +822,20 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
                     {/* ✨ 觸控按鈕 (支援自定義位置大小與防反白) */}
                     {gameState === 'playing' && touchSettings.layout === 'overlay' && (
-                        <div className="absolute inset-0 z-10 lg:hidden pointer-events-none" style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'none' }}>
+                        <div className="absolute inset-0 z-10 2xl:hidden pointer-events-none" style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'none' }}>
                             {/* 左側移動控制 */}
                             <div className="absolute flex gap-2 pointer-events-auto" style={{ bottom: `${12 + touchSettings.dpadY}px`, left: `${12 + touchSettings.dpadX}px`, transform: `scale(${touchSettings.scale})`, transformOrigin: 'bottom left' }}>
                                 <button 
                                     onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true;}}
                                     onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false;}}
-                                    className="bg-black/40 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-white/40 active:bg-black/60 flex items-center justify-center backdrop-blur-sm"
+                                    style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+                                    className="select-none touch-none bg-black/40 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-white/40 active:bg-black/60 flex items-center justify-center backdrop-blur-sm"
                                 >←</button>
                                 <button 
                                     onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true;}}
                                     onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false;}}
-                                    className="bg-black/40 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-white/40 active:bg-black/60 flex items-center justify-center backdrop-blur-sm"
+                                    style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+                                    className="select-none touch-none bg-black/40 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-white/40 active:bg-black/60 flex items-center justify-center backdrop-blur-sm"
                                 >→</button>
                             </div>
                             {/* 右側技能控制 */}
@@ -837,17 +843,20 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                                 <button 
                                     onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true;}}
                                     onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false;}}
-                                    className="bg-purple-600/60 text-white/90 w-12 h-12 font-bold text-xl rounded-full border-2 border-purple-300/60 active:bg-purple-600/90 flex flex-col items-center justify-center backdrop-blur-sm shadow-lg"
+                                    style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+                                    className="select-none touch-none bg-purple-600/60 text-white/90 w-12 h-12 font-bold text-xl rounded-full border-2 border-purple-300/60 active:bg-purple-600/90 flex flex-col items-center justify-center backdrop-blur-sm shadow-lg"
                                 >🛡️</button>
                                 <button 
                                     onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true;}}
                                     onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false;}}
-                                    className="bg-red-600/60 text-white/90 w-12 h-12 font-bold text-xl rounded-full border-2 border-red-300/60 active:bg-red-600/90 flex flex-col items-center justify-center backdrop-blur-sm shadow-lg"
+                                    style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+                                    className="select-none touch-none bg-red-600/60 text-white/90 w-12 h-12 font-bold text-xl rounded-full border-2 border-red-300/60 active:bg-red-600/90 flex flex-col items-center justify-center backdrop-blur-sm shadow-lg"
                                 >⚔️</button>
                                 <button 
                                     onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true;}}
                                     onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false;}}
-                                    className="bg-blue-600/60 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-blue-300/60 active:bg-blue-600/90 flex items-center justify-center backdrop-blur-sm shadow-lg"
+                                    style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+                                    className="select-none touch-none bg-blue-600/60 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-blue-300/60 active:bg-blue-600/90 flex items-center justify-center backdrop-blur-sm shadow-lg"
                                 >↑</button>
                             </div>
                         </div>
@@ -856,21 +865,20 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
                 {/* 畫面外的按鈕模式 */}
                 {gameState === 'playing' && touchSettings.layout === 'outside' && (
-                    <div className="flex justify-between w-full mt-2 px-2 lg:hidden gap-1 shrink-0" style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'none' }}>
+                    <div className="flex justify-between w-full mt-2 px-2 2xl:hidden gap-1 shrink-0" style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'none' }}>
                         <div className="flex gap-2">
-                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false;}} className="bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:translate-y-1 flex items-center justify-center">←</button>
-                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false;}} className="bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:translate-y-1 flex items-center justify-center">→</button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false;}} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:translate-y-1 flex items-center justify-center">←</button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false;}} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:translate-y-1 flex items-center justify-center">→</button>
                         </div>
                         <div className="flex gap-2">
-                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false;}} className="bg-purple-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-purple-800 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center"><span>🛡️</span><span>攔網</span></button>
-                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false;}} className="bg-red-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-red-800 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center"><span>⚔️</span><span>殺球</span></button>
-                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false;}} className="bg-blue-600 text-white w-14 h-14 font-bold text-xl rounded-lg border-b-4 border-blue-800 active:border-b-0 active:translate-y-1 flex items-center justify-center">↑</button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false;}} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-purple-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-purple-800 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center"><span>🛡️</span><span>攔網</span></button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false;}} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-red-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-red-800 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center"><span>⚔️</span><span>殺球</span></button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true;}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false;}} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-blue-600 text-white w-14 h-14 font-bold text-xl rounded-lg border-b-4 border-blue-800 active:border-b-0 active:translate-y-1 flex items-center justify-center">↑</button>
                         </div>
                     </div>
                 )}
 
-                <p className="text-gray-400 text-xs sm:text-sm mt-2 font-bold tracking-widest text-center hidden lg:block">
-                    預設控制：【A/D/方向鍵】移動，【W/空白鍵/↑】跳躍，【E】攔網，【F】殺球
+<p className="text-gray-400 text-xs sm:text-sm mt-2 font-bold tracking-widest text-center hidden 2xl:block">                    預設控制：【A/D/方向鍵】移動，【W/空白鍵/↑】跳躍，【E】攔網，【F】殺球
                 </p>
             </div>
         </div>
