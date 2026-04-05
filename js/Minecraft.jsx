@@ -233,7 +233,18 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     }
                 }
             } else {
-                 if (state.serving === 'opponent') aiTargetX = state.ball.x + 10;
+                 // ✨ 修正：村民發球邏輯，走到球的右後方然後起跳把球往前打
+                 if (state.serving === 'opponent') {
+                     aiTargetX = state.ball.x + 25; // 走到球的右後方
+                     // 當距離球夠近時，強制起跳並給予向左的初速度
+                     if (Math.abs(state.opponent.x - aiTargetX) < 20) {
+                         aiShouldJump = true;
+                         // 關鍵：發球瞬間給予向左的物理量，否則會原地跳
+                         if (state.opponent.y >= state.groundY) {
+                             state.opponent.vx = -state.opponent.speed;
+                         }
+                     }
+                 }
             }
 
             // 執行 AI 移動
@@ -370,6 +381,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     else state.lastHitTime.o = now;
 
                     playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/slime/attack1.ogg');
+                    let wasServing = state.isServing;
                     if (state.isServing) state.isServing = false;
 
                     if (isPlayer) {
@@ -402,6 +414,11 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     let speed = Math.sqrt(state.ball.vx*state.ball.vx + state.ball.vy*state.ball.vy);
                     let pSpeed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
                     let bounceSpeed = Math.max(7, speed * 0.7 + pSpeed * 0.5);
+
+                    if (wasServing && !isPlayer) {
+                        bounceSpeed = Math.max(bounceSpeed, 12);
+                        nxVec = -1.5;
+                    }
 
                     if (actualHitType === 'spike') {
                         // ✨ 殺球物理學升級：超高初速、淺平飛下壓 (保證過網不砸腳)
@@ -666,7 +683,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                </div>
             )}
 
-            <div className="bg-gray-800 p-2 border-4 border-gray-600 w-full max-w-4xl relative shadow-2xl flex flex-col items-center pointer-events-auto">
+            {/* ✨ 放大 max-w-4xl 到 max-w-6xl，讓電腦版可以接近滿版 */}
+            <div className="bg-gray-800 p-2 border-4 border-gray-600 w-full max-w-6xl relative shadow-2xl flex flex-col items-center pointer-events-auto">
                 <div className="w-full flex justify-between items-center text-white font-bold mb-2 font-mono px-2 text-xl">
                     <span className="text-blue-400">史蒂夫: {score.player}</span>
                     <span className="text-yellow-400 text-sm hidden sm:inline">先得 10 分者獲勝</span>
@@ -677,8 +695,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     </div>
                 </div>
 
-               {/* ✨ 加入 maxHeight 與 shrink-0 確保橫屏手機不會把按鈕擠出畫面 */}
-                <div className="relative w-full overflow-hidden border-4 border-black shrink-0" style={{ aspectRatio: '800/400', maxHeight: '55vh' }}>
+               {/* ✨ 電腦版取消高度限制，手機版保留 55vh，讓電腦畫面能變大 */}
+                <div className="relative w-full overflow-hidden border-4 border-black shrink-0 max-h-[55vh] md:max-h-none" style={{ aspectRatio: '800/400' }}>
                     <canvas ref={canvasRef} width={800} height={400} className="w-full h-full object-contain bg-[#87CEEB] pixelated"></canvas>
                     
                     {pointMessage && gameState === 'playing' && (
@@ -707,7 +725,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 </div>
 
                 {/* 手機版觸控按鈕 (增強擴充攔網與殺球) */}
-                <div className="flex justify-between w-full mt-2 px-1 sm:hidden select-none gap-1 shrink-0">
+                <div className="flex justify-between w-full mt-2 px-1 lg:hidden select-none gap-1 shrink-0">
                     <div className="flex gap-1">
                         <button 
                             onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true;}}
@@ -739,7 +757,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     </div>
                 </div>
 
-                <p className="text-gray-400 text-xs sm:text-sm mt-2 font-bold tracking-widest text-center hidden sm:block">
+                <p className="text-gray-400 text-xs sm:text-sm mt-2 font-bold tracking-widest text-center hidden lg:block">
                     預設控制：【A/D/方向鍵】移動，【W/空白鍵/↑】跳躍，【E】攔網，【F】殺球
                 </p>
             </div>
