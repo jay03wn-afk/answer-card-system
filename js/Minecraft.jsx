@@ -115,14 +115,19 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         const peer = new window.Peer();
         peerRef.current = peer;
         peer.on('open', () => {
-            const conn = peer.connect(joinId);
-            connRef.current = conn;
-            conn.on('open', () => {
-                setConnStatus('連線成功！等待房主開球...');
-                startGame('guest');
-            });
-            conn.on('data', (data) => {
+                // ✨ 核心修復 2：開啟 UDP 模式 (reliable: false)，丟失封包不等待，徹底消除累積延遲
+                const conn = peer.connect(joinId, { reliable: false });
+                connRef.current = conn;
+                conn.on('open', () => {
+                    setConnStatus('連線成功！等待房主開球...');
+                    startGame('guest');
+                });
+                conn.on('data', (data) => {
                     if (data.type === 'state' && gameRef.current) {
+                        // ✨ 核心修復 3：檢查幀數，丟棄遲到的舊封包，確保畫面永遠是最新的
+                        if (data.frame < (gameRef.current.lastFrame || 0)) return;
+                        gameRef.current.lastFrame = data.frame;
+
                         gameRef.current.ball = data.state.ball;
                         gameRef.current.player = data.state.player;
                         gameRef.current.opponent = data.state.opponent;
@@ -180,6 +185,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
     useEffect(() => {
         const handleKeyDown = (e) => {
+            if (e.repeat) return; // ✨ 核心修復 1：拒絕鍵盤長按造成的無效連發 (這是癱瘓網路的主因)
             if (bindingKey) {
                 e.preventDefault();
                 setKeyBindings(prev => ({ ...prev, [bindingKey]: e.code }));
@@ -569,11 +575,10 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             // ✨ 每幀結束時，Host 把最新狀態廣播給 Guest
             if (netModeRef.current === 'host' && connRef.current) {
                 state.frameCount = (state.frameCount || 0) + 1;
-                // ✨ 關鍵修復 3：降頻發送 (每 2 幀一次，約 30FPS)，有效解決訪客網路延遲阻塞的問題
                 if (state.frameCount % 2 === 0) {
                     connRef.current.send({
                         type: 'state',
-                        // 使用 pointMsgRef.current 確保抓到的是最新的文字
+                        frame: state.frameCount, // ✨ 加上幀數 ID 標籤，讓訪客可以辨識新舊
                         state: { ball: state.ball, player: state.player, opponent: state.opponent, score: state.score, serveTimer: state.serveTimer, msg: pointMsgRef.current }
                     });
                 }
