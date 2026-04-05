@@ -6,7 +6,14 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
     const canvasRef = useRef(null);
     const [gameState, setGameState] = useState('start');
     const [score, setScore] = useState({ player: 0, opponent: 0 });
-    const [pointMessage, setPointMessage] = useState('');
+    const [pointMessage, _setPointMessage] = useState('');
+    const pointMsgRef = useRef('');
+
+    // ✨ 修復：攔截並同步文字，讓 Host 隨時能拿到最新文字廣播出去
+    const setPointMessage = (msg) => {
+        pointMsgRef.current = typeof msg === 'function' ? msg(pointMsgRef.current) : msg;
+        _setPointMessage(msg);
+    };
 
     // ✨ 1. 觸控按鈕自定義設定狀態 (從資料庫讀取)
     const [touchSettings, setTouchSettings] = useState(
@@ -115,13 +122,25 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 startGame('guest');
             });
             conn.on('data', (data) => {
-                if (data.type === 'state' && gameRef.current) {
-                    gameRef.current.ball = data.state.ball;
-                    gameRef.current.player = data.state.player;
-                    gameRef.current.opponent = data.state.opponent;
-                    gameRef.current.serveTimer = data.state.serveTimer;
-                    setScore(data.state.score);
-                    if (data.state.msg !== pointMessage) setPointMessage(data.state.msg);
+                    if (data.type === 'state' && gameRef.current) {
+                        gameRef.current.ball = data.state.ball;
+                        gameRef.current.player = data.state.player;
+                        gameRef.current.opponent = data.state.opponent;
+                        gameRef.current.serveTimer = data.state.serveTimer;
+                        
+                        // ✨ 關鍵修復 1：只有分數改變時才更新 React UI，避免每秒 60 次無意義重新渲染導致畫面卡死
+                        if (gameRef.current.score.p !== data.state.score.p || gameRef.current.score.o !== data.state.score.o) {
+                            gameRef.current.score = data.state.score;
+                            setScore({ player: data.state.score.p, opponent: data.state.score.o });
+                        }
+                        
+                        // ✨ 關鍵修復 2：避免過時的變數範圍 (Stale Closure) 導致無窮渲染
+                        setPointMessage(prevMsg => {
+                            if (prevMsg !== data.state.msg) return data.state.msg;
+                            return prevMsg;
+                        });
+                        
+                    } else if (data.type === 'sound') {
                 } else if (data.type === 'sound') {
                     playCachedSound(data.url);
                 } else if (data.type === 'gameover') {
@@ -549,10 +568,15 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
             // ✨ 每幀結束時，Host 把最新狀態廣播給 Guest
             if (netModeRef.current === 'host' && connRef.current) {
-                connRef.current.send({
-                    type: 'state',
-                    state: { ball: state.ball, player: state.player, opponent: state.opponent, score: state.score, serveTimer: state.serveTimer, msg: pointMessage }
-                });
+                state.frameCount = (state.frameCount || 0) + 1;
+                // ✨ 關鍵修復 3：降頻發送 (每 2 幀一次，約 30FPS)，有效解決訪客網路延遲阻塞的問題
+                if (state.frameCount % 2 === 0) {
+                    connRef.current.send({
+                        type: 'state',
+                        // 使用 pointMsgRef.current 確保抓到的是最新的文字
+                        state: { ball: state.ball, player: state.player, opponent: state.opponent, score: state.score, serveTimer: state.serveTimer, msg: pointMsgRef.current }
+                    });
+                }
             }
         } // End of Host & Offline Physics Bypass
 
