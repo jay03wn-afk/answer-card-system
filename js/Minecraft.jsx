@@ -166,7 +166,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             if (state.opponent.blockActive > 0) state.opponent.blockActive--;
             if (state.opponent.spikeActive > 0) state.opponent.spikeActive--;
 
-            // 發球期間不可使用任何技能
+           // 玩家技能執行
             if (!state.isServing) {
                 if (state.keys.block && state.player.blockCd === 0 && state.player.stamina >= 25) {
                     state.player.stamina -= 25;
@@ -180,31 +180,9 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     state.player.spikeCd = 120;
                     playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/attack/sweep1.ogg');
                 }
-                
-                // 村民(AI) 使用技能的智慧判斷邏輯
-                let distToBall = Math.sqrt(Math.pow(state.ball.x - state.opponent.x, 2) + Math.pow(state.ball.y - state.opponent.y, 2));
-                
-                // AI殺球：球在對手半場高處，靠近網子，村民已跳起，且球在附近
-                if (state.ball.x > state.net.x + 10 && state.ball.y < state.net.y - 10 && state.opponent.y < state.groundY && distToBall < 130) {
-                    if (state.opponent.spikeCd === 0 && state.opponent.stamina >= 30) {
-                        state.opponent.stamina -= 30;
-                        state.opponent.spikeActive = 15;
-                        state.opponent.spikeCd = 120;
-                        playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/attack/sweep1.ogg');
-                    }
-                }
-                // AI攔網：球正從玩家那邊飛過來網子上方，且準備越界
-                else if (state.ball.x > state.net.x - 30 && state.ball.x < state.net.x + 60 && state.ball.vx > 0 && state.ball.y > 80 && state.ball.y < 280) {
-                    if (state.opponent.blockCd === 0 && state.opponent.stamina >= 25 && state.opponent.y >= state.groundY) {
-                        state.opponent.vy = state.opponent.jump * 0.8; // 攔網前稍微起跳
-                        state.opponent.stamina -= 25;
-                        state.opponent.blockActive = 20;
-                        state.opponent.blockCd = 90;
-                        playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
-                    }
-                }
             }
 
+            // 玩家移動執行
             if (state.keys.left) state.player.vx = -state.player.speed;
             else if (state.keys.right) state.player.vx = state.player.speed;
             else state.player.vx = 0;
@@ -213,23 +191,77 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 state.player.vy = state.player.jump;
             }
 
+            // 更新觸球區
             if (state.ball.x < state.net.x) state.touches.o = 0;
             if (state.ball.x > state.net.x + state.net.w) state.touches.p = 0;
 
-            if (state.ball.x > state.w / 2) {
-                let targetX = state.ball.x + 15;
-                if (state.opponent.x < targetX - 10) state.opponent.vx = state.opponent.speed;
-                else if (state.opponent.x > targetX + 10) state.opponent.vx = -state.opponent.speed;
-                else state.opponent.vx = 0;
-                
-                if (state.ball.y > 100 && state.ball.y < 280 && Math.abs(state.ball.x - state.opponent.x) < 60 && state.opponent.y >= state.groundY) {
-                    state.opponent.vy = state.opponent.jump;
+            // --- 🤖 村民 AI 核心大升級 (智商提升版) ---
+            let aiTargetX = 600; // 預設歸位點
+            let aiShouldJump = false;
+            let aiTryBlock = false;
+            let aiTrySpike = false;
+
+            if (!state.isServing) {
+                if (state.ball.x > state.net.x) {
+                    // 球在 AI 半場
+                    aiTargetX = state.ball.x + 25; // 保持在球的右後方，好往前施力
+                    
+                    // 如果球高度進入攻擊區且距離夠近，準備起跳
+                    if (Math.abs(state.ball.x - state.opponent.x) < 80 && state.ball.y > 50 && state.ball.y < 280) {
+                        aiShouldJump = true;
+                    }
+
+                    // 殺球判定：高度剛好在肩膀到頭頂之間，球在前方，且正在下墜或平飛
+                    if (state.opponent.y < state.groundY - 10 && // 已經跳起
+                        state.ball.x < state.opponent.x + 15 && // 球在前方或剛好頭上
+                        state.opponent.x - state.ball.x < 70 && // 距離合適
+                        state.ball.y < state.opponent.y + 10 && state.ball.y > state.opponent.y - 70) {
+                        aiTrySpike = true;
+                    }
+                } else {
+                    // 球在玩家半場
+                    if (state.ball.vx > 3 && state.ball.y < 220) {
+                        // 球高速往右飛且偏高 -> 衝到網前準備攔網
+                        aiTargetX = state.net.x + 35;
+                        if (state.ball.x > state.net.x - 120) { // 球靠近網子時起跳
+                             aiShouldJump = true;
+                             aiTryBlock = true; 
+                        }
+                    } else {
+                        // 回到中央防守
+                        aiTargetX = 600;
+                    }
                 }
             } else {
-                if (state.opponent.x < 600 - 10) state.opponent.vx = state.opponent.speed;
-                else if (state.opponent.x > 600 + 10) state.opponent.vx = -state.opponent.speed;
-                else state.opponent.vx = 0;
+                 if (state.serving === 'opponent') aiTargetX = state.ball.x + 10;
             }
+
+            // 執行 AI 移動
+            if (state.opponent.x < aiTargetX - 10) state.opponent.vx = state.opponent.speed;
+            else if (state.opponent.x > aiTargetX + 10) state.opponent.vx = -state.opponent.speed;
+            else state.opponent.vx = 0;
+
+            // 執行 AI 跳躍
+            if (aiShouldJump && state.opponent.y >= state.groundY) {
+                state.opponent.vy = state.opponent.jump;
+            }
+
+            // 執行 AI 技能
+            if (!state.isServing) {
+                if (aiTrySpike && state.opponent.spikeCd === 0 && state.opponent.stamina >= 30) {
+                    state.opponent.stamina -= 30;
+                    state.opponent.spikeActive = 15;
+                    state.opponent.spikeCd = 100;
+                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/attack/sweep1.ogg');
+                }
+                else if (aiTryBlock && state.opponent.blockCd === 0 && state.opponent.stamina >= 25 && state.opponent.y < state.groundY) {
+                    state.opponent.stamina -= 25;
+                    state.opponent.blockActive = 20;
+                    state.opponent.blockCd = 90;
+                    playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
+                }
+            }
+            // --- 🤖 AI 邏輯結束 ---
 
             state.player.x += state.player.vx; state.player.y += state.player.vy;
             state.opponent.x += state.opponent.vx; state.opponent.y += state.opponent.vy;
@@ -645,7 +677,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     </div>
                 </div>
 
-                <div className="relative w-full overflow-hidden border-4 border-black" style={{ aspectRatio: '800/400' }}>
+               {/* ✨ 加入 maxHeight 與 shrink-0 確保橫屏手機不會把按鈕擠出畫面 */}
+                <div className="relative w-full overflow-hidden border-4 border-black shrink-0" style={{ aspectRatio: '800/400', maxHeight: '55vh' }}>
                     <canvas ref={canvasRef} width={800} height={400} className="w-full h-full object-contain bg-[#87CEEB] pixelated"></canvas>
                     
                     {pointMessage && gameState === 'playing' && (
@@ -674,7 +707,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 </div>
 
                 {/* 手機版觸控按鈕 (增強擴充攔網與殺球) */}
-                <div className="flex justify-between w-full mt-4 px-2 sm:hidden select-none gap-1">
+                <div className="flex justify-between w-full mt-2 px-1 sm:hidden select-none gap-1 shrink-0">
                     <div className="flex gap-1">
                         <button 
                             onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true;}}
