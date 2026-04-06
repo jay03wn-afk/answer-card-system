@@ -2494,8 +2494,8 @@ function safeDecompress(val, fallbackType = 'string') {
 }
 
 function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard: originalBack, showAlert, showConfirm, showPrompt }) {
-    // ✨ 安全退出機制：微延遲 50 毫秒，讓存檔與解壓縮動作錯開，避免畫面卡死
-    const onBackToDashboard = () => setTimeout(originalBack, 50);
+    // ✨ 安全退出機制：延遲 800 毫秒，確保最後一筆作答進度有足夠時間存檔後才退出，防止進度遺失
+    const onBackToDashboard = () => setTimeout(originalBack, 800);
 
     // ✨ 新增：判斷是否為管理員
     const isAdmin = currentUser && (currentUser.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
@@ -2735,33 +2735,37 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         if (currentUser && quizId && (step === 'answering' || step === 'setup' || step === 'results')) {
             if (userAnswers.length === 0 && numQuestions > 0 && step === 'answering') return;
             
-            // ✨ 效能大躍進：加入 1.5 秒「防抖 (Debounce)」，停止打字後才執行高強度壓縮與存檔
-            const timer = setTimeout(() => {
-                // 🚀 核心升級：作答進度與分數不再壓縮！直接以原生物件存檔，讓列表頁讀取時 CPU 負擔降至 0！
-                const stateToSave = { 
-                    testName, numQuestions, maxScore: Number(maxScore), roundScore, userAnswers, starred, notes, peekedAnswers, correctAnswersInput, results, // ✨ 新增：保存筆記與偷看紀錄
-                    questionFileUrl, hasTimer, timeLimit, folder, hasSeparatedContent: true,
-                    updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-                    isCompleted: !!results // 標記完成狀態供列表極速讀取
-                };
-                if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
+            const stateToSave = { 
+                testName, numQuestions, maxScore: Number(maxScore), roundScore, userAnswers, starred, notes, peekedAnswers, correctAnswersInput, results,
+                questionFileUrl, hasTimer, timeLimit, folder, hasSeparatedContent: true,
+                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+                isCompleted: !!results 
+            };
+            if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
 
-                // 1. 儲存輕量外殼
+            // 🚀 終極修復 1：縮短延遲，並且「拔除 clearTimeout」防抖陷阱！
+            // 確保你「連續作答」時，每一題的進度都會排隊送出，不會因為答題太快而導致計時器不斷重置、永遠不存檔！
+            setTimeout(() => {
                 window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
-                    .catch(e => console.error("自動儲存外殼失敗", e));
-                
-                // 2. 儲存肥大內容
-                window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).set({
-                    questionText: window.jzCompress(questionText),
-                    questionHtml: questionHtml,
-                    explanationHtml: explanationHtml
-                }, { merge: true }).catch(e => console.error("自動儲存內容失敗", e));
-            }, 1500);
-            
-            return () => clearTimeout(timer); // 如果 1.5 秒內又有變動，就取消上一次的存檔，重新計時
-        }
-    }, [testName, numQuestions, userAnswers, starred, notes, correctAnswersInput, results, questionFileUrl, questionText, questionHtml, explanationHtml, folder, currentUser, quizId, step, syncTrigger]);
+                    .catch(e => console.error("自動儲存進度失敗", e));
+            }, 300);
 
+            // 🚀 終極修復 2：徹底移除「作答時自動覆寫題目內容 (quizContents)」的致命邏輯。
+            // 題目只在「編輯模式」時才儲存，作答時絕對不碰題目資料庫，徹底根絕題目莫名消失變空白的 Bug！
+        }
+    }, [testName, numQuestions, userAnswers, starred, notes, correctAnswersInput, results, questionFileUrl, folder, currentUser, quizId, step, syncTrigger]);
+
+    // 🚀 終極修復 3：加入防呆機制，當作答中不小心按到 F5 重新整理或關閉分頁時，瀏覽器會跳出警告阻擋，確保排隊中的進度有足夠時間存檔！
+    useEffect(() => {
+        const handleBeforeUnload = (e) => {
+            if (step === 'answering') {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [step]);
     useEffect(() => {
         if (step === 'results' && isTask && initialRecord.taskId) {
             window.db.collection('publicTasks').doc(initialRecord.taskId).collection('scores')
