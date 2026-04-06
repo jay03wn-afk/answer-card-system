@@ -1284,56 +1284,57 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
     }, []);
 
     const loop = (currentTime) => {
-        const cvs = canvasRef.current;
-        if (!cvs) return;
-        const state = gameRef.current;
-        
-        // ✨ 核心修復：獨立物理邏輯，根據螢幕刷新率動態決定執行次數 (解決 30fps 慢動作與 240fps 加速)
-        if (!currentTime) currentTime = performance.now();
-        if (!state.lastTime) state.lastTime = currentTime;
-        let elapsed = currentTime - state.lastTime;
-        if (elapsed > 100) elapsed = 100; // 防止切換視窗回來時物理大暴走
-        state.lastTime = currentTime;
-        state.accumulator = (state.accumulator || 0) + elapsed;
-        const timeStep = 1000 / 60; // 遊戲內部時間固定為 60Hz
+            const cvs = canvasRef.current;
+            if (!cvs) return;
+            const state = gameRef.current;
+            
+            // ✨ 核心修復：獨立物理邏輯，根據螢幕刷新率動態決定執行次數 (解決 30fps 慢動作與 240fps 加速)
+            if (!currentTime) currentTime = performance.now();
+            if (!state.lastTime) state.lastTime = currentTime;
+            let elapsed = currentTime - state.lastTime;
+            if (elapsed > 100) elapsed = 100; // 防止切換視窗回來時物理大暴走
+            state.lastTime = currentTime;
+            state.accumulator = (state.accumulator || 0) + elapsed;
+            const timeStep = 1000 / 60; // 遊戲內部時間固定為 60Hz
 
-        const ctx = cvs.getContext('2d');
+            const ctx = cvs.getContext('2d');
 
-        const drawImgSafe = (img, x, y, w, h, fallbackColor) => {
-            try {
-                if (img.complete && img.naturalWidth > 0) {
-                    ctx.drawImage(img, x, y, w, h);
-                } else {
+            const drawImgSafe = (img, x, y, w, h, fallbackColor) => {
+                try {
+                    if (img.complete && img.naturalWidth > 0) {
+                        ctx.drawImage(img, x, y, w, h);
+                    } else {
+                        ctx.fillStyle = fallbackColor;
+                        ctx.fillRect(x, y, w, h);
+                    }
+                } catch (e) {
                     ctx.fillStyle = fallbackColor;
                     ctx.fillRect(x, y, w, h);
                 }
-            } catch (e) {
-                ctx.fillStyle = fallbackColor;
-                ctx.fillRect(x, y, w, h);
-            }
-        };
+            };
 
-        // ✨ 進入時間步長循環 (幀數落後會連續執行補上，幀數過快會跳過)
-        while (state.accumulator >= timeStep) {
-            state.accumulator -= timeStep;
+            // ✨ 將變數宣告提至外層，避免繪圖時找不到變數導致遊戲當機卡死
+            let cyclePos = state.frames % 2700;
+            const getNetherWaveY = (x, frames, speed) => {
+                let worldX = x + (state.worldOffset || 0); 
+                return 210 + Math.sin(worldX * 0.004) * 45 + Math.cos(worldX * 0.0025) * 25;
+            };
 
-        let prevBottom = state.player.y + state.player.h; 
-        state.player.dy += 0.7; 
-        state.player.y += state.player.dy;
+            // ✨ 進入時間步長循環 (幀數落後會連續執行補上，幀數過快會跳過)
+            while (state.accumulator >= timeStep) {
+                state.accumulator -= timeStep;
 
-        // 階段計算：草原 (900) -> 洞穴 (900) -> 地獄 (900) 循環
-        let cyclePos = state.frames % 2700;
-        state.isCave = cyclePos >= 900 && cyclePos < 1800;
-        state.isNether = cyclePos >= 1800;
+                let prevBottom = state.player.y + state.player.h; 
+                state.player.dy += 0.7; 
+                state.player.y += state.player.dy;
 
-        // ✨ 紀錄真實的捲動距離，避免加速時造成地形突然位移 (解決刷新感)
-        state.worldOffset = (state.worldOffset || 0) + state.speed;
+                // 階段計算：草原 (900) -> 洞穴 (900) -> 地獄 (900) 循環
+                cyclePos = state.frames % 2700;
+                state.isCave = cyclePos >= 900 && cyclePos < 1800;
+                state.isNether = cyclePos >= 1800;
 
-        // ✨ 地獄連續波浪地形核心數學函數 (結合多重正弦波讓起伏更自然)
-        const getNetherWaveY = (x, frames, speed) => {
-            let worldX = x + state.worldOffset; // 改用真實偏移量
-            return 210 + Math.sin(worldX * 0.004) * 45 + Math.cos(worldX * 0.0025) * 25;
-        };
+                // ✨ 紀錄真實的捲動距離，避免加速時造成地形突然位移 (解決刷新感)
+                state.worldOffset = (state.worldOffset || 0) + state.speed;
 
         if (state.isCave) {
             if (state.frames % 150 === 0) {
