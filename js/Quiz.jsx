@@ -2494,8 +2494,7 @@ function safeDecompress(val, fallbackType = 'string') {
 }
 
 function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard: originalBack, showAlert, showConfirm, showPrompt }) {
-    // ✨ 安全退出機制：延遲 800 毫秒，確保最後一筆作答進度有足夠時間存檔後才退出，防止進度遺失
-    const onBackToDashboard = () => setTimeout(originalBack, 800);
+    // (退出機制已移至下方與存檔功能整合)
 
     // ✨ 新增：判斷是否為管理員
     const isAdmin = currentUser && (currentUser.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
@@ -2731,6 +2730,42 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         return () => { if(timerId) clearInterval(timerId); };
     }, [step, hasTimer, isTimeUp]);
 
+   // ✨ 新增：手動存檔與退出存檔核心邏輯
+    const handleSaveProgress = (isExiting = false) => {
+        if (!currentUser || !quizId) {
+            if (isExiting) originalBack();
+            return;
+        }
+        
+        const stateToSave = { 
+            testName, numQuestions, maxScore: Number(maxScore), roundScore, userAnswers, starred, notes, peekedAnswers, correctAnswersInput, results,
+            questionFileUrl, hasTimer, timeLimit, folder, hasSeparatedContent: true,
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            isCompleted: !!results 
+        };
+        if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
+
+        window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
+            .then(() => {
+                if (!isExiting) showAlert("✅ 進度已手動存檔！");
+                if (isExiting) originalBack();
+            })
+            .catch(e => {
+                console.error("存檔失敗", e);
+                if (!isExiting) showAlert("❌ 存檔失敗：" + e.message);
+                if (isExiting) originalBack(); // 就算失敗也要讓玩家能順利退出
+            });
+    };
+
+    // ✨ 覆寫退出按鈕邏輯：退出時強制執行存檔，確保進度萬無一失
+    const onBackToDashboard = () => {
+        if (step === 'answering') {
+            handleSaveProgress(true);
+        } else {
+            originalBack();
+        }
+    };
+
     useEffect(() => {
         if (currentUser && quizId && (step === 'answering' || step === 'setup' || step === 'results')) {
             if (userAnswers.length === 0 && numQuestions > 0 && step === 'answering') return;
@@ -2743,19 +2778,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             };
             if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
 
-            // 🚀 終極修復 1：縮短延遲，並且「拔除 clearTimeout」防抖陷阱！
-            // 確保你「連續作答」時，每一題的進度都會排隊送出，不會因為答題太快而導致計時器不斷重置、永遠不存檔！
+            // 背景自動存檔依然保留，作為雙重保險
             setTimeout(() => {
                 window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
                     .catch(e => console.error("自動儲存進度失敗", e));
             }, 300);
-
-            // 🚀 終極修復 2：徹底移除「作答時自動覆寫題目內容 (quizContents)」的致命邏輯。
-            // 題目只在「編輯模式」時才儲存，作答時絕對不碰題目資料庫，徹底根絕題目莫名消失變空白的 Bug！
         }
     }, [testName, numQuestions, userAnswers, starred, notes, correctAnswersInput, results, questionFileUrl, folder, currentUser, quizId, step, syncTrigger]);
 
-    // 🚀 終極修復 3：加入防呆機制，當作答中不小心按到 F5 重新整理或關閉分頁時，瀏覽器會跳出警告阻擋，確保排隊中的進度有足夠時間存檔！
     useEffect(() => {
         const handleBeforeUnload = (e) => {
             if (step === 'answering') {
@@ -4129,6 +4159,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                             📝 編輯試題
                         </button>
                     )}
+                    
+                    {/* ✨ 新增：手動存檔按鈕 */}
+                    <button 
+                        onClick={() => handleSaveProgress(false)} 
+                        className="text-sm font-bold bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-300 px-4 py-1.5 no-round border border-green-200 dark:border-green-700 hover:bg-green-100 dark:hover:bg-green-800 whitespace-nowrap transition-colors"
+                    >
+                        💾 手動存檔
+                    </button>
 
                     <button onClick={handleSubmitClick} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-1.5 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 text-sm shadow-sm transition-colors">
                         {isShared || isTask || testName.includes('[#op]') ? '直接交卷' : '交卷對答案'}
