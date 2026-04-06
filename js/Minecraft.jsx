@@ -362,9 +362,12 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 let aiTryBlock = false;
                 let aiTrySpike = false;
 
-               if (!state.isServing) {
+                if (!state.isServing) {
                     if (state.ball.x > state.net.x) {
+                        // 🏐【進攻狀態】球在 AI 半場
                         aiTargetX = state.ball.x + 25; 
+                        
+                        // 判斷跳躍與殺球時機
                         if (Math.abs(state.ball.x - state.opponent.x) < 80 && state.ball.y > 50 && state.ball.y < 280) {
                             aiShouldJump = true;
                         }
@@ -372,40 +375,64 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                             aiTrySpike = true;
                         }
                     } else {
-                        // ✨ 修復：精準判斷「殺球攔網」與「高吊球退防」
+                        // 🛡️【防守狀態】球在玩家半場
                         if (state.ball.vx > 0) {
-                            // 條件：球速快、高度在網子附近、且「沒有往上急升」(vy > -2) 才視為殺球並上網攔截
-                            if (state.ball.vx > 4 && state.ball.y < 240 && state.ball.vy > -2) {
+                            // ⚾ 球正飛向 AI：動態判斷球路
+                            let isFastSpike = state.ball.vx > 4.5 && state.ball.y < 250 && state.ball.vy > -1.5; // 平飛快球/殺球
+                            let isHighLob = state.ball.vy < -2.5 || state.ball.y < 160; // 高吊球
+                            
+                            if (isFastSpike) {
+                                // 應對殺球 -> 衝向網前攔網
                                 aiTargetX = state.net.x + 35;
                                 if (state.ball.x > state.net.x - 120) { aiShouldJump = true; aiTryBlock = true; }
+                            } else if (isHighLob) {
+                                // 應對高吊球 -> 根據球速提早往後場退防
+                                aiTargetX = state.ball.x + (state.ball.vx * 25);
+                                if (aiTargetX > 750) aiTargetX = 750; // 避免跑出場外
                             } else {
-                                // 高吊球或一般發球：根據球速大幅度往後場退防，最高退到底線 (X=750)
-                                aiTargetX = state.net.x + 100 + (state.ball.vx * 22);
-                                if (aiTargetX > 750) aiTargetX = 750;
+                                // 一般球 -> 動態跟隨
+                                aiTargetX = state.ball.x + (state.ball.vx * 15);
                             }
                         } else {
-                            aiTargetX = 600;
+                            // 🕵️ 球還沒飛過來，AI 開始「閱讀玩家戰術」
+                            let playerIsNearNet = state.player.x > state.net.x - 100;
+                            let playerIsJumping = state.player.y < state.groundY - 20;
+
+                            if (playerIsNearNet && playerIsJumping) {
+                                // 戰術 A：玩家在網前跳起 -> 極可能殺球，AI 提早靠網準備
+                                aiTargetX = state.net.x + 70;
+                            } else if (!playerIsNearNet) {
+                                // 戰術 B：玩家在後場 -> 極可能長球，AI 提早退防
+                                aiTargetX = 660;
+                            } else {
+                                // 預設站位
+                                aiTargetX = 600;
+                            }
                         }
                     }
                 } else {
+                     // 🎾【發球狀態】
                      if (state.serving === 'opponent') {
                          aiTargetX = state.ball.x + 25; 
                          if (Math.abs(state.opponent.x - aiTargetX) < 20) {
                              aiShouldJump = true;
                              if (state.opponent.y >= state.groundY) state.opponent.vx = -state.opponent.speed;
                          }
-                     } else if (state.serving === 'player') {
-                         // ✨ 修復：玩家發球時，村民保持在中間偏前的位置警戒
-                         aiTargetX = 550;
+                     } else {
+                         // 玩家發球時，AI 站中間偏後防守
+                         aiTargetX = 630;
                      }
                 }
 
+                // AI 移動執行
                 if (state.opponent.x < aiTargetX - 10) state.opponent.vx = state.opponent.speed;
                 else if (state.opponent.x > aiTargetX + 10) state.opponent.vx = -state.opponent.speed;
                 else state.opponent.vx = 0;
 
+                // AI 跳躍執行
                 if (aiShouldJump && state.opponent.y >= state.groundY) state.opponent.vy = state.opponent.jump;
 
+                // AI 技能執行
                 if (!state.isServing && !state.serveSkillLockO) {
                     if (aiTrySpike && state.opponent.spikeCd === 0 && state.opponent.stamina >= 30) {
                         state.opponent.stamina -= 30; state.opponent.spikeActive = 15; state.opponent.spikeCd = 100;
