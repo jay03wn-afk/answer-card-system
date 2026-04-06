@@ -259,11 +259,20 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         gameRef.current.reqId = requestAnimationFrame(loop);
     };
 
-    const loop = () => {
+    const loop = (timestamp) => {
         const state = gameRef.current;
         const cvs = canvasRef.current;
         if (!cvs) return;
         const ctx = cvs.getContext('2d');
+
+        // ✨ 核心修復：獨立物理邏輯，根據螢幕刷新率動態決定執行次數 (解決 30fps 慢動作與 240fps 加速)
+        if (!timestamp) timestamp = performance.now();
+        if (!state.lastTime) state.lastTime = timestamp;
+        let elapsed = timestamp - state.lastTime;
+        if (elapsed > 100) elapsed = 100; // 避免分頁切換回來後爆發性加速
+        state.lastTime = timestamp;
+        state.accumulator = (state.accumulator || 0) + elapsed;
+        const timeStep = 1000 / 60; // 遊戲內部物理時間固定為 60Hz
 
         // ✨ 網路音效同步包裝
         const triggerNetSound = (url) => {
@@ -273,8 +282,12 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             }
         };
 
-        // ✨ 若是 Guest，跳過所有物理運算，只負責往下跑去畫圖
-        if (netModeRef.current !== 'guest' && !state.isPointOver) {
+        // ✨ 進入時間步長循環 (幀數落後會連續執行補上，幀數過快會跳過)
+        while (state.accumulator >= timeStep) {
+            state.accumulator -= timeStep;
+
+            // ✨ 若是 Guest，跳過所有物理運算，只負責往下跑去畫圖
+            if (netModeRef.current !== 'guest' && !state.isPointOver) {
             
             if (state.serveTimer > 0) {
                 state.serveTimer--;
@@ -584,6 +597,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 }
             }
         } // End of Host & Offline Physics Bypass
+        
+        } // End of while loop for physics
 
         // ======================= 繪圖區域 (所有模式共用) =======================
         ctx.clearRect(0, 0, state.w, state.h);
@@ -1273,15 +1288,14 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
         if (!cvs) return;
         const state = gameRef.current;
         
+        // ✨ 核心修復：獨立物理邏輯，根據螢幕刷新率動態決定執行次數 (解決 30fps 慢動作與 240fps 加速)
         if (!currentTime) currentTime = performance.now();
-        const fpsInterval = 1000 / 60;
-        const elapsed = currentTime - state.lastFrameTime;
-
-        if (elapsed < fpsInterval) {
-            state.reqId = requestAnimationFrame(loop);
-            return;
-        }
-        state.lastFrameTime = currentTime - (elapsed % fpsInterval);
+        if (!state.lastTime) state.lastTime = currentTime;
+        let elapsed = currentTime - state.lastTime;
+        if (elapsed > 100) elapsed = 100; // 防止切換視窗回來時物理大暴走
+        state.lastTime = currentTime;
+        state.accumulator = (state.accumulator || 0) + elapsed;
+        const timeStep = 1000 / 60; // 遊戲內部時間固定為 60Hz
 
         const ctx = cvs.getContext('2d');
 
@@ -1298,6 +1312,10 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
                 ctx.fillRect(x, y, w, h);
             }
         };
+
+        // ✨ 進入時間步長循環 (幀數落後會連續執行補上，幀數過快會跳過)
+        while (state.accumulator >= timeStep) {
+            state.accumulator -= timeStep;
 
         let prevBottom = state.player.y + state.player.h; 
         state.player.dy += 0.7; 
@@ -1662,6 +1680,9 @@ else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.g
             state.nextDiamondFrame = state.frames + baseInterval;
         }
 
+        } // End of while loop for physics
+
+        // ======================= 繪圖區域 =======================
         ctx.clearRect(0, 0, LOG_W, LOG_H);
         
         ctx.fillStyle = state.isNether ? '#3a0000' : (state.isCave ? '#222222' : '#6bc0ff');
