@@ -1809,6 +1809,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
                 testName: cleanQuizName(sharedData.testName || '未命名試卷') + ' (來自代碼)',
                 numQuestions: numQ,
+                maxScore: sharedData.maxScore || 100,
+                roundScore: sharedData.roundScore !== false,
                 questionFileUrl: sharedData.questionFileUrl || '',
                 correctAnswersInput: sharedData.correctAnswersInput || '', 
                 publishAnswers: sharedData.publishAnswers !== false,
@@ -1891,6 +1893,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 originalQuizId: quiz.id,
                 testName: quiz.testName || '未命名試卷',
                 numQuestions: quiz.numQuestions || 50,
+                maxScore: quiz.maxScore || 100,
+                roundScore: quiz.roundScore !== false,
                 questionFileUrl: quiz.questionFileUrl || '',
                 correctAnswersInput: quiz.correctAnswersInput || '',
                 hasTimer: quiz.hasTimer || false,
@@ -2504,6 +2508,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     // ✨ 修正：如果標題有標籤，顯示給使用者編輯時要自動隱藏，讓畫面更乾淨
     const [testName, setTestName] = useState(initialRecord.testName ? initialRecord.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim() : '');
     const [numQuestions, setNumQuestions] = useState(initialRecord.numQuestions || 50);
+    const [maxScore, setMaxScore] = useState(initialRecord.maxScore || 100);
+    const [roundScore, setRoundScore] = useState(initialRecord.roundScore !== false);
     
     // ✨ 新增：任務牆專用標籤系統狀態與歷史紀錄
     const [taskType, setTaskType] = useState(initialRecord.taskType || (initialRecord.testName?.includes('[#op]') ? 'official' : initialRecord.testName?.match(/\[#(m?nm?st)\]/i) ? 'mock' : 'normal'));
@@ -2582,6 +2588,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [viewMode, setViewMode] = useState(initialRecord.viewMode || 'split'); // ✨ 修改：支援從 initialRecord 讀取預設模式 (用於錯題重測自動開啟沉浸式)
     const [currentInteractiveIndex, setCurrentInteractiveIndex] = useState(0); // ✨ 新增：當前顯示的沉浸式題目索引
     const [showQuestionGrid, setShowQuestionGrid] = useState(false); // ✨ 新增：是否展開題號導覽網格
+    const [immersiveTextSize, setImmersiveTextSize] = useState(1); // ✨ 新增：沉浸式作答文字大小
     
     // ✨ 新增：自動解析沉浸式作答的題目與選項
     const parsedInteractiveQuestions = React.useMemo(() => {
@@ -2728,7 +2735,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             const timer = setTimeout(() => {
                 // 🚀 核心升級：作答進度與分數不再壓縮！直接以原生物件存檔，讓列表頁讀取時 CPU 負擔降至 0！
                 const stateToSave = { 
-                    testName, numQuestions, userAnswers, starred, correctAnswersInput, results, 
+                    testName, numQuestions, maxScore: Number(maxScore), roundScore, userAnswers, starred, correctAnswersInput, results, 
                     questionFileUrl, hasTimer, timeLimit, folder, hasSeparatedContent: true,
                     updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
                     isCompleted: !!results // 標記完成狀態供列表極速讀取
@@ -2817,8 +2824,9 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     }, [isDragging, layoutMode]);
 
     const handleStartTest = async () => {
-        if (numQuestions < 1 || numQuestions > 100) return showAlert('題數限制為 1-100 題！');
+        if (numQuestions < 1 || numQuestions > 200) return showAlert('題數限制為 1-200 題！');
         if (hasTimer && (timeLimit < 1 || timeLimit > 999)) return showAlert('計時時間請設定在 1 到 999 分鐘之間。');
+        if (maxScore < 1) return showAlert('滿分必須大於 0！');
         
         setIsCreating(true); 
         
@@ -2871,7 +2879,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         try {
             const docRef = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                 testName: finalTestName,
-                numQuestions, userAnswers: initialAnswers, starred: initialStarred,
+                numQuestions, maxScore: Number(maxScore), roundScore, userAnswers: initialAnswers, starred: initialStarred,
                 correctAnswersInput: cleanKey,
                 publishAnswers: true, 
                 questionFileUrl: finalFileUrl,
@@ -2983,6 +2991,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         if (examRange !== oldData.examRange) updates.examRange = examRange; // ✨ 更新範圍
         if (questionFileUrl.trim() !== (oldData.questionFileUrl || '')) updates.questionFileUrl = questionFileUrl.trim();
         if (publishAnswersToggle !== (oldData.publishAnswers !== false)) updates.publishAnswers = publishAnswersToggle;
+        if (Number(maxScore) !== (oldData.maxScore || 100)) updates.maxScore = Number(maxScore);
+        if (roundScore !== (oldData.roundScore !== false)) updates.roundScore = roundScore;
         
         // ✨ 新增：編輯時若切換為公開任務，自動移動到 [公開試題管理]
         if ((taskType === 'official' || taskType === 'mock') && oldData.folder !== '[公開試題管理]') {
@@ -3074,7 +3084,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         ...updates, 
                         testName: finalTestName, 
                         creatorUid: currentUser.uid, 
-                        numQuestions, 
+                        numQuestions, maxScore: Number(maxScore), roundScore,
                         hasTimer, 
                         timeLimit,
                         taskType, examYear, examSubject, examTag,
@@ -3193,7 +3203,9 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             };
         });
 
-        const scoreVal = Math.round((correctCount / safeNumQuestions) * 100);
+        const safeMaxScore = Number(maxScore) || 100;
+        const rawScore = (correctCount / safeNumQuestions) * safeMaxScore;
+        const scoreVal = roundScore ? Math.round(rawScore) : Number(rawScore.toFixed(2));
         const newResults = { score: scoreVal, correctCount, total: safeNumQuestions, data };
         
         // 確保狀態正常更新，切換畫面
@@ -3644,6 +3656,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 setQuestionHtml(data.questionHtml || '');
                 setExplanationHtml(data.explanationHtml || '');
                 setPublishAnswersToggle(data.publishAnswers !== false);
+                setMaxScore(data.maxScore || 100);
+                setRoundScore(data.roundScore !== false);
                 setInputType(data.questionHtml ? 'richtext' : (data.questionText && !data.questionFileUrl) ? 'text' : 'url');
             }
         } catch (e) {
@@ -3767,6 +3781,19 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 )}
 
               {/* ✨ 已將標準答案移至詳解上方 */}
+                <div className="flex gap-4 mb-4 mt-4">
+                    <div className="flex-1">
+                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗滿分</label>
+                        <input type="number" min="1" className="w-full p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={maxScore} onChange={e => setMaxScore(e.target.value)} />
+                    </div>
+                    <div className="flex-1 flex items-end pb-3">
+                        <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
+                            <input type="checkbox" checked={roundScore} onChange={e => setRoundScore(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
+                            <span>成績四捨五入至整數</span>
+                        </label>
+                    </div>
+                </div>
+
                 <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">標準答案</h3>
                 <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} showConfirm={showConfirm} />
 
@@ -3900,8 +3927,24 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         </div>
                     )}
                 </div>
-                <input type="number" placeholder="50" className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
                 
+                <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                    <div className="flex-1">
+                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗題數 (上限200題)</label>
+                        <input type="number" placeholder="50" className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
+                    </div>
+                    <div className="flex-1">
+                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗滿分</label>
+                        <input type="number" placeholder="100" className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={maxScore} onChange={e => setMaxScore(e.target.value)} onFocus={handleFocusScroll} />
+                    </div>
+                    <div className="flex-1 flex items-end pb-2">
+                        <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
+                            <input type="checkbox" checked={roundScore} onChange={e => setRoundScore(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
+                            <span>四捨五入至整數</span>
+                        </label>
+                    </div>
+                </div>
+
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源 (單選)</label>
                 <div className="flex flex-wrap space-x-4 mb-4 dark:text-white">
                     <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
@@ -4066,7 +4109,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     .preview-rich-text {
         word-break: break-word;
         white-space: pre-wrap;
-        font-size: 1rem;
+        font-size: ${immersiveTextSize}rem;
         line-height: 1.6;
         background-color: #ffffff !important;
         color: #1a1a1a !important;
@@ -4108,16 +4151,25 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     ) : (
                         <div className="flex-grow flex flex-col h-full max-w-3xl mx-auto w-full relative">
                             {/* 頂部導覽列 */}
-                            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 sm:p-4 flex justify-between items-center shadow-sm z-20">
-                                <button 
-                                    onClick={() => setShowQuestionGrid(!showQuestionGrid)}
-                                    className="font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 px-3 py-1.5 rounded transition-colors flex items-center gap-2"
-                                >
-                                    <span>第 {currentInteractiveIndex + 1} / {parsedInteractiveQuestions.length} 題</span>
-                                    <span className="text-xs">{showQuestionGrid ? '▲ 收起' : '▼ 展開列表'}</span>
-                                </button>
-                                <div className="flex gap-2">
+                            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 sm:p-4 flex justify-between items-center shadow-sm z-20 overflow-x-auto custom-scrollbar">
+                                <div className="flex items-center gap-2 sm:gap-4 shrink-0">
                                     <button 
+                                        onClick={() => setShowQuestionGrid(!showQuestionGrid)}
+                                        className="font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 px-2 sm:px-3 py-1.5 rounded transition-colors flex items-center gap-2"
+                                    >
+                                        <span className="whitespace-nowrap">第 {currentInteractiveIndex + 1} / {parsedInteractiveQuestions.length} 題</span>
+                                        <span className="text-xs hidden sm:inline">{showQuestionGrid ? '▲ 收起' : '▼ 展開列表'}</span>
+                                    </button>
+                                    
+                                    {/* ✨ 新增：文字大小調整控制器 */}
+                                    <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
+                                        <button onClick={() => setImmersiveTextSize(prev => Math.max(0.6, prev - 0.2))} className="px-2 sm:px-3 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-black transition-colors">A-</button>
+                                        <span className="px-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-x border-gray-200 dark:border-gray-600 whitespace-nowrap">{Math.round(immersiveTextSize * 100)}%</span>
+                                        <button onClick={() => setImmersiveTextSize(prev => Math.min(3.0, prev + 0.2))} className="px-2 sm:px-3 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-black transition-colors">A+</button>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2 shrink-0 ml-4">
+                                    <button
                                         disabled={currentInteractiveIndex === 0}
                                         onClick={() => {
                                             setCurrentInteractiveIndex(prev => Math.max(0, prev - 1));
@@ -4210,7 +4262,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                                 ${isSelected ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400 shadow-sm scale-[1.01]' : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-750'}
                                                                 ${isTimeUp ? 'locked-btn opacity-80' : ''}`}
                                                         >
-                                                            <span className={`text-base font-black mt-0.5 w-6 shrink-0 text-center ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}>{opt}.</span>
+                                                            <span style={{ fontSize: `${Math.max(1, immersiveTextSize * 0.9)}rem` }} className={`font-black mt-0.5 w-6 sm:w-8 shrink-0 text-center ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}>{opt}.</span>
                                                             {hasCustomContent ? (
                                                                 <div 
                                                                     className={`preview-rich-text w-full flex-1 ${isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}
