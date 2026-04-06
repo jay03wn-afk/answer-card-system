@@ -2544,6 +2544,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     // ✨ 套用安全解壓縮，徹底消滅點擊編輯時的當機與白屏問題
     const [userAnswers, setUserAnswers] = useState(safeDecompress(initialRecord.userAnswers, 'array'));
     const [starred, setStarred] = useState(initialRecord.starred || []);
+    const [notes, setNotes] = useState(initialRecord.notes || []); // ✨ 新增：筆記狀態
     const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
     const [results, setResults] = useState(safeDecompress(initialRecord.results, 'object'));
     const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
@@ -2672,6 +2673,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
     const [showOnlyWrong, setShowOnlyWrong] = useState(false);
     const [showOnlyStarred, setShowOnlyStarred] = useState(false);
+    const [showOnlyNotes, setShowOnlyNotes] = useState(false); // ✨ 新增：篩選有筆記
     const [showShareScoreModal, setShowShareScoreModal] = useState(false);
 
     // ✨ 新增：同步進度狀態與重新算分的載入狀態
@@ -2735,7 +2737,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             const timer = setTimeout(() => {
                 // 🚀 核心升級：作答進度與分數不再壓縮！直接以原生物件存檔，讓列表頁讀取時 CPU 負擔降至 0！
                 const stateToSave = { 
-                    testName, numQuestions, maxScore: Number(maxScore), roundScore, userAnswers, starred, correctAnswersInput, results, 
+                    testName, numQuestions, maxScore: Number(maxScore), roundScore, userAnswers, starred, notes, correctAnswersInput, results, // ✨ 新增：保存筆記
                     questionFileUrl, hasTimer, timeLimit, folder, hasSeparatedContent: true,
                     updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
                     isCompleted: !!results // 標記完成狀態供列表極速讀取
@@ -2756,7 +2758,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             
             return () => clearTimeout(timer); // 如果 1.5 秒內又有變動，就取消上一次的存檔，重新計時
         }
-    }, [testName, numQuestions, userAnswers, starred, correctAnswersInput, results, questionFileUrl, questionText, questionHtml, explanationHtml, folder, currentUser, quizId, step, syncTrigger]);
+    }, [testName, numQuestions, userAnswers, starred, notes, correctAnswersInput, results, questionFileUrl, questionText, questionHtml, explanationHtml, folder, currentUser, quizId, step, syncTrigger]);
 
     useEffect(() => {
         if (step === 'results' && isTask && initialRecord.taskId) {
@@ -2832,8 +2834,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         
         const initialAnswers = Array(Number(numQuestions)).fill('');
         const initialStarred = Array(Number(numQuestions)).fill(false);
+        const initialNotes = Array(Number(numQuestions)).fill(''); // ✨ 新增：初始化筆記
         setUserAnswers(initialAnswers);
         setStarred(initialStarred);
+        setNotes(initialNotes);
 
         const finalFileUrl = inputType === 'url' ? questionFileUrl.trim() : '';
         const finalQuestionText = inputType === 'text' ? questionText : '';
@@ -2879,7 +2883,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         try {
             const docRef = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                 testName: finalTestName,
-                numQuestions, maxScore: Number(maxScore), roundScore, userAnswers: initialAnswers, starred: initialStarred,
+                numQuestions, maxScore: Number(maxScore), roundScore, userAnswers: initialAnswers, starred: initialStarred, notes: initialNotes, // ✨ 新增：存入初始筆記
                 correctAnswersInput: cleanKey,
                 publishAnswers: true, 
                 questionFileUrl: finalFileUrl,
@@ -2929,6 +2933,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         showConfirm("確定要再做一次嗎？\n先前的分數將保留在您的歷史紀錄中，系統將為您清空目前答案，不會產生新的試卷檔案。", () => {
             const initialAnswers = Array(Number(numQuestions)).fill('');
             const initialStarred = Array(Number(numQuestions)).fill(false);
+            const initialNotes = Array(Number(numQuestions)).fill(''); // ✨ 新增：初始化筆記
             
             const historyEntry = { 
                 score: results.score, 
@@ -2940,11 +2945,13 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
                 userAnswers: initialAnswers,
                 starred: initialStarred,
+                notes: initialNotes, // ✨ 新增：重設筆記
                 results: window.firebase.firestore.FieldValue.delete(),
                 history: window.firebase.firestore.FieldValue.arrayUnion(historyEntry)
             }).then(() => {
                 setUserAnswers(initialAnswers);
                 setStarred(initialStarred);
+                setNotes(initialNotes); // ✨ 新增：重設筆記狀態
                 setResults(null);
                 setStep('answering');
                 
@@ -4200,6 +4207,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                             const actualIdx = q.number - 1;
                                             const isAnswered = !!userAnswers[actualIdx];
                                             const isStarred = starred[actualIdx];
+                                            const hasNote = notes && !!notes[actualIdx]; // ✨ 新增：判斷有無筆記
                                             const isCurrent = currentInteractiveIndex === idx;
                                             
                                             return (
@@ -4216,6 +4224,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                 >
                                                     {q.number}
                                                     {isStarred && <span className="absolute -top-3 -right-3 text-orange-500 drop-shadow-sm text-lg z-10">★</span>}
+                                                    {hasNote && <span className="absolute -top-3 left-0 text-blue-500 drop-shadow-sm text-xs z-10">📝</span>}
                                                 </button>
                                             );
                                         })}
@@ -4274,6 +4283,21 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                         </button>
                                                     );
                                                 })}
+                                            </div>
+
+                                            {/* ✨ 新增：沉浸式筆記區 */}
+                                            <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-4">
+                                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">📝 我的筆記 (自動儲存)</label>
+                                                <textarea 
+                                                    className="w-full p-3 border border-gray-200 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 dark:text-gray-200 custom-scrollbar resize-none h-24"
+                                                    placeholder="在此輸入這題的重點筆記..."
+                                                    value={(notes && notes[actualIdx]) || ''}
+                                                    onChange={(e) => {
+                                                        const newNotes = notes ? [...notes] : Array(Number(numQuestions)).fill('');
+                                                        newNotes[actualIdx] = e.target.value;
+                                                        setNotes(newNotes);
+                                                    }}
+                                                ></textarea>
                                             </div>
                                         </div>
                                     );
@@ -4647,6 +4671,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                     <input type="checkbox" checked={showOnlyStarred} onChange={e => setShowOnlyStarred(e.target.checked)} className="w-3.5 h-3.5 accent-black dark:accent-white" />
                                     <span className="font-bold text-orange-600 dark:text-orange-400">只看星號</span>
                                 </label>
+                                <label className="flex items-center space-x-1.5 cursor-pointer hover:text-black dark:hover:text-white dark:text-gray-300">
+                                    <input type="checkbox" checked={showOnlyNotes} onChange={e => setShowOnlyNotes(e.target.checked)} className="w-3.5 h-3.5 accent-black dark:accent-white" />
+                                    <span className="font-bold text-blue-600 dark:text-blue-400">只看筆記</span>
+                                </label>
                                 {isTask && initialRecord.taskId && (
                                     <label className="flex items-center space-x-1.5 cursor-pointer hover:text-black dark:hover:text-white dark:text-gray-300 ml-2 sm:ml-4 pl-2 sm:pl-4 border-l border-gray-300 dark:border-gray-600">
                                         <input type="checkbox" checked={showDiscussion} onChange={e => setShowDiscussion(e.target.checked)} className="w-3.5 h-3.5 accent-black dark:accent-white" />
@@ -4680,6 +4708,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                 {results.data.filter(item => {
                                     if (showOnlyWrong && item.isCorrect) return false;
                                     if (showOnlyStarred && !item.isStarred) return false;
+                                    if (showOnlyNotes && (!notes || !notes[item.number - 1])) return false; // ✨ 新增：筆記過濾
                                     return true;
                                 }).map((item, i) => (
                                    <div 
@@ -4701,6 +4730,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                             <div className="flex items-center space-x-3 shrink-0">
                                                 <div className="flex items-center justify-center w-8">
                                                     {item.isStarred && <span className="text-orange-500 text-xs mr-1">★</span>}
+                                                    {notes && notes[item.number - 1] && <span className="text-blue-500 text-xs mr-1">📝</span>}
                                                     <span className={`font-mono text-lg font-bold hover:underline ${item.isCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>{item.number}.</span>
                                                 </div>
                                             </div>
@@ -4716,12 +4746,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                             </div>
                                         </div>
                                         <div className="flex justify-end w-full gap-2">
-                                            {explanationHtml && extractSpecificExplanation(explanationHtml, item.number) && (
+                                            {((explanationHtml && extractSpecificExplanation(explanationHtml, item.number)) || (notes && notes[item.number - 1])) && (
                                                 <button 
-                                                    onClick={(e) => { e.stopPropagation(); setExplanationModalItem({ number: item.number, content: extractSpecificExplanation(explanationHtml, item.number) }); }} 
+                                                    onClick={(e) => { e.stopPropagation(); setExplanationModalItem({ number: item.number, content: extractSpecificExplanation(explanationHtml, item.number), note: notes ? notes[item.number - 1] : '' }); }} 
                                                     className="text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-green-600 dark:text-green-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
                                                 >
-                                                    💡 查看詳解
+                                                    💡 查看詳解與筆記
                                                 </button>
                                             )}
                                            <button 
@@ -4846,12 +4876,21 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100] p-4" onClick={() => setExplanationModalItem(null)}>
                     <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-2xl no-round shadow-2xl transform transition-all max-h-[90dvh] overflow-y-auto custom-scrollbar border-t-4 border-green-500" onClick={e => e.stopPropagation()}>
                         <h3 className="font-black text-xl mb-4 flex justify-between items-center dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
-                            <span className="text-green-600 dark:text-green-400">💡 第 {explanationModalItem.number} 題 詳解</span>
+                            <span className="text-green-600 dark:text-green-400">💡 第 {explanationModalItem.number} 題 詳解與筆記</span>
                             <button onClick={() => setExplanationModalItem(null)} className="text-gray-400 hover:text-red-500 font-bold transition-colors">✖</button>
                         </h3>
-                        <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-sm text-gray-800 dark:text-gray-200" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                            {explanationModalItem.content}
-                        </div>
+                        {explanationModalItem.content && (
+                            <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-sm text-gray-800 dark:text-gray-200 mb-4" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                <h4 className="font-bold text-gray-500 mb-2 border-b border-gray-200 dark:border-gray-700 pb-1">官方詳解</h4>
+                                {explanationModalItem.content}
+                            </div>
+                        )}
+                        {explanationModalItem.note && (
+                            <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-sm text-gray-800 dark:text-gray-200" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                <h4 className="font-bold text-blue-600 dark:text-blue-400 mb-2 border-b border-blue-200 dark:border-blue-800 pb-1">📝 我的筆記</h4>
+                                {explanationModalItem.note}
+                            </div>
+                        )}
                         <div className="flex justify-end mt-6">
                             <button onClick={() => setExplanationModalItem(null)} className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 px-6 py-2 no-round font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shadow-sm">關閉</button>
                         </div>
