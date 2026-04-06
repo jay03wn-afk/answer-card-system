@@ -2485,8 +2485,16 @@ const AnswerGridInput = ({ value, onChange, maxQuestions, showConfirm }) => {
 function safeDecompress(val, fallbackType = 'string') {
     if (!val) return fallbackType === 'array' ? [] : (fallbackType === 'object' ? null : '');
     if (typeof val === 'object') return val; // 🚀 關鍵防護：如果已經是陣列或物件，絕對不呼叫解壓縮，直接回傳！
+    
+    // ✨ 終極修復：如果字串明顯是未壓縮的明文 (包含 HTML 標籤或題目標記)，直接回傳，避免 jzDecompress 誤判產生亂碼！
+    if (typeof val === 'string' && (val.includes('<p') || val.includes('<div') || val.includes('<span') || val.includes('<br') || val.includes('[Q.') || val.includes('[A.'))) {
+        return val;
+    }
+    
     try {
         const res = window.jzDecompress(val);
+        // 防呆：如果解壓縮出來是空字串，但原本不是空的，代表解壓失敗，退回原字串
+        if (!res && val.length > 0) return val;
         return res || (fallbackType === 'array' ? [] : (fallbackType === 'object' ? null : ''));
     } catch (e) {
         return val; // 如果解壓縮失敗，代表它原本就沒有被壓縮過，直接原樣回傳！
@@ -2734,26 +2742,56 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const handleSaveProgress = (isExiting = false) => {
         if (!currentUser || !quizId) {
             if (isExiting) originalBack();
-            return;
+            return Promise.resolve();
         }
+
+        // 🚀 終極防護：清除陣列中的 undefined 空洞，避免 Firebase 靜默崩潰卡死
+        const cleanArray = (arr, fallback) => {
+            if (!Array.isArray(arr)) return [];
+            const newArr = [...arr];
+            for (let i = 0; i < numQuestions; i++) {
+                if (newArr[i] === undefined) newArr[i] = fallback;
+            }
+            return newArr;
+        };
         
         const stateToSave = { 
-            testName, numQuestions, maxScore: Number(maxScore), roundScore, userAnswers, starred, notes, peekedAnswers, correctAnswersInput, results,
-            questionFileUrl, hasTimer, timeLimit, folder, hasSeparatedContent: true,
+            testName: testName || '未命名', 
+            numQuestions: Number(numQuestions) || 1, 
+            maxScore: Number(maxScore) || 100, 
+            roundScore, 
+            userAnswers: cleanArray(userAnswers, ''), 
+            starred: cleanArray(starred, false), 
+            notes: cleanArray(notes, ''), 
+            peekedAnswers: cleanArray(peekedAnswers, false), 
+            correctAnswersInput: correctAnswersInput || '', 
+            questionFileUrl: questionFileUrl || '', 
+            hasTimer: !!hasTimer, 
+            timeLimit: Number(timeLimit) || 0, 
+            folder: folder || '未分類', 
+            hasSeparatedContent: true,
             updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
             isCompleted: !!results 
         };
+        // 排除 undefined 欄位
+        if (results !== undefined && results !== null) stateToSave.results = results;
         if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
 
-        window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
+        if (isExiting) {
+            // ✨ 如果是退出，直接在背景發送存檔指令，並「立刻」讓畫面返回，絕不卡住玩家！
+            window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
+                .catch(e => console.error("背景存檔失敗", e));
+            originalBack();
+            return Promise.resolve();
+        }
+
+        return window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
             .then(() => {
-                if (!isExiting) showAlert("✅ 進度已手動存檔！");
-                if (isExiting) originalBack();
+                showAlert("✅ 進度已手動存檔！");
             })
             .catch(e => {
                 console.error("存檔失敗", e);
-                if (!isExiting) showAlert("❌ 存檔失敗：" + e.message);
-                if (isExiting) originalBack(); // 就算失敗也要讓玩家能順利退出
+                showAlert("❌ 存檔失敗：" + e.message);
             });
     };
 
@@ -2769,20 +2807,45 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     useEffect(() => {
         if (currentUser && quizId && (step === 'answering' || step === 'setup' || step === 'results')) {
             if (userAnswers.length === 0 && numQuestions > 0 && step === 'answering') return;
+
+            // 🚀 自動存檔也要防護 undefined
+            const cleanArray = (arr, fallback) => {
+                if (!Array.isArray(arr)) return [];
+                const newArr = [...arr];
+                for (let i = 0; i < numQuestions; i++) {
+                    if (newArr[i] === undefined) newArr[i] = fallback;
+                }
+                return newArr;
+            };
             
             const stateToSave = { 
-                testName, numQuestions, maxScore: Number(maxScore), roundScore, userAnswers, starred, notes, peekedAnswers, correctAnswersInput, results,
-                questionFileUrl, hasTimer, timeLimit, folder, hasSeparatedContent: true,
+                testName: testName || '未命名', 
+                numQuestions: Number(numQuestions) || 1, 
+                maxScore: Number(maxScore) || 100, 
+                roundScore, 
+                userAnswers: cleanArray(userAnswers, ''), 
+                starred: cleanArray(starred, false), 
+                notes: cleanArray(notes, ''), 
+                peekedAnswers: cleanArray(peekedAnswers, false), 
+                correctAnswersInput: correctAnswersInput || '', 
+                questionFileUrl: questionFileUrl || '', 
+                hasTimer: !!hasTimer, 
+                timeLimit: Number(timeLimit) || 0, 
+                folder: folder || '未分類', 
+                hasSeparatedContent: true,
                 updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
                 isCompleted: !!results 
             };
+            if (results !== undefined && results !== null) stateToSave.results = results;
             if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
 
             // 背景自動存檔依然保留，作為雙重保險
-            setTimeout(() => {
+            const timerId = setTimeout(() => {
                 window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
                     .catch(e => console.error("自動儲存進度失敗", e));
-            }, 300);
+            }, 800); // ✨ 加長防抖時間，避免連續點擊造成網路塞車
+
+            return () => clearTimeout(timerId); // ✨ 加上清除計時器，真正的防抖 (Debounce) 機制
         }
     }, [testName, numQuestions, userAnswers, starred, notes, correctAnswersInput, results, questionFileUrl, folder, currentUser, quizId, step, syncTrigger]);
 
@@ -2937,8 +3000,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
             await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(docRef.id).set({
                 questionText: window.jzCompress(finalQuestionText),
-                questionHtml: finalQuestionHtml,
-                explanationHtml: explanationHtml
+                questionHtml: finalQuestionHtml ? window.jzCompress(finalQuestionHtml) : '',
+                explanationHtml: explanationHtml ? window.jzCompress(explanationHtml) : ''
             });
 
            setQuizId(docRef.id);
@@ -3709,9 +3772,9 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 setTestName(data.testName || '');
                 setCorrectAnswersInput(data.correctAnswersInput || '');
                 setQuestionFileUrl(data.questionFileUrl || '');
-                setQuestionText(data.questionText ? window.jzDecompress(data.questionText) : '');
-                setQuestionHtml(data.questionHtml || '');
-                setExplanationHtml(data.explanationHtml || '');
+                setQuestionText(safeDecompress(data.questionText, 'string'));
+                setQuestionHtml(safeDecompress(data.questionHtml, 'string'));
+                setExplanationHtml(safeDecompress(data.explanationHtml, 'string'));
                 setPublishAnswersToggle(data.publishAnswers !== false);
                 setMaxScore(data.maxScore || 100);
                 setRoundScore(data.roundScore !== false);
@@ -4160,9 +4223,21 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         </button>
                     )}
                     
-                    {/* ✨ 新增：手動存檔按鈕 */}
+                   {/* ✨ 新增：手動存檔按鈕 */}
                     <button 
-                        onClick={() => handleSaveProgress(false)} 
+                        onClick={(e) => {
+                            const btn = e.currentTarget;
+                            const originalText = btn.innerHTML;
+                            btn.innerHTML = '⏳ 存檔中...';
+                            btn.classList.add('opacity-50', 'pointer-events-none');
+                            const savePromise = handleSaveProgress(false);
+                            if (savePromise && savePromise.finally) {
+                                savePromise.finally(() => {
+                                    btn.innerHTML = originalText;
+                                    btn.classList.remove('opacity-50', 'pointer-events-none');
+                                });
+                            }
+                        }} 
                         className="text-sm font-bold bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-300 px-4 py-1.5 no-round border border-green-200 dark:border-green-700 hover:bg-green-100 dark:hover:bg-green-800 whitespace-nowrap transition-colors"
                     >
                         💾 手動存檔
