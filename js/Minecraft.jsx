@@ -362,7 +362,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 let aiTryBlock = false;
                 let aiTrySpike = false;
 
-                if (!state.isServing) {
+               if (!state.isServing) {
                     if (state.ball.x > state.net.x) {
                         aiTargetX = state.ball.x + 25; 
                         if (Math.abs(state.ball.x - state.opponent.x) < 80 && state.ball.y > 50 && state.ball.y < 280) {
@@ -372,13 +372,16 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                             aiTrySpike = true;
                         }
                     } else {
-                        // ✨ 修復：當球在左半場但正朝右飛時，村民需提早預判往前站
+                        // ✨ 修復：精準判斷「殺球攔網」與「高吊球退防」
                         if (state.ball.vx > 0) {
-                            if (state.ball.vx > 3 && state.ball.y < 220) {
+                            // 條件：球速快、高度在網子附近、且「沒有往上急升」(vy > -2) 才視為殺球並上網攔截
+                            if (state.ball.vx > 4 && state.ball.y < 240 && state.ball.vy > -2) {
                                 aiTargetX = state.net.x + 35;
                                 if (state.ball.x > state.net.x - 120) { aiShouldJump = true; aiTryBlock = true; }
                             } else {
-                                aiTargetX = state.net.x + 100 + (state.ball.vx * 15); // 根據球速提早戒備
+                                // 高吊球或一般發球：根據球速大幅度往後場退防，最高退到底線 (X=750)
+                                aiTargetX = state.net.x + 100 + (state.ball.vx * 22);
+                                if (aiTargetX > 750) aiTargetX = 750;
                             }
                         } else {
                             aiTargetX = 600;
