@@ -2545,6 +2545,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [userAnswers, setUserAnswers] = useState(safeDecompress(initialRecord.userAnswers, 'array'));
     const [starred, setStarred] = useState(initialRecord.starred || []);
     const [notes, setNotes] = useState(initialRecord.notes || []); // ✨ 新增：筆記狀態
+    const [peekedAnswers, setPeekedAnswers] = useState(initialRecord.peekedAnswers || []); // ✨ 新增：偷看答案狀態
+    const [allowPeek, setAllowPeek] = useState(initialRecord.allowPeek !== false); // ✨ 新增：允許偷看開關
     const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
     const [results, setResults] = useState(safeDecompress(initialRecord.results, 'object'));
     const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
@@ -2737,7 +2739,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             const timer = setTimeout(() => {
                 // 🚀 核心升級：作答進度與分數不再壓縮！直接以原生物件存檔，讓列表頁讀取時 CPU 負擔降至 0！
                 const stateToSave = { 
-                    testName, numQuestions, maxScore: Number(maxScore), roundScore, userAnswers, starred, notes, correctAnswersInput, results, // ✨ 新增：保存筆記
+                    testName, numQuestions, maxScore: Number(maxScore), roundScore, userAnswers, starred, notes, peekedAnswers, correctAnswersInput, results, // ✨ 新增：保存筆記與偷看紀錄
                     questionFileUrl, hasTimer, timeLimit, folder, hasSeparatedContent: true,
                     updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
                     isCompleted: !!results // 標記完成狀態供列表極速讀取
@@ -2835,9 +2837,11 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         const initialAnswers = Array(Number(numQuestions)).fill('');
         const initialStarred = Array(Number(numQuestions)).fill(false);
         const initialNotes = Array(Number(numQuestions)).fill(''); // ✨ 新增：初始化筆記
+        const initialPeeked = Array(Number(numQuestions)).fill(false); // ✨ 新增：初始化偷看紀錄
         setUserAnswers(initialAnswers);
         setStarred(initialStarred);
         setNotes(initialNotes);
+        setPeekedAnswers(initialPeeked);
 
         const finalFileUrl = inputType === 'url' ? questionFileUrl.trim() : '';
         const finalQuestionText = inputType === 'text' ? questionText : '';
@@ -2883,7 +2887,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         try {
             const docRef = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                 testName: finalTestName,
-                numQuestions, maxScore: Number(maxScore), roundScore, userAnswers: initialAnswers, starred: initialStarred, notes: initialNotes, // ✨ 新增：存入初始筆記
+                numQuestions, maxScore: Number(maxScore), roundScore, userAnswers: initialAnswers, starred: initialStarred, notes: initialNotes, peekedAnswers: initialPeeked, allowPeek, // ✨ 新增：存入初始筆記與偷看設定
                 correctAnswersInput: cleanKey,
                 publishAnswers: true, 
                 questionFileUrl: finalFileUrl,
@@ -2934,6 +2938,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             const initialAnswers = Array(Number(numQuestions)).fill('');
             const initialStarred = Array(Number(numQuestions)).fill(false);
             const initialNotes = Array(Number(numQuestions)).fill(''); // ✨ 新增：初始化筆記
+            const initialPeeked = Array(Number(numQuestions)).fill(false); // ✨ 新增：初始化偷看紀錄
             
             const historyEntry = { 
                 score: results.score, 
@@ -2946,12 +2951,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 userAnswers: initialAnswers,
                 starred: initialStarred,
                 notes: initialNotes, // ✨ 新增：重設筆記
+                peekedAnswers: initialPeeked, // ✨ 新增：重設偷看紀錄
                 results: window.firebase.firestore.FieldValue.delete(),
                 history: window.firebase.firestore.FieldValue.arrayUnion(historyEntry)
             }).then(() => {
                 setUserAnswers(initialAnswers);
                 setStarred(initialStarred);
                 setNotes(initialNotes); // ✨ 新增：重設筆記狀態
+                setPeekedAnswers(initialPeeked); // ✨ 新增：重設偷看紀錄狀態
                 setResults(null);
                 setStep('answering');
                 
@@ -2998,6 +3005,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         if (examRange !== oldData.examRange) updates.examRange = examRange; // ✨ 更新範圍
         if (questionFileUrl.trim() !== (oldData.questionFileUrl || '')) updates.questionFileUrl = questionFileUrl.trim();
         if (publishAnswersToggle !== (oldData.publishAnswers !== false)) updates.publishAnswers = publishAnswersToggle;
+        if (allowPeek !== (oldData.allowPeek !== false)) updates.allowPeek = allowPeek; // ✨ 新增：更新偷看設定
         if (Number(maxScore) !== (oldData.maxScore || 100)) updates.maxScore = Number(maxScore);
         if (roundScore !== (oldData.roundScore !== false)) updates.roundScore = roundScore;
         
@@ -3153,10 +3161,18 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     };
 
     const handleAnswerSelect = (idx, opt) => {
-        if(isTimeUp) return;
+        if(isTimeUp || (peekedAnswers && peekedAnswers[idx])) return; // ✨ 修改：偷看答案後鎖定
         const newAns = [...userAnswers];
         newAns[idx] = newAns[idx] === opt ? '' : opt;
         setUserAnswers(newAns);
+    };
+
+    const handlePeek = (idx) => {
+        showConfirm("確定要偷看答案嗎？\n看過答案後，本題將被鎖定無法再更改選項！", () => {
+            const newPeeked = peekedAnswers ? [...peekedAnswers] : Array(Number(numQuestions)).fill(false);
+            newPeeked[idx] = true;
+            setPeekedAnswers(newPeeked);
+        });
     };
 
     const toggleStar = (idx) => {
@@ -3812,10 +3828,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     onChange={(e) => setExplanationHtml(e.target.value)}
                 />
 
-                <div className="flex items-center mt-4 mb-8 bg-gray-50 dark:bg-gray-900 p-3 border border-gray-200 dark:border-gray-700">
+                <div className="flex flex-col gap-3 mt-4 mb-8 bg-gray-50 dark:bg-gray-900 p-4 border border-gray-200 dark:border-gray-700">
                     <label className="flex items-center space-x-2 cursor-pointer dark:text-white font-bold text-sm">
                         <input type="checkbox" checked={publishAnswersToggle} onChange={e => setPublishAnswersToggle(e.target.checked)} className="w-4 h-4 accent-black" />
                         <span>👁️ 允許玩家在交卷後查看「標準答案」與「錯題」</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer dark:text-white font-bold text-sm">
+                        <input type="checkbox" checked={allowPeek} onChange={e => setAllowPeek(e.target.checked)} className="w-4 h-4 accent-black" />
+                        <span>👀 允許玩家在沉浸式作答時使用「偷看答案」(限一般試題，偷看後該題將鎖定)</span>
                     </label>
                 </div>
 
@@ -3998,8 +4018,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     onFocus={handleFocusScroll}
                 />
 
-                <div className="mb-6 border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-700 no-round">
+                <div className="mb-6 border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-700 no-round flex flex-col gap-3">
                     <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
+                        <input type="checkbox" checked={allowPeek} onChange={e => setAllowPeek(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
+                        <span>👀 允許作答時使用「偷看答案」(限一般試題，偷看後該題將鎖定)</span>
+                    </label>
+                    <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white pt-3 border-t border-gray-200 dark:border-gray-600">
                         <input type="checkbox" checked={hasTimer} onChange={e => setHasTimer(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
                         <span>⏱ 開啟測驗倒數計時</span>
                     </label>
@@ -4240,9 +4264,19 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                     const actualIdx = q.number - 1; 
                                     const currentAns = userAnswers[actualIdx];
                                     const isStarred = starred[actualIdx];
+                                    
+                                    // ✨ 新增：偷看答案相關邏輯
+                                    const isPeeked = peekedAnswers && peekedAnswers[actualIdx];
+                                    const isNormalQuiz = !isTask && !isShared && taskType === 'normal';
+                                    const canPeek = allowPeek && isNormalQuiz;
+                                    
+                                    const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
+                                    const keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
+                                    const currentCorrectAns = keyArray[actualIdx] || '';
+                                    const currentExp = extractSpecificExplanation(explanationHtml, q.number);
 
                                     return (
-                                <div key={q.number} className="bg-white dark:bg-gray-800 border-2 border-slate-200 dark:border-slate-700 shadow-xl p-4 sm:p-6 mb-10 transition-all">
+                                <div key={q.number} className={`bg-white dark:bg-gray-800 border-2 shadow-xl p-4 sm:p-6 mb-10 transition-all ${isPeeked ? 'border-orange-300 dark:border-orange-700' : 'border-slate-200 dark:border-slate-700'}`}>
                                     <div className="flex justify-between items-start mb-4 border-b border-slate-100 dark:border-gray-700 pb-3">
                                                 <div className="flex items-center space-x-3">
                                                     <span className="text-xl font-black text-blue-600 dark:text-blue-400">第 {q.number} 題</span>
@@ -4262,28 +4296,70 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                 {['A', 'B', 'C', 'D'].map(opt => {
                                                     const hasCustomContent = !!q.options[opt];
                                                     const isSelected = currentAns === opt;
+                                                    
+                                                    // ✨ 新增：偷看答案後的選項樣式
+                                                    const isCorrectOpt = isPeeked && (currentCorrectAns.toLowerCase().includes(opt.toLowerCase()) || currentCorrectAns.toLowerCase() === 'abcd' || currentCorrectAns.toLowerCase() === 'z');
+                                                    let btnClasses = `text-left w-full py-1.5 px-3 border-2 transition-all flex items-start space-x-2 sm:space-x-3 no-round `;
+                                                    
+                                                    if (isPeeked) {
+                                                        if (isCorrectOpt) {
+                                                            btnClasses += 'bg-green-50 border-green-500 dark:bg-green-900/30 dark:border-green-500 shadow-sm ';
+                                                        } else if (isSelected) {
+                                                            btnClasses += 'bg-red-50 border-red-500 dark:bg-red-900/30 dark:border-red-500 shadow-sm ';
+                                                        } else {
+                                                            btnClasses += 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 opacity-60 ';
+                                                        }
+                                                        btnClasses += 'cursor-not-allowed ';
+                                                    } else {
+                                                        btnClasses += isSelected ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400 shadow-sm scale-[1.01] ' : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-750 ';
+                                                        if (isTimeUp) btnClasses += 'locked-btn opacity-80 ';
+                                                    }
+
                                                     return (
                                                         <button 
                                                             key={opt}
-                                                            disabled={isTimeUp}
+                                                            disabled={isTimeUp || isPeeked}
                                                             onClick={() => handleAnswerSelect(actualIdx, opt)}
-                                                            className={`text-left w-full py-1.5 px-3 border-2 transition-all flex items-start space-x-2 sm:space-x-3 no-round
-                                                                ${isSelected ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400 shadow-sm scale-[1.01]' : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-750'}
-                                                                ${isTimeUp ? 'locked-btn opacity-80' : ''}`}
+                                                            className={btnClasses}
                                                         >
-                                                            <span style={{ fontSize: `${Math.max(1, immersiveTextSize * 0.9)}rem` }} className={`font-black mt-0.5 w-6 sm:w-8 shrink-0 text-center ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}>{opt}.</span>
+                                                            <span style={{ fontSize: `${Math.max(1, immersiveTextSize * 0.9)}rem` }} className={`font-black mt-0.5 w-6 sm:w-8 shrink-0 text-center ${isPeeked && isCorrectOpt ? 'text-green-600 dark:text-green-400' : isPeeked && isSelected ? 'text-red-600 dark:text-red-400' : isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}>{opt}.</span>
                                                             {hasCustomContent ? (
                                                                 <div 
-                                                                    className={`preview-rich-text w-full flex-1 ${isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}
+                                                                    className={`preview-rich-text w-full flex-1 ${isPeeked && (isCorrectOpt || isSelected) ? 'text-black dark:text-white' : isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}
                                                                     dangerouslySetInnerHTML={{ __html: q.options[opt] }}
                                                                 />
                                                             ) : (
-                                                                <span className={`w-full flex-1 ${isSelected ? 'text-black dark:text-white' : 'text-gray-400 dark:text-gray-600'} italic`}>(選項無內容，但可點擊作答)</span>
+                                                                <span className={`w-full flex-1 ${isSelected || (isPeeked && isCorrectOpt) ? 'text-black dark:text-white' : 'text-gray-400 dark:text-gray-600'} italic`}>(選項無內容，但可點擊作答)</span>
                                                             )}
+                                                            {/* 偷看答案的對錯圖示 */}
+                                                            {isPeeked && isCorrectOpt && <span className="text-green-500 font-bold ml-2 shrink-0">✅</span>}
+                                                            {isPeeked && isSelected && !isCorrectOpt && <span className="text-red-500 font-bold ml-2 shrink-0">❌</span>}
                                                         </button>
                                                     );
                                                 })}
                                             </div>
+                                            
+                                            {/* ✨ 新增：偷看答案按鈕與詳解區塊 */}
+                                            {canPeek && !isPeeked && (
+                                                <div className="mt-4 flex justify-end">
+                                                    <button onClick={() => handlePeek(actualIdx)} className="text-sm font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400 px-4 py-2 hover:bg-orange-200 dark:hover:bg-orange-800 transition-colors border border-orange-200 dark:border-orange-800 flex items-center gap-2">
+                                                        👀 偷看答案 (將鎖定此題)
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {isPeeked && (
+                                                <div className="mt-4 p-4 bg-orange-50 dark:bg-gray-900 border border-orange-200 dark:border-orange-800 text-sm">
+                                                    <div className="font-bold text-orange-700 dark:text-orange-400 mb-2 pb-2 border-b border-orange-200 dark:border-orange-800 flex items-center gap-2">
+                                                        <span>🔒 此題已看過答案並鎖定</span>
+                                                        <span className="bg-white dark:bg-gray-800 px-2 py-0.5 rounded border border-orange-200 dark:border-orange-800 ml-auto text-black dark:text-white">標準答案: {currentCorrectAns || '未設定'}</span>
+                                                    </div>
+                                                    {currentExp ? (
+                                                        <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: currentExp }} />
+                                                    ) : (
+                                                        <p className="text-gray-500 dark:text-gray-400 italic">此題無提供詳解。</p>
+                                                    )}
+                                                </div>
+                                            )}
 
                                             {/* ✨ 新增：沉浸式筆記區 */}
                                             <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-4">
@@ -4412,15 +4488,16 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                             {/* ✨ 新增：送分題 UI 閃爍標籤 */}
                                             {isBonus && <span className="text-[10px] bg-yellow-400 text-black px-1.5 py-0.5 rounded-sm font-bold animate-pulse shadow-sm">🎁 送分</span>}
                                         </div>
-                                        <div className="flex space-x-1 shrink-0">
+                                        <div className="flex space-x-1 shrink-0 items-center">
+                                            {peekedAnswers && peekedAnswers[i] && <span className="text-xs mr-2 text-orange-500 font-bold" title="已偷看答案並鎖定">🔒</span>}
                                             {['A','B','C','D'].map(o => (
                                                 <button 
                                                     key={o} 
-                                                    disabled={isTimeUp}
+                                                    disabled={isTimeUp || (peekedAnswers && peekedAnswers[i])}
                                                     onClick={() => handleAnswerSelect(i, o)} 
                                                     className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all 
                                                         ${ans === o ? 'bg-black dark:bg-gray-200 border-black dark:border-gray-200 text-white dark:text-black scale-105 shadow-sm' : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-400'}
-                                                        ${isTimeUp ? 'locked-btn' : 'hover:border-gray-500 dark:hover:border-gray-400'}
+                                                        ${isTimeUp || (peekedAnswers && peekedAnswers[i]) ? 'locked-btn opacity-60' : 'hover:border-gray-500 dark:hover:border-gray-400'}
                                                         ${isBonus && ans !== o && !isTimeUp ? 'border-yellow-300 dark:border-yellow-700' : ''}`}
                                                 >{o}</button>
                                             ))}
