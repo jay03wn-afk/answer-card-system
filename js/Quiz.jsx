@@ -646,6 +646,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const [editingItem, setEditingItem] = useState(null);
     const [currentFolder, setCurrentFolder] = useState('全部');
     const [previewImage, setPreviewImage] = useState(null);
+    const [localToast, setLocalToast] = useState(null); // ✨ 新增：小文字提示狀態
 
     const [isJumping, setIsJumping] = useState(false);
     const [visibleLimit, setVisibleLimit] = useState(5); 
@@ -1045,7 +1046,10 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                      onChange={(e) => {
                                          window.db.collection('users').doc(user.uid).collection('wrongBook').doc(item.id).update({
                                              folder: e.target.value
-                                         }).then(() => showAlert('✅ 分類已更新！'));
+                                         }).then(() => {
+                                             setLocalToast('✅ 分類已更新！');
+                                             setTimeout(() => setLocalToast(null), 2000);
+                                         });
                                      }}
                                      className="text-[10px] text-gray-600 dark:text-gray-300 font-bold px-1 py-0.5 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 outline-none cursor-pointer"
                                  >
@@ -1122,6 +1126,13 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     }}
                     showAlert={showAlert}
                 />
+            )}
+
+            {/* ✨ 新增：小文字提示浮窗 */}
+            {localToast && (
+                <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-black/80 text-white px-4 py-2 rounded-full text-sm font-bold z-[300] shadow-lg pointer-events-none animate-fade-in">
+                    {localToast}
+                </div>
             )}
         </div>
     );
@@ -4582,8 +4593,24 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                     {currentExp ? (
                                                         <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: currentExp }} />
                                                     ) : (
-                                                        <p className="text-gray-500 dark:text-gray-400 italic">此題無提供詳解。</p>
+                                                        <p className="text-gray-500 dark:text-gray-400 italic mb-2">此題無提供詳解。</p>
                                                     )}
+                                                    <div className="mt-3 pt-3 border-t border-orange-200 dark:border-orange-800 flex justify-end">
+                                                        <button 
+                                                            disabled={loadingWrongBookNum === q.number}
+                                                            onClick={(e) => { 
+                                                                e.stopPropagation(); 
+                                                                handleAddToWrongBook({
+                                                                    number: q.number,
+                                                                    userAns: currentAns || '未填寫',
+                                                                    correctAns: currentCorrectAns || '無'
+                                                                }); 
+                                                            }} 
+                                                            className={`text-xs bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1.5 font-bold no-round border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-gray-700 transition-colors shadow-sm ${loadingWrongBookNum === q.number ? 'opacity-50 cursor-wait' : ''}`}
+                                                        >
+                                                            {loadingWrongBookNum === q.number ? '⏳ 處理中...' : '📓 收錄錯題'}
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             )}
 
@@ -5240,7 +5267,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         qText: wrongBookAddingItem.extractedQText || '', 
                         qHtml: wrongBookAddingItem.extractedQHtml || '', // ✨ 帶入富文本
                         nText: wrongBookAddingItem.extractedExp || '', 
-                        userFolders: Array.from(new Set(userProfile?.folders || ['未分類']))
+                        userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']))
                     }}
                     onClose={() => setWrongBookAddingItem(null)}
                     onSave={async (data) => {
