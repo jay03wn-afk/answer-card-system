@@ -90,7 +90,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const [previewImage, setPreviewImage] = useState(null);
 
     const [isJumping, setIsJumping] = useState(false);
-    const [visibleLimit, setVisibleLimit] = useState(5); 
+    const [visibleLimit, setVisibleLimit] = useState(20); 
     const [isSyncingWb, setIsSyncingWb] = useState(false);
 
     useEffect(() => {
@@ -124,7 +124,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const filteredItems = currentFolder === '全部' ? wrongItems : wrongItems.filter(item => (item.folder || '未分類') === currentFolder);
 
     useEffect(() => {
-        setVisibleLimit(5); 
+        setVisibleLimit(20); 
     }, [currentFolder]);
 
     const displayedItems = filteredItems.slice(0, visibleLimit);
@@ -506,7 +506,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
             {!loading && wrongItems.length >= visibleLimit && (
                 <div className="flex justify-center mt-2 mb-10">
                     <button 
-                        onClick={() => setVisibleLimit(prev => prev + 5)} 
+                        onClick={() => setVisibleLimit(prev => prev + 20)} 
                         className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 px-6 py-2 font-bold shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
                     >
                         {isSyncingWb ? <><div className="w-4 h-4 border-2 border-gray-400 border-t-black dark:border-t-white rounded-full animate-spin"></div>同步最新解答中...</> : '⬇️ 載入更多錯題...'}

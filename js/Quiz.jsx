@@ -2510,8 +2510,11 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const initialRecord = activeQuizRecord || {};
     const userFolders = Array.from(new Set(['未分類', ...(userProfile.folders || [])]));
     
-    // ✨ 新增：試卷專屬載入狀態
+   // ✨ 新增：試卷專屬載入狀態
     const [isQuizLoading, setIsQuizLoading] = useState(true);
+    // ✨ 新增：背景更新狀態與暫存內容
+    const [backgroundUpdateReady, setBackgroundUpdateReady] = useState(false);
+    const [latestContent, setLatestContent] = useState(null);
     
     const [quizId, setQuizId] = useState(initialRecord.id || null);
     const [step, setStep] = useState(initialRecord.forceStep || (initialRecord.results ? 'results' : (initialRecord.id ? 'answering' : 'setup')));
@@ -2697,29 +2700,77 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [explanationModalItem, setExplanationModalItem] = useState(null); // ✨ 新增詳解彈窗狀態
     const [isEditLoading, setIsEditLoading] = useState(false); // ✨ 新增：編輯模式的載入狀態
 
-    // ✨ 新增：進入試卷時，確保題目與詳解已經完全載入的守門員
+   // ✨ 核心升級：快取優先 (秒開) + 背景下載與更新通知機制
     useEffect(() => {
+        let isMounted = true;
+        let localQText = safeDecompress(initialRecord.questionText, 'string');
+        let localQHtml = safeDecompress(initialRecord.questionHtml, 'string');
+        let localExpHtml = safeDecompress(initialRecord.explanationHtml, 'string');
+
         const loadQuizContent = async () => {
-            // 如果這是一份分離儲存的考卷，且傳進來的資料裡面沒有題目 (代表從錯題本或某些跳轉入口進來漏抓了)
-            if (initialRecord.id && initialRecord.hasSeparatedContent && !initialRecord.questionHtml && !initialRecord.questionText) {
+            if (initialRecord.id && initialRecord.hasSeparatedContent) {
+                
+                // 1. 如果一開始沒資料，先嘗試從「本機快取」拿，達到秒開效果
+                if (!localQHtml && !localQText) {
+                    try {
+                        const cacheDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(initialRecord.id).get({ source: 'cache' });
+                        if (cacheDoc.exists && isMounted) {
+                            const data = cacheDoc.data();
+                            localQText = safeDecompress(data.questionText, 'string');
+                            localQHtml = safeDecompress(data.questionHtml, 'string');
+                            localExpHtml = safeDecompress(data.explanationHtml, 'string');
+
+                            setQuestionText(localQText);
+                            setQuestionHtml(localQHtml);
+                            setExplanationHtml(localExpHtml);
+                            setIsQuizLoading(false); // 快取命中，瞬間開門！
+                        }
+                    } catch (e) {
+                        // 快取沒有命中，保持 Loading 狀態等待下方網路請求
+                    }
+                } else {
+                    // 如果 initialRecord 已經自帶資料，直接秒開
+                    setIsQuizLoading(false);
+                }
+
+                // 2. 背景發起 Server 請求，檢查有沒有最新更新
                 try {
-                    const contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(initialRecord.id).get();
-                    if (contentDoc.exists) {
-                        const data = contentDoc.data();
-                        setQuestionText(safeDecompress(data.questionText, 'string'));
-                        setQuestionHtml(safeDecompress(data.questionHtml, 'string'));
-                        setExplanationHtml(safeDecompress(data.explanationHtml, 'string'));
+                    const serverDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(initialRecord.id).get({ source: 'server' });
+                    if (serverDoc.exists && isMounted) {
+                        const data = serverDoc.data();
+                        const serverQText = safeDecompress(data.questionText, 'string');
+                        const serverQHtml = safeDecompress(data.questionHtml, 'string');
+                        const serverExp = safeDecompress(data.explanationHtml, 'string');
+
+                        // 情況 A：剛剛快取沒命中，所以還在轉圈圈。現在網路抓到了，直接顯示！
+                        if (!localQHtml && !localQText) {
+                            setQuestionText(serverQText);
+                            setQuestionHtml(serverQHtml);
+                            setExplanationHtml(serverExp);
+                            setIsQuizLoading(false);
+                        }
+                        // 情況 B：已經秒開顯示畫面了，但背景比對發現「雲端內容有更新」！
+                        else if (serverQText !== localQText || serverQHtml !== localQHtml || serverExp !== localExpHtml) {
+                            setLatestContent({
+                                questionText: serverQText,
+                                questionHtml: serverQHtml,
+                                explanationHtml: serverExp
+                            });
+                            setBackgroundUpdateReady(true); // 觸發畫面上的更新通知按鈕
+                        }
                     }
                 } catch (e) {
-                    console.error("獲取試卷內容失敗:", e);
+                    console.error("背景更新檢查失敗:", e);
+                    if (isMounted) setIsQuizLoading(false); // 就算斷網也要放行，不要卡死
                 }
+            } else {
+                if (isMounted) setIsQuizLoading(false);
             }
-            // 資料準備完畢，關閉載入畫面
-            setIsQuizLoading(false);
         };
-        
+
         loadQuizContent();
-    }, [initialRecord.id, currentUser.uid, initialRecord.hasSeparatedContent, initialRecord.questionHtml, initialRecord.questionText]);
+        return () => { isMounted = false; };
+    }, [initialRecord.id, currentUser.uid]); // 只依賴 ID，避免死迴圈
 
     // ✨ 新增：點進試題時，自動檢查答案是否更新的監聽器
     useEffect(() => {
@@ -3815,7 +3866,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         setStep(results ? 'results' : 'answering');
     };
 
-    // ✨ 新增：試卷尚未載入完成前，顯示載入動畫
+   // ✨ 新增：試卷尚未載入完成前，顯示載入動畫
     if (isQuizLoading) return (
         <div className="flex flex-col h-[100dvh] items-center justify-center bg-gray-100 dark:bg-gray-900 transition-colors">
             <div className="w-16 h-16 border-4 border-blue-200 dark:border-gray-700 border-t-blue-600 dark:border-t-white rounded-full animate-spin mb-6 shadow-md"></div>
@@ -3825,9 +3876,28 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             </div>
         </div>
     );
+
+    // ✨ 新增：背景更新完成的浮動通知組件
+    const UpdateNotification = backgroundUpdateReady && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[999]">
+            <button
+                onClick={() => {
+                    setQuestionText(latestContent.questionText);
+                    setQuestionHtml(latestContent.questionHtml);
+                    setExplanationHtml(latestContent.explanationHtml);
+                    setBackgroundUpdateReady(false);
+                    showAlert("✅ 已為您載入最新版本的試卷內容！");
+                }}
+                className="bg-blue-600 text-white px-6 py-2 rounded-full shadow-2xl font-black flex items-center gap-2 hover:bg-blue-700 transition-colors border-2 border-blue-300 animate-bounce"
+            >
+                <span>🔄 試題已在背景更新，點擊立即套用</span>
+            </button>
+        </div>
+    );
     
     if (step === 'edit') return (
         <div className="flex flex-col min-h-[100dvh] items-center p-4 relative py-10 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors custom-scrollbar">
+            {UpdateNotification}
             <button onClick={handleBackFromEdit} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">← 返回</button>
 <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-4xl no-round border border-gray-200 dark:border-gray-700 mt-6 transition-colors">                <h2 className="font-bold mb-6 text-2xl dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">📝 編輯試題</h2>
                 
@@ -4187,6 +4257,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
     if (step === 'answering') return (
         <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
+            {UpdateNotification}
             {/* ✨ 修正：加入 flex-wrap 與 w-full，並調整為 lg 斷點，避免平板尺寸時按鈕被擠壓到畫面外 */}
             <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center no-round gap-3 shrink-0 z-10 transition-colors w-full">
                 <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
@@ -4685,6 +4756,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
     if (step === 'results') return (
         <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
+            {UpdateNotification}
             {/* ✨ 修正：加入 flex-wrap 與 w-full，並調整為 lg 斷點，避免平板尺寸時按鈕被擠壓到畫面外 */}
             <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center no-round gap-3 shrink-0 z-10 transition-colors w-full">
                 <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
