@@ -2510,6 +2510,9 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const initialRecord = activeQuizRecord || {};
     const userFolders = Array.from(new Set(['未分類', ...(userProfile.folders || [])]));
     
+    // ✨ 新增：試卷專屬載入狀態
+    const [isQuizLoading, setIsQuizLoading] = useState(true);
+    
     const [quizId, setQuizId] = useState(initialRecord.id || null);
     const [step, setStep] = useState(initialRecord.forceStep || (initialRecord.results ? 'results' : (initialRecord.id ? 'answering' : 'setup')));
     // ✨ 修正：如果標題有標籤，顯示給使用者編輯時要自動隱藏，讓畫面更乾淨
@@ -2693,6 +2696,30 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [loadingWrongBookNum, setLoadingWrongBookNum] = useState(null); // ✨ 新增：收錄錯題時的載入狀態
     const [explanationModalItem, setExplanationModalItem] = useState(null); // ✨ 新增詳解彈窗狀態
     const [isEditLoading, setIsEditLoading] = useState(false); // ✨ 新增：編輯模式的載入狀態
+
+    // ✨ 新增：進入試卷時，確保題目與詳解已經完全載入的守門員
+    useEffect(() => {
+        const loadQuizContent = async () => {
+            // 如果這是一份分離儲存的考卷，且傳進來的資料裡面沒有題目 (代表從錯題本或某些跳轉入口進來漏抓了)
+            if (initialRecord.id && initialRecord.hasSeparatedContent && !initialRecord.questionHtml && !initialRecord.questionText) {
+                try {
+                    const contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(initialRecord.id).get();
+                    if (contentDoc.exists) {
+                        const data = contentDoc.data();
+                        setQuestionText(safeDecompress(data.questionText, 'string'));
+                        setQuestionHtml(safeDecompress(data.questionHtml, 'string'));
+                        setExplanationHtml(safeDecompress(data.explanationHtml, 'string'));
+                    }
+                } catch (e) {
+                    console.error("獲取試卷內容失敗:", e);
+                }
+            }
+            // 資料準備完畢，關閉載入畫面
+            setIsQuizLoading(false);
+        };
+        
+        loadQuizContent();
+    }, [initialRecord.id, currentUser.uid, initialRecord.hasSeparatedContent, initialRecord.questionHtml, initialRecord.questionText]);
 
     // ✨ 新增：點進試題時，自動檢查答案是否更新的監聽器
     useEffect(() => {
@@ -3787,6 +3814,17 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         setIsEditLoading(false); // ✨ 關閉載入
         setStep(results ? 'results' : 'answering');
     };
+
+    // ✨ 新增：試卷尚未載入完成前，顯示載入動畫
+    if (isQuizLoading) return (
+        <div className="flex flex-col h-[100dvh] items-center justify-center bg-gray-100 dark:bg-gray-900 transition-colors">
+            <div className="w-16 h-16 border-4 border-blue-200 dark:border-gray-700 border-t-blue-600 dark:border-t-white rounded-full animate-spin mb-6 shadow-md"></div>
+            <div className="text-2xl font-black text-gray-800 dark:text-white mb-2 tracking-widest">🚀 試卷載入中...</div>
+            <div className="text-sm font-bold text-gray-500 dark:text-gray-400 animate-pulse bg-gray-200 dark:bg-gray-800 px-4 py-1.5 rounded-full">
+                正在為您解壓縮題目與詳解，請稍候
+            </div>
+        </div>
+    );
     
     if (step === 'edit') return (
         <div className="flex flex-col min-h-[100dvh] items-center p-4 relative py-10 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors custom-scrollbar">
