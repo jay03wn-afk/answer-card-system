@@ -4624,17 +4624,52 @@ const handleGenerateAI = async () => {
                             className="w-full p-2 mb-4 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none font-bold text-sm h-20 resize-none custom-scrollbar"
                         />
 
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">上傳參考文本 (選項，僅供 AI 閱讀)</label>
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">上傳參考資料 (支援 PDF、TXT 等，僅供 AI 閱讀)</label>
                         <input 
                             type="file" 
-                            accept=".txt,.csv,.md"
-                            onChange={e => {
+                            accept=".txt,.csv,.md,.pdf"
+                            onChange={async (e) => {
                                 const file = e.target.files[0];
                                 if (!file) return;
-                                setAiFileName(file.name);
-                                const reader = new FileReader();
-                                reader.onload = (event) => setAiFileContent(event.target.result);
-                                reader.readAsText(file);
+                                
+                                if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+                                    setAiFileName(file.name + ' (⏳ 讀取中...)');
+                                    setAiFileContent('正在解析 PDF...');
+                                    try {
+                                        if (!window.pdfjsLib) {
+                                            await new Promise((resolve, reject) => {
+                                                const script = document.createElement('script');
+                                                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+                                                script.onload = () => {
+                                                    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+                                                    resolve();
+                                                };
+                                                script.onerror = reject;
+                                                document.head.appendChild(script);
+                                            });
+                                        }
+                                        const arrayBuffer = await file.arrayBuffer();
+                                        const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                                        let fullText = '';
+                                        const maxPages = Math.min(pdf.numPages, 50); // 防呆限制最多讀取前 50 頁，避免瀏覽器當機
+                                        for (let i = 1; i <= maxPages; i++) {
+                                            const page = await pdf.getPage(i);
+                                            const textContent = await page.getTextContent();
+                                            fullText += textContent.items.map(item => item.str).join(' ') + '\n';
+                                        }
+                                        setAiFileContent(fullText);
+                                        setAiFileName(file.name + ` (已讀取 ${maxPages} 頁)`);
+                                    } catch (err) {
+                                        setAiFileName('❌ PDF 解析失敗');
+                                        setAiFileContent('');
+                                        alert('PDF 讀取失敗，可能是檔案損壞或有密碼保護。');
+                                    }
+                                } else {
+                                    setAiFileName(file.name);
+                                    const reader = new FileReader();
+                                    reader.onload = (event) => setAiFileContent(event.target.result);
+                                    reader.readAsText(file);
+                                }
                             }}
                             className="hidden" 
                             id="aiFileUpload"
@@ -4643,7 +4678,7 @@ const handleGenerateAI = async () => {
                             htmlFor="aiFileUpload" 
                             className="w-full flex items-center justify-center p-2 mb-6 border border-dashed border-purple-400 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 cursor-pointer font-bold text-sm hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
                         >
-                            {aiFileName ? `📄 已選擇：${aiFileName}` : '📎 點此上傳純文字檔 (.txt 等)'}
+                            {aiFileName ? `📄 ${aiFileName}` : '📎 點此上傳 PDF 或文字檔'}
                         </label>
 
                         <div className="flex justify-end gap-3">
