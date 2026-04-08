@@ -206,28 +206,20 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
   }, [user, db, appId, myTasks, calculatePoints]);
 
   const addStudyLog = useCallback((subjectData, message, type = 'note', customDate = null) => {
-    if (!user || !db) {
-      alert("錯誤：未登入或無法連線資料庫");
-      return;
-    }
+    if (!user || !db) return;
     const now = new Date();
     const displayDate = customDate || now.toLocaleDateString('zh-TW');
     const displayTime = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
 
-    // 支援多選並防止 undefined 造成 Firebase 崩潰卡死
-    const subjectsToSave = subjectData ? (Array.isArray(subjectData) ? subjectData : [subjectData]) : [];
+    // 支援多選：將傳入的科目資料統一轉為陣列格式儲存
+    const subjectsToSave = Array.isArray(subjectData) ? subjectData : [subjectData];
 
-    // 加上 return 讓外部程式可以確認儲存進度，並補上預設空字串以過濾 undefined
-    return db.collection('users').doc(user.uid).collection('studyLogs').add({
+    db.collection('users').doc(user.uid).collection('studyLogs').add({
       subjects: subjectsToSave, 
-      message: message || "", 
-      type: type || 'note',
+      message, type,
       date: displayDate, time: displayTime,
       timestamp: now.getTime()
-    }).catch(err => {
-      console.error("寫入軌跡失敗:", err);
-      alert("打卡失敗，請檢查網路狀態。");
-    });
+    }).catch(err => console.error("寫入軌跡失敗:", err));
   }, [user, db]);
 
   const deleteStudyLog = useCallback((logId) => {
