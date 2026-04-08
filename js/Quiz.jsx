@@ -2631,6 +2631,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     
     const [previewLightboxImg, setPreviewLightboxImg] = useState(null); // ✨ 新增：題目圖片全螢幕放大預覽
     const [eliminatedOptions, setEliminatedOptions] = useState({}); // ✨ 新增：沉浸式作答的「刪去法」狀態記錄
+    const [showEliminationBtn, setShowEliminationBtn] = useState(true); // ✨ 新增：是否顯示刪去法按鈕
 
     // ✨ 新增：全域攔截富文本點擊，實現圖片放大功能
     const handleRichTextClick = (e) => {
@@ -4312,6 +4313,19 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     if (step === 'answering') return (
         <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors" onClick={handleRichTextClick}>
             {UpdateNotification}
+            
+            {/* ✨ 全域注入：確保所有作答區 (包含傳統雙視窗) 的圖片都有指標樣式與放大動畫 */}
+            <style dangerouslySetInnerHTML={{__html: `
+                .preview-rich-text img, .preview-rich-text canvas {
+                    cursor: zoom-in !important;
+                    transition: opacity 0.2s, transform 0.2s !important;
+                }
+                .preview-rich-text img:hover, .preview-rich-text canvas:hover {
+                    opacity: 0.85 !important;
+                    transform: scale(1.02) !important;
+                }
+            `}} />
+
             {/* ✨ 修正：加入 flex-wrap 與 w-full，並調整為 lg 斷點，避免平板尺寸時按鈕被擠壓到畫面外 */}
             <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center no-round gap-3 shrink-0 z-10 transition-colors w-full">
                 <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
@@ -4484,6 +4498,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                         <span className="px-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-x border-gray-200 dark:border-gray-600 whitespace-nowrap">{Math.round(immersiveTextSize * 100)}%</span>
                                         <button onClick={() => setImmersiveTextSize(prev => Math.min(3.0, prev + 0.2))} className="px-2 sm:px-3 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 font-black transition-colors">A+</button>
                                     </div>
+                                    
+                                    {/* ✨ 新增：刪去法開關 */}
+                                    <button 
+                                        onClick={() => setShowEliminationBtn(!showEliminationBtn)}
+                                        className={`px-2 sm:px-3 py-1 text-xs font-bold rounded transition-colors whitespace-nowrap ${showEliminationBtn ? 'bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/40 dark:text-blue-400 dark:border-blue-800' : 'bg-gray-100 text-gray-400 border border-gray-200 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-500'}`}
+                                    >
+                                        {showEliminationBtn ? '✅ 刪去法' : '❌ 刪去法'}
+                                    </button>
                                 </div>
                                 <div className="flex gap-2 shrink-0 ml-4">
                                     <button
@@ -4604,43 +4626,51 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                         if (isEliminated) btnClasses += 'opacity-30 grayscale '; // ✨ 刪去法樣式
                                                     }
 
-                                                    return (
+                                                   return (
                                                         <div key={opt} className="flex items-stretch gap-2 w-full">
+                                                            
+                                                            {/* ✨ 修改：刪去法按鈕移到左邊，改用專業 SVG 圖示，並支援開關隱藏 */}
+                                                            {showEliminationBtn && (
+                                                                <button
+                                                                    disabled={isTimeUp || isPeeked}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setEliminatedOptions(prev => ({ ...prev, [elimKey]: !prev[elimKey] }));
+                                                                        if (!isEliminated && isSelected) {
+                                                                            handleAnswerSelect(actualIdx, opt);
+                                                                        }
+                                                                    }}
+                                                                    className={`w-8 sm:w-10 flex items-center justify-center border-2 transition-colors no-round shrink-0 ${isEliminated ? 'bg-gray-200 border-gray-300 text-gray-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300' : 'bg-white border-gray-200 text-gray-300 hover:text-gray-500 hover:border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500 dark:hover:bg-gray-700'}`}
+                                                                    title={isEliminated ? '取消刪去' : '刪去此選項'}
+                                                                >
+                                                                    {isEliminated ? (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+                                                                    ) : (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                                    )}
+                                                                </button>
+                                                            )}
+
                                                             <button 
                                                                 disabled={isTimeUp || isPeeked}
-                                                                onClick={() => {
+                                                                onClick={(e) => {
+                                                                    // ✨ 修復：點擊圖片時阻擋按鈕預設事件，讓外層的放大檢視能夠正常運作不衝突！
+                                                                    if (e.target.tagName === 'IMG' || e.target.tagName === 'CANVAS') return;
                                                                     if (!isEliminated) handleAnswerSelect(actualIdx, opt);
                                                                 }}
                                                                 className={btnClasses}
                                                             >
-                                                                <span style={{ fontSize: `${Math.max(1, immersiveTextSize * 0.9)}rem` }} className={`font-black mt-0.5 w-6 sm:w-8 shrink-0 text-center ${isPeeked && isCorrectOpt ? 'text-green-600 dark:text-green-400' : isPeeked && isSelected ? 'text-red-600 dark:text-red-400' : isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} ${isEliminated ? 'line-through' : ''}`}>{opt}.</span>
+                                                                <span style={{ fontSize: `${Math.max(1, immersiveTextSize * 0.9)}rem` }} className={`font-black mt-0.5 w-6 sm:w-8 shrink-0 text-center ${isPeeked && isCorrectOpt ? 'text-green-600 dark:text-green-400' : isPeeked && isSelected ? 'text-red-600 dark:text-red-400' : isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`}>{opt}.</span>
                                                                 {hasCustomContent ? (
                                                                     <div 
-                                                                        className={`preview-rich-text w-full flex-1 ${isPeeked && (isCorrectOpt || isSelected) ? 'text-black dark:text-white' : isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'} ${isEliminated ? 'line-through' : ''}`}
+                                                                        className={`preview-rich-text w-full flex-1 ${isPeeked && (isCorrectOpt || isSelected) ? 'text-black dark:text-white' : isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'} ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`}
                                                                         dangerouslySetInnerHTML={{ __html: q.options[opt] }}
                                                                     />
                                                                 ) : (
-                                                                    <span className={`w-full flex-1 ${isSelected || (isPeeked && isCorrectOpt) ? 'text-black dark:text-white' : 'text-gray-400 dark:text-gray-600'} italic ${isEliminated ? 'line-through' : ''}`}>(選項無內容，但可點擊作答)</span>
+                                                                    <span className={`w-full flex-1 ${isSelected || (isPeeked && isCorrectOpt) ? 'text-black dark:text-white' : 'text-gray-400 dark:text-gray-600'} italic ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`}>(選項無內容，但可點擊作答)</span>
                                                                 )}
                                                                 {isPeeked && isCorrectOpt && <span className="text-green-500 font-bold ml-2 shrink-0">✅</span>}
                                                                 {isPeeked && isSelected && !isCorrectOpt && <span className="text-red-500 font-bold ml-2 shrink-0">❌</span>}
-                                                            </button>
-
-                                                            {/* ✨ 新增：刪去法按鈕 (Process of Elimination) */}
-                                                            <button
-                                                                disabled={isTimeUp || isPeeked}
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setEliminatedOptions(prev => ({ ...prev, [elimKey]: !prev[elimKey] }));
-                                                                    // 若剛好刪除到已選取的答案，則取消選取
-                                                                    if (!isEliminated && isSelected) {
-                                                                        handleAnswerSelect(actualIdx, opt);
-                                                                    }
-                                                                }}
-                                                                className={`w-10 sm:w-12 flex items-center justify-center border-2 transition-colors rounded shrink-0 ${isEliminated ? 'bg-red-50 border-red-300 text-red-500 dark:bg-red-900/40 dark:border-red-700' : 'bg-gray-50 border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-300 hover:bg-red-50 dark:bg-gray-800 dark:border-gray-700 dark:hover:bg-gray-700'}`}
-                                                                title={isEliminated ? '復原此選項' : '刪去此選項 (刪去法)'}
-                                                            >
-                                                                {isEliminated ? '↩️' : '❌'}
                                                             </button>
                                                         </div>
                                                     );
