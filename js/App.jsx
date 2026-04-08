@@ -142,50 +142,7 @@ function ExamProgressDashboard({ examFeatures, user }) {
                 </p>
             </div>
 
-            {/* === ✨ 新增：獨立的 AI 口訣小幫手區域 === */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border-2 border-purple-200 dark:border-purple-900/50 p-4 md:p-6 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-40 h-40 bg-purple-50/50 dark:bg-purple-900/10 rounded-bl-full -z-10"></div>
-                <div className="flex items-center gap-2 mb-4">
-                    <span className="text-2xl">🤖</span>
-                    <h2 className="text-xl md:text-2xl font-bold text-purple-900 dark:text-purple-300">AI 口訣小幫手</h2>
-                </div>
-                
-                <div className="flex flex-col sm:flex-row gap-3 mb-2">
-                    <input 
-                        type="text"
-                        value={aiTopic}
-                        onChange={(e) => setAiTopic(e.target.value)}
-                        placeholder="想背什麼？輸入單元或重點 (例：交感神經藥物)..."
-                        className="flex-1 px-4 py-3 rounded-xl border border-slate-200 dark:border-gray-600 bg-slate-50 dark:bg-gray-900 outline-none focus:border-purple-500 dark:text-white transition-colors text-sm"
-                    />
-                    <button 
-                        onClick={async () => {
-                            if (!aiTopic.trim()) return; // 沒打字不反應
-                            setIsAiLoading(true);
-                            setAiResult(''); // 清空上次結果
-                            const result = await examFeatures.generateAIMnemonic(aiTopic);
-                            setAiResult(result);
-                            setIsAiLoading(false);
-                        }}
-                        disabled={isAiLoading}
-                        className={`px-6 py-3 rounded-xl font-bold text-white shadow-sm transition-all whitespace-nowrap ${isAiLoading ? 'bg-purple-300 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 active:scale-95'}`}
-                    >
-                        {isAiLoading ? '🧠 思考中...' : '✨ 幫我想口訣'}
-                    </button>
-                </div>
-                
-                {/* 網頁內顯示結果的區塊 (不使用彈跳視窗) */}
-                {aiResult && (
-                    <div className="mt-4 bg-purple-50 dark:bg-gray-900 p-4 rounded-xl border-2 border-dashed border-purple-300 dark:border-purple-700 animate-fade-in-up">
-                        <div className="text-xs font-black text-purple-600 dark:text-purple-400 mb-2 flex items-center gap-1">
-                            <span>✨ AI 專屬口訣</span>
-                        </div>
-                        <div className="text-slate-800 dark:text-gray-200 font-bold whitespace-pre-wrap leading-relaxed text-sm">
-                            {aiResult}
-                        </div>
-                    </div>
-                )}
-            </div>
+           
 
             {/* === 2. 任務打卡區 (含搜尋與雙層選單) === */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 p-4">

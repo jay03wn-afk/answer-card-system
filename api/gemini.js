@@ -2,40 +2,39 @@ export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
 
   try {
-    const rawKey = process.env.GEMINI_API_KEY;
-    if (!rawKey) return res.status(200).json({ result: "❌ 錯誤：找不到金鑰。" });
-    const API_KEY = rawKey.trim();
+    const API_KEY = process.env.GEMINI_API_KEY;
+
+    if (!API_KEY) {
+      return res.status(200).json({ result: "❌ 錯誤：Vercel 找不到金鑰。請確認環境變數設定。" });
+    }
 
     const { prompt } = req.body || {};
-    if (!prompt) return res.status(200).json({ result: "❌ 錯誤：未收到內容。" });
+    if (!prompt) {
+      return res.status(200).json({ result: "❌ 錯誤：沒有收到題目內容。" });
+    }
 
-    // ✨ 根據你的清單，使用最保險的「通用型號」路徑
-    // 這個型號在免費層級通常有每分鐘 15 次的額度
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${API_KEY}`;
-    
-    const response = await fetch(url, {
+    // ✨ 修正重點：將網址中的 v1beta 改成 v1 (正式版路徑)
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7 }
-      })
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
     });
 
     const data = await response.json();
 
     if (data.error) {
-      // 如果還是報錯，我們把錯誤訊息簡化顯示
-      return res.status(200).json({ result: `❌ Google 提示：${data.error.message}` });
+      // 如果正式版也沒這型號，可能是名稱問題，我們顯示出來
+      return res.status(200).json({ result: `❌ Google 報錯：${data.error.message}` });
     }
 
-    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      return res.status(200).json({ result: data.candidates[0].content.parts[0].text });
+    if (data.candidates && data.candidates[0]?.content?.parts?.[0]) {
+      const text = data.candidates[0].content.parts[0].text;
+      return res.status(200).json({ result: text });
     } else {
-      return res.status(200).json({ result: "❌ AI 暫時沒靈感，請等一下再試試看。" });
+      return res.status(200).json({ result: "❌ AI 暫時無法回答，請稍後再試。" });
     }
 
   } catch (err) {
-    return res.status(200).json({ result: `❌ 系統意外：${err.message}` });
+    return res.status(200).json({ result: `❌ 伺服器發生意外：${err.message}` });
   }
 }

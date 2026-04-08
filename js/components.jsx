@@ -51,27 +51,95 @@ function DialogOverlay({ dialog, onClose }) {
 }
 
 function TutorialOverlay({ onComplete }) {
+    const [step, setStep] = React.useState(0);
+
+    const steps = [
+        {
+            title: "🎉 歡迎來到 JJay 線上測驗",
+            icon: "🚀",
+            content: "這是一個結合「測驗」、「社群」與「遊戲化」的國考練功房！\n接下來我們將花 1 分鐘，帶你快速認識所有的超酷功能！",
+            color: "border-black dark:border-white"
+        },
+        {
+            title: "📰 JJay 日報",
+            icon: "📰",
+            content: "每天發布最新的考試重點或資訊。重點是：看完文章後，通常滑到最下方可以【領取免費鑽石】喔！",
+            color: "border-blue-500"
+        },
+        {
+            title: "📚 我的題庫",
+            icon: "📚",
+            content: "首創雙螢幕排版！可自訂資料夾分類，支援【輸入代碼】直接下載別人的測驗卷。左邊看題目，右邊畫卡，超級方便！",
+            color: "border-green-500"
+        },
+        {
+            title: "🎯 任務牆 & 📓 錯題整理",
+            icon: "🎯",
+            content: "每天完成【每日任務】可賺取大量鑽石！而你在測驗中答錯的題目，都會自動收錄到【錯題整理】，考前複習最有效率！",
+            color: "border-red-500"
+        },
+        {
+            title: "💬 社群交流",
+            icon: "💬",
+            content: "不再是一個人讀書！你可以加好友、即時對話，還能一鍵打包自己的測驗卷分享給好友作答。支援圖片閱後即焚！",
+            color: "border-pink-500"
+        },
+        {
+            title: "⛏️ 史蒂夫養成",
+            icon: "⛏️",
+            content: "讀書也要有儀式感。用賺來的【鑽石】購買傢俱佈置你的專屬家園，還能玩滑板小遊戲與好友競爭等級排名！",
+            color: "border-orange-500"
+        },
+        {
+            title: "📈 國考戰況追蹤",
+            icon: "📈",
+            content: "掌控你的全科複習進度！支援【打卡連動】與超強的【AI 口訣小幫手】，只要輸入重點，AI 馬上幫你生出好背的口訣！",
+            color: "border-teal-500"
+        },
+        {
+            title: "👤 隨時重新觀看",
+            icon: "⚙️",
+            content: "如果忘記這些功能怎麼用，隨時可以到左側選單的【個人檔案】中，點擊下方按鈕【重新觀看新手教學】喔！",
+            color: "border-purple-500"
+        }
+    ];
+
+    const nextStep = () => {
+        if (step < steps.length - 1) {
+            setStep(step + 1);
+        } else {
+            onComplete();
+        }
+    };
+
+    const current = steps[step];
+
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[70] p-4">
-            <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-lg no-round shadow-2xl relative border-t-4 border-black dark:border-gray-500 animate-fade-in-up">
-                <h2 className="text-2xl font-black mb-6 text-center tracking-wider dark:text-white">🎉 歡迎加入 JJay 線上測驗</h2>
-                <div className="space-y-6 text-gray-700 dark:text-gray-300 mb-8">
-                    <div>
-                        <p className="font-bold border-l-4 border-black dark:border-gray-400 pl-3 text-lg dark:text-gray-100">📖 我的題庫</p>
-                        <p className="pl-4 mt-1 text-sm leading-relaxed">首創雙螢幕排版，貼上雲端題本或純文字，左邊看題、右邊畫卡，並支援資料夾與測驗代碼功能。</p>
-                    </div>
-                    <div>
-                        <p className="font-bold border-l-4 border-blue-500 pl-3 text-lg dark:text-gray-100">💬 社群交流</p>
-                        <p className="pl-4 mt-1 text-sm leading-relaxed">不再是一個人讀書！新增好友即時對話，還能一鍵打包你的測驗卷分享給好友作答、互相炫耀成績。支援圖片閱後即焚！</p>
-                    </div>
-                    <div>
-                        <p className="font-bold border-l-4 border-orange-500 pl-3 text-lg dark:text-gray-100">⛏️ 史蒂夫養成</p>
-                        <p className="pl-4 mt-1 text-sm leading-relaxed">讀書也要有儀式感。賺取鑽石佈置你的 Minecraft 家園，還能玩滑板小遊戲與好友競爭等級！</p>
-                    </div>
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[100] p-4 transition-opacity duration-300">
+            <div key={step} className={`bg-white dark:bg-gray-800 p-8 w-full max-w-lg no-round shadow-2xl relative border-t-4 ${current.color} animate-fade-in-up flex flex-col`}>
+                <div className="text-6xl text-center mb-4 animate-bounce drop-shadow-md">{current.icon}</div>
+                <h2 className="text-2xl font-black mb-4 text-center tracking-wider dark:text-white">{current.title}</h2>
+                <div className="text-gray-700 dark:text-gray-300 mb-8 min-h-[110px] flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 border border-gray-100 dark:border-gray-700">
+                    <p className="text-base leading-relaxed font-bold text-center whitespace-pre-wrap">{current.content}</p>
                 </div>
-                <button onClick={onComplete} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors">
-                    🚀 開始體驗
-                </button>
+                
+                {/* 下方的進度小點點 */}
+                <div className="flex justify-center gap-2 mb-6">
+                    {steps.map((_, idx) => (
+                        <div key={idx} className={`h-2.5 w-2.5 rounded-full transition-all duration-300 ${idx === step ? 'bg-black dark:bg-white scale-125' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
+                    ))}
+                </div>
+
+                <div className="flex gap-3">
+                    {step > 0 && (
+                        <button onClick={() => setStep(step - 1)} className="w-1/3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 p-3 font-bold no-round hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            上一步
+                        </button>
+                    )}
+                    <button onClick={nextStep} className="flex-1 bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-transform active:scale-95 shadow-md">
+                        {step < steps.length - 1 ? '下一步 ➡️' : '🚀 開始體驗'}
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -366,7 +434,7 @@ function ProfilePage({ user, userProfile, showAlert }) {
                         <button 
                             onClick={() => {
                                 window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: false })
-                                .then(() => showAlert('✅ 已為您重新開啟新手教學視窗！', '提示'));
+                                
                             }} 
                             className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 px-6 py-2 font-bold no-round hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                         >
