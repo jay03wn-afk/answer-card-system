@@ -1782,33 +1782,29 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
    const executeImport = async (code) => {
         const cleanCode = code?.trim().toUpperCase();
         if (!cleanCode) return;
-        
         const codeRegex = /^[A-Z0-9]{6}$/;
         if (!codeRegex.test(cleanCode)) {
             return showAlert("⚠️ 代碼格式錯誤！請輸入 6 碼英數字。", "輸入錯誤");
         }
-
         try {
             // 1. 本地重複檢查
             const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
             if (isDuplicateCode) {
                 return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
             }
-
+            
             // 2. 直接去公共大廳 (shareCodes) 拿剛剛打包好的獨立包裹！
             const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
-
             if (!codeDoc.exists) {
                 return showAlert("❌ 找不到該代碼，請確認代碼是否輸入正確，或代碼已失效。", "查無資料");
             }
-
-            const sharedData = codeDoc.data();
-
+            const sharedData = codeDoc.data() || {};
+            
             // 防呆：不能匯入自己的試卷
             if (sharedData.ownerId === user.uid) {
                 return showAlert("⚠️ 這是你自己的試卷！", "重複擁有");
             }
-            
+
             // ✨ 終極防呆：確保雲端資料有值，防止 undefined 造成 Firebase 崩潰
             const safeOriginalQuizId = sharedData.originalQuizId || 'MISSING_ID';
             const safeOwnerId = sharedData.ownerId || 'MISSING_OWNER';
@@ -1818,35 +1814,41 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 .where('creatorQuizId', '==', safeOriginalQuizId)
                 .limit(1)
                 .get();
-
+            
             if (!duplicateCheck.empty && safeOriginalQuizId !== 'MISSING_ID') {
                 return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
             }
 
-            // 3. 準備個人作答紀錄的空陣列
-            const numQ = Number(sharedData.numQuestions || 50);
+            // 3. 準備個人作答紀錄的空陣列 (防呆保護，避免 NaN 導致陣列生成失敗)
+            let numQ = Number(sharedData.numQuestions);
+            if (isNaN(numQ) || numQ <= 0) numQ = 50;
             const emptyAnswers = Array(numQ).fill('');
             const emptyStarred = Array(numQ).fill(false);
-            
+
+            // 防呆處理 Timer 相關變數，避免出現 NaN 被 Firestore 拒絕
+            const isTimerActive = !!sharedData.hasTimer;
+            const safeTimeLimit = Number(sharedData.timeLimit) || 0;
+            const safeTimeRemaining = isTimerActive ? (safeTimeLimit * 60) : null;
+
             // 4. 將試卷基本設定存入自己的 quizzes
             const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
-                testName: cleanQuizName(sharedData.testName || '未命名試卷') + ' (來自代碼)',
+                testName: cleanQuizName(String(sharedData.testName || '未命名試卷')) + ' (來自代碼)',
                 numQuestions: numQ,
-                maxScore: sharedData.maxScore || 100,
+                maxScore: Number(sharedData.maxScore) || 100,
                 roundScore: sharedData.roundScore !== false,
                 questionFileUrl: sharedData.questionFileUrl || '',
-                correctAnswersInput: sharedData.correctAnswersInput || '', 
+                correctAnswersInput: sharedData.correctAnswersInput || '',
                 publishAnswers: sharedData.publishAnswers !== false,
                 userAnswers: emptyAnswers,
                 starred: emptyStarred,
-                hasTimer: sharedData.hasTimer || false,
-                timeLimit: sharedData.timeLimit || null,
-                timeRemaining: sharedData.hasTimer ? (sharedData.timeLimit * 60) : null,
-                isShared: true, 
-                creatorUid: safeOwnerId, 
+                hasTimer: isTimerActive,
+                timeLimit: safeTimeLimit > 0 ? safeTimeLimit : null,
+                timeRemaining: safeTimeRemaining,
+                isShared: true,
+                creatorUid: safeOwnerId,
                 creatorQuizId: safeOriginalQuizId,
-                folder: '未分類', 
-                shortCode: cleanCode, 
+                folder: '未分類',
+                shortCode: cleanCode,
                 hasSeparatedContent: true, // 新架構統一強制使用分離儲存
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
@@ -1862,17 +1864,14 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             try {
                 if (safeOwnerId !== 'MISSING_OWNER' && safeOriginalQuizId !== 'MISSING_ID') {
                     await window.db.collection('users').doc(safeOwnerId).collection('quizzes').doc(safeOriginalQuizId).update({
-                        sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
-                            uid: user.uid, 
-                            quizId: newDocRef.id 
-                        })
+                        sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ uid: user.uid, quizId: newDocRef.id })
                     });
                 }
             } catch (syncErr) {
                 console.warn("無法更新原作者的紀錄，但不影響匯入作業:", syncErr);
             }
 
-            showAlert(`✅ 成功加入「${cleanQuizName(sharedData.testName || '未命名試卷')}」！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
+            showAlert(`✅ 成功加入「${cleanQuizName(String(sharedData.testName || '未命名試卷'))}」！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
 
         } catch (e) {
             console.error("匯入錯誤詳細資訊:", e);
