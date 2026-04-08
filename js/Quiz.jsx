@@ -1610,6 +1610,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     );
 }
 // --- 新增：教學提示組件 (跳動箭頭對話框) ---
+// --- 新增：教學提示組件 (靜態對話框) ---
 const HelpTooltip = ({ show, text, position = 'bottom', className = "" }) => {
     if (!show) return null;
     const posClasses = {
@@ -1621,7 +1622,7 @@ const HelpTooltip = ({ show, text, position = 'bottom', className = "" }) => {
         'bottom': 'bottom-full left-1/2 -translate-x-1/2 border-b-blue-500 border-l-transparent border-r-transparent border-t-transparent'
     };
     return (
-        <div className={`absolute z-[100] w-56 bg-blue-50 border-2 border-blue-500 text-blue-800 text-xs font-bold p-3 shadow-xl animate-bounce pointer-events-none rounded ${posClasses[position]} ${className}`}>
+        <div className={`absolute z-[9999] w-56 bg-blue-50 border-2 border-blue-500 text-blue-800 text-xs font-bold p-3 shadow-xl pointer-events-none rounded transition-opacity ${posClasses[position]} ${className}`}>
             {text}
             <div className={`absolute border-[6px] ${arrowClasses[position]}`}></div>
         </div>
@@ -2179,9 +2180,9 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 </div>
             </div>
 
-            {/* ✨ 修正：加入 min-w-0，並將 space-x-2 改為 gap-2，確保滾動條正確作用於容器內部，不會撐破父元素 */}
-            <div className="flex flex-col md:flex-row gap-3 mb-2 shrink-0 w-full min-w-0 overflow-hidden">
-                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 flex-grow w-full min-w-0 relative">
+            {/* ✨ 修正：移除 overflow-hidden 避免教學框被切斷，並允許按鈕自然換行 */}
+            <div className="flex flex-col md:flex-row gap-3 mb-2 shrink-0 w-full min-w-0">
+                <div className="flex items-center gap-2 overflow-visible pb-1 flex-grow w-full min-w-0 relative flex-wrap">
                     {userFolders.map(f => (
                         <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors shrink-0 ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
                             {f === '我建立的試題' ? '⭐ ' : '📁 '} {f}
@@ -2189,7 +2190,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     ))}
                     <HelpTooltip show={showHelp} text="點擊上方頁籤，可以切換查看不同分類下的考卷喔" position="bottom" className="left-[100px]" />
                 </div>
-                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 shrink-0 w-full md:w-auto min-w-0">
+                <div className="flex items-center gap-2 overflow-visible pb-1 shrink-0 w-full md:w-auto min-w-0 flex-wrap">
                     <div className="relative">
                         <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors shrink-0">
                             + 新增資料夾
