@@ -280,65 +280,91 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     };
 
     const handleRetakeWrong = async () => {
-        if (filteredItems.length === 0) {
-            return showAlert("此分類目前沒有錯題可供測驗喔！");
-        }
-        showConfirm(`確定要針對「${currentFolder}」的 ${filteredItems.length} 題進行錯題重測嗎？\n\n系統將自動為您生成一份專屬試卷，並開啟沉浸式作答模式，交卷後的詳解將會顯示您當初填寫的錯題筆記！`, async () => {
-            setIsJumping(true);
-            try {
-                let qHtml = '';
-                let eHtml = '';
-                let ansArray = [];
-
-                filteredItems.forEach((item, index) => {
-                    const qNum = index + 1;
-                    let qContent = item.qHtml ? item.qHtml : (item.qText || '無題目文字');
-                    if (item.qImage) {
-                        qContent += `<br/><br/><img src="${item.qImage}" style="max-width:100%; border-radius:8px;" />`;
-                    }
-                    qHtml += `[Q.${qNum}] ${qContent} [End]<br/><br/>`;
-
-                    let expContent = item.nText || item.note || '無筆記';
-                    if (item.nImage) {
-                        expContent += `<br/><br/><img src="${item.nImage}" style="max-width:100%; border-radius:8px;" />`;
-                    }
-                    eHtml += `[A.${qNum}] ${expContent} [End]<br/><br/>`;
-
-                    ansArray.push(item.correctAns || '');
-                });
-
-                const cleanKey = ansArray.join(',');
-                const emptyAnswers = Array(filteredItems.length).fill('');
-                const emptyStarred = Array(filteredItems.length).fill(false);
-
-                const docRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
-                    testName: `[錯題重測] ${currentFolder}`,
-                    numQuestions: filteredItems.length,
-                    questionHtml: qHtml,
-                    explanationHtml: eHtml,
-                    correctAnswersInput: cleanKey,
-                    publishAnswers: true,
-                    userAnswers: emptyAnswers,
-                    starred: emptyStarred,
-                    folder: '錯題重測', 
-                    viewMode: 'interactive', 
-                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                });
-
-                if (!customFolders.includes('錯題重測')) {
-                    await window.db.collection('users').doc(user.uid).set({
-                        wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion('錯題重測')
-                    }, { merge: true });
-                }
-
-                const docSnap = await docRef.get();
-                onContinueQuiz({ id: docSnap.id, ...docSnap.data(), forceStep: 'answering' });
-
-            } catch (e) {
-                showAlert('生成錯題重測失敗：' + e.message);
-                setIsJumping(false);
+        setIsJumping(true); 
+        try {
+            // 直接從資料庫抓取該分類的所有題目，不受畫面載入限制
+            let query = window.db.collection('users').doc(user.uid).collection('wrongBook');
+            if (currentFolder !== '全部') {
+                query = query.where('folder', '==', currentFolder);
             }
-        });
+            
+            const snapshot = await query.get();
+            
+            if (snapshot.empty) {
+                setIsJumping(false);
+                return showAlert("此分類目前沒有錯題可供測驗喔！");
+            }
+
+            // 將抓回來的資料轉為陣列，並在前端依時間排序 (避免 Firestore 缺少索引報錯)
+            let allWrongItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            allWrongItems.sort((a, b) => {
+                const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+                const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+                return timeB - timeA; 
+            });
+
+            setIsJumping(false); 
+
+            showConfirm(`確定要針對「${currentFolder}」的 ${allWrongItems.length} 題（包含未顯示的題目）進行錯題重測嗎？\n\n系統將自動為您生成一份專屬試卷，並開啟沉浸式作答模式，交卷後的詳解將會顯示您當初填寫的錯題筆記！`, async () => {
+                setIsJumping(true);
+                try {
+                    let qHtml = '';
+                    let eHtml = '';
+                    let ansArray = [];
+
+                    allWrongItems.forEach((item, index) => {
+                        const qNum = index + 1;
+                        let qContent = item.qHtml ? item.qHtml : (item.qText || '無題目文字');
+                        if (item.qImage) {
+                            qContent += `<br/><br/><img src="${item.qImage}" style="max-width:100%; border-radius:8px;" />`;
+                        }
+                        qHtml += `[Q.${qNum}] ${qContent} [End]<br/><br/>`;
+
+                        let expContent = item.nText || item.note || '無筆記';
+                        if (item.nImage) {
+                            expContent += `<br/><br/><img src="${item.nImage}" style="max-width:100%; border-radius:8px;" />`;
+                        }
+                        eHtml += `[A.${qNum}] ${expContent} [End]<br/><br/>`;
+
+                        ansArray.push(item.correctAns || '');
+                    });
+
+                    const cleanKey = ansArray.join(',');
+                    const emptyAnswers = Array(allWrongItems.length).fill('');
+                    const emptyStarred = Array(allWrongItems.length).fill(false);
+
+                    const docRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
+                        testName: `[錯題重測] ${currentFolder}`,
+                        numQuestions: allWrongItems.length,
+                        questionHtml: qHtml,
+                        explanationHtml: eHtml,
+                        correctAnswersInput: cleanKey,
+                        publishAnswers: true,
+                        userAnswers: emptyAnswers,
+                        starred: emptyStarred,
+                        folder: '錯題重測', 
+                        viewMode: 'interactive', 
+                        createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    if (!customFolders.includes('錯題重測')) {
+                        await window.db.collection('users').doc(user.uid).set({
+                            wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion('錯題重測')
+                        }, { merge: true });
+                    }
+
+                    const docSnap = await docRef.get();
+                    onContinueQuiz({ id: docSnap.id, ...docSnap.data(), forceStep: 'answering' });
+
+                } catch (e) {
+                    showAlert('生成錯題重測失敗：' + e.message);
+                    setIsJumping(false);
+                }
+            });
+        } catch (e) {
+            showAlert('讀取題庫失敗：' + e.message);
+            setIsJumping(false);
+        }
     };
 
     return (
@@ -359,8 +385,13 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     ))}
                 </div>
                 <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 shrink-0 w-full md:w-auto min-w-0">
-                    <button 
+                   <button 
                         onClick={handleRetakeWrong}
+                        className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors shrink-0"
+                    >
+                        📝 錯題重測 (全部)
+                    </button><button 
+                       onClick={handleRetakeWrong}
                         className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors shrink-0"
                     >
                         📝 錯題重測 ({filteredItems.length}題)
