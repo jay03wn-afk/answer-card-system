@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     }
 
     // 建議確認模型名稱，例如：gemini-1.5-flash 或 gemini-2.0-flash
-    const MODEL_NAME = "gemini-2.5-flash"; 
+    const MODEL_NAME = "gemini-3.1-flash-lite-preview"; 
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
 
     const response = await fetch(API_URL, {
