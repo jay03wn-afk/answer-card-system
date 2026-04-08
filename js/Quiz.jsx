@@ -1802,7 +1802,17 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 return showAlert("❌ 找不到該代碼，請確認代碼是否輸入正確，或代碼已失效。", "查無資料");
             }
 
-            const sharedData = codeDoc.data();
+            const rawData = codeDoc.data();
+
+            // ✨ 終極修復：統一處理新舊兩種不同結構的 shareCodes，解決匯入時發生非預期錯誤的問題
+            const sharedData = rawData.quizData ? {
+                ownerId: rawData.ownerId,
+                originalQuizId: rawData.quizId,
+                ...rawData.quizData,
+                questionText: rawData.contentData?.questionText || '',
+                questionHtml: rawData.contentData?.questionHtml || '',
+                explanationHtml: rawData.contentData?.explanationHtml || '',
+            } : rawData;
 
             // 防呆：不能匯入自己的試卷
             if (sharedData.ownerId === user.uid) {
