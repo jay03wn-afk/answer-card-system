@@ -34,6 +34,40 @@ const renderTestName = (rawName, isCompleted = false, type = null) => {
     return <div className="break-all sm:break-words min-w-0 w-full">{cleanName}</div>;
 };
 
+// --- 新增：載入並初始化 MathJax (LaTeX 數學公式渲染引擎) ---
+if (typeof window !== 'undefined' && !window.mathjaxObserverInit) {
+    window.mathjaxObserverInit = true;
+    window.MathJax = {
+        tex: {
+            inlineMath: [['$', '$'], ['\\(', '\\)']],
+            displayMath: [['$$', '$$'], ['\\[', '\\]']],
+            processEscapes: true
+        },
+        startup: {
+            typeset: false // 手動控制渲染時機
+        }
+    };
+    const script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js";
+    script.async = true;
+    script.onload = () => {
+        let mathTimer = null;
+        const observer = new MutationObserver(() => {
+            if (mathTimer) return;
+            mathTimer = setTimeout(() => {
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    window.MathJax.typesetClear();
+                    window.MathJax.typesetPromise().catch(err => console.error("MathJax error:", err));
+                }
+                mathTimer = null;
+            }, 500); // 防抖批次渲染，維持高效能
+        });
+        const targetNode = document.getElementById('root') || document.body;
+        observer.observe(targetNode, { childList: true, subtree: true });
+    };
+    document.head.appendChild(script);
+}
+
 // --- 新增：載入並初始化 SmilesDrawer (自動繪製高畫質化學式引擎) ---
 if (typeof window !== 'undefined' && !window.smilesDrawerObserverInit) {
     window.smilesDrawerObserverInit = true;
@@ -2265,11 +2299,11 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                                 <div className="grid grid-cols-4 sm:flex sm:flex-wrap items-center gap-1 sm:gap-3 w-full sm:w-auto text-center shrink-0">
                                     <button onClick={() => handleDelete(rec.id)} className="text-xs text-gray-500 hover:text-red-600 transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis">刪除</button>
                                     <button onClick={() => setShowMoveModal(rec)} className="text-xs text-green-600 dark:text-green-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis">📁移動</button>
-                                    {!(rec.isTask || /\[#(op|m?nm?st)\]/i.test(rec.testName)) ? (
+                                   {!(rec.isTask || /\[#(op|m?nm?st)\]/i.test(rec.testName || '')) ? (
                                         <button onClick={() => setShowShareModal(rec)} className="text-xs text-blue-500 dark:text-blue-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis">📤分享</button>
                                     ) : <div />}
-                                    {/* ✨ 放寬權限：如果是出題者本人，就算發布成任務也允許編輯 */}
-                                    {!rec.isShared && (!rec.isTask || !rec.creatorUid || rec.creatorUid === currentUser.uid) ? (
+                                    {/* ✨ 放寬權限：如果是出題者本人，就算發布成任務也允許編輯 (修復 currentUser 導致的當機) */}
+                                    {!rec.isShared && (!rec.isTask || !rec.creatorUid || rec.creatorUid === user.uid) ? (
                                         <button onClick={() => handleEditQuiz(rec)} className="text-xs text-purple-600 dark:text-purple-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis relative">
                                             📝編輯
                                             {rec.hasNewSuggestion && <span className="absolute top-1 right-0 sm:-top-1 sm:-right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
@@ -2693,6 +2727,25 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
+
+    // ✨ 新增：監聽鍵盤方向鍵，控制沉浸式作答切換上下題
+    useEffect(() => {
+        if (step !== 'answering' || viewMode !== 'interactive') return;
+        const handleKeyDown = (e) => {
+            // 如果使用者正在輸入文字(如筆記區)，則不觸發方向鍵切換
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+            
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                setCurrentInteractiveIndex(prev => Math.min(parsedInteractiveQuestions.length - 1, prev + 1));
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                setCurrentInteractiveIndex(prev => Math.max(0, prev - 1));
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [step, viewMode, parsedInteractiveQuestions.length]);
     const [isDragging, setIsDragging] = useState(false);
     const [previewOpen, setPreviewOpen] = useState(true);
     const splitContainerRef = useRef(null);
@@ -5036,11 +5089,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     ) : (
                         <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white dark:bg-gray-800 transition-colors">
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px 16px' }}>
-                                {results.data.filter(item => {
-                                    if (showOnlyWrong && item.isCorrect) return false;
-                                    if (showOnlyStarred && !item.isStarred) return false;
-                                    if (showOnlyNotes && (!notes || !notes[item.number - 1])) return false; // ✨ 新增：筆記過濾
-                                    return true;
+                               {results.data.filter(item => {
+                                    // ✨ 修改為 OR (聯集) 邏輯：只要勾選的條件有任何一個符合，就顯示
+                                    if (!showOnlyWrong && !showOnlyStarred && !showOnlyNotes) return true;
+                                    let show = false;
+                                    if (showOnlyWrong && !item.isCorrect) show = true;
+                                    if (showOnlyStarred && item.isStarred) show = true;
+                                    if (showOnlyNotes && notes && notes[item.number - 1]) show = true;
+                                    return show;
                                 }).map((item, i) => (
                                    <div 
                                         key={i} 
@@ -5466,6 +5522,34 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         });
     };
 
+   const handleAutoParse = () => {
+        const tempText = question.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n</p>').replace(/<[^>]+>/g, '');
+        
+        const optA = tempText.match(/(?:A|Ａ)[.、\s]+([\s\S]*?)(?=(?:B|Ｂ)[.、\s]+|$)/i);
+        const optB = tempText.match(/(?:B|Ｂ)[.、\s]+([\s\S]*?)(?=(?:C|Ｃ)[.、\s]+|$)/i);
+        const optC = tempText.match(/(?:C|Ｃ)[.、\s]+([\s\S]*?)(?=(?:D|Ｄ)[.、\s]+|$)/i);
+        const optD = tempText.match(/(?:D|Ｄ)[.、\s]+([\s\S]*?)$/i);
+        
+        if (optA || optB || optC || optD) {
+            const newOptions = [...options];
+            if (optA) newOptions[0] = optA[1].trim();
+            if (optB) newOptions[1] = optB[1].trim();
+            if (optC) newOptions[2] = optC[1].trim();
+            if (optD) newOptions[3] = optD[1].trim();
+            setOptions(newOptions);
+            
+            let newQHtml = question;
+            const firstMatch = question.match(/(?:<[^>]+>)*\s*(?:A|Ａ)[.、\s]+/i);
+            if (firstMatch) {
+                newQHtml = question.substring(0, firstMatch.index).trim();
+            }
+            setQuestion(newQHtml);
+            showAlert("✅ 自動解析成功！已將選項分發至對應欄位，並將選項從題目中移除。");
+        } else {
+            showAlert("⚠️ 找不到 A, B, C, D 選項開頭，請確認題目格式。");
+        }
+    };
+
     const handleShare = () => {
         const shareUrl = `${window.location.origin}/?qaId=${activeQA.id}`;
         const plainQ = activeQA.question.replace(/<img[^>]*>/gi, '(圖片)').replace(/<[^>]+>/g, '').trim();
@@ -5625,7 +5709,17 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                         <input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-gray-800" />
                                     )}
                                 </div>
-                                <div className="md:col-span-2"><label className="block text-sm font-bold mb-1">題目內容 (支援貼上圖片)</label><ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入..." showAlert={showAlert} /></div>
+                                <div className="md:col-span-2">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="block text-sm font-bold">題目內容 (支援貼上圖片)</label>
+                                        {qaType === 'mcq' && (
+                                            <button onClick={handleAutoParse} className="text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 px-2 py-1 font-bold rounded shadow-sm border border-blue-300">
+                                                🤖 自動解析貼上選項
+                                            </button>
+                                        )}
+                                    </div>
+                                    <ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入或貼上包含 A, B, C, D 的完整題目，再點擊右上方「自動解析」..." showAlert={showAlert} />
+                                </div>
                                 
                                 {qaType === 'mcq' ? options.map((opt, idx) => (
                                     <div key={idx} className="md:col-span-2 flex items-center gap-2">
