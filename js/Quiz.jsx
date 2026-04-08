@@ -3101,8 +3101,9 @@ const [isAiGenerating, setIsAiGenerating] = useState(false);
     }, [isDragging, layoutMode]);
 const handleGenerateAI = async () => {
         const currentDiamonds = userProfile?.mcData?.diamonds || 0;
-        if (currentDiamonds < 100) {
-            return showAlert('💎 鑽石不足！自動生成需要 100 顆鑽石。');
+        const requiredDiamonds = Number(aiNum) * 3;
+        if (currentDiamonds < requiredDiamonds) {
+            return showAlert(`💎 鑽石不足！生成 ${aiNum} 題需要 ${requiredDiamonds} 顆鑽石。`);
         }
         if (aiNum < 1 || aiNum > 50) return showAlert('題數請設定在 1-50 題之間。');
         if (!aiScope && !aiFileContent) return showAlert('請輸入出題範圍或上傳參考檔案！');
@@ -3251,10 +3252,11 @@ const handleGenerateAI = async () => {
 
                 const parsed = JSON.parse(cleanJsonStr.trim());
 
-                // 扣除鑽石
+                // 扣除鑽石 (依據使用者要求的題數計價：3💎/題)
                 const mcData = userProfile.mcData || {};
+                const cost = Number(aiNum) * 3;
                 await window.db.collection('users').doc(currentUser.uid).update({
-                    'mcData.diamonds': (mcData.diamonds || 0) - 100
+                    'mcData.diamonds': (mcData.diamonds || 0) - cost
                 });
 
                 // ✨ 背景寫入資料庫：不再依賴畫面，直接為玩家建立一份「立即可測驗」的試卷
@@ -4403,7 +4405,7 @@ const handleGenerateAI = async () => {
                         onClick={() => setShowAiModal(true)} 
                         className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 font-bold no-round shadow-sm transition-colors text-sm flex items-center gap-2"
                     >
-                        ✨ AI 自動出題 (-100💎)
+                        ✨ AI 自動出題 (3💎/題)
                     </button>
                 </div>                
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">存放資料夾</label>
@@ -4559,12 +4561,17 @@ const handleGenerateAI = async () => {
            {showAiModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[150] p-4">
                     <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-md no-round shadow-xl border-t-4 border-purple-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                        <h3 className="font-black text-xl mb-4 dark:text-white flex items-center gap-2">
+                        <h3 className="font-black text-xl mb-2 dark:text-white flex items-center gap-2">
                             ✨ AI 智慧出題
                         </h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-bold">
-                            花費 100 💎 鑽石，讓 AI 自動為您生成題目與詳解。
-                        </p>
+                        <div className="flex justify-between items-center mb-4 bg-gray-50 dark:bg-gray-700/50 p-2 border border-gray-200 dark:border-gray-600">
+                            <span className="text-xs text-purple-700 dark:text-purple-300 font-bold">
+                                預估花費：{aiNum * 3} 💎 (3💎/題)
+                            </span>
+                            <span className="text-sm font-black text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                                您擁有：{userProfile?.mcData?.diamonds || 0} 💎
+                            </span>
+                        </div>
                         
                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">科目選擇</label>
                         <select 
