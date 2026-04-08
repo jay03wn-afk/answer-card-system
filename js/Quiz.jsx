@@ -3858,12 +3858,19 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
             const extractedExp = extractSpecificExplanation(explanationHtml, item.number);
             const plainExp = extractedExp ? extractedExp.replace(/<[^>]+>/g, '').trim() : '';
+            
+            // ✨ 新增：將該題的筆記自動帶入詳解下方
+            const actualIdx = item.number - 1;
+            let finalExp = plainExp;
+            if (notes && notes[actualIdx]) {
+                finalExp = finalExp ? `${finalExp}\n\n【我的筆記】\n${notes[actualIdx]}` : `【我的筆記】\n${notes[actualIdx]}`;
+            }
 
             setWrongBookAddingItem({ 
                 ...item, 
                 extractedQText: extractedText, 
                 extractedQHtml: extractedHtml,
-                extractedExp: plainExp 
+                extractedExp: finalExp 
             });
         } catch (error) {
             console.error("收錄錯題發生錯誤:", error);
