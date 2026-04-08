@@ -6,6 +6,11 @@ function ExamProgressDashboard({ examFeatures, user }) {
     const { useState, useMemo } = React;
     const [noteText, setNoteText] = useState('');
     
+    // === AI 口訣區狀態 ===
+    const [aiTopic, setAiTopic] = useState('');
+    const [aiResult, setAiResult] = useState('');
+    const [isAiLoading, setIsAiLoading] = useState(false);
+    
     // === 打卡區狀態 ===
     const [expandedSubj, setExpandedSubj] = useState(null);
     const [expandedCat, setExpandedCat] = useState(null);
@@ -132,9 +137,54 @@ function ExamProgressDashboard({ examFeatures, user }) {
                         <div className="absolute inset-0 bg-white/20 w-full animate-pulse"></div>
                     </div>
                 </div>
-               <p className="text-sm text-teal-700 dark:text-teal-300 mt-4 font-medium">
+              <p className="text-sm text-teal-700 dark:text-teal-300 mt-4 font-medium">
                     📈 進度分配：速讀(15%) → 細讀(25%) → 熟讀(30%) → 刷題(30%)
                 </p>
+            </div>
+
+            {/* === ✨ 新增：獨立的 AI 口訣小幫手區域 === */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border-2 border-purple-200 dark:border-purple-900/50 p-4 md:p-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-40 h-40 bg-purple-50/50 dark:bg-purple-900/10 rounded-bl-full -z-10"></div>
+                <div className="flex items-center gap-2 mb-4">
+                    <span className="text-2xl">🤖</span>
+                    <h2 className="text-xl md:text-2xl font-bold text-purple-900 dark:text-purple-300">AI 口訣小幫手</h2>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row gap-3 mb-2">
+                    <input 
+                        type="text"
+                        value={aiTopic}
+                        onChange={(e) => setAiTopic(e.target.value)}
+                        placeholder="想背什麼？輸入單元或重點 (例：交感神經藥物)..."
+                        className="flex-1 px-4 py-3 rounded-xl border border-slate-200 dark:border-gray-600 bg-slate-50 dark:bg-gray-900 outline-none focus:border-purple-500 dark:text-white transition-colors text-sm"
+                    />
+                    <button 
+                        onClick={async () => {
+                            if (!aiTopic.trim()) return; // 沒打字不反應
+                            setIsAiLoading(true);
+                            setAiResult(''); // 清空上次結果
+                            const result = await examFeatures.generateAIMnemonic(aiTopic);
+                            setAiResult(result);
+                            setIsAiLoading(false);
+                        }}
+                        disabled={isAiLoading}
+                        className={`px-6 py-3 rounded-xl font-bold text-white shadow-sm transition-all whitespace-nowrap ${isAiLoading ? 'bg-purple-300 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 active:scale-95'}`}
+                    >
+                        {isAiLoading ? '🧠 思考中...' : '✨ 幫我想口訣'}
+                    </button>
+                </div>
+                
+                {/* 網頁內顯示結果的區塊 (不使用彈跳視窗) */}
+                {aiResult && (
+                    <div className="mt-4 bg-purple-50 dark:bg-gray-900 p-4 rounded-xl border-2 border-dashed border-purple-300 dark:border-purple-700 animate-fade-in-up">
+                        <div className="text-xs font-black text-purple-600 dark:text-purple-400 mb-2 flex items-center gap-1">
+                            <span>✨ AI 專屬口訣</span>
+                        </div>
+                        <div className="text-slate-800 dark:text-gray-200 font-bold whitespace-pre-wrap leading-relaxed text-sm">
+                            {aiResult}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* === 2. 任務打卡區 (含搜尋與雙層選單) === */}
@@ -189,21 +239,9 @@ function ExamProgressDashboard({ examFeatures, user }) {
                                             
                                             {isCatExpanded && (
                                                 <div className="p-2 grid grid-cols-1 xl:grid-cols-2 gap-2 max-h-[400px] overflow-y-auto custom-scrollbar">
-                                                    {chapsToRender.map(({chapName, chapIdx}) => (
+                                                   {chapsToRender.map(({chapName, chapIdx}) => (
                                                         <div key={chapIdx} className="bg-slate-50 dark:bg-gray-800 p-2 rounded-lg border border-slate-100 dark:border-gray-700">
-                                                            <div className="flex justify-between items-center mb-2">
-                                                                <div className="text-xs font-bold text-slate-700 dark:text-gray-300">{chapName}</div>
-                                                                <button 
-                                                                    onClick={async () => {
-                                                                        alert('🧠 AI 正在努力想口訣中...');
-                                                                        const result = await examFeatures.generateAIMnemonic(chapName);
-                                                                        alert(`✨ 【${chapName}】AI 口訣：\n\n${result}`);
-                                                                    }}
-                                                                    className="text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded font-bold border border-purple-200 dark:border-purple-800 hover:bg-purple-200 dark:hover:bg-purple-900 transition-colors"
-                                                                >
-                                                                    ✨ AI想口訣
-                                                                </button>
-                                                            </div>
+                                                            <div className="text-xs font-bold text-slate-700 dark:text-gray-300 mb-2">{chapName}</div>
                                                             <div className="flex gap-1">
                                                                 {taskTypes.map(type => {
                                                                     const taskId = `${subj.id}_${cat.id}_${chapIdx}_0_${type.id}`;
