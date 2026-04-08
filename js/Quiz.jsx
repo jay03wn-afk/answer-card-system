@@ -3268,6 +3268,12 @@ const handleGenerateAI = async () => {
                     - 主要語言：題目敘述、選項內容、詳解等，請務必「全部使用繁體中文（台灣）」撰寫，不可使用簡體中文或英文造句。
                     - 專有名詞：一般敘述以中文為主，但藥物名稱、化學結構名稱等專業術語，請嚴格依照上方角色設定的規定辦理（例如：若規定只給英文，就絕對不可中英並列）。
 
+                    【⚠️ JSON 格式嚴格防呆要求 ⚠️】
+                    1. 必須是完全合法的 JSON 字串。
+                    2. 若內容包含反斜線（例如 LaTeX 語法或特殊符號），請務必「雙重轉義」成 \\\\。
+                    3. 字串內絕對「不可」包含真實的換行符號（請寫成單行，或使用 <br/> 代替換行）。
+                    4. 字串內若有雙引號 "，請務必加上反斜線轉義成 \\"。
+
                     請務必嚴格依照以下 JSON 格式回傳，**絕對不要包含任何 markdown code block (例如 \`\`\`json)，直接回傳純 JSON 字串即可**：
                     {
                       "questionsHtml": "[Q.001] 第一題題目內容... [A] 選項A內容 [B] 選項B內容 [C] 選項C內容 [D] 選項D內容 [End]<br/><br/>[Q.002] 第二題題目內容... [A] 選項A內容...",
@@ -3293,6 +3299,13 @@ const handleGenerateAI = async () => {
                 if (cleanJsonStr.startsWith('```json')) cleanJsonStr = cleanJsonStr.replace(/^```json\n?/, '');
                 if (cleanJsonStr.startsWith('```')) cleanJsonStr = cleanJsonStr.replace(/^```\n?/, '');
                 if (cleanJsonStr.endsWith('```')) cleanJsonStr = cleanJsonStr.replace(/\n?```$/, '');
+
+                // ✨ 終極防呆：自動修復 AI 亂加的非法反斜線 (Bad escaped character)
+                // 將非法的反斜線 (如 \a, \x) 替換為雙斜線 (\\a, \\x)，同時避開合法的 \n, \t, \", \\ 等
+                cleanJsonStr = cleanJsonStr.replace(/\\([^"\\\/bfnrtu])/g, '\\\\$1');
+                
+                // ✨ 終極防呆 2：清除真實的換行符號與隱藏控制字元，避免 JSON 斷行當機
+                cleanJsonStr = cleanJsonStr.replace(/[\u0000-\u0019]+/g, "");
 
                 const parsed = JSON.parse(cleanJsonStr.trim());
 
