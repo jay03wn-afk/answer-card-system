@@ -366,12 +366,13 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                     // 當作化學式時的安全字元過濾
                     let fallbackSmiles = cleanText.replace(/[^A-Za-z0-9@+\-\[\]\(\)\\\/=#$:\.%*]/g, '');
                     
-                    // ✨ 修正：移除會破壞 DOM 結構的 <span> 寫入，改為如果 Cactus 也失敗時，直接把圖片來源替換成一張帶有「解析失敗」字樣的 base64 圖片
-                    const errorSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="30"><rect width="80" height="30" fill="%23fef2f2" rx="4"/><text x="40" y="20" font-family="sans-serif" font-size="12" font-weight="bold" fill="%23ef4444" text-anchor="middle"></text></svg>`;
+                    // ✨ 修正：移除紅色的解析失敗 SVG，改為優雅降級回純文字 span，只要沒全成功就不會跳醜醜的圖
+                    const fallbackTextSpan = `<span style="color:#2563eb; font-weight:bold; background-color:#eff6ff; padding:2px 6px; border-radius:4px; margin:0 2px; display:inline-block;">${cleanText}</span>`;
+                    const encodedSpan = encodeURIComponent(fallbackTextSpan);
                     
                     // 第二備案：利用舊版 Cactus API 繪製 SMILES (發生在藥物名稱找不到時)
                     const cactusUrl = `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(fallbackSmiles)}/image`;
-                    const cactusImgHtml = `<img src="${cactusUrl}" alt="${fallbackSmiles}" title="SMILES: ${fallbackSmiles}" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #ffffff !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-white" onerror="this.src='${errorSvg}'" />`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                    const cactusImgHtml = `<img src="${cactusUrl}" alt="${fallbackSmiles}" title="SMILES: ${fallbackSmiles}" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #ffffff !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-white" onerror="this.outerHTML=decodeURIComponent('${encodedSpan}')" />`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
                     // 首選方案：呼叫 PubChem API 找藥物圖片，如果失敗就觸發 onerror 換成第二備案 Cactus
                     const pubChemUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(cleanText)}/PNG`;
@@ -2447,7 +2448,17 @@ const AnswerGridInput = ({ value, onChange, maxQuestions, showConfirm }) => {
     };
 
     const handleChange = (index, char) => {
-        const cleanChar = char.replace(/[^a-dA-DZz]/g, '');
+        let cleanChar = char.replace(/[^a-dA-DZz]/g, '');
+        
+        // ✨ 修正解析拆分邏輯：大寫字母只能一格一個，小寫才可以一格多個
+        if (/[A-DZ]/.test(cleanChar)) {
+            // 如果輸入包含大寫，強制只取最後輸入的一個字元，並保持大寫
+            cleanChar = cleanChar.slice(-1).toUpperCase();
+        } else {
+            // 全小寫，最多允許輸入 4 碼
+            cleanChar = cleanChar.slice(0, 4).toLowerCase();
+        }
+
         const valStr = value || '';
         let currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
         while(currentArr.length < maxQuestions) currentArr.push('');
@@ -2729,11 +2740,11 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // ✨ 新增：監聽鍵盤方向鍵，控制沉浸式作答切換上下題
+   // ✨ 新增：監聽鍵盤方向鍵與 ABCD 鍵，控制沉浸式作答
     useEffect(() => {
         if (step !== 'answering' || viewMode !== 'interactive') return;
         const handleKeyDown = (e) => {
-            // 如果使用者正在輸入文字(如筆記區)，則不觸發方向鍵切換
+            // 如果使用者正在輸入文字(如筆記區)，則不觸發切換
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
             
             if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
@@ -2742,11 +2753,24 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 setCurrentInteractiveIndex(prev => Math.max(0, prev - 1));
+            } else if (['a', 'b', 'c', 'd'].includes(e.key.toLowerCase())) {
+                // ✨ 新增：可以透過鍵盤 ABCD 來選擇答案
+                e.preventDefault();
+                const opt = e.key.toUpperCase();
+                const q = parsedInteractiveQuestions[currentInteractiveIndex];
+                if (q && !isTimeUp && !(peekedAnswers && peekedAnswers[q.number - 1])) {
+                    const actualIdx = q.number - 1;
+                    setUserAnswers(prev => {
+                        const newAns = [...prev];
+                        newAns[actualIdx] = newAns[actualIdx] === opt ? '' : opt;
+                        return newAns;
+                    });
+                }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [step, viewMode, parsedInteractiveQuestions.length]);
+    }, [step, viewMode, parsedInteractiveQuestions, currentInteractiveIndex, isTimeUp, peekedAnswers]);
     const [isDragging, setIsDragging] = useState(false);
     const [previewOpen, setPreviewOpen] = useState(true);
     const splitContainerRef = useRef(null);
@@ -4650,8 +4674,17 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                             <button 
                                                                 disabled={isTimeUp || isPeeked}
                                                                 onClick={(e) => {
-                                                                    // ✨ 修復：點擊圖片時阻擋按鈕預設事件，讓外層的放大檢視能夠正常運作不衝突！
-                                                                    if (e.target.tagName === 'IMG' || e.target.tagName === 'CANVAS') return;
+                                                                    // ✨ 修復：點擊圖片時直接觸發放大檢視，並且阻擋事件往上傳遞，徹底解決按鈕衝突問題！
+                                                                    if (e.target.tagName === 'IMG' && (e.target.closest('.preview-rich-text') || e.target.classList.contains('zoomable-img'))) {
+                                                                        e.stopPropagation();
+                                                                        setPreviewLightboxImg(e.target.src);
+                                                                        return;
+                                                                    } else if (e.target.tagName === 'CANVAS' && e.target.closest('.preview-rich-text')) {
+                                                                        e.stopPropagation();
+                                                                        setPreviewLightboxImg(e.target.toDataURL());
+                                                                        return;
+                                                                    }
+                                                                    
                                                                     if (!isEliminated) handleAnswerSelect(actualIdx, opt);
                                                                 }}
                                                                 className={btnClasses}
