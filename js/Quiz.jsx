@@ -2625,7 +2625,6 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     const [aiFileContent, setAiFileContent] = useState('');
     const [aiFileName, setAiFileName] = useState('');
 const [isAiGenerating, setIsAiGenerating] = useState(false);
-    const [aiTaskToast, setAiTaskToast] = useState(null); // ✨ 新增：背景生成右下角小通知狀態    const [taskScores, setTaskScores] = useState(null);
     const [creatorSuggestions, setCreatorSuggestions] = useState([]); 
 
     const [showDiscussion, setShowDiscussion] = useState(false);
@@ -3100,8 +3099,7 @@ const [isAiGenerating, setIsAiGenerating] = useState(false);
             window.removeEventListener('touchmove', handleDragEnd);
         };
     }, [isDragging, layoutMode]);
-
-   const handleGenerateAI = async () => {
+const handleGenerateAI = async () => {
         const currentDiamonds = userProfile?.mcData?.diamonds || 0;
         if (currentDiamonds < 100) {
             return showAlert('💎 鑽石不足！自動生成需要 100 顆鑽石。');
@@ -3110,22 +3108,26 @@ const [isAiGenerating, setIsAiGenerating] = useState(false);
         if (!aiScope && !aiFileContent) return showAlert('請輸入出題範圍或上傳參考檔案！');
         if (aiSubject === '其他' && !aiCustomSubject.trim()) return showAlert('請填寫您想要測驗的科目名稱！');
 
-        // ✨ 背景執行邏輯：馬上關閉設定視窗，並開啟右下角提示
+        // ✨ 啟動全域背景執行邏輯：馬上關閉設定視窗，不需要等 AI
         setShowAiModal(false);
-        setAiTaskToast({ status: 'loading', message: '⏳ AI 正在背景撰寫題目，請稍候... (您可以繼續做其他事)' });
-        setIsAiGenerating(true);
+        setIsAiGenerating(false);
+        
+        if (window.setGlobalToast) {
+            window.setGlobalToast({ status: 'loading', message: '⏳ AI 正在背景撰寫題目，請稍候... (您可以自由切換到其他頁面或去玩遊戲)' });
+        }
 
         // ✨ 自動簡化標題邏輯：[範圍 + 模擬測驗(AI)]
         const displayScope = aiScope ? aiScope.substring(0, 15).replace(/\n/g, '') : (aiSubject === '其他' ? aiCustomSubject : aiSubject);
         const autoTitle = `【${displayScope}】模擬測驗 (AI)`;
 
-        try {
-            // 💡 1. 這裡依照不同科目注入深度 Prompt 專家設定
-            let basePrompt = "";
-            if (aiSubject === '藥理與藥物化學') {
-                const pharmCount = Math.round(aiNum * (aiPharmRatio / 100));
-                const medchemCount = aiNum - pharmCount;
-                basePrompt = `
+        // ✨ 使用 IIFE (立即執行非同步函式) 脫離 UI 執行緒，讓它在背景默默做事
+        (async () => {
+            try {
+                let basePrompt = "";
+                if (aiSubject === '藥理與藥物化學') {
+                    const pharmCount = Math.round(aiNum * (aiPharmRatio / 100));
+                    const medchemCount = aiNum - pharmCount;
+                    basePrompt = `
 # 角色設定
 你是資深藥師國考命題專家，精通藥理學與藥物化學（特別熟悉 Basic 與 Foye's 參考書的深度）。根據我提供的教材內容，設計出一份題目與選項簡短，困難、需要深度思考與細節辨識的高階測驗。
 # 核心任務
@@ -3143,9 +3145,9 @@ const [isAiGenerating, setIsAiGenerating] = useState(false);
 2. 題幹要求：敘述簡短、不贅述情境，直接提問。語氣不可武斷，避免送分題。
 3. 專有名詞：每一處出現的專有名詞，結構名稱請「只給英文」，絕對不要中英並列。
 4. 干擾選項：必須設置具備高度迷惑性的適當干擾選項。
-                `.trim();
-            } else if (aiSubject === '藥劑與生物藥劑學') {
-                basePrompt = `
+                    `.trim();
+                } else if (aiSubject === '藥劑與生物藥劑學') {
+                    basePrompt = `
 # 角色設定
 你是一位資深的藥學系教授與藥師國考命題專家，精通「藥劑學」與「生物藥劑學」的考點與出題邏輯。設計出一份題目與選項都很簡短，極度困難、需要深度思考與細節辨識的高階測驗。
 # 核心任務
@@ -3163,9 +3165,9 @@ const [isAiGenerating, setIsAiGenerating] = useState(false);
 2. 題幹要求：敘述簡短直接。考配方或動力學時，語氣不可武斷。
 3. 專有名詞：請「只給英文」或「只給中文」，絕對不要中英並列。
 4. 干擾選項：設置具備高度迷惑性的適當干擾選項。
-                `.trim();
-            } else if (aiSubject === '生藥學與中藥學') {
-                basePrompt = `
+                    `.trim();
+                } else if (aiSubject === '生藥學與中藥學') {
+                    basePrompt = `
 # 角色設定
 你是資深藥師國考命題專家，精通生藥學與中藥學。設計出一份題目與選項簡短，困難、需要深度思考的高階測驗。共 ${aiNum} 題單選題。
 # 嚴格格式與輸出限制
@@ -3175,9 +3177,9 @@ const [isAiGenerating, setIsAiGenerating] = useState(false);
 - 生藥：基原、成分、結構個論（細節）、成分之效果、特點與詳細個論或不同生藥比較等。
 # 題目與選項設計規範
 1. 難度設定：難。專注細節與綜合判斷。2. 題幹要求：敘述簡短直接。3. 專有名詞：只給英文或只給中文。4. 干擾選項：必須設置具備高度迷惑性。
-                `.trim();
-            } else if (aiSubject === '其他') {
-                basePrompt = `
+                    `.trim();
+                } else if (aiSubject === '其他') {
+                    basePrompt = `
 # 角色設定
 你是資深國家考試命題專家，精通「${aiCustomSubject || '該專業領域'}」。請根據我提供的教材內容，設計出一份題目與選項簡短，困難、需要深度思考與細節辨識的高階測驗。共 ${aiNum} 題單選題。
 # 嚴格格式與輸出限制
@@ -3187,9 +3189,9 @@ const [isAiGenerating, setIsAiGenerating] = useState(false);
 - 若有提供參考文本，請嚴格按照文本內容的細節進行語意轉換與邏輯包裝，測驗考生的核心掌握度。
 # 題目與選項設計規範
 1. 難度設定：難。專注細節與綜合判斷。2. 題幹要求：敘述簡短直接。3. 專有名詞：只給英文或中文，不並列。4. 干擾選項：具備高度迷惑性。
-                `.trim();
-            } else {
-                basePrompt = `
+                    `.trim();
+                } else {
+                    basePrompt = `
 # 角色設定
 你是資深藥師國考命題專家，精通藥物分析與儀器分析。設計一份題目與選項簡短，極度困難、需要深度思考的高階測驗。共 ${aiNum} 題單選題。
 # 嚴格格式與輸出限制
@@ -3203,75 +3205,111 @@ const [isAiGenerating, setIsAiGenerating] = useState(false);
 - 因果推理與機制原理題：藉由改變實驗條件達成特定分析結果，及底層物理化學作用提問。
 # 題目與選項設計規範
 1. 難度設定：難。專注細節。2. 題幹要求：簡短直接。3. 專有名詞：只給英文或中文，不並列。4. 干擾選項：具備高度迷惑性。
-                `.trim();
-            }
-
-            const fullPrompt = `
-                ${basePrompt}
-
-                【使用者指定內容】
-                - 題數：${aiNum} 題
-                - 出題範圍/重點：${aiScope || '無'}
-                - 參考文本：${aiFileContent ? aiFileContent.substring(0, 15000) : '無'} (請以此為核心發揮出題)
-
-                【語言與文字要求】
-                - 主要語言：題目敘述、選項內容、詳解等，請務必「全部使用繁體中文（台灣）」撰寫，不可使用簡體中文或英文造句。
-                - 專有名詞：一般敘述以中文為主，但藥物名稱、化學結構名稱等專業術語，請嚴格依照上方角色設定的規定辦理（例如：若規定只給英文，就絕對不可中英並列）。
-
-                請務必嚴格依照以下 JSON 格式回傳，**絕對不要包含任何 markdown code block (例如 \`\`\`json)，直接回傳純 JSON 字串即可**：
-                {
-                  "questionsHtml": "[Q.001] 第一題題目內容... [A] 選項A內容 [B] 選項B內容 [C] 選項C內容 [D] 選項D內容 [End]<br/><br/>[Q.002] 第二題題目內容... [A] 選項A內容...",
-                  "answers": "A,B,C,D",
-                  "explanations": "[A.001] 第一題詳解... [End]<br/><br/>[A.002] 第二題詳解... [End]"
+                    `.trim();
                 }
-                注意：
-                1. questionsHtml 格式必須完全符合 [Q.數字] 題目 [A]...[B]...[C]...[D]... [End] 的格式（數字可補零如 [Q.001]）。
-                2. answers 是所有標準答案，用逗號分隔，共有 ${aiNum} 個。
-                3. explanations 格式必須完全符合 [A.數字] 詳解 [End] 的格式（數字可補零如 [A.001]）。
-            `;
 
-            const res = await fetch('/api/gemini', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: fullPrompt })
-            });
+                const fullPrompt = `
+                    ${basePrompt}
 
-            const data = await res.json();
-            if (data.result && data.result.startsWith('❌')) throw new Error(data.result);
+                    【使用者指定內容】
+                    - 題數：${aiNum} 題
+                    - 出題範圍/重點：${aiScope || '無'}
+                    - 參考文本：${aiFileContent ? aiFileContent.substring(0, 15000) : '無'} (請以此為核心發揮出題)
 
-            let cleanJsonStr = data.result.trim();
-            // 處理 AI 可能還是手賤回傳 markdown 標籤的問題
-            if (cleanJsonStr.startsWith('```json')) cleanJsonStr = cleanJsonStr.replace(/^```json\n?/, '');
-            if (cleanJsonStr.startsWith('```')) cleanJsonStr = cleanJsonStr.replace(/^```\n?/, '');
-            if (cleanJsonStr.endsWith('```')) cleanJsonStr = cleanJsonStr.replace(/\n?```$/, '');
+                    【語言與文字要求】
+                    - 主要語言：題目敘述、選項內容、詳解等，請務必「全部使用繁體中文（台灣）」撰寫，不可使用簡體中文或英文造句。
+                    - 專有名詞：一般敘述以中文為主，但藥物名稱、化學結構名稱等專業術語，請嚴格依照上方角色設定的規定辦理（例如：若規定只給英文，就絕對不可中英並列）。
 
-            const parsed = JSON.parse(cleanJsonStr.trim());
+                    請務必嚴格依照以下 JSON 格式回傳，**絕對不要包含任何 markdown code block (例如 \`\`\`json)，直接回傳純 JSON 字串即可**：
+                    {
+                      "questionsHtml": "[Q.001] 第一題題目內容... [A] 選項A內容 [B] 選項B內容 [C] 選項C內容 [D] 選項D內容 [End]<br/><br/>[Q.002] 第二題題目內容... [A] 選項A內容...",
+                      "answers": "A,B,C,D",
+                      "explanations": "[A.001] 第一題詳解... [End]<br/><br/>[A.002] 第二題詳解... [End]"
+                    }
+                    注意：
+                    1. questionsHtml 格式必須完全符合 [Q.數字] 題目 [A]...[B]...[C]...[D]... [End] 的格式（數字可補零如 [Q.001]）。
+                    2. answers 是所有標準答案，用逗號分隔，共有 ${aiNum} 個。
+                    3. explanations 格式必須完全符合 [A.數字] 詳解 [End] 的格式（數字可補零如 [A.001]）。
+                `;
 
-            // 扣除鑽石
-            const mcData = userProfile.mcData || {};
-            await window.db.collection('users').doc(currentUser.uid).update({
-                'mcData.diamonds': (mcData.diamonds || 0) - 100
-            });
+                const res = await fetch('/api/gemini', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: fullPrompt })
+                });
 
-            // 自動填入所有資料 (建立好可以直接測驗的狀態)
-            setTestName(autoTitle);
-            setNumQuestions(aiNum);
-            setMaxScore(100);
-            setInputType('richtext');
-            setQuestionHtml(parsed.questionsHtml || '');
-            setCorrectAnswersInput(parsed.answers || '');
-            setExplanationHtml(parsed.explanations || '');
-            
-            // ✨ 背景成功通知
-            setAiTaskToast({ status: 'success', message: '✅ 題目生成完畢！已自動為您填寫所有內容，您可以直接點擊下方「開始作答」了！' });
-            // 8 秒後自動隱藏通知
-            setTimeout(() => setAiTaskToast(null), 8000);
+                const data = await res.json();
+                if (data.result && data.result.startsWith('❌')) throw new Error(data.result);
 
-        } catch (e) {
-            setAiTaskToast({ status: 'error', message: '❌ 生成失敗 (未扣除鑽石)：' + e.message });
-            setTimeout(() => setAiTaskToast(null), 8000);
-        }
-        setIsAiGenerating(false);
+                let cleanJsonStr = data.result.trim();
+                if (cleanJsonStr.startsWith('```json')) cleanJsonStr = cleanJsonStr.replace(/^```json\n?/, '');
+                if (cleanJsonStr.startsWith('```')) cleanJsonStr = cleanJsonStr.replace(/^```\n?/, '');
+                if (cleanJsonStr.endsWith('```')) cleanJsonStr = cleanJsonStr.replace(/\n?```$/, '');
+
+                const parsed = JSON.parse(cleanJsonStr.trim());
+
+                // 扣除鑽石
+                const mcData = userProfile.mcData || {};
+                await window.db.collection('users').doc(currentUser.uid).update({
+                    'mcData.diamonds': (mcData.diamonds || 0) - 100
+                });
+
+                // ✨ 背景寫入資料庫：不再依賴畫面，直接為玩家建立一份「立即可測驗」的試卷
+                const cleanKey = (parsed.answers || '').replace(/[^a-dA-DZz,]/g, '');
+                const initialAnswers = Array(Number(aiNum)).fill('');
+                const initialStarred = Array(Number(aiNum)).fill(false);
+                const initialNotes = Array(Number(aiNum)).fill('');
+                const initialPeeked = Array(Number(aiNum)).fill(false);
+
+                const docRef = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
+                    testName: autoTitle,
+                    numQuestions: Number(aiNum),
+                    maxScore: 100,
+                    roundScore: true,
+                    userAnswers: initialAnswers,
+                    starred: initialStarred,
+                    notes: initialNotes,
+                    peekedAnswers: initialPeeked,
+                    allowPeek: true,
+                    correctAnswersInput: cleanKey,
+                    publishAnswers: true,
+                    questionFileUrl: '',
+                    hasTimer: false,
+                    timeLimit: null,
+                    timeRemaining: null,
+                    folder: '未分類', 
+                    hasSeparatedContent: true,
+                    isCompleted: false,
+                    taskType: 'normal',
+                    examYear: '',
+                    examSubject: '',
+                    examTag: 'AI智慧生成',
+                    examRange: displayScope,
+                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(docRef.id).set({
+                    questionText: window.jzCompress ? window.jzCompress('') : '',
+                    questionHtml: window.jzCompress ? window.jzCompress(parsed.questionsHtml || '') : (parsed.questionsHtml || ''),
+                    explanationHtml: parsed.explanations ? (window.jzCompress ? window.jzCompress(parsed.explanations) : parsed.explanations) : ''
+                });
+
+                if (window.setGlobalToast) {
+                    window.setGlobalToast({ status: 'success', message: `✅ AI 試卷「${autoTitle}」生成完畢！已為您存入「未分類」資料夾，可隨時前往作答。` });
+                    setTimeout(() => {
+                        if (window.setGlobalToast) window.setGlobalToast(null);
+                    }, 8000);
+                }
+
+            } catch (e) {
+                if (window.setGlobalToast) {
+                    window.setGlobalToast({ status: 'error', message: '❌ 生成失敗 (未扣除鑽石)：' + e.message });
+                    setTimeout(() => {
+                        if (window.setGlobalToast) window.setGlobalToast(null);
+                    }, 8000);
+                }
+            }
+        })();
     };
 
     const handleStartTest = async () => {
@@ -4514,20 +4552,7 @@ const [isAiGenerating, setIsAiGenerating] = useState(false);
                 </div>
 
                 <button onClick={handleStartTest} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors">開始作答</button>
-           {/* ✨ 新增：AI 背景生成右下角小通知 (不會阻擋使用者操作) */}
-            {aiTaskToast && (
-                <div className={`fixed bottom-6 right-6 p-4 shadow-2xl z-[300] border-l-4 transition-all max-w-sm w-full font-bold text-sm flex items-start gap-3
-                    ${aiTaskToast.status === 'loading' ? 'bg-blue-50 border-blue-500 text-blue-800 dark:bg-gray-800 dark:text-blue-300' : 
-                      aiTaskToast.status === 'success' ? 'bg-green-50 border-green-500 text-green-800 dark:bg-gray-800 dark:text-green-300' : 
-                      'bg-red-50 border-red-500 text-red-800 dark:bg-gray-800 dark:text-red-300'}`}
-                >
-                    {aiTaskToast.status === 'loading' && <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0 mt-0.5"></div>}
-                    <div className="flex-1 leading-relaxed">{aiTaskToast.message}</div>
-                    {(aiTaskToast.status === 'success' || aiTaskToast.status === 'error') && (
-                        <button onClick={() => setAiTaskToast(null)} className="ml-auto text-gray-400 hover:text-black dark:hover:text-white shrink-0">✕</button>
-                    )}
-                </div>
-            )}
+
            {showAiModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[150] p-4">
                     <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-md no-round shadow-xl border-t-4 border-purple-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
