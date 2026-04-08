@@ -152,7 +152,8 @@ if (typeof window !== 'undefined' && !window.smilesDrawerObserverInit) {
 // --- 新增：全域 SMILES 化學式轉換輔助函式 ---
 const parseSmilesToHtml = (content) => {
     if (!content) return content;
-    const regex = /\{([^}\n\r]{2,})\}/g;
+    // ✨ 修改：將化學式解析格式從 {...} 改為 <<:...:>>
+    const regex = /<<:([^\n\r]+?):>>/g;
     return content.replace(regex, (match, rawText) => {
         // 清理 HTML 標籤，保留中英文藥物名稱
         let cleanText = rawText.replace(/<[^>]*>/g, '').trim();
@@ -364,20 +365,21 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
     };
 
     // ✨ 新增：只掃描文本節點並轉換 SMILES，不會破壞 Word 的 HTML 排版
-    // ✨ 新增：只掃描文本節點並轉換 SMILES，不會破壞 Word 的 HTML 排版
+   // ✨ 新增：只掃描文本節點並轉換 SMILES，不會破壞 Word 的 HTML 排版
     const processSmilesInDOM = (element) => {
         let changed = false;
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
         const nodesToReplace = [];
         let node;
         while(node = walker.nextNode()) {
-            if (node.nodeValue.includes('{') && node.nodeValue.includes('}')) {
+            // ✨ 修改：偵測新的結構名稱格式 <<: ... :>>
+            if (node.nodeValue.includes('<<:') && node.nodeValue.includes(':>>')) {
                 nodesToReplace.push(node);
             }
         }
         nodesToReplace.forEach(n => {
             // ✨ 修改：放寬抓取規則，容許內部有意外的標籤
-            const regex = /\{([^}\n\r]{2,})\}/g;
+            const regex = /<<:([^\n\r]+?):>>/g;
             if(regex.test(n.nodeValue)) {
                 changed = true;
                 const span = document.createElement('span');
@@ -633,9 +635,10 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
         }
     };
 
-    // ✨ 附加：保留打字即時轉換的舒適感 (針對手動修補時)
+   // ✨ 附加：保留打字即時轉換的舒適感 (針對手動修補時)
     const handleKeyUp = (e) => {
-        if (e.key === '}') {
+        // ✨ 修改：當打完結尾的 > 符號時觸發轉換
+        if (e.key === '>') {
             const changed = processSmilesInDOM(editorRef.current);
             if (changed) handleInput();
         }
@@ -665,7 +668,7 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
             />
             {/* 提示小字 */}
             <div className="absolute bottom-2 right-2 text-xs text-gray-400 font-bold bg-white dark:bg-gray-800 px-1 pointer-events-none opacity-50">
-                支援化學式：貼上 {'{SMILES}'} 自動轉換
+                支援化學式：貼上 {'<<:結構名稱:>>'} 自動轉換
             </div>
         </div>
     );
