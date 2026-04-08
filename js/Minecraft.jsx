@@ -364,63 +364,70 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
                 if (!state.isServing) {
                     if (state.ball.x > state.net.x) {
-                        // 🏐【進攻狀態】球在 AI 半場
-                        aiTargetX = state.ball.x + 25; 
+                        // 🏐【進攻/接球狀態】球在 AI 半場
+                        // ✨ 修正 1：預防四觸犯規！
+                        // 為了把球往對面(左)打，AI 必須刻意站在球的「右側」，讓身體的物理碰撞產生往左的推力
+                        let offset = 15; 
+                        if (state.touches.o >= 1) offset = 30; // 已經碰過一次球，更用力往右站，強迫球往左飛
                         
-                        // 判斷跳躍與殺球時機
-                        if (Math.abs(state.ball.x - state.opponent.x) < 80 && state.ball.y > 50 && state.ball.y < 280) {
+                        aiTargetX = state.ball.x + (state.ball.vx * 10) + offset; 
+                        
+                        // 確保不會跑出場外或撞網
+                        if (aiTargetX < state.net.x + 35) aiTargetX = state.net.x + 35;
+                        if (aiTargetX > state.w - 30) aiTargetX = state.w - 30;
+
+                        // 判斷跳躍時機
+                        let xDist = state.opponent.x - state.ball.x; 
+                        if (xDist > -15 && xDist < 60 && state.ball.y > 100 && state.ball.y < 280 && state.ball.vy > -1) {
                             aiShouldJump = true;
                         }
-                        if (state.opponent.y < state.groundY - 10 && state.ball.x < state.opponent.x + 15 && state.opponent.x - state.ball.x < 70 && state.ball.y < state.opponent.y + 10 && state.ball.y > state.opponent.y - 70) {
+
+                        // ✨ 修正 2：判斷殺球時機，嚴禁在網子下方殺球
+                        if (state.opponent.y < state.groundY - 15 && 
+                            state.ball.y < state.net.y - 15 && // 🏐 核心修正：球必須「高於網子」才能觸發殺球
+                            state.ball.x < state.opponent.x + 15 && 
+                            state.ball.x > state.opponent.x - 50 &&
+                            state.ball.y < state.opponent.y + 10 && 
+                            state.ball.y > state.opponent.y - 65 &&
+                            state.opponent.stamina >= 35) { 
                             aiTrySpike = true;
                         }
                     } else {
                         // 🛡️【防守狀態】球在玩家半場
                         if (state.ball.vx > 0) {
-                            // ⚾ 球正飛向 AI：動態判斷球路
-                            let isFastSpike = state.ball.vx > 4.5 && state.ball.y < 250 && state.ball.vy > -1.5; // 平飛快球/殺球
-                            let isHighLob = state.ball.vy < -2.5 || state.ball.y < 160; // 高吊球
-                            
-                            if (isFastSpike) {
-                                // 應對殺球 -> 衝向網前攔網
-                                aiTargetX = state.net.x + 35;
-                                if (state.ball.x > state.net.x - 120) { aiShouldJump = true; aiTryBlock = true; }
-                            } else if (isHighLob) {
-                                // 應對高吊球 -> 根據球速提早往後場退防
-                                aiTargetX = state.ball.x + (state.ball.vx * 25);
-                                if (aiTargetX > 750) aiTargetX = 750; // 避免跑出場外
+                            // ⚾ 球正飛向 AI：判斷落點
+                            if (state.ball.vx > 7 && state.ball.y < 250) {
+                                // 玩家殺球！快速後退準備接球
+                                aiTargetX = 720; 
+                                // 只有球極低且快過網時，才緊急攔網
+                                if (state.ball.x > state.net.x - 60 && state.ball.y < 180 && state.opponent.stamina >= 40) {
+                                    aiTargetX = state.net.x + 35;
+                                    aiShouldJump = true;
+                                    aiTryBlock = true;
+                                }
                             } else {
-                                // 一般球 -> 動態跟隨
-                                aiTargetX = state.ball.x + (state.ball.vx * 15);
+                                // 一般球或高吊球，退到中後場判斷落點
+                                aiTargetX = 660 + (state.ball.vx * 15);
+                                if (aiTargetX > 760) aiTargetX = 760;
                             }
                         } else {
-                            // 🕵️ 球還沒飛過來，AI 開始「閱讀玩家戰術」
-                            let playerIsNearNet = state.player.x > state.net.x - 100;
-                            let playerIsJumping = state.player.y < state.groundY - 20;
-
-                            if (playerIsNearNet && playerIsJumping) {
-                                // 戰術 A：玩家在網前跳起 -> 極可能殺球，AI 提早靠網準備
-                                aiTargetX = state.net.x + 70;
-                            } else if (!playerIsNearNet) {
-                                // 戰術 B：玩家在後場 -> 極可能長球，AI 提早退防
-                                aiTargetX = 660;
-                            } else {
-                                // 預設站位
-                                aiTargetX = 600;
+                            // 🕵️ 球還沒飛過來，AI 保持在防守黃金位置
+                            aiTargetX = 660; 
+                            if (state.player.x > state.net.x - 80 && state.player.y < state.groundY - 20) {
+                                aiTargetX = 580;
                             }
                         }
                     }
                 } else {
                      // 🎾【發球狀態】
                      if (state.serving === 'opponent') {
-                         aiTargetX = state.ball.x + 25; 
-                         if (Math.abs(state.opponent.x - aiTargetX) < 20) {
+                         aiTargetX = state.ball.x + 20; 
+                         if (Math.abs(state.opponent.x - aiTargetX) < 15) {
                              aiShouldJump = true;
                              if (state.opponent.y >= state.groundY) state.opponent.vx = -state.opponent.speed;
                          }
                      } else {
-                         // 玩家發球時，AI 站中間偏後防守
-                         aiTargetX = 630;
+                         aiTargetX = 660;
                      }
                 }
 

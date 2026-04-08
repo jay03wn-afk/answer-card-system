@@ -367,7 +367,7 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                     let fallbackSmiles = cleanText.replace(/[^A-Za-z0-9@+\-\[\]\(\)\\\/=#$:\.%*]/g, '');
                     
                     // ✨ 修正：移除會破壞 DOM 結構的 <span> 寫入，改為如果 Cactus 也失敗時，直接把圖片來源替換成一張帶有「解析失敗」字樣的 base64 圖片
-                    const errorSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="30"><rect width="80" height="30" fill="%23fef2f2" rx="4"/><text x="40" y="20" font-family="sans-serif" font-size="12" font-weight="bold" fill="%23ef4444" text-anchor="middle">解析失敗</text></svg>`;
+                    const errorSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="30"><rect width="80" height="30" fill="%23fef2f2" rx="4"/><text x="40" y="20" font-family="sans-serif" font-size="12" font-weight="bold" fill="%23ef4444" text-anchor="middle"></text></svg>`;
                     
                     // 第二備案：利用舊版 Cactus API 繪製 SMILES (發生在藥物名稱找不到時)
                     const cactusUrl = `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(fallbackSmiles)}/image`;

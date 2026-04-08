@@ -1,8 +1,377 @@
+// ==========================================
+// ✨ 國考戰況與 AI 口訣專屬 UI 介面
+// ==========================================
+
+function ExamProgressDashboard({ examFeatures, user }) {
+    const { useState, useMemo } = React;
+    const [noteText, setNoteText] = useState('');
+    
+    // === 打卡區狀態 ===
+    const [expandedSubj, setExpandedSubj] = useState(null);
+    const [expandedCat, setExpandedCat] = useState(null);
+    const [punchSearch, setPunchSearch] = useState(''); // 新增：打卡區搜尋
+
+    // === 學習軌跡連動區狀態 ===
+    const [selectedItems, setSelectedItems] = useState([]);
+    const [isSelectorOpen, setIsSelectorOpen] = useState(false);
+    const [logSearch, setLogSearch] = useState(''); // 新增：學習軌跡搜尋
+    const [logExpandedSubj, setLogExpandedSubj] = useState(null); // 新增：學習軌跡多層展開
+    const [logExpandedCat, setLogExpandedCat] = useState(null);
+
+    const taskTypes = [
+        { id: 'skim', label: '速讀', color: 'bg-blue-500' },
+        { id: 'deep', label: '細讀', color: 'bg-emerald-500' },
+        { id: 'master', label: '熟讀', color: 'bg-amber-500' },
+        { id: 'practice', label: '刷題', color: 'bg-rose-500' }
+    ];
+
+    const toggleSelectedItem = (itemId) => {
+        setSelectedItems(prev => prev.includes(itemId) ? prev.filter(i => i !== itemId) : [...prev, itemId]);
+    };
+
+    const handleAddLog = (e) => {
+        e.preventDefault();
+        if (selectedItems.length === 0 && !noteText.trim()) return;
+
+        // 1. 連動更新打卡區：將選中的項目自動標記為已完成
+        selectedItems.forEach(taskId => {
+            if (!examFeatures.myTasks.includes(taskId)) {
+                examFeatures.toggleTask(taskId);
+            }
+        });
+
+        // 2. 轉換標籤名稱用於顯示
+        const subjectLabels = selectedItems.map(id => {
+            const [sId, cId, chapIdx, pIdx, type] = id.split('_');
+            const subj = examFeatures.EXAM_DATA.find(s => s.id === sId);
+            const cat = subj.categories.find(c => c.id === cId);
+            const chap = cat.chapters[parseInt(chapIdx)];
+            const typeLabel = taskTypes.find(t => t.id === type).label;
+            return `${subj.title} > ${chap} (${typeLabel})`;
+        });
+
+        examFeatures.addStudyLog(subjectLabels.length > 0 ? subjectLabels : ['📝 一般筆記'], noteText, 'note');
+        
+        // 3. 清空狀態
+        setNoteText('');
+        setSelectedItems([]);
+        setIsSelectorOpen(false);
+    };
+
+    // === 搜尋過濾邏輯：打卡區 ===
+    const filteredPunchData = useMemo(() => {
+        if (!punchSearch.trim()) return examFeatures.EXAM_DATA;
+        const term = punchSearch.toLowerCase();
+        return examFeatures.EXAM_DATA.map(subj => {
+            const matchSubj = subj.title.toLowerCase().includes(term);
+            const filteredCats = subj.categories.map(cat => {
+                const matchCat = cat.title.toLowerCase().includes(term);
+                // 重要：保留原本的 Index，避免打卡 ID 錯亂
+                const matchedChaps = cat.chapters
+                    .map((chapName, chapIdx) => ({ chapName, chapIdx }))
+                    .filter(c => c.chapName.toLowerCase().includes(term));
+                
+                if (matchSubj || matchCat || matchedChaps.length > 0) {
+                    return {
+                        ...cat,
+                        displayChaps: (matchSubj || matchCat) ? cat.chapters.map((chapName, chapIdx) => ({ chapName, chapIdx })) : matchedChaps
+                    };
+                }
+                return null;
+            }).filter(Boolean);
+
+            if (matchSubj || filteredCats.length > 0) return { ...subj, categories: filteredCats };
+            return null;
+        }).filter(Boolean);
+    }, [examFeatures.EXAM_DATA, punchSearch]);
+
+    // === 搜尋過濾邏輯：學習軌跡 ===
+    const filteredLogData = useMemo(() => {
+        if (!logSearch.trim()) return examFeatures.EXAM_DATA;
+        const term = logSearch.toLowerCase();
+        return examFeatures.EXAM_DATA.map(subj => {
+            const matchSubj = subj.title.toLowerCase().includes(term);
+            const filteredCats = subj.categories.map(cat => {
+                const matchCat = cat.title.toLowerCase().includes(term);
+                const matchedChaps = cat.chapters
+                    .map((chapName, chapIdx) => ({ chapName, chapIdx }))
+                    .filter(c => c.chapName.toLowerCase().includes(term));
+                
+                if (matchSubj || matchCat || matchedChaps.length > 0) {
+                    return {
+                        ...cat,
+                        displayChaps: (matchSubj || matchCat) ? cat.chapters.map((chapName, chapIdx) => ({ chapName, chapIdx })) : matchedChaps
+                    };
+                }
+                return null;
+            }).filter(Boolean);
+
+            if (matchSubj || filteredCats.length > 0) return { ...subj, categories: filteredCats };
+            return null;
+        }).filter(Boolean);
+    }, [examFeatures.EXAM_DATA, logSearch]);
+
+    return (
+        <div className="max-w-4xl mx-auto w-full p-4 md:p-6 space-y-6 pb-20">
+            {/* === 1. 頂部戰情面板 === */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-teal-100 dark:border-gray-700 relative overflow-hidden">
+                <div className="absolute bottom-0 right-0 w-32 h-32 bg-teal-50/50 dark:bg-teal-900/20 rounded-tl-full -z-10"></div>
+                <div className="flex items-center gap-2 text-slate-700 dark:text-gray-200 mb-2">
+                    <span className="text-2xl">🎯</span>
+                    <h2 className="text-xl font-bold">國考備戰總完成度</h2>
+                </div>
+                <div className="text-4xl font-black text-teal-600 dark:text-teal-400 mb-4">
+                    {examFeatures.overallProgress}% 
+                    <span className="text-sm text-gray-400 ml-2 font-medium">({examFeatures.myTotalPoints} 點)</span>
+                </div>
+                <div className="h-4 bg-slate-100 dark:bg-gray-700 rounded-full overflow-hidden shadow-inner">
+                    <div 
+                        className="h-full bg-teal-500 rounded-full transition-all duration-1000 ease-out relative"
+                        style={{ width: `${Math.min(examFeatures.overallProgress, 100)}%` }}
+                    >
+                        <div className="absolute inset-0 bg-white/20 w-full animate-pulse"></div>
+                    </div>
+                </div>
+               <p className="text-sm text-teal-700 dark:text-teal-300 mt-4 font-medium">
+                    📈 進度分配：速讀(15%) → 細讀(25%) → 熟讀(30%) → 刷題(30%)
+                </p>
+            </div>
+
+            {/* === 2. 任務打卡區 (含搜尋與雙層選單) === */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 p-4">
+                <div className="flex items-center gap-2 mb-4">
+                    <span className="text-2xl">📖</span>
+                    <h2 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-white">各科進度打卡區</h2>
+                </div>
+                
+                {/* 🔍 打卡區搜尋框 */}
+                <div className="mb-4 relative">
+                    <input
+                        type="text"
+                        placeholder="🔍 搜尋科目、類別或章節名稱..."
+                        value={punchSearch}
+                        onChange={(e) => setPunchSearch(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-900 rounded-xl outline-none text-sm focus:border-teal-500 dark:text-white transition-colors"
+                    />
+                    {punchSearch && <button onClick={() => setPunchSearch('')} className="absolute right-3 top-2.5 text-gray-400 font-bold hover:text-gray-600">✖</button>}
+                </div>
+                
+                <div className="space-y-2">
+                    {filteredPunchData.length === 0 ? (
+                        <div className="text-center py-6 text-slate-400 font-bold text-sm bg-slate-50 dark:bg-gray-900 rounded-xl border border-dashed border-slate-200 dark:border-gray-700">找不到符合的章節範圍 😢</div>
+                    ) : filteredPunchData.map(subj => {
+                        const isSubjExpanded = punchSearch.trim() || expandedSubj === subj.id;
+                        return (
+                        <div key={subj.id} className="border border-slate-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                            <button 
+                                onClick={() => setExpandedSubj(isSubjExpanded ? null : subj.id)}
+                                className="w-full text-left px-4 py-3 bg-slate-50 dark:bg-gray-800 hover:bg-slate-100 dark:hover:bg-gray-700 font-bold text-slate-700 dark:text-gray-200 flex justify-between items-center transition-colors"
+                            >
+                                <span>{subj.title}</span>
+                                <span className="text-teal-500">{isSubjExpanded ? '▲ 收起' : '▼ 展開'}</span>
+                            </button>
+                            
+                            {isSubjExpanded && (
+                                <div className="p-2 bg-white dark:bg-gray-900 border-t border-slate-200 dark:border-gray-700">
+                                    {subj.categories.map(cat => {
+                                        const isCatExpanded = punchSearch.trim() || expandedCat === cat.id;
+                                        const chapsToRender = cat.displayChaps || cat.chapters.map((chapName, chapIdx) => ({chapName, chapIdx}));
+                                        
+                                        return (
+                                        <div key={cat.id} className="mb-2 border border-slate-100 dark:border-gray-800 rounded-lg overflow-hidden">
+                                            <button
+                                                onClick={() => setExpandedCat(isCatExpanded ? null : cat.id)}
+                                                className="w-full text-left px-3 py-2 bg-teal-50/30 dark:bg-teal-900/10 text-teal-800 dark:text-teal-300 font-bold flex justify-between items-center text-sm"
+                                            >
+                                                <span>{cat.title}</span>
+                                                <span>{isCatExpanded ? '▲' : '▼'}</span>
+                                            </button>
+                                            
+                                            {isCatExpanded && (
+                                                <div className="p-2 grid grid-cols-1 xl:grid-cols-2 gap-2 max-h-[400px] overflow-y-auto custom-scrollbar">
+                                                    {chapsToRender.map(({chapName, chapIdx}) => (
+                                                        <div key={chapIdx} className="bg-slate-50 dark:bg-gray-800 p-2 rounded-lg border border-slate-100 dark:border-gray-700">
+                                                            <div className="text-xs font-bold text-slate-700 dark:text-gray-300 mb-2">{chapName}</div>
+                                                            <div className="flex gap-1">
+                                                                {taskTypes.map(type => {
+                                                                    const taskId = `${subj.id}_${cat.id}_${chapIdx}_0_${type.id}`;
+                                                                    const isDone = examFeatures.myTasks.includes(taskId);
+                                                                    return (
+                                                                        <button
+                                                                            key={type.id}
+                                                                            onClick={() => examFeatures.toggleTask(taskId)}
+                                                                            className={`flex-1 text-[10px] py-1 rounded font-bold transition-all ${isDone ? `${type.color} text-white` : 'bg-gray-200 dark:bg-gray-700 text-gray-500'}`}
+                                                                        >
+                                                                            {type.label}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )})}
+                                </div>
+                            )}
+                        </div>
+                    )})}
+                </div>
+            </div>
+
+            {/* === 3. 學習軌跡 (多層選單與搜尋優化) === */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 p-4 md:p-6">
+                <div className="flex items-center gap-2 mb-4">
+                    <span className="text-2xl">⏳</span>
+                    <h2 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-white">每日學習打卡</h2>
+                </div>
+                
+                <div className="mb-6 bg-slate-50 dark:bg-gray-900 p-4 rounded-xl border border-slate-200 dark:border-gray-700">
+                    <div className="mb-4 relative">
+                        <button 
+                            onClick={() => setIsSelectorOpen(!isSelectorOpen)}
+                            className="w-full py-2.5 px-4 bg-white dark:bg-gray-800 border-2 border-dashed border-teal-300 dark:border-teal-900 rounded-xl text-teal-600 dark:text-teal-400 font-bold text-sm flex justify-between items-center transition-colors hover:bg-teal-50 dark:hover:bg-teal-900/10"
+                        >
+                            {selectedItems.length > 0 ? `已選取 ${selectedItems.length} 個範圍與進度` : '🎯 點此選取今日學習範圍 (可連動打卡)'}
+                            <span>{isSelectorOpen ? '▲ 收起' : '▼ 展開選單'}</span>
+                        </button>
+
+                        {isSelectorOpen && (
+                            <div className="mt-2 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-xl shadow-lg absolute w-full z-20">
+                                
+                                {/* 🔍 軌跡專屬搜尋框 */}
+                                <div className="p-3 border-b border-slate-100 dark:border-gray-700 bg-slate-50 dark:bg-gray-900 rounded-t-xl sticky top-0">
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            placeholder="🔍 快速尋找要打卡的範圍..."
+                                            value={logSearch}
+                                            onChange={(e) => setLogSearch(e.target.value)}
+                                            className="w-full px-3 py-2 border border-slate-200 dark:border-gray-600 rounded-lg outline-none text-sm bg-white dark:bg-gray-800 dark:text-white focus:border-teal-500"
+                                        />
+                                        {logSearch && <button onClick={() => setLogSearch('')} className="absolute right-2.5 top-2 text-gray-400 font-bold">✖</button>}
+                                    </div>
+                                </div>
+
+                                <div className="p-3 max-h-[350px] overflow-y-auto custom-scrollbar">
+                                    {filteredLogData.length === 0 ? (
+                                        <div className="text-center py-4 text-slate-400 font-bold text-sm">找不到相關範圍...</div>
+                                    ) : filteredLogData.map(subj => {
+                                        const isSubjExpanded = logSearch.trim() || logExpandedSubj === subj.id;
+                                        return (
+                                        <div key={subj.id} className="mb-2 border border-slate-100 dark:border-gray-700 rounded-lg overflow-hidden">
+                                            <button
+                                                onClick={() => setLogExpandedSubj(isSubjExpanded ? null : subj.id)}
+                                                className="w-full text-left px-3 py-2 bg-slate-100 dark:bg-gray-800 hover:bg-slate-200 dark:hover:bg-gray-700 font-bold text-slate-700 dark:text-gray-200 text-sm flex justify-between items-center transition-colors"
+                                            >
+                                                <span>{subj.title}</span>
+                                                <span>{isSubjExpanded ? '▲' : '▼'}</span>
+                                            </button>
+
+                                            {isSubjExpanded && (
+                                                <div className="p-2 bg-white dark:bg-gray-900">
+                                                    {subj.categories.map(cat => {
+                                                        const isCatExpanded = logSearch.trim() || logExpandedCat === cat.id;
+                                                        const chapsToRender = cat.displayChaps || cat.chapters.map((chapName, chapIdx) => ({chapName, chapIdx}));
+                                                        return (
+                                                            <div key={cat.id} className="mb-2 last:mb-0 border border-slate-50 dark:border-gray-800 rounded">
+                                                                <button
+                                                                    onClick={() => setLogExpandedCat(isCatExpanded ? null : cat.id)}
+                                                                    className="w-full text-left px-2 py-1.5 bg-teal-50/50 dark:bg-teal-900/10 text-teal-800 dark:text-teal-300 font-bold flex justify-between items-center text-xs"
+                                                                >
+                                                                    <span>{cat.title}</span>
+                                                                    <span>{isCatExpanded ? '▲' : '▼'}</span>
+                                                                </button>
+
+                                                                {isCatExpanded && (
+                                                                    <div className="p-2 space-y-2">
+                                                                        {chapsToRender.map(({chapName, chapIdx}) => (
+                                                                            <div key={chapIdx} className="flex flex-wrap gap-1 bg-slate-50 dark:bg-gray-800 p-2 rounded">
+                                                                                <div className="w-full text-xs font-bold text-slate-600 dark:text-gray-400 mb-1">{chapName}</div>
+                                                                                {taskTypes.map(type => {
+                                                                                    const taskId = `${subj.id}_${cat.id}_${chapIdx}_0_${type.id}`;
+                                                                                    const isSelected = selectedItems.includes(taskId);
+                                                                                    const isAlreadyDone = examFeatures.myTasks.includes(taskId);
+                                                                                    return (
+                                                                                        <button
+                                                                                            key={type.id}
+                                                                                            onClick={() => toggleSelectedItem(taskId)}
+                                                                                            className={`px-2 py-1 rounded text-[10px] font-bold border transition-all ${isSelected ? 'bg-teal-500 border-teal-500 text-white shadow-sm' : isAlreadyDone ? 'bg-slate-200 border-slate-300 text-slate-400 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-500' : 'bg-white border-slate-200 text-slate-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300'}`}
+                                                                                        >
+                                                                                            {isAlreadyDone && !isSelected ? '✓ ' : ''}{type.label}
+                                                                                        </button>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )})}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <form onSubmit={handleAddLog} className="flex gap-2">
+                        <input
+                            type="text"
+                            value={noteText}
+                            onChange={(e) => setNoteText(e.target.value)}
+                            placeholder="今日心得筆記 (非必填)..."
+                            className="flex-1 px-3 py-2 bg-white dark:bg-gray-800 border border-slate-300 dark:border-gray-600 rounded-lg outline-none text-sm text-slate-800 dark:text-white focus:border-teal-500"
+                        />
+                        <button type="submit" className="bg-teal-500 hover:bg-teal-600 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-sm transition-all active:scale-95">打卡</button>
+                    </form>
+                </div>
+
+                {/* 軌跡列表 */}
+                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                    {examFeatures.studyLogs.length === 0 ? (
+                        <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-100 dark:border-gray-700 rounded-xl">尚無學習紀錄</div>
+                    ) : (
+                        examFeatures.studyLogs.map((log, index) => (
+                            <div key={log.id} className="flex gap-3 relative group">
+                                <div className="flex flex-col items-center min-w-[1rem] mt-1.5">
+                                    <div className="w-2.5 h-2.5 rounded-full z-10 bg-teal-400"></div>
+                                    {index !== examFeatures.studyLogs.length - 1 && <div className="w-0.5 h-full bg-slate-100 dark:bg-gray-700 -my-1"></div>}
+                                </div>
+                                <div className="flex-1 pb-6">
+                                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                                        <span className="text-[10px] font-medium text-slate-400">{log.date} {log.time}</span>
+                                        {log.subjects && log.subjects.map((sub, i) => (
+                                            <span key={i} className="text-[10px] font-bold text-teal-600 bg-teal-50 dark:bg-teal-900/30 px-2 py-0.5 rounded-full border border-teal-100 dark:border-teal-800">{sub}</span>
+                                        ))}
+                                        <button onClick={() => examFeatures.deleteStudyLog(log.id)} className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-red-400 font-bold transition-opacity bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded">刪除</button>
+                                    </div>
+                                    {log.message && <p className="text-sm p-3 rounded-xl bg-slate-50 dark:bg-gray-800/50 border border-slate-100 dark:border-gray-700 text-slate-700 dark:text-gray-300 break-all">{log.message}</p>}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+// ============== 貼到這行之上： function Main() { ==============
 function Main() {
     const { useState, useEffect } = React;
 
     // --- 基礎 App 狀態 ---
     const [user, setUser] = useState(null);
+
+    // ✨ 啟動大腦模組 (傳入 Firebase db 與 user)
+    const examFeatures = useExamFeatures(window.db, user);
+
+    // ✨ 新增：側邊選單的開關狀態
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     
     // ✨ 新增：一進來就檢查網址有沒有 qaId 或 newsId，存入狀態中
     const [currentQaId, setCurrentQaId] = useState(() => {
@@ -186,39 +555,70 @@ function Main() {
     };
     // ---------------------------------
 
-    const topNavContent = (
-        <div className="bg-black dark:bg-gray-950 text-white px-4 flex justify-between items-center shadow-md h-14 shrink-0 relative z-20 overflow-x-auto custom-scrollbar transition-colors">
-            <div className="flex space-x-6 items-center h-full whitespace-nowrap">
-                <span className="font-black text-lg tracking-widest mr-4">JJay</span>
-                <button onClick={() => setActiveTab('newspaper')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'newspaper' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>📰 JJay日報</button>
-                <button onClick={() => setActiveTab('dashboard')} className={`h-full px-2 font-bold transition-colors ${activeTab === 'dashboard' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>我的題庫</button>
-                <button onClick={() => setActiveTab('taskwall')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'taskwall' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>🎯 任務牆</button>
-                <button onClick={() => setActiveTab('wrongbook')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'wrongbook' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>📓 錯題整理</button>
-                
-                <button onClick={() => setActiveTab('social')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'social' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>社群交流</button>
-                <button onClick={() => setActiveTab('minecraft')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'minecraft' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>⛏️ 史蒂夫養成</button>
-                <button onClick={() => setActiveTab('profile')} className={`flex items-center h-full px-2 font-bold transition-colors ${activeTab === 'profile' ? 'border-b-4 border-white text-white' : 'text-gray-400 hover:text-white'}`}>👤 個人檔案</button>
-            </div>
-           {user && (
-                <div className="flex items-center space-x-3 md:space-x-4">
-                    {/* ✅ 將倒數計時器放在這裡 */}
-                    <ExamCountdown />
-                    
-                    {/* ✨ 新增：分享網站按鈕 */}
-                    <button onClick={handleShareSite} className="text-xl hover:scale-110 transition-transform" title="分享網站給好友">
-                        🔗
-                    </button>
+    // ✨ 新增：側邊欄導覽項目切換功能
+    const handleTabClick = (tabId) => {
+        setActiveTab(tabId);
+        setIsSidebarOpen(false); // 點擊後自動收起側邊欄
+    };
 
-                    <button onClick={() => setIsDark(!isDark)} className="text-xl hover:scale-110 transition-transform" title="切換日/夜間模式">
-                        {isDark ? '☀️' : '🌙'}
+    const topNavContent = (
+        <>
+            {/* 頂部標題列 (包含漢堡按鈕與工具) */}
+            <div className="bg-black dark:bg-gray-950 text-white px-4 flex justify-between items-center shadow-md h-14 shrink-0 relative z-20 transition-colors">
+                <div className="flex items-center">
+                    {/* 漢堡選單按鈕 */}
+                    <button onClick={() => setIsSidebarOpen(true)} className="mr-4 text-2xl hover:text-gray-300 transition-colors focus:outline-none">
+                        ☰
                     </button>
-                    <div className="w-8 h-8 bg-gray-700 no-round overflow-hidden border border-gray-600">
-                        {userProfile.avatar ? <img src={userProfile.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-xs">👤</div>}
-                    </div>
-                    <button onClick={() => window.auth.signOut()} className="text-xs font-bold opacity-60 hover:opacity-100 transition-opacity">登出</button>
+                    <span className="font-black text-lg tracking-widest">JJay</span>
                 </div>
+                
+                {user && (
+                    <div className="flex items-center space-x-3 md:space-x-4">
+                        <ExamCountdown />
+                        <button onClick={handleShareSite} className="text-xl hover:scale-110 transition-transform" title="分享網站給好友">🔗</button>
+                        <button onClick={() => setIsDark(!isDark)} className="text-xl hover:scale-110 transition-transform" title="切換日/夜間模式">
+                            {isDark ? '☀️' : '🌙'}
+                        </button>
+                        <div className="w-8 h-8 bg-gray-700 no-round overflow-hidden border border-gray-600">
+                            {userProfile.avatar ? <img src={userProfile.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-xs">👤</div>}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* 側邊欄遮罩 (點擊旁邊可以關閉) */}
+            {isSidebarOpen && (
+                <div 
+                    className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
             )}
-        </div>
+
+            {/* 側邊選單主體 */}
+            <div className={`fixed top-0 left-0 h-full w-64 bg-white dark:bg-gray-900 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
+                    <span className="font-black text-xl dark:text-white tracking-widest">選單</span>
+                    <button onClick={() => setIsSidebarOpen(false)} className="text-2xl font-bold text-gray-500 hover:text-black dark:hover:text-white">✕</button>
+                </div>
+                <div className="flex-1 overflow-y-auto py-2 flex flex-col custom-scrollbar">
+                    <button onClick={() => handleTabClick('newspaper')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'newspaper' ? 'bg-gray-200 dark:bg-gray-800 text-black dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>📰 JJay日報</button>
+                    <button onClick={() => handleTabClick('dashboard')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'dashboard' ? 'bg-gray-200 dark:bg-gray-800 text-black dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>📚 我的題庫</button>
+                    <button onClick={() => handleTabClick('taskwall')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'taskwall' ? 'bg-gray-200 dark:bg-gray-800 text-black dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>🎯 任務牆</button>
+                    <button onClick={() => handleTabClick('wrongbook')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'wrongbook' ? 'bg-gray-200 dark:bg-gray-800 text-black dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>📓 錯題整理</button>
+                    <button onClick={() => handleTabClick('social')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'social' ? 'bg-gray-200 dark:bg-gray-800 text-black dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>💬 社群交流</button>
+                    <button onClick={() => handleTabClick('minecraft')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'minecraft' ? 'bg-gray-200 dark:bg-gray-800 text-black dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>⛏️ 史蒂夫養成</button>
+                    
+                    {/* ✨ 新增的國考進度追蹤 */}
+                    <button onClick={() => handleTabClick('examProgress')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'examProgress' ? 'bg-gray-200 dark:bg-gray-800 text-black dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>📈 國考戰況追蹤</button>
+                    
+                    <button onClick={() => handleTabClick('profile')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'profile' ? 'bg-gray-200 dark:bg-gray-800 text-black dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>👤 個人檔案</button>
+                </div>
+                <div className="p-4 border-t dark:border-gray-700">
+                    <button onClick={() => window.auth.signOut()} className="w-full py-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-bold rounded hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors">登出</button>
+                </div>
+            </div>
+        </>
     );
 
     if (loading) return (
@@ -389,6 +789,14 @@ function Main() {
                             <MinecraftDashboard user={user} userProfile={userProfile} showAlert={showAlert} />
                         </div>
                     )}
+                    
+                    {/* ✨ 正式接上華麗的國考進度與口訣 UI */}
+                    {activeTab === 'examProgress' && (
+                        <div className="h-full w-full flex flex-col overflow-y-auto custom-scrollbar bg-teal-50/30 dark:bg-gray-900 transition-colors">
+                            <ExamProgressDashboard examFeatures={examFeatures} user={user} />
+                        </div>
+                    )}
+
                     {activeTab === 'profile' && <ProfilePage user={user} userProfile={userProfile} showAlert={showAlert} />}
                 </div>
             ) : (
