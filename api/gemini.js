@@ -2,47 +2,48 @@ export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
 
   try {
-    const API_KEY = process.env.GEMINI_API_KEY;
-    if (!API_KEY) return res.status(200).json({ result: "❌ 錯誤：找不到金鑰。" });
+    const rawKey = process.env.GEMINI_API_KEY;
+    if (!rawKey) return res.status(200).json({ result: "❌ 錯誤：Vercel 沒抓到 GEMINI_API_KEY。" });
+    
+    // ✨ 核心修正：自動清理金鑰前後可能存在的「空白鍵」或「換行」
+    const API_KEY = rawKey.trim();
 
     const { prompt } = req.body || {};
-    if (!prompt) return res.status(200).json({ result: "❌ 錯誤：沒有收到內容。" });
+    if (!prompt) return res.status(200).json({ result: "❌ 錯誤：沒有收到題目內容。" });
 
-    // ✨ 我們準備兩個地址，第一個不行就換第二個
-    const endpoints = [
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${API_KEY}`
-    ];
+    // ✨ 修正路徑：使用目前最穩定的 v1beta 搭配 1.5 Flash 型號
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
-    let lastError = "";
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        // 降低安全門檻，避免藥理學詞彙被誤判
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
+      })
+    });
 
-    for (let url of endpoints) {
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-        });
+    const data = await response.json();
 
-        const data = await response.json();
-
-        // 如果這條路通了，就直接回傳結果
-        if (data.candidates && data.candidates[0]?.content?.parts?.[0]) {
-          return res.status(200).json({ result: data.candidates[0].content.parts[0].text });
-        }
-        
-        // 如果 Google 報錯，紀錄下來，試下一個地址
-        if (data.error) lastError = data.error.message;
-        
-      } catch (e) {
-        lastError = e.message;
-      }
+    // 檢查 Google 報錯
+    if (data.error) {
+      return res.status(200).json({ result: `❌ Google 拒絕了：${data.error.message}` });
     }
 
-    // 如果兩條路都試過了還是失敗
-    return res.status(200).json({ result: `❌ AI 暫時罷工。原因：${lastError}` });
+    // 解析回答文字
+    if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+      return res.status(200).json({ result: data.candidates[0].content.parts[0].text });
+    } else {
+      return res.status(200).json({ result: "❌ AI 有回應但內容被擋住了，請試試其他關鍵字。" });
+    }
 
   } catch (err) {
-    return res.status(200).json({ result: `❌ 發生意外：${err.message}` });
+    return res.status(200).json({ result: `❌ 系統崩潰：${err.message}` });
   }
 }
