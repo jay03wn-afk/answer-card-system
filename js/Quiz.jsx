@@ -2625,7 +2625,51 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     const [aiFileContent, setAiFileContent] = useState('');
     const [aiFileName, setAiFileName] = useState('');
 const [isAiGenerating, setIsAiGenerating] = useState(false);
+    const [isAiFileDragging, setIsAiFileDragging] = useState(false); // ✨ 新增：檔案拖曳狀態
     const [creatorSuggestions, setCreatorSuggestions] = useState([]); 
+
+    // ✨ 新增：獨立出來的檔案處理邏輯 (供點擊與拖曳共用)
+    const handleProcessAiFile = async (file) => {
+        if (!file) return;
+        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+            setAiFileName(file.name + ' (⏳ 讀取中...)');
+            setAiFileContent('正在解析 PDF...');
+            try {
+                if (!window.pdfjsLib) {
+                    await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+                        script.onload = () => {
+                            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+                            resolve();
+                        };
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    });
+                }
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let fullText = '';
+                const maxPages = Math.min(pdf.numPages, 50); // 防呆限制最多讀取前 50 頁
+                for (let i = 1; i <= maxPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    fullText += textContent.items.map(item => item.str).join(' ') + '\n';
+                }
+                setAiFileContent(fullText);
+                setAiFileName(file.name + ` (已讀取 ${maxPages} 頁)`);
+            } catch (err) {
+                setAiFileName('❌ PDF 解析失敗');
+                setAiFileContent('');
+                alert('PDF 讀取失敗，可能是檔案損壞或有密碼保護。');
+            }
+        } else {
+            setAiFileName(file.name);
+            const reader = new FileReader();
+            reader.onload = (event) => setAiFileContent(event.target.result);
+            reader.readAsText(file);
+        }
+    };
 
     const [showDiscussion, setShowDiscussion] = useState(false);
     const [discussions, setDiscussions] = useState([]);
@@ -3289,7 +3333,7 @@ const handleGenerateAI = async () => {
                     examYear: '',
                     examSubject: '',
                     examTag: 'AI智慧生成',
-                    examRange: displayScope,
+                    examRange: aiScope || '',
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
 
@@ -4635,61 +4679,49 @@ const handleGenerateAI = async () => {
                         />
 
                         <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">上傳參考資料 (支援 PDF、TXT 等，僅供 AI 閱讀)</label>
-                        <input 
-                            type="file" 
-                            accept=".txt,.csv,.md,.pdf"
-                            onChange={async (e) => {
-                                const file = e.target.files[0];
-                                if (!file) return;
-                                
-                                if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-                                    setAiFileName(file.name + ' (⏳ 讀取中...)');
-                                    setAiFileContent('正在解析 PDF...');
-                                    try {
-                                        if (!window.pdfjsLib) {
-                                            await new Promise((resolve, reject) => {
-                                                const script = document.createElement('script');
-                                                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
-                                                script.onload = () => {
-                                                    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-                                                    resolve();
-                                                };
-                                                script.onerror = reject;
-                                                document.head.appendChild(script);
-                                            });
-                                        }
-                                        const arrayBuffer = await file.arrayBuffer();
-                                        const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                                        let fullText = '';
-                                        const maxPages = Math.min(pdf.numPages, 50); // 防呆限制最多讀取前 50 頁，避免瀏覽器當機
-                                        for (let i = 1; i <= maxPages; i++) {
-                                            const page = await pdf.getPage(i);
-                                            const textContent = await page.getTextContent();
-                                            fullText += textContent.items.map(item => item.str).join(' ') + '\n';
-                                        }
-                                        setAiFileContent(fullText);
-                                        setAiFileName(file.name + ` (已讀取 ${maxPages} 頁)`);
-                                    } catch (err) {
-                                        setAiFileName('❌ PDF 解析失敗');
-                                        setAiFileContent('');
-                                        alert('PDF 讀取失敗，可能是檔案損壞或有密碼保護。');
-                                    }
-                                } else {
-                                    setAiFileName(file.name);
-                                    const reader = new FileReader();
-                                    reader.onload = (event) => setAiFileContent(event.target.result);
-                                    reader.readAsText(file);
+                        <div 
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsAiFileDragging(true); }}
+                            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsAiFileDragging(true); }}
+                            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsAiFileDragging(false); }}
+                            onDrop={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setIsAiFileDragging(false);
+                                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                    handleProcessAiFile(e.dataTransfer.files[0]);
                                 }
                             }}
-                            className="hidden" 
-                            id="aiFileUpload"
-                        />
-                        <label 
-                            htmlFor="aiFileUpload" 
-                            className="w-full flex items-center justify-center p-2 mb-6 border border-dashed border-purple-400 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 cursor-pointer font-bold text-sm hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
+                            className={`w-full flex items-center justify-center p-6 mb-6 border-2 border-dashed transition-colors cursor-pointer rounded-lg ${isAiFileDragging ? 'border-purple-600 bg-purple-100 dark:bg-purple-900/60 shadow-inner' : 'border-purple-400 bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 dark:hover:bg-purple-900/50'}`}
                         >
-                            {aiFileName ? `📄 ${aiFileName}` : '📎 點此上傳 PDF 或文字檔'}
-                        </label>
+                            <input 
+                                type="file" 
+                                accept=".txt,.csv,.md,.pdf"
+                                onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                        handleProcessAiFile(e.target.files[0]);
+                                    }
+                                }}
+                                className="hidden" 
+                                id="aiFileUpload"
+                            />
+                            <label 
+                                htmlFor="aiFileUpload" 
+                                className="w-full h-full flex flex-col items-center justify-center cursor-pointer font-bold text-sm text-purple-700 dark:text-purple-300"
+                            >
+                                {aiFileName ? (
+                                    <>
+                                        <span className="text-2xl mb-2">📄</span>
+                                        <span className="text-center break-all">{aiFileName}</span>
+                                        <span className="text-xs text-purple-500 dark:text-purple-400 mt-2 opacity-80">(點擊或拖曳新檔案以替換)</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="text-3xl mb-2">📥</span>
+                                        <span className="text-center">點此上傳，或將 PDF / 文字檔「拖曳」至此處</span>
+                                    </>
+                                )}
+                            </label>
+                        </div>
 
                         <div className="flex justify-end gap-3">
                             <button 
