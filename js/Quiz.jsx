@@ -2624,9 +2624,13 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     const [aiScope, setAiScope] = useState('');
     const [aiFileContent, setAiFileContent] = useState('');
     const [aiFileName, setAiFileName] = useState('');
-const [isAiGenerating, setIsAiGenerating] = useState(false);
+    const [isAiGenerating, setIsAiGenerating] = useState(false);
     const [isAiFileDragging, setIsAiFileDragging] = useState(false); // ✨ 新增：檔案拖曳狀態
-    const [creatorSuggestions, setCreatorSuggestions] = useState([]); 
+    const [aiDifficultyMode, setAiDifficultyMode] = useState('default'); // 'default' 或 'custom'
+    const [aiSimpleRatio, setAiSimpleRatio] = useState(30);
+    const [aiMediumRatio, setAiMediumRatio] = useState(40);
+    const [aiHardRatio, setAiHardRatio] = useState(30);
+    const [creatorSuggestions, setCreatorSuggestions] = useState([]);
 
     // ✨ 新增：獨立出來的檔案處理邏輯 (供點擊與拖曳共用)
     const handleProcessAiFile = async (file) => {
@@ -3168,6 +3172,23 @@ const handleGenerateAI = async () => {
         const displayTitleStr = shortScope ? `${actualSubject} - ${shortScope}` : actualSubject;
         const autoTitle = `【${displayTitleStr}】模擬測驗 (AI)`;
 
+        // ✨ 難度指令生成
+        let difficultyInstruction = "";
+        if (aiDifficultyMode === 'default') {
+            difficultyInstruction = "難度設定：困難、需要深度思考與細節辨識的高階測驗。專注於細節與綜合判斷，必須經過語意轉換與邏輯包裝。";
+        } else {
+            const sCount = Math.round(aiNum * (aiSimpleRatio / 100));
+            const mCount = Math.round(aiNum * (aiMediumRatio / 100));
+            const hCount = aiNum - sCount - mCount;
+            difficultyInstruction = `
+            # 難度分布要求
+            請嚴格依照以下比例出題（總數 ${aiNum} 題）：
+            - 簡單題 (觀念直覺型)：${sCount} 題
+            - 中等題 (需轉換思考型)：${mCount} 題
+            - 困難題 (細節辨識與高階綜合型)：${hCount} 題
+            `;
+        }
+
         // ✨ 使用 IIFE (立即執行非同步函式) 脫離 UI 執行緒，讓它在背景默默做事
         (async () => {
             try {
@@ -3177,9 +3198,11 @@ const handleGenerateAI = async () => {
                     const medchemCount = aiNum - pharmCount;
                     basePrompt = `
 # 角色設定
-你是資深藥師國考命題專家，精通藥理學與藥物化學（特別熟悉 Basic 與 Foye's 參考書的深度）。根據我提供的教材內容，設計出一份題目與選項簡短，困難、需要深度思考與細節辨識的高階測驗。
+你是資深藥師國考命題專家，精通藥理學與藥物化學（特別熟悉 Basic 與 Foye's 參考書的深度）。根據我提供的教材內容，設計出題目與選項簡短的測驗。
 # 核心任務
 出單選題（四選一，A/B/C/D）。要求包含：藥理學 ${pharmCount} 題，藥物化學 ${medchemCount} 題，共 ${aiNum} 題。
+# 難度設定
+${difficultyInstruction}
 # 嚴格格式與輸出限制（請務必遵守）
 1. 禁止在題目或選項中提供任何提示或答案。也不要列出無用敘述（例如「含有一個氧原子與一個氮原子的 dibenzoxazepine」，只需要列出「dibenzoxazepine」 ）。
 2. 考結構特徵的題目不可以給<<:結構名稱:>>，要給藥物名。
@@ -3189,17 +3212,18 @@ const handleGenerateAI = async () => {
 【藥理學重點】著重於藥物個論細節（如半衰期長短、特殊藥物特性、適用疾病）。測驗機轉(MOA)與同類藥物的「細微差異」比較。深入測驗藥物交互作用(DDI)、禁忌症、副作用及各疾病的首選藥物(DOC)。
 【藥物化學重點】著重測驗結構特徵與化學結構辨識與代謝、個論比較及代謝途徑。必須包含直接考化學結構與藥理個論的綜合題型，及藥物機轉與結構的關聯(SAR)。
 # 題目與選項設計規範
-1. 難度設定：難。專注細節與綜合判斷，必須經過語意轉換與邏輯包裝。
-2. 題幹要求：敘述簡短、不贅述情境，直接提問。語氣不可武斷，避免送分題。
-3. 專有名詞：每一處出現的專有名詞，結構名稱請「只給英文」，絕對不要中英並列。
-4. 干擾選項：必須設置具備高度迷惑性的適當干擾選項。
+1. 題幹要求：敘述簡短、不贅述情境，直接提問。語氣不可武斷。
+2. 專有名詞：每一處出現的專有名詞，結構名稱請「只給英文」，絕對不要中英並列。
+3. 干擾選項：必須設置具備高度迷惑性的適當干擾選項。
                     `.trim();
                 } else if (aiSubject === '藥劑與生物藥劑學') {
                     basePrompt = `
 # 角色設定
-你是一位資深的藥學系教授與藥師國考命題專家，精通「藥劑學」與「生物藥劑學」的考點與出題邏輯。設計出一份題目與選項都很簡短，極度困難、需要深度思考與細節辨識的高階測驗。
+你是一位資深的藥學系教授與藥師國考命題專家，精通「藥劑學」與「生物藥劑學」的考點與出題邏輯。
 # 核心任務
 根據中華藥典第九版與藥師國考用書內容，出 ${aiNum} 題單選題（四選一，A/B/C/D）。
+# 難度設定
+${difficultyInstruction}
 # 嚴格格式與輸出限制
 絕對禁止：在題目或選項中提供任何提示或答案。
 # 命題重點與方向
@@ -3209,50 +3233,55 @@ const handleGenerateAI = async () => {
 - 製程與品管：滅菌法選擇、粉體學特性、GMP 相關品管規範與各項確效指標。
 - 生物藥劑學：ADME影響因子，BA與BE的細節比較與參數意義。
 # 題目與選項設計規範
-1. 難度設定：非常難。專注於極端細節與綜合判斷。
-2. 題幹要求：敘述簡短直接。考配方或動力學時，語氣不可武斷。
-3. 專有名詞：請「只給英文」或「只給中文」，絕對不要中英並列。
-4. 干擾選項：設置具備高度迷惑性的適當干擾選項。
+1. 題幹要求：敘述簡短直接。考配方或動力學時，語氣不可武斷。
+2. 專有名詞：請「只給英文」或「只給中文」，絕對不要中英並列。
+3. 干擾選項：設置具備高度迷惑性的適當干擾選項。
                     `.trim();
                 } else if (aiSubject === '生藥學與中藥學') {
                     basePrompt = `
 # 角色設定
-你是資深藥師國考命題專家，精通生藥學與中藥學。設計出一份題目與選項簡短，困難、需要深度思考的高階測驗。共 ${aiNum} 題單選題。
+你是資深藥師國考命題專家，精通生藥學與中藥學。共 ${aiNum} 題單選題。
+# 難度設定
+${difficultyInstruction}
 # 嚴格格式與輸出限制
 絕對禁止在題目或選項中提供任何提示或答案。
 # 命題重點與方向
 - 中藥：基原、成分、分類、藥理、主治等。
 - 生藥：基原、成分、結構個論（細節）、成分之效果、特點與詳細個論或不同生藥比較等。
 # 題目與選項設計規範
-1. 難度設定：難。專注細節與綜合判斷。2. 題幹要求：敘述簡短直接。3. 專有名詞：只給英文或只給中文。4. 干擾選項：必須設置具備高度迷惑性。
+1. 題幹要求：敘述簡短直接。 2. 專有名詞：只給英文或只給中文。 3. 干擾選項：必須設置具備高度迷惑性。
                     `.trim();
                 } else if (aiSubject === '其他') {
                     basePrompt = `
 # 角色設定
-你是資深國家考試命題專家，精通「${aiCustomSubject || '該專業領域'}」。請根據我提供的教材內容，設計出一份題目與選項簡短，困難、需要深度思考與細節辨識的高階測驗。共 ${aiNum} 題單選題。
+你是資深國家考試命題專家，精通「${aiCustomSubject || '該專業領域'}」。共 ${aiNum} 題單選題。
+# 難度設定
+${difficultyInstruction}
 # 嚴格格式與輸出限制
 絕對禁止在題目或選項中提供任何提示或答案。
 # 命題重點與方向
 - 請針對「${aiCustomSubject || '該專業領域'}」的核心觀念、進階細節與綜合比較進行深入命題。
-- 若有提供參考文本，請嚴格按照文本內容的細節進行語意轉換與邏輯包裝，測驗考生的核心掌握度。
+- 若有提供參考文本，請嚴格按照文本內容的細節進行語意轉換與邏輯包裝。
 # 題目與選項設計規範
-1. 難度設定：難。專注細節與綜合判斷。2. 題幹要求：敘述簡短直接。3. 專有名詞：只給英文或中文，不並列。4. 干擾選項：具備高度迷惑性。
+1. 題幹要求：敘述簡短直接。 2. 專有名詞：只給英文或中文，不並列。 3. 干擾選項：具備高度迷惑性。
                     `.trim();
                 } else {
                     basePrompt = `
 # 角色設定
-你是資深藥師國考命題專家，精通藥物分析與儀器分析。設計一份題目與選項簡短，極度困難、需要深度思考的高階測驗。共 ${aiNum} 題單選題。
+你是資深藥師國考命題專家，精通藥物分析與儀器分析。共 ${aiNum} 題單選題。
+# 難度設定
+${difficultyInstruction}
 # 嚴格格式與輸出限制
 絕對禁止在題目或選項中提供任何提示或答案。
 # 命題重點與方向
 - 具體數值計算題：算出精確的化學計量、溶液pH值或物理常數。
 - 實驗觀察顏色題：詢問滴定終點或特定鑑定試驗產生的顏色反應。
-- 負向陳述/正向陳述題：測試對原理、定義或儀器操作的排錯與核心觀念掌握。
+- 負向陳述/正向陳述題：測試對原理、定義或儀器操作。
 - 方法適用性判定題：某類化合物「最適合」或「最不適合」使用哪種分析方法。
-- 效能比較與物理性質比較題：比較鑑別效果或化合物間的物理常數差異(比重/折光率/位移)。
-- 因果推理與機制原理題：藉由改變實驗條件達成特定分析結果，及底層物理化學作用提問。
+- 效能比較與物理性質比較題：比較鑑別效果或化合物間的物理常數差異。
+- 因果推理與機制原理題：藉由改變實驗條件達成特定分析結果。
 # 題目與選項設計規範
-1. 難度設定：難。專注細節。2. 題幹要求：簡短直接。3. 專有名詞：只給英文或中文，不並列。4. 干擾選項：具備高度迷惑性。
+1. 題幹要求：簡短直接。 2. 專有名詞：只給英文或中文，不並列。 3. 干擾選項：具備高度迷惑性。
                     `.trim();
                 }
 
@@ -4674,7 +4703,7 @@ const handleGenerateAI = async () => {
                             </div>
                         )}
 
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">生成題數 (上限 50 題)</label>
+                      <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">生成題數 (上限 50 題)</label>
                         <input 
                             type="number" 
                             value={aiNum} 
@@ -4682,6 +4711,67 @@ const handleGenerateAI = async () => {
                             min="1" max="50" 
                             className="w-full p-2 mb-4 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none font-bold text-sm"
                         />
+
+                        {/* ✨ 新增：難度占比分配器 */}
+                        <div className="mb-6 p-4 bg-blue-50 dark:bg-gray-700/50 border border-blue-100 dark:border-gray-600">
+                            <label className="block text-sm font-black text-blue-800 dark:text-blue-300 mb-3 flex justify-between items-center">
+                                <span>⚖️ 難度分布調整</span>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => setAiDifficultyMode('default')}
+                                        className={`px-2 py-0.5 text-[10px] no-round border ${aiDifficultyMode === 'default' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-300'}`}
+                                    >系統預設 (高難度)</button>
+                                    <button 
+                                        onClick={() => setAiDifficultyMode('custom')}
+                                        className={`px-2 py-0.5 text-[10px] no-round border ${aiDifficultyMode === 'custom' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-300'}`}
+                                    >自訂比例</button>
+                                </div>
+                            </label>
+
+                            {aiDifficultyMode === 'custom' ? (
+                                <div className="space-y-4 animate-fade-in">
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-[10px] font-bold text-green-600 dark:text-green-400">
+                                            <span>簡單 (觀念題)</span>
+                                            <span>{aiSimpleRatio}%</span>
+                                        </div>
+                                        <input type="range" min="0" max="100" step="5" value={aiSimpleRatio} onChange={e => {
+                                            const val = parseInt(e.target.value);
+                                            setAiSimpleRatio(val);
+                                            // 自動平衡機制
+                                            const remain = 100 - val;
+                                            setAiMediumRatio(Math.round(remain * 0.6));
+                                            setAiHardRatio(100 - val - Math.round(remain * 0.6));
+                                        }} className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-green-500" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-[10px] font-bold text-yellow-600 dark:text-yellow-400">
+                                            <span>中等 (思考題)</span>
+                                            <span>{aiMediumRatio}%</span>
+                                        </div>
+                                        <input type="range" min="0" max={100 - aiSimpleRatio} step="5" value={aiMediumRatio} onChange={e => {
+                                            const val = parseInt(e.target.value);
+                                            setAiMediumRatio(val);
+                                            setAiHardRatio(100 - aiSimpleRatio - val);
+                                        }} className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-yellow-500" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-[10px] font-bold text-red-600 dark:text-red-400">
+                                            <span>困難 (辨識與綜合題)</span>
+                                            <span>{aiHardRatio}%</span>
+                                        </div>
+                                        <div className="w-full h-1.5 bg-gray-200 rounded-lg overflow-hidden">
+                                            <div className="bg-red-500 h-full" style={{ width: `${aiHardRatio}%` }}></div>
+                                        </div>
+                                    </div>
+                                    <p className="text-[9px] text-gray-400 italic">💡 調整上方滑桿，系統會自動平衡總比例為 100%。</p>
+                                </div>
+                            ) : (
+                                <p className="text-xs text-blue-600/70 dark:text-blue-300/70 font-bold leading-relaxed italic">
+                                    「系統預設」模式將採用藥師國考高階命題邏輯，專注於細節辨識、機轉比較與結構個論，適合衝刺期考生。
+                                </p>
+                            )}
+                        </div>
 
                         <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">出題範圍 / 重點 (手動輸入)</label>
                         <textarea 
