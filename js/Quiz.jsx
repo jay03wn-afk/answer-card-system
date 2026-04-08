@@ -2618,13 +2618,14 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     // ✨ 新增：AI 自動出題相關狀態
     const [showAiModal, setShowAiModal] = useState(false);
     const [aiSubject, setAiSubject] = useState('藥理與藥物化學');
+    const [aiCustomSubject, setAiCustomSubject] = useState(''); // ✨ 新增：自訂科目名稱
     const [aiPharmRatio, setAiPharmRatio] = useState(50); // ✨ 新增：藥理學佔比 (預設50%)
     const [aiNum, setAiNum] = useState(10);
     const [aiScope, setAiScope] = useState('');
     const [aiFileContent, setAiFileContent] = useState('');
     const [aiFileName, setAiFileName] = useState('');
-    const [isAiGenerating, setIsAiGenerating] = useState(false);    
-    const [taskScores, setTaskScores] = useState(null);
+const [isAiGenerating, setIsAiGenerating] = useState(false);
+    const [aiTaskToast, setAiTaskToast] = useState(null); // ✨ 新增：背景生成右下角小通知狀態    const [taskScores, setTaskScores] = useState(null);
     const [creatorSuggestions, setCreatorSuggestions] = useState([]); 
 
     const [showDiscussion, setShowDiscussion] = useState(false);
@@ -3100,17 +3101,26 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
         };
     }, [isDragging, layoutMode]);
 
-    const handleGenerateAI = async () => {
+   const handleGenerateAI = async () => {
         const currentDiamonds = userProfile?.mcData?.diamonds || 0;
         if (currentDiamonds < 100) {
             return showAlert('💎 鑽石不足！自動生成需要 100 顆鑽石。');
         }
         if (aiNum < 1 || aiNum > 50) return showAlert('題數請設定在 1-50 題之間。');
         if (!aiScope && !aiFileContent) return showAlert('請輸入出題範圍或上傳參考檔案！');
+        if (aiSubject === '其他' && !aiCustomSubject.trim()) return showAlert('請填寫您想要測驗的科目名稱！');
 
+        // ✨ 背景執行邏輯：馬上關閉設定視窗，並開啟右下角提示
+        setShowAiModal(false);
+        setAiTaskToast({ status: 'loading', message: '⏳ AI 正在背景撰寫題目，請稍候... (您可以繼續做其他事)' });
         setIsAiGenerating(true);
+
+        // ✨ 自動簡化標題邏輯：[範圍 + 模擬測驗(AI)]
+        const displayScope = aiScope ? aiScope.substring(0, 15).replace(/\n/g, '') : (aiSubject === '其他' ? aiCustomSubject : aiSubject);
+        const autoTitle = `【${displayScope}】模擬測驗 (AI)`;
+
         try {
-           // 💡 1. 這裡依照不同科目注入深度 Prompt 專家設定
+            // 💡 1. 這裡依照不同科目注入深度 Prompt 專家設定
             let basePrompt = "";
             if (aiSubject === '藥理與藥物化學') {
                 const pharmCount = Math.round(aiNum * (aiPharmRatio / 100));
@@ -3166,8 +3176,19 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
 # 題目與選項設計規範
 1. 難度設定：難。專注細節與綜合判斷。2. 題幹要求：敘述簡短直接。3. 專有名詞：只給英文或只給中文。4. 干擾選項：必須設置具備高度迷惑性。
                 `.trim();
+            } else if (aiSubject === '其他') {
+                basePrompt = `
+# 角色設定
+你是資深國家考試命題專家，精通「${aiCustomSubject || '該專業領域'}」。請根據我提供的教材內容，設計出一份題目與選項簡短，困難、需要深度思考與細節辨識的高階測驗。共 ${aiNum} 題單選題。
+# 嚴格格式與輸出限制
+絕對禁止在題目或選項中提供任何提示或答案。
+# 命題重點與方向
+- 請針對「${aiCustomSubject || '該專業領域'}」的核心觀念、進階細節與綜合比較進行深入命題。
+- 若有提供參考文本，請嚴格按照文本內容的細節進行語意轉換與邏輯包裝，測驗考生的核心掌握度。
+# 題目與選項設計規範
+1. 難度設定：難。專注細節與綜合判斷。2. 題幹要求：敘述簡短直接。3. 專有名詞：只給英文或中文，不並列。4. 干擾選項：具備高度迷惑性。
+                `.trim();
             } else {
-                // 藥物分析
                 basePrompt = `
 # 角色設定
 你是資深藥師國考命題專家，精通藥物分析與儀器分析。設計一份題目與選項簡短，極度困難、需要深度思考的高階測驗。共 ${aiNum} 題單選題。
@@ -3194,12 +3215,11 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
                 - 參考文本：${aiFileContent ? aiFileContent.substring(0, 15000) : '無'} (請以此為核心發揮出題)
 
                 【語言與文字要求】
-                - 主要語言：題目敘述、選項內容、詳解與標題，請務必「全部使用繁體中文（台灣）」撰寫，不可使用簡體中文或英文造句。
+                - 主要語言：題目敘述、選項內容、詳解等，請務必「全部使用繁體中文（台灣）」撰寫，不可使用簡體中文或英文造句。
                 - 專有名詞：一般敘述以中文為主，但藥物名稱、化學結構名稱等專業術語，請嚴格依照上方角色設定的規定辦理（例如：若規定只給英文，就絕對不可中英並列）。
 
                 請務必嚴格依照以下 JSON 格式回傳，**絕對不要包含任何 markdown code block (例如 \`\`\`json)，直接回傳純 JSON 字串即可**：
                 {
-                  "title": "為這份測驗想一個合適的標題",
                   "questionsHtml": "[Q.001] 第一題題目內容... [A] 選項A內容 [B] 選項B內容 [C] 選項C內容 [D] 選項D內容 [End]<br/><br/>[Q.002] 第二題題目內容... [A] 選項A內容...",
                   "answers": "A,B,C,D",
                   "explanations": "[A.001] 第一題詳解... [End]<br/><br/>[A.002] 第二題詳解... [End]"
@@ -3233,20 +3253,23 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
                 'mcData.diamonds': (mcData.diamonds || 0) - 100
             });
 
-            // 自動填入所有資料
-            setTestName(parsed.title || 'AI 生成測驗');
+            // 自動填入所有資料 (建立好可以直接測驗的狀態)
+            setTestName(autoTitle);
             setNumQuestions(aiNum);
             setMaxScore(100);
             setInputType('richtext');
             setQuestionHtml(parsed.questionsHtml || '');
             setCorrectAnswersInput(parsed.answers || '');
             setExplanationHtml(parsed.explanations || '');
-            setShowAiModal(false);
             
-            showAlert('✅ AI 試卷生成成功！已自動為您填入所有內容，並扣除 100 鑽石。您可檢查後點擊最下方「開始作答」。');
+            // ✨ 背景成功通知
+            setAiTaskToast({ status: 'success', message: '✅ 題目生成完畢！已自動為您填寫所有內容，您可以直接點擊下方「開始作答」了！' });
+            // 8 秒後自動隱藏通知
+            setTimeout(() => setAiTaskToast(null), 8000);
 
         } catch (e) {
-            showAlert('❌ 生成失敗，可能是 AI 回應格式錯誤或範圍太模糊 (未扣除鑽石)：' + e.message);
+            setAiTaskToast({ status: 'error', message: '❌ 生成失敗 (未扣除鑽石)：' + e.message });
+            setTimeout(() => setAiTaskToast(null), 8000);
         }
         setIsAiGenerating(false);
     };
@@ -4491,6 +4514,20 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
                 </div>
 
                 <button onClick={handleStartTest} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors">開始作答</button>
+           {/* ✨ 新增：AI 背景生成右下角小通知 (不會阻擋使用者操作) */}
+            {aiTaskToast && (
+                <div className={`fixed bottom-6 right-6 p-4 shadow-2xl z-[300] border-l-4 transition-all max-w-sm w-full font-bold text-sm flex items-start gap-3
+                    ${aiTaskToast.status === 'loading' ? 'bg-blue-50 border-blue-500 text-blue-800 dark:bg-gray-800 dark:text-blue-300' : 
+                      aiTaskToast.status === 'success' ? 'bg-green-50 border-green-500 text-green-800 dark:bg-gray-800 dark:text-green-300' : 
+                      'bg-red-50 border-red-500 text-red-800 dark:bg-gray-800 dark:text-red-300'}`}
+                >
+                    {aiTaskToast.status === 'loading' && <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0 mt-0.5"></div>}
+                    <div className="flex-1 leading-relaxed">{aiTaskToast.message}</div>
+                    {(aiTaskToast.status === 'success' || aiTaskToast.status === 'error') && (
+                        <button onClick={() => setAiTaskToast(null)} className="ml-auto text-gray-400 hover:text-black dark:hover:text-white shrink-0">✕</button>
+                    )}
+                </div>
+            )}
            {showAiModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[150] p-4">
                     <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-md no-round shadow-xl border-t-4 border-purple-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
@@ -4511,7 +4548,21 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
                             <option value="藥劑與生物藥劑學">藥劑與生物藥劑學</option>
                             <option value="藥物分析">藥物分析</option>
                             <option value="生藥學與中藥學">生藥學與中藥學</option>
+                            <option value="其他">其他 (自行填寫)</option>
                         </select>
+
+                        {aiSubject === '其他' && (
+                            <div className="mb-4">
+                                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">✍️ 自訂科目名稱</label>
+                                <input 
+                                    type="text" 
+                                    value={aiCustomSubject} 
+                                    onChange={e => setAiCustomSubject(e.target.value)} 
+                                    placeholder="例如：解剖學、臨床藥學..." 
+                                    className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none font-bold text-sm"
+                                />
+                            </div>
+                        )}
 
                         {aiSubject === '藥理與藥物化學' && (
                             <div className="mb-4 bg-purple-50 dark:bg-gray-700/50 p-3 border border-purple-100 dark:border-gray-600">
