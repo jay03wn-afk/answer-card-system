@@ -129,6 +129,12 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
 
     const displayedItems = filteredItems.slice(0, visibleLimit);
 
+    // ✨ 新增：自動過濾 [Q.1] 與 [End] 標籤的工具函數，讓畫面保持乾淨
+    const formatDisplayText = (text) => {
+        if (!text) return '';
+        return text.replace(/\[Q\.\d+\]/gi, '').replace(/\[A\.\d+\]/gi, '').replace(/\[End\]/gi, '').trim();
+    };
+
     // 極速背景同步機制
     useEffect(() => {
         if (displayedItems.length === 0) return;
@@ -282,7 +288,6 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const handleRetakeWrong = async () => {
         setIsJumping(true); 
         try {
-            // 直接從資料庫抓取該分類的所有題目，不受畫面載入限制
             let query = window.db.collection('users').doc(user.uid).collection('wrongBook');
             if (currentFolder !== '全部') {
                 query = query.where('folder', '==', currentFolder);
@@ -295,7 +300,6 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 return showAlert("此分類目前沒有錯題可供測驗喔！");
             }
 
-            // 將抓回來的資料轉為陣列，並在前端依時間排序 (避免 Firestore 缺少索引報錯)
             let allWrongItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             allWrongItems.sort((a, b) => {
                 const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
@@ -315,16 +319,20 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     allWrongItems.forEach((item, index) => {
                         const qNum = index + 1;
                         let qContent = item.qHtml ? item.qHtml : (item.qText || '無題目文字');
+                        
+                        // ✨ 修正：生成試卷前，先剝除可能殘留的舊 [Q.1] [End] 標籤，防止重複包裝導致解析錯誤
+                        let cleanQContent = qContent.replace(/\[Q\.\d+\]/gi, '').replace(/\[End\]/gi, '').trim();
                         if (item.qImage) {
-                            qContent += `<br/><br/><img src="${item.qImage}" style="max-width:100%; border-radius:8px;" />`;
+                            cleanQContent += `<br/><br/><img src="${item.qImage}" style="max-width:100%; border-radius:8px;" />`;
                         }
-                        qHtml += `[Q.${qNum}] ${qContent} [End]<br/><br/>`;
+                        qHtml += `[Q.${qNum}] ${cleanQContent} [End]<br/><br/>`;
 
                         let expContent = item.nText || item.note || '無筆記';
+                        let cleanEContent = expContent.replace(/\[A\.\d+\]/gi, '').replace(/\[End\]/gi, '').trim();
                         if (item.nImage) {
-                            expContent += `<br/><br/><img src="${item.nImage}" style="max-width:100%; border-radius:8px;" />`;
+                            cleanEContent += `<br/><br/><img src="${item.nImage}" style="max-width:100%; border-radius:8px;" />`;
                         }
-                        eHtml += `[A.${qNum}] ${expContent} [End]<br/><br/>`;
+                        eHtml += `[A.${qNum}] ${cleanEContent} [End]<br/><br/>`;
 
                         ansArray.push(item.correctAns || '');
                     });
@@ -376,23 +384,28 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 <p className="text-sm font-bold text-gray-500 dark:text-gray-400">專屬你的弱點突破筆記本</p>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-3 mb-4 shrink-0 w-full min-w-0">
-                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 flex-grow w-full min-w-0">
+            {/* ✨ 修正：將原本的 overflow-x-auto 改成 flex-wrap，解決手機版按鈕超出畫面的問題 */}
+            <div className="flex flex-col mb-6 gap-3 shrink-0 w-full">
+                {/* 第一排：資料夾選擇 */}
+                <div className="flex flex-wrap items-center gap-2 pb-1">
                     {folders.map(f => (
-                        <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors shrink-0 ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
+                        <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round transition-colors ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600'}`}>
                             {f === '全部' ? '🔍 ' : '📁 '} {f}
                         </button>
                     ))}
                 </div>
-                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 shrink-0 w-full md:w-auto min-w-0">
+                
+                {/* 第二排：功能操作按鈕 */}
+                <div className="flex flex-wrap items-center gap-2 pb-1 border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
                    <button 
                         onClick={handleRetakeWrong}
-                        className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors shrink-0"
+                        className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50 no-round transition-colors"
                     >
                         📝 錯題重測 (全部)
-                    </button><button 
+                    </button>
+                    <button 
                        onClick={handleRetakeWrong}
-                        className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors shrink-0"
+                        className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50 no-round transition-colors"
                     >
                         📝 錯題重測 ({filteredItems.length}題)
                     </button>
@@ -412,26 +425,24 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                 }
                             });
                         }} 
-                        className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors shrink-0"
+                        className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round transition-colors"
                     >
                         + 新增錯題資料夾
                     </button>
 
-                    {/* ✨ 新增：一鍵清空錯題功能 */}
                     {currentFolder !== '全部' && (
                         <button 
                             onClick={handleClearWrongBookFolder} 
-                            className="px-3 py-1.5 text-sm font-bold bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800 no-round whitespace-nowrap transition-colors shrink-0"
+                            className="px-3 py-1.5 text-sm font-bold bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800/50 no-round transition-colors"
                         >
                             🧹 清空分類
                         </button>
                     )}
                     
-                    {/* ✨ 新增：刪除錯題資料夾功能 */}
                     {currentFolder !== '全部' && currentFolder !== '未分類' && (
                         <button 
                             onClick={handleDeleteWrongBookFolder} 
-                            className="px-3 py-1.5 text-sm font-bold bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors shrink-0"
+                            className="px-3 py-1.5 text-sm font-bold bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 no-round transition-colors"
                         >
                             🗑️ 刪除資料夾
                         </button>
@@ -490,10 +501,12 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                                      background-color: #ffffff !important;
                                                  }
                                              `}} />
-                                             <div className="wb-rich-text" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(item.qHtml) }} />
+                                             {/* ✨ 修正：顯示富文本時自動過濾掉多餘的 [Q.1] 標籤 */}
+                                             <div className="wb-rich-text" dangerouslySetInnerHTML={{ __html: formatDisplayText(parseSmilesToHtml(item.qHtml)) }} />
                                          </>
                                      ) : (
-                                         item.qText && <p>{item.qText}</p>
+                                         /* ✨ 修正：顯示純文字時自動過濾掉多餘的 [Q.1] 標籤 */
+                                         item.qText && <p>{formatDisplayText(item.qText)}</p>
                                      )}
                                      {item.qImage && <img src={item.qImage} onClick={() => setPreviewImage(item.qImage)} className="mt-2 max-h-[300px] w-full object-contain border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity bg-white" alt="題目附圖" title="點擊放大" />}
                                  </div>
@@ -504,7 +517,8 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                              <div className="mb-3">
                                  <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">💡 筆記</p>
                                  <div className="bg-yellow-50 dark:bg-gray-900 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap border-l-4 border-yellow-400 font-bold">
-                                     {(item.nText || item.note) && <p>{item.nText || item.note}</p>}
+                                     {/* ✨ 修正：顯示筆記純文字時自動過濾掉多餘的 [A.1] 標籤 */}
+                                     {(item.nText || item.note) && <p>{formatDisplayText(item.nText || item.note)}</p>}
                                     {item.nImage && <img src={item.nImage} onClick={() => setPreviewImage(item.nImage)} className="mt-2 max-h-[300px] w-full object-contain border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition-opacity bg-white" alt="筆記附圖" title="點擊放大" />}
                                  </div>
                              </div>
