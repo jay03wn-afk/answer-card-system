@@ -4052,15 +4052,8 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         <input type="radio" checked={inputType === 'text'} onChange={() => setInputType('text')} className="w-4 h-4 accent-black dark:accent-white" />
                         <span>純文字</span>
                     </label>
-                    <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300 mt-2 sm:mt-0">
-                        <input type="radio" checked={inputType === 'richtext'} onChange={() => {
-    const isAuth = currentUser && (currentUser.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
-    if (isAuth) {
-        setInputType('richtext');
-    } else {
-        showAlert("🔒 此功能目前僅開放給 jay03wn@gmail.com 或經授權的老師使用。");
-    }
-}} className="w-4 h-4 accent-black dark:accent-white" />
+                   <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300 mt-2 sm:mt-0">
+                        <input type="radio" checked={inputType === 'richtext'} onChange={() => setInputType('richtext')} className="w-4 h-4 accent-black dark:accent-white" />
                         <span className="text-blue-600 dark:text-blue-400 font-bold">富文本 (支援 Word 貼上)</span>
                     </label>
                 </div>
@@ -4253,14 +4246,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                         <span>純文字</span>
                     </label>
                     <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300 mt-2 sm:mt-0">
-                        <input type="radio" checked={inputType === 'richtext'} onChange={() => {
-    const isAuth = currentUser && (currentUser.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
-    if (isAuth) {
-        setInputType('richtext');
-    } else {
-        showAlert("🔒 此功能目前僅開放給 jay03wn@gmail.com 或經授權的老師使用。");
-    }
-}} className="w-4 h-4 accent-black dark:accent-white" />
+                        <input type="radio" checked={inputType === 'richtext'} onChange={() => setInputType('richtext')} className="w-4 h-4 accent-black dark:accent-white" />
                         <span className="text-blue-600 dark:text-blue-400 font-bold">富文本 (支援 Word 貼上)</span>
                     </label>
                 </div>
