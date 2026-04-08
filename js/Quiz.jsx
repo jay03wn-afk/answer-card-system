@@ -2613,8 +2613,17 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [folder, setFolder] = useState(initialRecord.folder || '未分類');
     const [shortCode, setShortCode] = useState(initialRecord.shortCode || null);
     const [pdfZoom, setPdfZoom] = useState(1);
-    const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.publishAnswers !== false);
+const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.publishAnswers !== false);
     
+    // ✨ 新增：AI 自動出題相關狀態
+    const [showAiModal, setShowAiModal] = useState(false);
+    const [aiSubject, setAiSubject] = useState('藥理與藥物化學');
+    const [aiPharmRatio, setAiPharmRatio] = useState(50); // ✨ 新增：藥理學佔比 (預設50%)
+    const [aiNum, setAiNum] = useState(10);
+    const [aiScope, setAiScope] = useState('');
+    const [aiFileContent, setAiFileContent] = useState('');
+    const [aiFileName, setAiFileName] = useState('');
+    const [isAiGenerating, setIsAiGenerating] = useState(false);    
     const [taskScores, setTaskScores] = useState(null);
     const [creatorSuggestions, setCreatorSuggestions] = useState([]); 
 
@@ -3090,6 +3099,153 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             window.removeEventListener('touchmove', handleDragEnd);
         };
     }, [isDragging, layoutMode]);
+
+    const handleGenerateAI = async () => {
+        const currentDiamonds = userProfile?.mcData?.diamonds || 0;
+        if (currentDiamonds < 100) {
+            return showAlert('💎 鑽石不足！自動生成需要 100 顆鑽石。');
+        }
+        if (aiNum < 1 || aiNum > 50) return showAlert('題數請設定在 1-50 題之間。');
+        if (!aiScope && !aiFileContent) return showAlert('請輸入出題範圍或上傳參考檔案！');
+
+        setIsAiGenerating(true);
+        try {
+           // 💡 1. 這裡依照不同科目注入深度 Prompt 專家設定
+            let basePrompt = "";
+            if (aiSubject === '藥理與藥物化學') {
+                const pharmCount = Math.round(aiNum * (aiPharmRatio / 100));
+                const medchemCount = aiNum - pharmCount;
+                basePrompt = `
+# 角色設定
+你是資深藥師國考命題專家，精通藥理學與藥物化學（特別熟悉 Basic 與 Foye's 參考書的深度）。根據我提供的教材內容，設計出一份題目與選項簡短，困難、需要深度思考與細節辨識的高階測驗。
+# 核心任務
+出單選題（四選一，A/B/C/D）。要求包含：藥理學 ${pharmCount} 題，藥物化學 ${medchemCount} 題，共 ${aiNum} 題。
+# 嚴格格式與輸出限制（請務必遵守）
+1. 禁止在題目或選項中提供任何提示或答案。也不要列出無用敘述（例如「含有一個氧原子與一個氮原子的 dibenzoxazepine」，只需要列出「dibenzoxazepine」 ）。
+2. 考結構特徵的題目不可以給<<:結構名稱:>>，要給藥物名。
+3. 如果是{結構}圖片考題（僅限藥化），請把藥物名稱寫在<<:(名稱):>>中，例如：<<:Aspirin:>>。
+# 命題重點與方向
+題型：Type1:關於...的敘述，何者錯誤（佔40%）。Type2:何者為...?
+【藥理學重點】著重於藥物個論細節（如半衰期長短、特殊藥物特性、適用疾病）。測驗機轉(MOA)與同類藥物的「細微差異」比較。深入測驗藥物交互作用(DDI)、禁忌症、副作用及各疾病的首選藥物(DOC)。
+【藥物化學重點】著重測驗結構特徵與化學結構辨識與代謝、個論比較及代謝途徑。必須包含直接考化學結構與藥理個論的綜合題型，及藥物機轉與結構的關聯(SAR)。
+# 題目與選項設計規範
+1. 難度設定：難。專注細節與綜合判斷，必須經過語意轉換與邏輯包裝。
+2. 題幹要求：敘述簡短、不贅述情境，直接提問。語氣不可武斷，避免送分題。
+3. 專有名詞：每一處出現的專有名詞，結構名稱請「只給英文」，絕對不要中英並列。
+4. 干擾選項：必須設置具備高度迷惑性的適當干擾選項。
+                `.trim();
+            } else if (aiSubject === '藥劑與生物藥劑學') {
+                basePrompt = `
+# 角色設定
+你是一位資深的藥學系教授與藥師國考命題專家，精通「藥劑學」與「生物藥劑學」的考點與出題邏輯。設計出一份題目與選項都很簡短，極度困難、需要深度思考與細節辨識的高階測驗。
+# 核心任務
+根據中華藥典第九版與藥師國考用書內容，出 ${aiNum} 題單選題（四選一，A/B/C/D）。
+# 嚴格格式與輸出限制
+絕對禁止：在題目或選項中提供任何提示或答案。
+# 命題重點與方向
+- 劑型設計與特性：各類劑型的優缺點、適用途徑與配方考量。
+- 賦形劑與添加物：特定賦形劑的確切功能、使用濃度限制或配伍禁忌。
+- 物理藥學與動力學：溶解度、安定性、流變學、界面現象等核心概念的實際應用。
+- 製程與品管：滅菌法選擇、粉體學特性、GMP 相關品管規範與各項確效指標。
+- 生物藥劑學：ADME影響因子，BA與BE的細節比較與參數意義。
+# 題目與選項設計規範
+1. 難度設定：非常難。專注於極端細節與綜合判斷。
+2. 題幹要求：敘述簡短直接。考配方或動力學時，語氣不可武斷。
+3. 專有名詞：請「只給英文」或「只給中文」，絕對不要中英並列。
+4. 干擾選項：設置具備高度迷惑性的適當干擾選項。
+                `.trim();
+            } else if (aiSubject === '生藥學與中藥學') {
+                basePrompt = `
+# 角色設定
+你是資深藥師國考命題專家，精通生藥學與中藥學。設計出一份題目與選項簡短，困難、需要深度思考的高階測驗。共 ${aiNum} 題單選題。
+# 嚴格格式與輸出限制
+絕對禁止在題目或選項中提供任何提示或答案。
+# 命題重點與方向
+- 中藥：基原、成分、分類、藥理、主治等。
+- 生藥：基原、成分、結構個論（細節）、成分之效果、特點與詳細個論或不同生藥比較等。
+# 題目與選項設計規範
+1. 難度設定：難。專注細節與綜合判斷。2. 題幹要求：敘述簡短直接。3. 專有名詞：只給英文或只給中文。4. 干擾選項：必須設置具備高度迷惑性。
+                `.trim();
+            } else {
+                // 藥物分析
+                basePrompt = `
+# 角色設定
+你是資深藥師國考命題專家，精通藥物分析與儀器分析。設計一份題目與選項簡短，極度困難、需要深度思考的高階測驗。共 ${aiNum} 題單選題。
+# 嚴格格式與輸出限制
+絕對禁止在題目或選項中提供任何提示或答案。
+# 命題重點與方向
+- 具體數值計算題：算出精確的化學計量、溶液pH值或物理常數。
+- 實驗觀察顏色題：詢問滴定終點或特定鑑定試驗產生的顏色反應。
+- 負向陳述/正向陳述題：測試對原理、定義或儀器操作的排錯與核心觀念掌握。
+- 方法適用性判定題：某類化合物「最適合」或「最不適合」使用哪種分析方法。
+- 效能比較與物理性質比較題：比較鑑別效果或化合物間的物理常數差異(比重/折光率/位移)。
+- 因果推理與機制原理題：藉由改變實驗條件達成特定分析結果，及底層物理化學作用提問。
+# 題目與選項設計規範
+1. 難度設定：難。專注細節。2. 題幹要求：簡短直接。3. 專有名詞：只給英文或中文，不並列。4. 干擾選項：具備高度迷惑性。
+                `.trim();
+            }
+
+            const fullPrompt = `
+                ${basePrompt}
+
+                【使用者指定內容】
+                - 題數：${aiNum} 題
+                - 出題範圍/重點：${aiScope || '無'}
+                - 參考文本：${aiFileContent ? aiFileContent.substring(0, 15000) : '無'} (請以此為核心發揮出題)
+
+                請務必嚴格依照以下 JSON 格式回傳，**絕對不要包含任何 markdown code block (例如 \`\`\`json)，直接回傳純 JSON 字串即可**：
+                {
+                  "title": "為這份測驗想一個合適的標題",
+                  "questionsHtml": "[Q.001] 第一題題目內容... [A] 選項A內容 [B] 選項B內容 [C] 選項C內容 [D] 選項D內容 [End]<br/><br/>[Q.002] 第二題題目內容... [A] 選項A內容...",
+                  "answers": "A,B,C,D",
+                  "explanations": "[A.001] 第一題詳解... [End]<br/><br/>[A.002] 第二題詳解... [End]"
+                }
+                注意：
+                1. questionsHtml 格式必須完全符合 [Q.數字] 題目 [A]...[B]...[C]...[D]... [End] 的格式（數字可補零如 [Q.001]）。
+                2. answers 是所有標準答案，用逗號分隔，共有 ${aiNum} 個。
+                3. explanations 格式必須完全符合 [A.數字] 詳解 [End] 的格式（數字可補零如 [A.001]）。
+            `;
+
+            const res = await fetch('/api/gemini', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: fullPrompt })
+            });
+
+            const data = await res.json();
+            if (data.result && data.result.startsWith('❌')) throw new Error(data.result);
+
+            let cleanJsonStr = data.result.trim();
+            // 處理 AI 可能還是手賤回傳 markdown 標籤的問題
+            if (cleanJsonStr.startsWith('```json')) cleanJsonStr = cleanJsonStr.replace(/^```json\n?/, '');
+            if (cleanJsonStr.startsWith('```')) cleanJsonStr = cleanJsonStr.replace(/^```\n?/, '');
+            if (cleanJsonStr.endsWith('```')) cleanJsonStr = cleanJsonStr.replace(/\n?```$/, '');
+
+            const parsed = JSON.parse(cleanJsonStr.trim());
+
+            // 扣除鑽石
+            const mcData = userProfile.mcData || {};
+            await window.db.collection('users').doc(currentUser.uid).update({
+                'mcData.diamonds': (mcData.diamonds || 0) - 100
+            });
+
+            // 自動填入所有資料
+            setTestName(parsed.title || 'AI 生成測驗');
+            setNumQuestions(aiNum);
+            setMaxScore(100);
+            setInputType('richtext');
+            setQuestionHtml(parsed.questionsHtml || '');
+            setCorrectAnswersInput(parsed.answers || '');
+            setExplanationHtml(parsed.explanations || '');
+            setShowAiModal(false);
+            
+            showAlert('✅ AI 試卷生成成功！已自動為您填入所有內容，並扣除 100 鑽石。您可檢查後點擊最下方「開始作答」。');
+
+        } catch (e) {
+            showAlert('❌ 生成失敗，可能是 AI 回應格式錯誤或範圍太模糊 (未扣除鑽石)：' + e.message);
+        }
+        setIsAiGenerating(false);
+    };
 
     const handleStartTest = async () => {
         if (numQuestions < 1 || numQuestions > 200) return showAlert('題數限制為 1-200 題！');
@@ -4173,8 +4329,15 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     if (step === 'setup') return (
         <div className="flex flex-col items-center p-4 h-[100dvh] overflow-y-auto relative custom-scrollbar bg-gray-100 dark:bg-gray-900">
             <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">← 返回列表</button>
-<div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-4xl no-round border border-gray-200 dark:border-gray-700 mt-10 mb-10 transition-colors">                <h1 className="text-xl font-bold mb-6 border-b border-gray-200 dark:border-gray-700 pb-2 tracking-tight dark:text-white">新增測驗</h1>
-                
+<div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-4xl no-round border border-gray-200 dark:border-gray-700 mt-10 mb-10 transition-colors">                <div className="flex justify-between items-center mb-6 border-b border-gray-200 dark:border-gray-700 pb-2">
+                    <h1 className="text-xl font-bold tracking-tight dark:text-white">新增測驗</h1>
+                    <button 
+                        onClick={() => setShowAiModal(true)} 
+                        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 font-bold no-round shadow-sm transition-colors text-sm flex items-center gap-2"
+                    >
+                        ✨ AI 自動出題 (-100💎)
+                    </button>
+                </div>                
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">存放資料夾</label>
                 <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm cursor-pointer">
                     {userFolders.map(f => <option key={f} value={f}>{f}</option>)}
@@ -4324,6 +4487,106 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                 </div>
 
                 <button onClick={handleStartTest} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 transition-colors">開始作答</button>
+           {showAiModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[150] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-md no-round shadow-xl border-t-4 border-purple-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                        <h3 className="font-black text-xl mb-4 dark:text-white flex items-center gap-2">
+                            ✨ AI 智慧出題
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-bold">
+                            花費 100 💎 鑽石，讓 AI 自動為您生成題目與詳解。
+                        </p>
+                        
+                       <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">科目選擇</label>
+                        <select 
+                            value={aiSubject} 
+                            onChange={e => setAiSubject(e.target.value)} 
+                            className="w-full p-2 mb-4 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none font-bold text-sm"
+                        >
+                            <option value="藥理與藥物化學">藥理與藥物化學</option>
+                            <option value="藥劑與生物藥劑學">藥劑與生物藥劑學</option>
+                            <option value="藥物分析">藥物分析</option>
+                            <option value="生藥學與中藥學">生藥學與中藥學</option>
+                        </select>
+
+                        {aiSubject === '藥理與藥物化學' && (
+                            <div className="mb-4 bg-purple-50 dark:bg-gray-700/50 p-3 border border-purple-100 dark:border-gray-600">
+                                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 flex justify-between">
+                                    <span>💊 調整出題比重</span>
+                                    <span className="text-purple-700 dark:text-purple-300">
+                                        藥理學 {aiPharmRatio}% / 藥化 {100 - aiPharmRatio}%
+                                    </span>
+                                </label>
+                                <input 
+                                    type="range" 
+                                    min="0" max="100" step="10"
+                                    value={aiPharmRatio} 
+                                    onChange={e => setAiPharmRatio(parseInt(e.target.value))} 
+                                    className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer dark:bg-gray-600 accent-purple-600"
+                                />
+                            </div>
+                        )}
+
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">生成題數 (上限 50 題)</label>
+                        <input 
+                            type="number" 
+                            value={aiNum} 
+                            onChange={e => setAiNum(e.target.value)} 
+                            min="1" max="50" 
+                            className="w-full p-2 mb-4 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none font-bold text-sm"
+                        />
+
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">出題範圍 / 重點 (手動輸入)</label>
+                        <textarea 
+                            value={aiScope} 
+                            onChange={e => setAiScope(e.target.value)} 
+                            placeholder="例如：第一章 常見抗生素的機轉與副作用..." 
+                            className="w-full p-2 mb-4 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none font-bold text-sm h-20 resize-none custom-scrollbar"
+                        />
+
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">上傳參考文本 (選項，僅供 AI 閱讀)</label>
+                        <input 
+                            type="file" 
+                            accept=".txt,.csv,.md"
+                            onChange={e => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+                                setAiFileName(file.name);
+                                const reader = new FileReader();
+                                reader.onload = (event) => setAiFileContent(event.target.result);
+                                reader.readAsText(file);
+                            }}
+                            className="hidden" 
+                            id="aiFileUpload"
+                        />
+                        <label 
+                            htmlFor="aiFileUpload" 
+                            className="w-full flex items-center justify-center p-2 mb-6 border border-dashed border-purple-400 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 cursor-pointer font-bold text-sm hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
+                        >
+                            {aiFileName ? `📄 已選擇：${aiFileName}` : '📎 點此上傳純文字檔 (.txt 等)'}
+                        </label>
+
+                        <div className="flex justify-end gap-3">
+                            <button 
+                                onClick={() => setShowAiModal(false)} 
+                                disabled={isAiGenerating}
+                                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold no-round hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm disabled:opacity-50"
+                            >
+                                取消
+                            </button>
+                            <button 
+                                onClick={handleGenerateAI} 
+                                disabled={isAiGenerating}
+                                className="px-4 py-2 bg-purple-600 text-white font-bold no-round hover:bg-purple-700 transition-colors text-sm shadow-sm flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isAiGenerating ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : null}
+                                {isAiGenerating ? 'AI 努力生題中...' : '確認扣除並生成'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {isCreating && (
                     <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
                         <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-black dark:border-white">
