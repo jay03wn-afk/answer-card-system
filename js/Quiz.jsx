@@ -3149,9 +3149,12 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     }, [isDragging, layoutMode]);
 const handleGenerateAI = async () => {
         const currentDiamonds = userProfile?.mcData?.diamonds || 0;
-        const requiredDiamonds = Number(aiNum) * 3;
+       const aiNumInt = Number(aiNum);
+        // 新計費：基礎 50 鑽(含10題)，超過 10 題的部分每題加 3 鑽
+        const requiredDiamonds = 50 + Math.max(0, aiNumInt - 10) * 3;
+        
         if (currentDiamonds < requiredDiamonds) {
-            return showAlert(`💎 鑽石不足！生成 ${aiNum} 題需要 ${requiredDiamonds} 顆鑽石。`);
+            return showAlert(`💎 鑽石不足！生成 ${aiNumInt} 題共需 ${requiredDiamonds} 顆鑽石 (基礎50 + 超出10題部分*3)。`);
         }
         if (aiNum < 1 || aiNum > 50) return showAlert('題數請設定在 1-50 題之間。');
         if (!aiScope && !aiFileContent) return showAlert('請輸入出題範圍或上傳參考檔案！');
@@ -3340,7 +3343,8 @@ ${difficultyInstruction}
 
                 // 扣除鑽石 (依據使用者要求的題數計價：3💎/題)
                 const mcData = userProfile.mcData || {};
-                const cost = Number(aiNum) * 3;
+                // 扣除鑽石 (基礎50鑽 + 超過10題部分每題3鑽)
+                const cost = 50 + Math.max(0, Number(aiNum) - 10) * 3;
                 await window.db.collection('users').doc(currentUser.uid).update({
                     'mcData.diamonds': (mcData.diamonds || 0) - cost
                 });
@@ -4652,7 +4656,7 @@ ${difficultyInstruction}
                         </h3>
                         <div className="flex justify-between items-center mb-4 bg-gray-50 dark:bg-gray-700/50 p-2 border border-gray-200 dark:border-gray-600">
                             <span className="text-xs text-purple-700 dark:text-purple-300 font-bold">
-                                預估花費：{aiNum * 3} 💎 (3💎/題)
+                                預估花費：{50 + Math.max(0, Number(aiNum) - 10) * 3} 💎 (10題50，每多一題+3)
                             </span>
                             <span className="text-sm font-black text-blue-600 dark:text-blue-400 flex items-center gap-1">
                                 您擁有：{userProfile?.mcData?.diamonds || 0} 💎
