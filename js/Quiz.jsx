@@ -3116,9 +3116,12 @@ const handleGenerateAI = async () => {
             window.setGlobalToast({ status: 'loading', message: '⏳ AI 正在背景撰寫題目，請稍候... (您可以自由切換到其他頁面或去玩遊戲)' });
         }
 
-        // ✨ 自動簡化標題邏輯：[範圍 + 模擬測驗(AI)]
-        const displayScope = aiScope ? aiScope.substring(0, 15).replace(/\n/g, '') : (aiSubject === '其他' ? aiCustomSubject : aiSubject);
-        const autoTitle = `【${displayScope}】模擬測驗 (AI)`;
+        // ✨ 自動簡化標題邏輯：[科目名稱 + 範圍 + 模擬測驗(AI)]
+        const actualSubject = aiSubject === '其他' ? aiCustomSubject : aiSubject;
+        const shortScope = aiScope ? aiScope.substring(0, 15).replace(/\n/g, '') : '';
+        // 如果有輸入範圍，就顯示「科目 - 範圍」，否則只顯示「科目」
+        const displayTitleStr = shortScope ? `${actualSubject} - ${shortScope}` : actualSubject;
+        const autoTitle = `【${displayTitleStr}】模擬測驗 (AI)`;
 
         // ✨ 使用 IIFE (立即執行非同步函式) 脫離 UI 執行緒，讓它在背景默默做事
         (async () => {
