@@ -4817,6 +4817,48 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
 
             </div>
             )}
+
+            {/* ✨ 修復：在作答頁面 (偷看答案時) 也能正常彈出錯題收錄 Modal */}
+            {wrongBookAddingItem && (
+                <WrongBookModal
+                    title={`收錄第 ${wrongBookAddingItem.number} 題`}
+                    initialData={{ 
+                        qText: wrongBookAddingItem.extractedQText || '', 
+                        qHtml: wrongBookAddingItem.extractedQHtml || '',
+                        nText: wrongBookAddingItem.extractedExp || '', 
+                        userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']))
+                    }}
+                    onClose={() => setWrongBookAddingItem(null)}
+                    onSave={async (data) => {
+                        try {
+                            await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').add({
+                                quizId: quizId,
+                                folder: data.folder || '未分類',
+                                quizName: cleanQuizName(testName),
+                                questionNum: wrongBookAddingItem.number,
+                                userAns: wrongBookAddingItem.userAns || '未填寫',
+                                correctAns: wrongBookAddingItem.correctAns,
+                                qText: data.qText || '',
+                                qHtml: data.qHtml || '',
+                                qImage: data.qImage,
+                                nText: data.nText,
+                                nImage: data.nImage,
+                                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                            if (data.folder && !userProfile.wrongBookFolders?.includes(data.folder)) {
+                                await window.db.collection('users').doc(currentUser.uid).set({
+                                    wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
+                                }, { merge: true });
+                            }
+                            showAlert(`✅ 第 ${wrongBookAddingItem.number} 題已成功收錄至「錯題整理」！`);
+                            setWrongBookAddingItem(null);
+                        } catch(e) {
+                            showAlert("收錄失敗：" + e.message);
+                        }
+                    }}
+                    showAlert={showAlert}
+                />
+            )}
         </div>
     );
 
