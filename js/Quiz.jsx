@@ -94,40 +94,18 @@ if (typeof window !== 'undefined' && !window.smilesDrawerObserverInit) {
             
             canvases.forEach(canvas => {
                 const smiles = canvas.getAttribute('data-smiles');
-                // ✨ 立即標記為處理中，防止 MutationObserver 重複觸發導致無限迴圈或重疊
+                const rawText = canvas.getAttribute('data-raw-text') || smiles;
                 canvas.setAttribute('data-drawn', 'processing'); 
                 
                 window.SmilesDrawer.parse(smiles, (tree) => {
-                    drawer.draw(tree, canvas, 'light', false); // 畫上黑線
+                    drawer.draw(tree, canvas, 'light', false); 
                     canvas.setAttribute('data-drawn', 'true');
                 }, (err) => {
-                    console.error("SmilesDrawer 解析失敗:", err);
-                    // ✨ 終極修正：絕對不要用 replaceChild 破壞 React 的 DOM 結構 (會導致重複出現)
-                    // 改為直接在畫布上繪製「解析失敗」的提示！
-                    const ctx = canvas.getContext('2d');
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.fillStyle = "#fef2f2"; 
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    ctx.fillStyle = "#ef4444"; 
-                    ctx.font = "bold 20px sans-serif";
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.fillText("[解析失敗]", canvas.width / 2, canvas.height / 2);
-                    
-                    canvas.setAttribute('data-drawn', 'true'); 
-                });
-            });
-            
-            canvases.forEach(canvas => {
-                const smiles = canvas.getAttribute('data-smiles');
-                window.SmilesDrawer.parse(smiles, (tree) => {
-                    drawer.draw(tree, canvas, 'light', false); // 畫上黑線
-                    canvas.setAttribute('data-drawn', 'true');
-                }, (err) => {
-                    console.error("SmilesDrawer 解析失敗:", err);
+                    // ✨ 優化：如果不具備化學式結構(例如只是中文名稱)，安靜地優雅還原成純文字，不顯示報錯圖片
                     const span = document.createElement('span');
-                    span.className = "text-red-500 font-bold bg-red-50 px-1 text-xs";
-                    span.textContent = `[解析失敗: ${smiles}]`;
+                    span.className = "text-blue-700 dark:text-blue-300 font-bold bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-700 mx-1 inline-block shadow-sm";
+                    span.textContent = rawText;
+                    // 在 dangerouslySetInnerHTML 內安全替換節點
                     canvas.parentNode.replaceChild(span, canvas);
                 });
             });
@@ -163,17 +141,14 @@ const parseSmilesToHtml = (content) => {
         let fallbackSmiles = cleanText.replace(/[^A-Za-z0-9@+\-\[\]\(\)\\\/=#$:\.%*]/g, '');
         const uniqueId = 'smiles-' + Math.random().toString(36).substr(2, 9);
         
-        // 備用的 Canvas 畫布 (當 PubChem 找不到藥物圖片時，觸發畫布渲染 SMILES)
-        const fallbackCanvasHtml = `<canvas id="${uniqueId}" class="smiles-canvas shadow-sm" data-smiles="${fallbackSmiles}" width="300" height="150" style="height: 40px; width: auto; max-width: 100%; display: inline-block; vertical-align: middle; background-color: #ffffff !important; border-radius: 4px; border: 1px solid #ddd; margin: 0 2px;"></canvas>`;
+        // 備用的 Canvas 畫布 (帶入 raw-text 供失敗時還原文字使用)
+        const fallbackCanvasHtml = `<canvas id="${uniqueId}" class="smiles-canvas shadow-sm" data-smiles="${fallbackSmiles}" data-raw-text="${cleanText}" width="300" height="150" style="height: 40px; width: auto; max-width: 100%; display: inline-block; vertical-align: middle; background-color: #ffffff !important; border-radius: 4px; border: 1px solid #ddd; margin: 0 2px;"></canvas>`;
         
-        // 處理 onerror 內的引號跳脫，確保語法安全
-        const safeFallback = fallbackCanvasHtml.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-
-        // 優先呼叫 PubChem API，利用名稱尋找結構圖
+        // ✨ 優化：使用 encodeURIComponent 避免任何 HTML 引號衝突
+        const encodedCanvas = encodeURIComponent(fallbackCanvasHtml);
         const pubChemUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(cleanText)}/PNG`;
 
-        // 先嘗試載入圖片，失敗(onerror)就自我替換成 Canvas 畫布
-        return `<img src="${pubChemUrl}" alt="${cleanText}" title="${cleanText}" style="height: 40px; width: auto; max-width: 100%; display: inline-block; vertical-align: middle; background-color: #ffffff !important; border-radius: 4px; border: 1px solid #ddd; margin: 0 2px;" onerror="this.outerHTML='${safeFallback}'" />`;
+        return `<img src="${pubChemUrl}" alt="${cleanText}" title="${cleanText}" style="height: 40px; width: auto; max-width: 100%; display: inline-block; vertical-align: middle; background-color: #ffffff !important; border-radius: 4px; border: 1px solid #ddd; margin: 0 2px; cursor: zoom-in;" class="zoomable-img" onerror="this.outerHTML=decodeURIComponent('${encodedCanvas}')" />`;
     });
 };
 
@@ -2654,6 +2629,18 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [showQuestionGrid, setShowQuestionGrid] = useState(false); // ✨ 新增：是否展開題號導覽網格
     const [immersiveTextSize, setImmersiveTextSize] = useState(1); // ✨ 新增：沉浸式作答文字大小
     
+    const [previewLightboxImg, setPreviewLightboxImg] = useState(null); // ✨ 新增：題目圖片全螢幕放大預覽
+    const [eliminatedOptions, setEliminatedOptions] = useState({}); // ✨ 新增：沉浸式作答的「刪去法」狀態記錄
+
+    // ✨ 新增：全域攔截富文本點擊，實現圖片放大功能
+    const handleRichTextClick = (e) => {
+        if (e.target.tagName === 'IMG' && (e.target.closest('.preview-rich-text') || e.target.classList.contains('zoomable-img'))) {
+            setPreviewLightboxImg(e.target.src);
+        } else if (e.target.tagName === 'CANVAS' && e.target.closest('.preview-rich-text')) {
+            setPreviewLightboxImg(e.target.toDataURL());
+        }
+    };
+    
     // ✨ 新增：自動解析沉浸式作答的題目與選項
     const parsedInteractiveQuestions = React.useMemo(() => {
         if (viewMode !== 'interactive') return [];
@@ -4323,7 +4310,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     );
 
     if (step === 'answering') return (
-        <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
+        <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors" onClick={handleRichTextClick}>
             {UpdateNotification}
             {/* ✨ 修正：加入 flex-wrap 與 w-full，並調整為 lg 斷點，避免平板尺寸時按鈕被擠壓到畫面外 */}
             <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center no-round gap-3 shrink-0 z-10 transition-colors w-full">
@@ -4451,7 +4438,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         background-color: transparent !important;
     }
     /* ✨ 強制修復：確保所有圖片正常顯示，不會變成透明或白色方塊 */
-    .preview-rich-text img {
+    .preview-rich-text img, .preview-rich-text canvas {
         display: block !important;
         max-width: 100% !important;
         height: auto !important;
@@ -4459,6 +4446,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
         background-color: #ffffff !important;
         opacity: 1 !important;
         visibility: visible !important;
+        cursor: zoom-in;
+        transition: opacity 0.2s, transform 0.2s;
+    }
+    .preview-rich-text img:hover, .preview-rich-text canvas:hover {
+        opacity: 0.85 !important;
+        transform: scale(1.02);
     }
     /* 🚀 修正：強制消除「選項按鈕」內部富文本的白底與巨大邊距 */
     button .preview-rich-text {
@@ -4589,10 +4582,12 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                 {['A', 'B', 'C', 'D'].map(opt => {
                                                     const hasCustomContent = !!q.options[opt];
                                                     const isSelected = currentAns === opt;
+                                                    const elimKey = `${actualIdx}_${opt}`;
+                                                    const isEliminated = eliminatedOptions[elimKey];
                                                     
                                                     // ✨ 新增：偷看答案後的選項樣式
                                                     const isCorrectOpt = isPeeked && (currentCorrectAns.toLowerCase().includes(opt.toLowerCase()) || currentCorrectAns.toLowerCase() === 'abcd' || currentCorrectAns.toLowerCase() === 'z');
-                                                    let btnClasses = `text-left w-full py-1.5 px-3 border-2 transition-all flex items-start space-x-2 sm:space-x-3 no-round `;
+                                                    let btnClasses = `text-left w-full py-1.5 px-3 border-2 transition-all flex items-start space-x-2 sm:space-x-3 no-round flex-1 `;
                                                     
                                                     if (isPeeked) {
                                                         if (isCorrectOpt) {
@@ -4606,28 +4601,48 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                                                     } else {
                                                         btnClasses += isSelected ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400 shadow-sm scale-[1.01] ' : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-750 ';
                                                         if (isTimeUp) btnClasses += 'locked-btn opacity-80 ';
+                                                        if (isEliminated) btnClasses += 'opacity-30 grayscale '; // ✨ 刪去法樣式
                                                     }
 
                                                     return (
-                                                        <button 
-                                                            key={opt}
-                                                            disabled={isTimeUp || isPeeked}
-                                                            onClick={() => handleAnswerSelect(actualIdx, opt)}
-                                                            className={btnClasses}
-                                                        >
-                                                            <span style={{ fontSize: `${Math.max(1, immersiveTextSize * 0.9)}rem` }} className={`font-black mt-0.5 w-6 sm:w-8 shrink-0 text-center ${isPeeked && isCorrectOpt ? 'text-green-600 dark:text-green-400' : isPeeked && isSelected ? 'text-red-600 dark:text-red-400' : isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}>{opt}.</span>
-                                                            {hasCustomContent ? (
-                                                                <div 
-                                                                    className={`preview-rich-text w-full flex-1 ${isPeeked && (isCorrectOpt || isSelected) ? 'text-black dark:text-white' : isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}
-                                                                    dangerouslySetInnerHTML={{ __html: q.options[opt] }}
-                                                                />
-                                                            ) : (
-                                                                <span className={`w-full flex-1 ${isSelected || (isPeeked && isCorrectOpt) ? 'text-black dark:text-white' : 'text-gray-400 dark:text-gray-600'} italic`}>(選項無內容，但可點擊作答)</span>
-                                                            )}
-                                                            {/* 偷看答案的對錯圖示 */}
-                                                            {isPeeked && isCorrectOpt && <span className="text-green-500 font-bold ml-2 shrink-0">✅</span>}
-                                                            {isPeeked && isSelected && !isCorrectOpt && <span className="text-red-500 font-bold ml-2 shrink-0">❌</span>}
-                                                        </button>
+                                                        <div key={opt} className="flex items-stretch gap-2 w-full">
+                                                            <button 
+                                                                disabled={isTimeUp || isPeeked}
+                                                                onClick={() => {
+                                                                    if (!isEliminated) handleAnswerSelect(actualIdx, opt);
+                                                                }}
+                                                                className={btnClasses}
+                                                            >
+                                                                <span style={{ fontSize: `${Math.max(1, immersiveTextSize * 0.9)}rem` }} className={`font-black mt-0.5 w-6 sm:w-8 shrink-0 text-center ${isPeeked && isCorrectOpt ? 'text-green-600 dark:text-green-400' : isPeeked && isSelected ? 'text-red-600 dark:text-red-400' : isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} ${isEliminated ? 'line-through' : ''}`}>{opt}.</span>
+                                                                {hasCustomContent ? (
+                                                                    <div 
+                                                                        className={`preview-rich-text w-full flex-1 ${isPeeked && (isCorrectOpt || isSelected) ? 'text-black dark:text-white' : isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'} ${isEliminated ? 'line-through' : ''}`}
+                                                                        dangerouslySetInnerHTML={{ __html: q.options[opt] }}
+                                                                    />
+                                                                ) : (
+                                                                    <span className={`w-full flex-1 ${isSelected || (isPeeked && isCorrectOpt) ? 'text-black dark:text-white' : 'text-gray-400 dark:text-gray-600'} italic ${isEliminated ? 'line-through' : ''}`}>(選項無內容，但可點擊作答)</span>
+                                                                )}
+                                                                {isPeeked && isCorrectOpt && <span className="text-green-500 font-bold ml-2 shrink-0">✅</span>}
+                                                                {isPeeked && isSelected && !isCorrectOpt && <span className="text-red-500 font-bold ml-2 shrink-0">❌</span>}
+                                                            </button>
+
+                                                            {/* ✨ 新增：刪去法按鈕 (Process of Elimination) */}
+                                                            <button
+                                                                disabled={isTimeUp || isPeeked}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setEliminatedOptions(prev => ({ ...prev, [elimKey]: !prev[elimKey] }));
+                                                                    // 若剛好刪除到已選取的答案，則取消選取
+                                                                    if (!isEliminated && isSelected) {
+                                                                        handleAnswerSelect(actualIdx, opt);
+                                                                    }
+                                                                }}
+                                                                className={`w-10 sm:w-12 flex items-center justify-center border-2 transition-colors rounded shrink-0 ${isEliminated ? 'bg-red-50 border-red-300 text-red-500 dark:bg-red-900/40 dark:border-red-700' : 'bg-gray-50 border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-300 hover:bg-red-50 dark:bg-gray-800 dark:border-gray-700 dark:hover:bg-gray-700'}`}
+                                                                title={isEliminated ? '復原此選項' : '刪去此選項 (刪去法)'}
+                                                            >
+                                                                {isEliminated ? '↩️' : '❌'}
+                                                            </button>
+                                                        </div>
                                                     );
                                                 })}
                                             </div>
@@ -4880,7 +4895,7 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
             );
 
     if (step === 'results') return (
-        <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors">
+        <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors" onClick={handleRichTextClick}>
             {UpdateNotification}
             {/* ✨ 修正：加入 flex-wrap 與 w-full，並調整為 lg 斷點，避免平板尺寸時按鈕被擠壓到畫面外 */}
             <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center no-round gap-3 shrink-0 z-10 transition-colors w-full">
@@ -5329,6 +5344,14 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
                     </div>
                 </div>
             )}
+           {/* ✨ 新增：點擊圖片全螢幕放大預覽 Modal */}
+            {previewLightboxImg && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4 cursor-zoom-out" onClick={() => setPreviewLightboxImg(null)}>
+                    <img src={previewLightboxImg} className="max-w-full max-h-[90vh] object-contain shadow-2xl bg-white p-2 rounded" alt="放大預覽" />
+                    <button className="absolute top-4 right-4 text-white text-3xl font-bold bg-black/50 w-12 h-12 rounded-full flex items-center justify-center hover:bg-black/80">✖</button>
+                </div>
+            )}
+
             {/* ✨ 新增：重新算分時的光速載入 Modal */}
             {isRegrading && (
                 <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
