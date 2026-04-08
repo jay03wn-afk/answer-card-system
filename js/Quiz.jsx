@@ -4545,7 +4545,7 @@ ${difficultyInstruction}
                             onClick={() => setShowAiModal(true)} 
                             className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 font-bold no-round shadow-sm transition-colors text-sm flex items-center gap-2"
                         >
-                            ✨ AI 自動出題 (3💎/題)
+                            ✨ AI 自動出題 (50💎)
                         </button>
                         <HelpTooltip show={showHelp} text="太懶得自己出題？點擊這裡讓 AI 閱讀講義後，直接幫你生出一份精準的考卷！" position="bottom" className="right-0 transform-none left-auto" />
                     </div>
