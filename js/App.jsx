@@ -442,9 +442,17 @@ function Main() {
         window.history.replaceState({}, document.title, window.location.pathname);
         setCurrentNewsId(null);
     };
-   const [userProfile, setUserProfile] = useState({ displayName: '載入中...', folders: [] });
+  const [userProfile, setUserProfile] = useState({ displayName: '載入中...', folders: [] });
     const [activeTab, setActiveTab] = useState('dashboard');
     const [activeQuizRecord, setActiveQuizRecord] = useState(null);
+
+    // ✨ 新增：全域背景通知狀態 (確保跨網頁切換時皆可顯示)
+    const [globalToast, setGlobalToast] = useState(null);
+
+    useEffect(() => {
+        // 將設定全域通知的方法綁定到 window，讓其他組件可以呼叫
+        window.setGlobalToast = setGlobalToast;
+    }, []);
     
     // ✨ 修改：加入載入進度條相關狀態
     const [loading, setLoading] = useState(true);
@@ -788,6 +796,21 @@ function Main() {
 
     return (
         <div className="h-[100dvh] flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-900 transition-colors relative">       
+            
+            {/* ✨ 新增：AI 背景生成全域右下角小通知 (不阻擋使用者操作，跨頁面皆存活) */}
+            {globalToast && (
+                <div className={`fixed bottom-6 right-6 p-4 shadow-2xl z-[9999] border-l-4 transition-all max-w-sm w-full font-bold text-sm flex items-start gap-3 animate-fade-in-up
+                    ${globalToast.status === 'loading' ? 'bg-blue-50 border-blue-500 text-blue-800 dark:bg-gray-800 dark:text-blue-300' : 
+                      globalToast.status === 'success' ? 'bg-green-50 border-green-500 text-green-800 dark:bg-gray-800 dark:text-green-300' : 
+                      'bg-red-50 border-red-500 text-red-800 dark:bg-gray-800 dark:text-red-300'}`}
+                >
+                    {globalToast.status === 'loading' && <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0 mt-0.5"></div>}
+                    <div className="flex-1 leading-relaxed">{globalToast.message}</div>
+                    {(globalToast.status === 'success' || globalToast.status === 'error') && (
+                        <button onClick={() => setGlobalToast(null)} className="ml-auto text-gray-400 hover:text-black dark:hover:text-white shrink-0">✕</button>
+                    )}
+                </div>
+            )}
             
             {/* ✨ 新增：判斷如果尚未看過新手教學，就渲染已經寫好的教學視窗 (加入 !currentQaId 確保完成快問快答才顯示) */}
             {userProfile && userProfile.hasSeenTutorial === false && !currentQaId && (
