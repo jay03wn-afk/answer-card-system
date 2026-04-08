@@ -9,46 +9,31 @@ export default async function handler(req, res) {
     const { prompt } = req.body || {};
     if (!prompt) return res.status(200).json({ result: "❌ 錯誤：未收到內容。" });
 
-    // ✨ 備援名單：如果第一個塞車，就自動試第二個
-    const modelList = ['gemini-2.5-flash', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'];
-    let lastError = "";
+    // ✨ 根據你的清單，使用最保險的「通用型號」路徑
+    // 這個型號在免費層級通常有每分鐘 15 次的額度
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${API_KEY}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7 }
+      })
+    });
 
-    for (let modelName of modelList) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
-      
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7 }
-          })
-        });
+    const data = await response.json();
 
-        const data = await response.json();
-
-        // 如果這組型號成功給出口訣，就直接回傳
-        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          return res.status(200).json({ result: data.candidates[0].content.parts[0].text });
-        }
-
-        // 如果回傳的是「High Demand (塞車)」，我們紀錄下來並試下一個
-        if (data.error) {
-          lastError = data.error.message;
-          if (data.error.status === 'UNAVAILABLE' || data.error.code === 429) {
-            console.log(`${modelName} 塞車中，切換型號...`);
-            continue; 
-          }
-          // 如果是其他錯誤，就直接跳出
-          return res.status(200).json({ result: `❌ Google 報錯：${data.error.message}` });
-        }
-      } catch (e) {
-        lastError = e.message;
-      }
+    if (data.error) {
+      // 如果還是報錯，我們把錯誤訊息簡化顯示
+      return res.status(200).json({ result: `❌ Google 提示：${data.error.message}` });
     }
 
-    return res.status(200).json({ result: `❌ 目前 AI 忙線中（${lastError}），請隔幾分鐘後再按一次試試看！` });
+    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      return res.status(200).json({ result: data.candidates[0].content.parts[0].text });
+    } else {
+      return res.status(200).json({ result: "❌ AI 暫時沒靈感，請等一下再試試看。" });
+    }
 
   } catch (err) {
     return res.status(200).json({ result: `❌ 系統意外：${err.message}` });
