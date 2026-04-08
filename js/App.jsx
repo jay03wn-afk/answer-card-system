@@ -191,7 +191,19 @@ function ExamProgressDashboard({ examFeatures, user }) {
                                                 <div className="p-2 grid grid-cols-1 xl:grid-cols-2 gap-2 max-h-[400px] overflow-y-auto custom-scrollbar">
                                                     {chapsToRender.map(({chapName, chapIdx}) => (
                                                         <div key={chapIdx} className="bg-slate-50 dark:bg-gray-800 p-2 rounded-lg border border-slate-100 dark:border-gray-700">
-                                                            <div className="text-xs font-bold text-slate-700 dark:text-gray-300 mb-2">{chapName}</div>
+                                                            <div className="flex justify-between items-center mb-2">
+                                                                <div className="text-xs font-bold text-slate-700 dark:text-gray-300">{chapName}</div>
+                                                                <button 
+                                                                    onClick={async () => {
+                                                                        alert('🧠 AI 正在努力想口訣中...');
+                                                                        const result = await examFeatures.generateAIMnemonic(chapName);
+                                                                        alert(`✨ 【${chapName}】AI 口訣：\n\n${result}`);
+                                                                    }}
+                                                                    className="text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded font-bold border border-purple-200 dark:border-purple-800 hover:bg-purple-200 dark:hover:bg-purple-900 transition-colors"
+                                                                >
+                                                                    ✨ AI想口訣
+                                                                </button>
+                                                            </div>
                                                             <div className="flex gap-1">
                                                                 {taskTypes.map(type => {
                                                                     const taskId = `${subj.id}_${cat.id}_${chapIdx}_0_${type.id}`;

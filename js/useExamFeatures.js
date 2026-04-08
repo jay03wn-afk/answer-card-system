@@ -228,10 +228,32 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
       .catch(err => console.error("刪除軌跡失敗:", err));
   }, [user, db]);
 
+// === 新增：呼叫後端 Vercel API 想口訣的功能 ===
+    const generateAIMnemonic = async (topic) => {
+        try {
+            // 注意：這裡是呼叫你剛剛建的 /api/gemini，而不是直接呼叫 Google
+            const response = await fetch('/api/gemini', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: `請幫我用幽默、好記的方式，為國考單元「${topic}」想一個背誦口訣。字數盡量簡短，50字以內。` })
+            });
+            const data = await response.json();
+            if (data.result) {
+                return data.result;
+            } else {
+                return "AI 暫時想不出口訣，請稍後再試！";
+            }
+        } catch (error) {
+            console.error("AI API Error:", error);
+            return "連線失敗，請檢查網路或 Vercel API 設定。";
+        }
+    };
+
   return {
-    EXAM_DATA, GLOBAL_TOTAL_POINTS,
+    EXAM_DATA, GLOBAL_TOTAL_POINTS,generateAIMnemonic,
     myTasks, allUsersData, studyLogs, myTotalPoints, overallProgress,
-    calculatePoints, toggleTask, addStudyLog, deleteStudyLog
+    calculatePoints, toggleTask, addStudyLog, deleteStudyLog, generateAIMnemonic
+  
   };
 }
 
