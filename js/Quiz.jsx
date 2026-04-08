@@ -1609,8 +1609,28 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
         </div>
     );
 }
+// --- 新增：教學提示組件 (跳動箭頭對話框) ---
+const HelpTooltip = ({ show, text, position = 'bottom', className = "" }) => {
+    if (!show) return null;
+    const posClasses = {
+        'top': 'bottom-full left-1/2 -translate-x-1/2 mb-2',
+        'bottom': 'top-full left-1/2 -translate-x-1/2 mt-2'
+    };
+    const arrowClasses = {
+        'top': 'top-full left-1/2 -translate-x-1/2 border-t-blue-500 border-l-transparent border-r-transparent border-b-transparent',
+        'bottom': 'bottom-full left-1/2 -translate-x-1/2 border-b-blue-500 border-l-transparent border-r-transparent border-t-transparent'
+    };
+    return (
+        <div className={`absolute z-[100] w-56 bg-blue-50 border-2 border-blue-500 text-blue-800 text-xs font-bold p-3 shadow-xl animate-bounce pointer-events-none rounded ${posClasses[position]} ${className}`}>
+            {text}
+            <div className={`absolute border-[6px] ${arrowClasses[position]}`}></div>
+        </div>
+    );
+};
+
 // --- 我的題庫與測驗核心 ---
 function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm, showPrompt }) {
+    const [showHelp, setShowHelp] = useState(false); // ✨ 新增：教學模式開關
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isJumping, setIsJumping] = useState(false); // ✨ 新增：跳轉載入狀態
@@ -2126,43 +2146,62 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 <div className="flex items-center gap-3">
                     <h1 className="text-2xl font-black dark:text-white shrink-0">我的題庫</h1>
                     <button 
-                        onClick={() => { 
-                            setIsRefreshing(true); 
-                            // ✨ 智慧同步：移除強制 server 標籤，利用 Firebase 背景機制自動實現「只抓沒抓過的資料」
-                            window.db.collection('users').doc(user.uid).collection('quizzes')
-                                .orderBy('createdAt', 'desc')
-                                .limit(visibleLimit)
-                                .get()
-                                .then(() => setRefreshTrigger(prev => prev + 1))
-                                .catch(e => console.error(e))
-                                .finally(() => setIsRefreshing(false));
-                        }}
-                        disabled={isRefreshing}
-                        className="text-sm bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 px-3 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round disabled:opacity-50"
-                        title="手動同步雲端最新資料"
+                        onClick={() => setShowHelp(!showHelp)} 
+                        className={`text-sm px-3 py-1 font-bold shadow-sm flex items-center gap-1 no-round transition-colors ${showHelp ? 'bg-blue-600 text-white border-blue-700' : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200'}`}
                     >
-                        {isRefreshing ? <div className="w-4 h-4 border-2 border-gray-400 border-t-black dark:border-t-white rounded-full animate-spin"></div> : '🔄'} 重新整理
+                        {showHelp ? '關閉教學' : '❓ 系統教學'}
                     </button>
+                    <div className="relative hidden md:block">
+                        <button 
+                            onClick={() => { 
+                                setIsRefreshing(true); 
+                                // ✨ 智慧同步：移除強制 server 標籤，利用 Firebase 背景機制自動實現「只抓沒抓過的資料」
+                                window.db.collection('users').doc(user.uid).collection('quizzes')
+                                    .orderBy('createdAt', 'desc')
+                                    .limit(visibleLimit)
+                                    .get()
+                                    .then(() => setRefreshTrigger(prev => prev + 1))
+                                    .catch(e => console.error(e))
+                                    .finally(() => setIsRefreshing(false));
+                            }}
+                            disabled={isRefreshing}
+                            className="text-sm bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 px-3 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 no-round disabled:opacity-50"
+                            title="手動同步雲端最新資料"
+                        >
+                            {isRefreshing ? <div className="w-4 h-4 border-2 border-gray-400 border-t-black dark:border-t-white rounded-full animate-spin"></div> : '🔄'} 重新整理
+                        </button>
+                        <HelpTooltip show={showHelp} text="若在手機或其他裝置有更新進度，點這裡手動抓取最新資料！" position="bottom" className="left-0 transform-none" />
+                    </div>
                 </div>
-                <button onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 shadow-sm transition-colors whitespace-nowrap shrink-0">+ 新測驗</button>
+                <div className="relative">
+                    <button onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 py-2 no-round font-bold hover:bg-gray-800 dark:hover:bg-gray-300 shadow-sm transition-colors whitespace-nowrap shrink-0">+ 新測驗</button>
+                    <HelpTooltip show={showHelp} text="點擊這裡開始「建立」你自己的專屬測驗題本！" position="bottom" className="right-0 transform-none left-auto" />
+                </div>
             </div>
 
             {/* ✨ 修正：加入 min-w-0，並將 space-x-2 改為 gap-2，確保滾動條正確作用於容器內部，不會撐破父元素 */}
             <div className="flex flex-col md:flex-row gap-3 mb-2 shrink-0 w-full min-w-0 overflow-hidden">
-                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 flex-grow w-full min-w-0">
+                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 flex-grow w-full min-w-0 relative">
                     {userFolders.map(f => (
                         <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm no-round whitespace-nowrap transition-colors shrink-0 ${currentFolder === f ? 'bg-black dark:bg-gray-200 text-white dark:text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'}`}>
                             {f === '我建立的試題' ? '⭐ ' : '📁 '} {f}
                         </button>
                     ))}
+                    <HelpTooltip show={showHelp} text="點擊上方頁籤，可以切換查看不同分類下的考卷喔" position="bottom" className="left-[100px]" />
                 </div>
                 <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 shrink-0 w-full md:w-auto min-w-0">
-                    <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors shrink-0">
-                        + 新增資料夾
-                    </button>
-                    <button onClick={handleImportCode} className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors shrink-0">
-                        📥 輸入代碼
-                    </button>
+                    <div className="relative">
+                        <button onClick={handleCreateFolder} className="px-3 py-1.5 text-sm font-bold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 no-round whitespace-nowrap transition-colors shrink-0">
+                            + 新增資料夾
+                        </button>
+                        <HelpTooltip show={showHelp} text="建立新資料夾來歸納分類你的海量試題" position="bottom" />
+                    </div>
+                    <div className="relative">
+                        <button onClick={handleImportCode} className="px-3 py-1.5 text-sm font-bold bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800 no-round whitespace-nowrap transition-colors shrink-0">
+                            📥 輸入代碼
+                        </button>
+                        <HelpTooltip show={showHelp} text="朋友有分享試題給你嗎？點這裡輸入 6 碼代碼直接下載！" position="bottom" className="right-0 transform-none left-auto" />
+                    </div>
                     {!specialFolders.includes(currentFolder) && (
                         <button 
                             onClick={() => handleDeleteFolder(currentFolder)} 
@@ -2547,6 +2586,7 @@ function safeDecompress(val, fallbackType = 'string') {
 
 function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard: originalBack, showAlert, showConfirm, showPrompt }) {
     // (退出機制已移至下方與存檔功能整合)
+    const [showHelp, setShowHelp] = useState(false); // ✨ 新增：測驗內部的教學模式開關
 
     // ✨ 新增：判斷是否為管理員
     const isAdmin = currentUser && (currentUser.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
@@ -4486,24 +4526,38 @@ ${difficultyInstruction}
         </div>
     );
 
-    if (step === 'setup') return (
+   if (step === 'setup') return (
         <div className="flex flex-col items-center p-4 h-[100dvh] overflow-y-auto relative custom-scrollbar bg-gray-100 dark:bg-gray-900">
             <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">← 返回列表</button>
 <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-4xl no-round border border-gray-200 dark:border-gray-700 mt-10 mb-10 transition-colors">                <div className="flex justify-between items-center mb-6 border-b border-gray-200 dark:border-gray-700 pb-2">
-                    <h1 className="text-xl font-bold tracking-tight dark:text-white">新增測驗</h1>
-                    <button 
-                        onClick={() => setShowAiModal(true)} 
-                        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 font-bold no-round shadow-sm transition-colors text-sm flex items-center gap-2"
-                    >
-                        ✨ AI 自動出題 (3💎/題)
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <h1 className="text-xl font-bold tracking-tight dark:text-white">新增測驗</h1>
+                        <button 
+                            onClick={() => setShowHelp(!showHelp)} 
+                            className={`text-xs px-2 py-1 font-bold shadow-sm no-round transition-colors ${showHelp ? 'bg-blue-600 text-white border-blue-700' : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200'}`}
+                        >
+                            {showHelp ? '關閉教學' : '❓ 使用教學'}
+                        </button>
+                    </div>
+                    <div className="relative">
+                        <button 
+                            onClick={() => setShowAiModal(true)} 
+                            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 font-bold no-round shadow-sm transition-colors text-sm flex items-center gap-2"
+                        >
+                            ✨ AI 自動出題 (3💎/題)
+                        </button>
+                        <HelpTooltip show={showHelp} text="太懶得自己出題？點擊這裡讓 AI 閱讀講義後，直接幫你生出一份精準的考卷！" position="bottom" className="right-0 transform-none left-auto" />
+                    </div>
                 </div>                
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">存放資料夾</label>
                 <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm cursor-pointer">
                     {userFolders.map(f => <option key={f} value={f}>{f}</option>)}
                 </select>
 
-                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗名稱</label>
+                <div className="relative">
+                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗名稱</label>
+                    <HelpTooltip show={showHelp} text="幫你的測驗取個好辨認的名字，例如：藥理學期中考範圍" position="top" className="left-1/4" />
+                </div>
                 <input type="text" placeholder="例如: 藥理學期中考" className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
                 
                 {/* ✨ 任務牆屬性與標籤設定 */}
@@ -4572,7 +4626,7 @@ ${difficultyInstruction}
                     )}
                 </div>
                 
-                <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                <div className="flex flex-col sm:flex-row gap-4 mb-4 relative">
                     <div className="flex-1">
                         <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗題數 (上限200題)</label>
                         <input type="number" placeholder="50" className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={numQuestions} onChange={e => setNumQuestions(e.target.value)} onFocus={handleFocusScroll} />
@@ -4587,9 +4641,13 @@ ${difficultyInstruction}
                             <span>四捨五入至整數</span>
                         </label>
                     </div>
+                    <HelpTooltip show={showHelp} text="設定考卷總題數（決定答案卡有幾格）以及滿分（交卷時會自動幫你依比例算分）" position="top" className="left-1/3" />
                 </div>
 
-                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源 (單選)</label>
+                <div className="relative">
+                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源 (單選)</label>
+                    <HelpTooltip show={showHelp} text="強烈推薦使用【富文本】，你可以直接把 Word 題庫複製貼上，排版、圖片跟表格都會完美保留！" position="bottom" className="left-1/4" />
+                </div>
                 <div className="flex flex-wrap space-x-4 mb-4 dark:text-white">
                     <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
                         <input type="radio" checked={inputType === 'url'} onChange={() => setInputType('url')} className="w-4 h-4 accent-black dark:accent-white" />
@@ -4650,10 +4708,18 @@ ${difficultyInstruction}
 
            {showAiModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[150] p-4">
-                    <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-md no-round shadow-xl border-t-4 border-purple-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                        <h3 className="font-black text-xl mb-2 dark:text-white flex items-center gap-2">
-                            ✨ AI 智慧出題
-                        </h3>
+                    <div className="bg-white dark:bg-gray-800 p-6 w-full max-w-md no-round shadow-xl border-t-4 border-purple-500 max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+                        <div className="flex justify-between items-center mb-2">
+                            <h3 className="font-black text-xl dark:text-white flex items-center gap-2">
+                                ✨ AI 智慧出題
+                            </h3>
+                            <button 
+                                onClick={() => setShowHelp(!showHelp)} 
+                                className={`text-xs px-2 py-1 font-bold shadow-sm no-round transition-colors ${showHelp ? 'bg-purple-600 text-white border-purple-700' : 'bg-purple-50 hover:bg-purple-100 text-purple-600 border border-purple-200'}`}
+                            >
+                                {showHelp ? '關閉教學' : '❓ 教學'}
+                            </button>
+                        </div>
                         <div className="flex justify-between items-center mb-4 bg-gray-50 dark:bg-gray-700/50 p-2 border border-gray-200 dark:border-gray-600">
                             <span className="text-xs text-purple-700 dark:text-purple-300 font-bold">
                                 預估花費：{50 + Math.max(0, Number(aiNum) - 10) * 3} 💎 (10題50，每多一題+3)
@@ -4717,7 +4783,8 @@ ${difficultyInstruction}
                         />
 
                         {/* ✨ 新增：難度占比分配器 */}
-                        <div className="mb-6 p-4 bg-blue-50 dark:bg-gray-700/50 border border-blue-100 dark:border-gray-600">
+                        <div className="mb-6 p-4 bg-blue-50 dark:bg-gray-700/50 border border-blue-100 dark:border-gray-600 relative">
+                            <HelpTooltip show={showHelp} text="滑動這些控制條，決定考卷要有幾題送分題，幾題用來鑑別實力的魔王題！" position="top" />
                             <label className="block text-sm font-black text-blue-800 dark:text-blue-300 mb-3 flex justify-between items-center">
                                 <span>⚖️ 難度分布調整</span>
                                 <div className="flex gap-2">
@@ -4785,7 +4852,10 @@ ${difficultyInstruction}
                             className="w-full p-2 mb-4 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none font-bold text-sm h-20 resize-none custom-scrollbar"
                         />
 
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">上傳參考資料 (支援 PDF、TXT 等，僅供 AI 閱讀)</label>
+                        <div className="relative mt-4">
+                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">上傳參考資料 (支援 PDF、TXT 等，僅供 AI 閱讀)</label>
+                            <HelpTooltip show={showHelp} text="把你的上課講義或考古題拖曳進來，AI 就會【只考範圍內的內容】，非常適合期中考前衝刺！" position="top" />
+                        </div>
                         <div 
                             onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsAiFileDragging(true); }}
                             onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsAiFileDragging(true); }}
