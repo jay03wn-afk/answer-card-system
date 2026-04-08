@@ -16,13 +16,18 @@ window.auth = auth; // 確保全域可用
 window.db = db;     // 確保全域可用
 window.storage = storage; // ✨ 確保全域可用
 
-// 🚀 終極提速：強制延遲 2.5 秒才啟動離線快取，把效能車道完全讓給「登入驗證」！
-setTimeout(() => {
-    db.enablePersistence({ synchronizeTabs: true })
-        .catch((err) => {
-            console.warn("離線快取啟動狀態：", err.code);
-        });
-}, 2500);
+// 🚀 修正：移除延遲，確保在所有資料庫操作前優先啟動離線快取
+db.enablePersistence({ synchronizeTabs: true })
+    .then(() => {
+        console.log("✅ 離線快取啟動成功！");
+    })
+    .catch((err) => {
+        if (err.code === 'failed-precondition') {
+            console.warn("離線快取失敗：多個分頁同時開啟中");
+        } else if (err.code === 'unimplemented') {
+            console.warn("離線快取失敗：瀏覽器不支援");
+        }
+    });
 
 const { useState, useEffect, useRef } = React;
 
