@@ -3193,6 +3193,10 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
                 - 出題範圍/重點：${aiScope || '無'}
                 - 參考文本：${aiFileContent ? aiFileContent.substring(0, 15000) : '無'} (請以此為核心發揮出題)
 
+                【語言與文字要求】
+                - 主要語言：題目敘述、選項內容、詳解與標題，請務必「全部使用繁體中文（台灣）」撰寫，不可使用簡體中文或英文造句。
+                - 專有名詞：一般敘述以中文為主，但藥物名稱、化學結構名稱等專業術語，請嚴格依照上方角色設定的規定辦理（例如：若規定只給英文，就絕對不可中英並列）。
+
                 請務必嚴格依照以下 JSON 格式回傳，**絕對不要包含任何 markdown code block (例如 \`\`\`json)，直接回傳純 JSON 字串即可**：
                 {
                   "title": "為這份測驗想一個合適的標題",
