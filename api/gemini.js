@@ -13,13 +13,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ result: "❌ 錯誤：沒有收到題目內容。" });
     }
 
-    // ✨ 修正重點：將網址中的 v1beta 改成 v1 (正式版路徑)
-   // 建議使用 v1beta 路徑，因為 2.0 版本目前在 beta 路徑支援度最高
-const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-});
+   
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
 
     const data = await response.json();
 
