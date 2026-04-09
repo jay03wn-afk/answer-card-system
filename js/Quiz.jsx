@@ -2643,8 +2643,6 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     const [aiCustomSubject, setAiCustomSubject] = useState(''); // ✨ 新增：自訂科目名稱
     const [aiPharmRatio, setAiPharmRatio] = useState(50); // ✨ 新增：藥理學佔比 (預設50%)
     const [aiNum, setAiNum] = useState(10);
-    const [aiEnableImages, setAiEnableImages] = useState(false); // ✨ 新增：是否開啟圖片生成
-    const [aiImageRatio, setAiImageRatio] = useState(30); // ✨ 新增：圖片題占比
     const [aiScope, setAiScope] = useState('');
     const [aiFileContent, setAiFileContent] = useState('');
     const [aiFileName, setAiFileName] = useState('');
@@ -2654,6 +2652,8 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     const [aiSimpleRatio, setAiSimpleRatio] = useState(30);
     const [aiMediumRatio, setAiMediumRatio] = useState(40);
     const [aiHardRatio, setAiHardRatio] = useState(30);
+    const [aiEnableImages, setAiEnableImages] = useState(false); // ✨ 新增：是否開啟圖片搜尋
+    const [aiImageRatio, setAiImageRatio] = useState(30); // ✨ 新增：圖片題目佔比
     const [creatorSuggestions, setCreatorSuggestions] = useState([]);
 
     // ✨ 新增：獨立出來的檔案處理邏輯 (供點擊與拖曳共用)
@@ -3175,14 +3175,15 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     }, [isDragging, layoutMode]);
 const handleGenerateAI = async () => {
         const currentDiamonds = userProfile?.mcData?.diamonds || 0;
-       const aiNumInt = Number(aiNum);
-        // 新計費：基礎 50 鑽(含10題)，超過 10 題的部分每題加 3 鑽
-        // ✨ 新增：圖片題每題加 4 鑽
-        const imgCount = aiEnableImages ? Math.round(aiNumInt * (aiImageRatio / 100)) : 0;
-        const requiredDiamonds = 50 + Math.max(0, aiNumInt - 10) * 3 + (imgCount * 4);
+        const aiNumInt = Number(aiNum);
+        
+        // ✨ 新增計費邏輯：基礎費用 + 超額題數費用 + 圖片加成 (每題多1鑽，達成每題4鑽)
+        const imageCount = aiEnableImages ? Math.round(aiNumInt * (aiImageRatio / 100)) : 0;
+        const baseCost = 50 + Math.max(0, aiNumInt - 10) * 3;
+        const requiredDiamonds = baseCost + (imageCount * 1); 
         
         if (currentDiamonds < requiredDiamonds) {
-            return showAlert(`💎 鑽石不足！生成 ${aiNumInt} 題共需 ${requiredDiamonds} 顆鑽石 (基礎50 + 超出10題部分*3)。`);
+            return showAlert(`💎 鑽石不足！生成 ${aiNumInt} 題（含 ${imageCount} 題圖片搜尋）共需 ${requiredDiamonds} 顆鑽石。`);
         }
         if (aiNum < 1 || aiNum > 50) return showAlert('題數請設定在 1-50 題之間。');
         if (!aiScope && !aiFileContent) return showAlert('請輸入出題範圍或上傳參考檔案！');
@@ -3193,13 +3194,12 @@ const handleGenerateAI = async () => {
         setIsAiGenerating(false);
         
         if (window.setGlobalToast) {
-            window.setGlobalToast({ status: 'loading', message: '⏳ AI 正在背景撰寫題目，請稍候... (您可以自由切換到其他頁面或去玩遊戲)' });
+            window.setGlobalToast({ status: 'loading', message: '⏳ AI 正在背景撰寫題目並搜尋圖片，請稍候... (您可以自由切換到其他頁面)' });
         }
 
-        // ✨ 自動簡化標題邏輯：[科目名稱 + 範圍 + 模擬測驗(AI)]
+        // ✨ 自動簡化標題邏輯
         const actualSubject = aiSubject === '其他' ? aiCustomSubject : aiSubject;
         const shortScope = aiScope ? aiScope.substring(0, 15).replace(/\n/g, '') : '';
-        // 如果有輸入範圍，就顯示「科目 - 範圍」，否則只顯示「科目」
         const displayTitleStr = shortScope ? `${actualSubject} - ${shortScope}` : actualSubject;
         const autoTitle = `【${displayTitleStr}】模擬測驗 (AI)`;
 
@@ -3220,7 +3220,15 @@ const handleGenerateAI = async () => {
             `;
         }
 
-        // ✨ 使用 IIFE (立即執行非同步函式) 脫離 UI 執行緒，讓它在背景默默做事
+        // ✨ 圖片搜尋指令生成
+        const imageInstruction = aiEnableImages ? `
+        # 圖片搜尋與融入要求 (重要)
+        1. 請針對題目內容，大約有 ${aiImageRatio}% 的題目（約 ${imageCount} 題）必須包含相關圖片。
+        2. 你具有搜尋網路資源的能力，請搜尋與題目概念最相關的真實圖片網址（例如：解剖圖、儀器構造、化學反應圖等）。
+        3. 請將圖片網址以標準 HTML <img> 標籤插入到題幹(questionsHtml)中，例如：<img src="https://example.com/image.png" style="max-width:100%; height:auto;" />。
+        4. 圖片必須與考點緊密結合，輔助學生理解題目。
+        ` : "";
+
         (async () => {
             try {
                 let basePrompt = "";
@@ -3229,23 +3237,20 @@ const handleGenerateAI = async () => {
                     const medchemCount = aiNum - pharmCount;
                     basePrompt = `
 # 角色設定
-你是資深藥師國考命題專家，精通藥理學與藥物化學（特別熟悉 Basic 與 Foye's 參考書的深度）。根據我提供的教材內容，設計出題目與選項簡短的測驗。
+你是資深藥師國考命題專家，精通藥理學與藥物化學。根據我提供的教材內容，設計出題目與選項簡短的測驗。
 # 核心任務
 出單選題（四選一，A/B/C/D）。要求包含：藥理學 ${pharmCount} 題，藥物化學 ${medchemCount} 題，共 ${aiNum} 題。
 # 難度設定
 ${difficultyInstruction}
+${imageInstruction}
 # 嚴格格式與輸出限制（請務必遵守）
-1. 禁止在題目或選項中提供任何提示或答案。也不要列出無用敘述（例如「含有一個氧原子與一個氮原子的 dibenzoxazepine」，只需要列出「dibenzoxazepine」 ）。
+1. 禁止在題目或選項中提供任何提示或答案。
 2. 考結構特徵的題目不可以給<<:結構名稱:>>，要給藥物名。
 3. 如果是{結構}圖片考題（僅限藥化），請把藥物名稱寫在<<:(名稱):>>中，例如：<<:Aspirin:>>。
 # 命題重點與方向
 題型：Type1:關於...的敘述，何者錯誤（佔40%）。Type2:何者為...?
 【藥理學重點】著重於藥物個論細節（如半衰期長短、特殊藥物特性、適用疾病）。測驗機轉(MOA)與同類藥物的「細微差異」比較。深入測驗藥物交互作用(DDI)、禁忌症、副作用及各疾病的首選藥物(DOC)。
 【藥物化學重點】著重測驗結構特徵與化學結構辨識與代謝、個論比較及代謝途徑。必須包含直接考化學結構與藥理個論的綜合題型，及藥物機轉與結構的關聯(SAR)。
-# 題目與選項設計規範
-1. 題幹要求：敘述簡短、不贅述情境，直接提問。語氣不可武斷。
-2. 專有名詞：每一處出現的專有名詞，結構名稱請「只給英文」，絕對不要中英並列。
-3. 干擾選項：必須設置具備高度迷惑性的適當干擾選項。
                     `.trim();
                 } else if (aiSubject === '藥劑與生物藥劑學') {
                     basePrompt = `
@@ -3255,18 +3260,9 @@ ${difficultyInstruction}
 根據中華藥典第九版與藥師國考用書內容，出 ${aiNum} 題單選題（四選一，A/B/C/D）。
 # 難度設定
 ${difficultyInstruction}
+${imageInstruction}
 # 嚴格格式與輸出限制
 絕對禁止：在題目或選項中提供任何提示或答案。
-# 命題重點與方向
-- 劑型設計與特性：各類劑型的優缺點、適用途徑與配方考量。
-- 賦形劑與添加物：特定賦形劑的確切功能、使用濃度限制或配伍禁忌。
-- 物理藥學與動力學：溶解度、安定性、流變學、界面現象等核心概念的實際應用。
-- 製程與品管：滅菌法選擇、粉體學特性、GMP 相關品管規範與各項確效指標。
-- 生物藥劑學：ADME影響因子，BA與BE的細節比較與參數意義。
-# 題目與選項設計規範
-1. 題幹要求：敘述簡短直接。考配方或動力學時，語氣不可武斷。
-2. 專有名詞：請「只給英文」或「只給中文」，絕對不要中英並列。
-3. 干擾選項：設置具備高度迷惑性的適當干擾選項。
                     `.trim();
                 } else if (aiSubject === '生藥學與中藥學') {
                     basePrompt = `
@@ -3274,13 +3270,9 @@ ${difficultyInstruction}
 你是資深藥師國考命題專家，精通生藥學與中藥學。共 ${aiNum} 題單選題。
 # 難度設定
 ${difficultyInstruction}
+${imageInstruction}
 # 嚴格格式與輸出限制
 絕對禁止在題目或選項中提供任何提示或答案。
-# 命題重點與方向
-- 中藥：基原、成分、分類、藥理、主治等。
-- 生藥：基原、成分、結構個論（細節）、成分之效果、特點與詳細個論或不同生藥比較等。
-# 題目與選項設計規範
-1. 題幹要求：敘述簡短直接。 2. 專有名詞：只給英文或只給中文。 3. 干擾選項：必須設置具備高度迷惑性。
                     `.trim();
                 } else if (aiSubject === '其他') {
                     basePrompt = `
@@ -3288,13 +3280,11 @@ ${difficultyInstruction}
 你是資深國家考試命題專家，精通「${aiCustomSubject || '該專業領域'}」。共 ${aiNum} 題單選題。
 # 難度設定
 ${difficultyInstruction}
-# 嚴格格式與輸出限制
-絕對禁止在題目或選項中提供任何提示或答案。
+${imageInstruction}
 # 命題重點與方向
 - 請針對「${aiCustomSubject || '該專業領域'}」的核心觀念、進階細節與綜合比較進行深入命題。
 - 若有提供參考文本，請嚴格按照文本內容的細節進行語意轉換與邏輯包裝。
-# 題目與選項設計規範
-1. 題幹要求：敘述簡短直接。 2. 專有名詞：只給英文或中文，不並列。 3. 干擾選項：具備高度迷惑性。
+- **開啟圖片融入功能時：請搜尋並插入與 ${aiCustomSubject} 相關的教學圖片或示意圖網址，並確保圖片可正常呈現於題幹中。**
                     `.trim();
                 } else {
                     basePrompt = `
@@ -3302,31 +3292,14 @@ ${difficultyInstruction}
 你是資深藥師國考命題專家，精通藥物分析與儀器分析。共 ${aiNum} 題單選題。
 # 難度設定
 ${difficultyInstruction}
+${imageInstruction}
 # 嚴格格式與輸出限制
 絕對禁止在題目或選項中提供任何提示或答案。
-# 命題重點與方向
-- 具體數值計算題：算出精確的化學計量、溶液pH值或物理常數。
-- 實驗觀察顏色題：詢問滴定終點或特定鑑定試驗產生的顏色反應。
-- 負向陳述/正向陳述題：測試對原理、定義或儀器操作。
-- 方法適用性判定題：某類化合物「最適合」或「最不適合」使用哪種分析方法。
-- 效能比較與物理性質比較題：比較鑑別效果或化合物間的物理常數差異。
-- 因果推理與機制原理題：藉由改變實驗條件達成特定分析結果。
-# 題目與選項設計規範
-1. 題幹要求：簡短直接。 2. 專有名詞：只給英文或中文，不並列。 3. 干擾選項：具備高度迷惑性。
                     `.trim();
                 }
 
-                const imgCount = aiEnableImages ? Math.round(aiNum * (aiImageRatio / 100)) : 0;
-        const imageInstruction = aiEnableImages ? `
-        # 圖片題特別要求 (重要)
-        1. 請務必讓其中的 ${imgCount} 題成為「圖片輔助題」。
-        2. 這 ${imgCount} 題的題幹中，請選定一個核心藥物或結構，並將其名稱包裹在 <<:英文藥名:>> 標籤中。
-        3. 例如：「關於下圖 <<:Atropine:>> 的敘述，何者錯誤？」或「<<:Paracetamol:>> 的代謝路徑為何？」。
-        4. 系統會根據標籤內的英文名稱自動從數據庫抓取化學結構圖呈現給學生。` : "";
-
-        const fullPrompt = `
+                const fullPrompt = `
                     ${basePrompt}
-                    ${imageInstruction}
 
                     【使用者指定內容】
                     - 題數：${aiNum} 題
@@ -3334,25 +3307,14 @@ ${difficultyInstruction}
                     - 參考文本：${aiFileContent ? aiFileContent.substring(0, 15000) : '無'} (請以此為核心發揮出題)
 
                     【語言與文字要求】
-                    - 主要語言：題目敘述、選項內容、詳解等，請務必「全部使用繁體中文（台灣）」撰寫，不可使用簡體中文或英文造句。
-                    - 專有名詞：一般敘述以中文為主，但藥物名稱、化學結構名稱等專業術語，請嚴格依照上方角色設定的規定辦理（例如：若規定只給英文，就絕對不可中英並列）。
+                    - 主要語言：全部使用繁體中文（台灣）。
 
-                    【⚠️ JSON 格式嚴格防呆要求 ⚠️】
-                    1. 必須是完全合法的 JSON 字串。
-                    2. 若內容包含反斜線（例如 LaTeX 語法或特殊符號），請務必「雙重轉義」成 \\\\。
-                    3. 字串內絕對「不可」包含真實的換行符號（請寫成單行，或使用 <br/> 代替換行）。
-                    4. 字串內若有雙引號 "，請務必加上反斜線轉義成 \\"。
-
-                    請務必嚴格依照以下 JSON 格式回傳，**絕對不要包含任何 markdown code block (例如 \`\`\`json)，直接回傳純 JSON 字串即可**：
+                    請務必嚴格依照以下 JSON 格式回傳，**絕對不要包含任何 markdown code block，直接回傳純 JSON 字串即可**：
                     {
-                      "questionsHtml": "[Q.001] 第一題題目內容... [A] 選項A內容 [B] 選項B內容 [C] 選項C內容 [D] 選項D內容 [End]<br/><br/>[Q.002] 第二題題目內容... [A] 選項A內容...",
+                      "questionsHtml": "[Q.001] 第一題題目內容... [A] 選項A內容 [B] 選項B內容 [C] 選項C內容 [D] 選項D內容 [End]<br/><br/>[Q.002] 第二題題目內容...",
                       "answers": "A,B,C,D",
-                      "explanations": "[A.001] 第一題詳解... [End]<br/><br/>[A.002] 第二題詳解... [End]"
+                      "explanations": "[A.001] 第一題詳解... [End]"
                     }
-                    注意：
-                    1. questionsHtml 格式必須完全符合 [Q.數字] 題目 [A]...[B]...[C]...[D]... [End] 的格式（數字可補零如 [Q.001]）。
-                    2. answers 是所有標準答案，用逗號分隔，共有 ${aiNum} 個。
-                    3. explanations 格式必須完全符合 [A.數字] 詳解 [End] 的格式（數字可補零如 [A.001]）。
                 `;
 
                 const res = await fetch('/api/gemini', {
@@ -3368,77 +3330,54 @@ ${difficultyInstruction}
                 if (cleanJsonStr.startsWith('```json')) cleanJsonStr = cleanJsonStr.replace(/^```json\n?/, '');
                 if (cleanJsonStr.startsWith('```')) cleanJsonStr = cleanJsonStr.replace(/^```\n?/, '');
                 if (cleanJsonStr.endsWith('```')) cleanJsonStr = cleanJsonStr.replace(/\n?```$/, '');
-
-                // ✨ 終極防呆：自動修復 AI 亂加的非法反斜線 (Bad escaped character)
-                // 將非法的反斜線 (如 \a, \x) 替換為雙斜線 (\\a, \\x)，同時避開合法的 \n, \t, \", \\ 等
                 cleanJsonStr = cleanJsonStr.replace(/\\([^"\\\/bfnrtu])/g, '\\\\$1');
-                
-                // ✨ 終極防呆 2：清除真實的換行符號與隱藏控制字元，避免 JSON 斷行當機
                 cleanJsonStr = cleanJsonStr.replace(/[\u0000-\u0019]+/g, "");
 
                 const parsed = JSON.parse(cleanJsonStr.trim());
 
-                // 扣除鑽石 (依據使用者要求的題數計價：3💎/題)
+                // 扣除鑽石
                 const mcData = userProfile.mcData || {};
-                // 扣除鑽石 (基礎50鑽 + 超過10題部分每題3鑽)
-                const cost = 50 + Math.max(0, Number(aiNum) - 10) * 3;
+                const finalCost = requiredDiamonds;
                 await window.db.collection('users').doc(currentUser.uid).update({
-                    'mcData.diamonds': (mcData.diamonds || 0) - cost
+                    'mcData.diamonds': (mcData.diamonds || 0) - finalCost
                 });
-
-                // ✨ 背景寫入資料庫：不再依賴畫面，直接為玩家建立一份「立即可測驗」的試卷
-                const cleanKey = (parsed.answers || '').replace(/[^a-dA-DZz,]/g, '');
-                const initialAnswers = Array(Number(aiNum)).fill('');
-                const initialStarred = Array(Number(aiNum)).fill(false);
-                const initialNotes = Array(Number(aiNum)).fill('');
-                const initialPeeked = Array(Number(aiNum)).fill(false);
 
                 const docRef = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                     testName: autoTitle,
                     numQuestions: Number(aiNum),
                     maxScore: 100,
                     roundScore: true,
-                    userAnswers: initialAnswers,
-                    starred: initialStarred,
-                    notes: initialNotes,
-                    peekedAnswers: initialPeeked,
+                    userAnswers: Array(Number(aiNum)).fill(''),
+                    starred: Array(Number(aiNum)).fill(false),
+                    notes: Array(Number(aiNum)).fill(''),
+                    peekedAnswers: Array(Number(aiNum)).fill(false),
                     allowPeek: true,
-                    correctAnswersInput: cleanKey,
+                    correctAnswersInput: (parsed.answers || '').replace(/[^a-dA-DZz,]/g, ''),
                     publishAnswers: true,
-                    questionFileUrl: '',
-                    hasTimer: false,
-                    timeLimit: null,
-                    timeRemaining: null,
                     folder: '未分類', 
                     hasSeparatedContent: true,
                     isCompleted: false,
                     taskType: 'normal',
-                    examYear: '',
-                    examSubject: '',
                     examTag: 'AI智慧生成',
                     examRange: aiScope || '',
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
 
                 await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(docRef.id).set({
-                    questionText: window.jzCompress ? window.jzCompress('') : '',
+                    questionText: '',
                     questionHtml: window.jzCompress ? window.jzCompress(parsed.questionsHtml || '') : (parsed.questionsHtml || ''),
                     explanationHtml: parsed.explanations ? (window.jzCompress ? window.jzCompress(parsed.explanations) : parsed.explanations) : ''
                 });
 
                 if (window.setGlobalToast) {
-                    window.setGlobalToast({ status: 'success', message: `✅ AI 試卷「${autoTitle}」生成完畢！已為您存入「未分類」資料夾，可隨時前往作答。` });
-                    setTimeout(() => {
-                        if (window.setGlobalToast) window.setGlobalToast(null);
-                    }, 8000);
+                    window.setGlobalToast({ status: 'success', message: `✅ AI 試卷「${autoTitle}」生成完畢！已為您存入「未分類」資料夾。` });
+                    setTimeout(() => { if (window.setGlobalToast) window.setGlobalToast(null); }, 8000);
                 }
 
             } catch (e) {
                 if (window.setGlobalToast) {
                     window.setGlobalToast({ status: 'error', message: '❌ 生成失敗 (未扣除鑽石)：' + e.message });
-                    setTimeout(() => {
-                        if (window.setGlobalToast) window.setGlobalToast(null);
-                    }, 8000);
+                    setTimeout(() => { if (window.setGlobalToast) window.setGlobalToast(null); }, 8000);
                 }
             }
         })();
@@ -4760,8 +4699,37 @@ ${difficultyInstruction}
                                     className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white outline-none font-bold text-sm"
                                 />
                             </div>
+                            
                         )}
-
+{aiSubject === '其他' && (
+                            <div className="mb-4 p-3 bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800 animate-fade-in">
+                                <label className="flex items-center gap-2 cursor-pointer font-black text-sm text-pink-700 dark:text-pink-400 mb-2">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={aiEnableImages} 
+                                        onChange={e => setAiEnableImages(e.target.checked)} 
+                                        className="w-4 h-4 accent-pink-600"
+                                    />
+                                    🌐 開啟網路圖片融入 (每題 +1 💎)
+                                </label>
+                                {aiEnableImages && (
+                                    <div className="space-y-1 animate-fade-in">
+                                        <div className="flex justify-between text-[10px] font-bold text-pink-600 dark:text-pink-400">
+                                            <span>圖片題目比例</span>
+                                            <span>{aiImageRatio}%</span>
+                                        </div>
+                                        <input 
+                                            type="range" 
+                                            min="10" max="100" step="10" 
+                                            value={aiImageRatio} 
+                                            onChange={e => setAiImageRatio(parseInt(e.target.value))} 
+                                            className="w-full h-1.5 bg-pink-200 rounded-lg appearance-none cursor-pointer accent-pink-600" 
+                                        />
+                                        <p className="text-[9px] text-pink-400 italic">💡 AI 將搜尋網路上的相關示意圖並自動嵌入題目中。</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         {aiSubject === '藥理與藥物化學' && (
                             <div className="mb-4 bg-purple-50 dark:bg-gray-700/50 p-3 border border-purple-100 dark:border-gray-600">
                                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 flex justify-between">
@@ -4778,6 +4746,8 @@ ${difficultyInstruction}
                                     className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer dark:bg-gray-600 accent-purple-600"
                                 />
                             </div>
+                            
+
                         )}
 
                       <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">生成題數 (上限 50 題)</label>
@@ -4848,34 +4818,6 @@ ${difficultyInstruction}
                                 <p className="text-xs text-blue-600/70 dark:text-blue-300/70 font-bold leading-relaxed italic">
                                     「系統預設」模式將採用藥師國考高階命題邏輯，專注於細節辨識、機轉比較與結構個論，適合衝刺期考生。
                                 </p>
-                            )}
-                        </div>
-
-                        {/* ✨ 新增：圖片生成控制區塊 */}
-                        <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
-                            <label className="flex items-center justify-between cursor-pointer">
-                                <span className="text-sm font-black text-yellow-800 dark:text-yellow-400">🖼️ 自動檢索藥物圖片 (+4💎/題)</span>
-                                <input 
-                                    type="checkbox" 
-                                    checked={aiEnableImages} 
-                                    onChange={e => setAiEnableImages(e.target.checked)} 
-                                    className="w-5 h-5 accent-yellow-600"
-                                />
-                            </label>
-                            {aiEnableImages && (
-                                <div className="mt-3 animate-fade-in">
-                                    <div className="flex justify-between text-[10px] font-bold text-yellow-700 dark:text-yellow-300 mb-1">
-                                        <span>圖片題占比</span>
-                                        <span>{aiImageRatio}% (約 {Math.round(aiNum * (aiImageRatio / 100))} 題)</span>
-                                    </div>
-                                    <input 
-                                        type="range" min="10" max="100" step="10" 
-                                        value={aiImageRatio} 
-                                        onChange={e => setAiImageRatio(parseInt(e.target.value))} 
-                                        className="w-full h-1.5 bg-yellow-200 rounded-lg appearance-none cursor-pointer accent-yellow-600" 
-                                    />
-                                    <p className="text-[9px] text-yellow-600 dark:text-yellow-500 mt-1">💡 開啟後，AI 會自動標記藥名，系統將從雲端抓取結構圖嵌入題目中。</p>
-                                </div>
                             )}
                         </div>
 
