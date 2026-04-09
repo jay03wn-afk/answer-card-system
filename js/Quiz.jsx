@@ -1817,113 +1817,51 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         }
     }, [loading, pendingShareCode, records]);
 
-   const executeImport = async (code) => {
+   // ✨ 系統重寫 2：匯入代碼 (建立追蹤指標，不複製龐大內容)
+    const executeImport = async (code) => {
         const cleanCode = code?.trim().toUpperCase();
         if (!cleanCode) return;
         
         const codeRegex = /^[A-Z0-9]{6}$/;
-        if (!codeRegex.test(cleanCode)) {
-            return showAlert("⚠️ 代碼格式錯誤！請輸入 6 碼英數字。", "輸入錯誤");
-        }
+        if (!codeRegex.test(cleanCode)) return showAlert("⚠️ 代碼格式錯誤！請輸入 6 碼英數字。", "輸入錯誤");
 
         try {
-            // 1. 本地重複檢查
             const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
-            if (isDuplicateCode) {
-                return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
-            }
+            if (isDuplicateCode) return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
 
-            // 2. 直接去公共大廳 (shareCodes) 拿剛剛打包好的獨立包裹！
             const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
+            if (!codeDoc.exists) return showAlert("❌ 找不到該代碼，請確認代碼是否輸入正確，或代碼已失效。", "查無資料");
 
-            if (!codeDoc.exists) {
-                return showAlert("❌ 找不到該代碼，請確認代碼是否輸入正確，或代碼已失效。", "查無資料");
-            }
-
-            const rawData = codeDoc.data();
-
-            // ✨ 終極修復：統一處理新舊兩種不同結構的 shareCodes，解決匯入時發生非預期錯誤的問題
-            const sharedData = rawData.quizData ? {
-                ownerId: rawData.ownerId,
-                originalQuizId: rawData.quizId,
-                ...rawData.quizData,
-                questionText: rawData.contentData?.questionText || '',
-                questionHtml: rawData.contentData?.questionHtml || '',
-                explanationHtml: rawData.contentData?.explanationHtml || '',
-            } : rawData;
-
-            // 防呆：不能匯入自己的試卷
-            if (sharedData.ownerId === user.uid) {
-                return showAlert("⚠️ 這是你自己的試卷！", "重複擁有");
-            }
-            
-            // ✨ 終極防呆：確保雲端資料有值，防止 undefined 造成 Firebase 崩潰
-            const safeOriginalQuizId = sharedData.originalQuizId || 'MISSING_ID';
+            const sharedData = codeDoc.data();
+            const safeOriginalQuizId = sharedData.originalQuizId || sharedData.quizId || 'MISSING_ID'; // 相容新舊版
             const safeOwnerId = sharedData.ownerId || 'MISSING_OWNER';
 
-            // 雲端重複檢查
+            if (safeOwnerId === user.uid) return showAlert("⚠️ 這是你自己的試卷！", "重複擁有");
+
             const duplicateCheck = await window.db.collection('users').doc(user.uid).collection('quizzes')
-                .where('creatorQuizId', '==', safeOriginalQuizId)
-                .limit(1)
-                .get();
+                .where('creatorQuizId', '==', safeOriginalQuizId).limit(1).get();
+            if (!duplicateCheck.empty && safeOriginalQuizId !== 'MISSING_ID') return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
 
-            if (!duplicateCheck.empty && safeOriginalQuizId !== 'MISSING_ID') {
-                return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
-            }
-
-            // 3. 準備個人作答紀錄的空陣列
             const numQ = Number(sharedData.numQuestions || 50);
             const emptyAnswers = Array(numQ).fill('');
             const emptyStarred = Array(numQ).fill(false);
             
-            // 4. 將試卷基本設定存入自己的 quizzes (✨ 延遲載入大改造：保持輕量封面)
-            const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
-                testName: cleanQuizName(sharedData.testName || '未命名試卷') + ' (來自代碼)',
+            // 🚀 核心升級：只在自己的資料庫建立一個「進度追蹤器 (Pointer)」
+            await window.db.collection('users').doc(user.uid).collection('quizzes').add({
+                testName: cleanQuizName(sharedData.testName || sharedData.quizData?.testName || '未命名試卷') + ' (來自代碼)',
                 numQuestions: numQ,
-                maxScore: sharedData.maxScore || 100,
-                roundScore: sharedData.roundScore !== false,
-                questionFileUrl: sharedData.questionFileUrl || '',
-                correctAnswersInput: sharedData.correctAnswersInput || '', 
-                publishAnswers: sharedData.publishAnswers !== false,
                 userAnswers: emptyAnswers,
                 starred: emptyStarred,
-                hasTimer: sharedData.hasTimer || false,
-                timeLimit: sharedData.timeLimit || null,
-                timeRemaining: sharedData.hasTimer ? (sharedData.timeLimit * 60) : null,
                 isShared: true, 
                 creatorUid: safeOwnerId, 
                 creatorQuizId: safeOriginalQuizId,
                 folder: '未分類', 
                 shortCode: cleanCode, 
-                hasSeparatedContent: true, // 新架構統一強制使用分離儲存
+                // ⚠️ 絕對不要再把 questionHtml 塞進來，也不用建立 quizContents
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                // 🚀 注意：沒有存入笨重的 questionText 等內容
             });
 
-            // 5. 將獨立包裹裡的題目內容，存入自己的 quizContents (✨ 延遲載入大改造：確保壓縮)
-            // 🚀 終極修復：避免「雙重壓縮」導致試題變成亂碼白屏！先用 safeDecompress 解壓縮確保是明文，再壓縮存入！
-            await window.db.collection('users').doc(user.uid).collection('quizContents').doc(newDocRef.id).set({
-                questionText: window.jzCompress && sharedData.questionText ? window.jzCompress(safeDecompress(sharedData.questionText, 'string')) : (sharedData.questionText || ''),
-                questionHtml: window.jzCompress && sharedData.questionHtml ? window.jzCompress(safeDecompress(sharedData.questionHtml, 'string')) : (sharedData.questionHtml || ''),
-                explanationHtml: window.jzCompress && sharedData.explanationHtml ? window.jzCompress(safeDecompress(sharedData.explanationHtml, 'string')) : (sharedData.explanationHtml || '')
-            });
-
-            // 6. 嘗試通知原作者。如果因為對方權限沒開而報錯，我們用 catch 攔截並忽略，【絕對不影響匯入成功】！
-            try {
-                if (safeOwnerId !== 'MISSING_OWNER' && safeOriginalQuizId !== 'MISSING_ID') {
-                    await window.db.collection('users').doc(safeOwnerId).collection('quizzes').doc(safeOriginalQuizId).update({
-                        sharedTo: window.firebase.firestore.FieldValue.arrayUnion({ 
-                            uid: user.uid, 
-                            quizId: newDocRef.id 
-                        })
-                    });
-                }
-            } catch (syncErr) {
-                console.warn("無法更新原作者的紀錄，但不影響匯入作業:", syncErr);
-            }
-
-            showAlert(`✅ 成功加入「${cleanQuizName(sharedData.testName || '未命名試卷')}」！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
-
+            showAlert(`✅ 成功加入試卷！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
         } catch (e) {
             console.error("匯入錯誤詳細資訊:", e);
             showAlert('❌ 發生非預期錯誤：' + e.message, "系統錯誤");
@@ -1935,6 +1873,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     };
 
     // ✨ 新增：生成 6 碼分享代碼的完整功能 (解決權限問題的關鍵)
+    // ✨ 系統重寫 1：生成 6 碼分享代碼 (極致輕量版，只存鑰匙)
     const handleGenerateCode = async (quiz) => {
         if (quiz.shortCode) {
             navigator.clipboard.writeText(quiz.shortCode);
@@ -1945,45 +1884,17 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
         try {
-            // 1. 統一把題目內容抓出來（不管原本是分離儲存還是舊版合併儲存）
-            let fullQuestionsHtml = quiz.questionHtml || '';
-            let fullQuestionsText = quiz.questionText || '';
-            let fullExplanationHtml = quiz.explanationHtml || '';
-
-            if (quiz.hasSeparatedContent) {
-                const contentDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(quiz.id).get();
-                if (contentDoc.exists) {
-                    const cData = contentDoc.data();
-                    fullQuestionsHtml = cData.questionHtml || '';
-                    fullQuestionsText = cData.questionText || '';
-                    fullExplanationHtml = cData.explanationHtml || '';
-                }
-            }
-
-            // 2. 製作一個「完全獨立」的快照包裹，不再依賴任何原作者的資料庫連結
+            // 🚀 廢除舊版的龐大打包機制，現在只存輕量的「指標(Pointer)」
             const publicQuizPackage = {
                 ownerId: user.uid,
                 originalQuizId: quiz.id,
                 testName: quiz.testName || '未命名試卷',
                 numQuestions: quiz.numQuestions || 50,
-                maxScore: quiz.maxScore || 100,
-                roundScore: quiz.roundScore !== false,
-                questionFileUrl: quiz.questionFileUrl || '',
-                correctAnswersInput: quiz.correctAnswersInput || '',
-                hasTimer: quiz.hasTimer || false,
-                timeLimit: quiz.timeLimit || null,
-                publishAnswers: quiz.publishAnswers !== false,
-                // 直接把最純粹的題目內容塞進包裹
-                questionHtml: fullQuestionsHtml,
-                questionText: fullQuestionsText,
-                explanationHtml: fullExplanationHtml,
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             };
 
-            // 3. 把包裹丟到公開的 shareCodes 集合中
             await window.db.collection('shareCodes').doc(newCode).set(publicQuizPackage);
 
-            // 4. 在自己的試卷上記錄這組代碼
             await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quiz.id).update({
                 shortCode: newCode
             });
@@ -1998,29 +1909,12 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         setIsGeneratingCode(false);
     };
 
-    const shareToFriend = async (friend) => {
+    // ✨ 系統重寫 3：好友私訊分享 (超級瘦身防爆版)
+    const shareToFriend = (friend) => {
         const cleanTestName = cleanQuizName(showShareModal.testName);
         const chatId = [user.uid, friend.uid].sort().join('_');
         
-        // ✨ 修復漏水點：確保分享給好友時，有去倉庫把被隱藏的「龐大試題內容」抓出來一起寄出！
-        let fullQuestionsText = showShareModal.questionText || '';
-        let fullQuestionsHtml = showShareModal.questionHtml || '';
-        let fullExplanationHtml = showShareModal.explanationHtml || '';
-
-        if (showShareModal.hasSeparatedContent) {
-            try {
-                const contentDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(showShareModal.id).get();
-                if (contentDoc.exists) {
-                    const cData = contentDoc.data();
-                    fullQuestionsText = cData.questionText || '';
-                    fullQuestionsHtml = cData.questionHtml || '';
-                    fullExplanationHtml = cData.explanationHtml || '';
-                }
-            } catch (e) {
-                console.error("抓取完整試題內容失敗", e);
-            }
-        }
-
+        // 🚀 只寄送最輕量的鑰匙，告別 Firebase 1MB 限制報錯！
         window.db.collection('chats').doc(chatId).collection('messages').add({
             senderId: user.uid,
             senderName: userProfile.displayName,
@@ -2031,11 +1925,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 ownerId: user.uid,
                 quizId: showShareModal.id,
                 testName: cleanTestName,
-                questionFileUrl: showShareModal.questionFileUrl || '',
-                questionText: fullQuestionsText,
-                questionHtml: fullQuestionsHtml,
-                explanationHtml: fullExplanationHtml,
-                correctAnswersInput: showShareModal.correctAnswersInput || ''
+                numQuestions: showShareModal.numQuestions || 50
             }
         }).then(() => {
             window.db.collection('users').doc(friend.uid).set({
@@ -2113,14 +2003,49 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         let finalRec = { ...rec };
 
         try {
-                // 🚀 修復：移除強制 source: server，改用標準 get() 讓 Firebase 自動處理離線快取與不穩定的網路，徹底消滅空題庫
                 const docSnap = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).get();
                 if (docSnap.exists) {
                     finalRec = { id: docSnap.id, ...docSnap.data() };
                 }
 
-                // ✨ 救星：把存在獨立資料庫的「龐大考卷內容」抓下來合併
-                if (finalRec.hasSeparatedContent) {
+                // ✨✨ 系統重寫 4：魔法引擎 (即時從原作者拉取最新資料) ✨✨
+                if (finalRec.isShared && finalRec.creatorUid && finalRec.creatorQuizId) {
+                    const creatorQuizSnap = await window.db.collection('users').doc(finalRec.creatorUid).collection('quizzes').doc(finalRec.creatorQuizId).get();
+                    const creatorContentSnap = await window.db.collection('users').doc(finalRec.creatorUid).collection('quizContents').doc(finalRec.creatorQuizId).get();
+
+                    if (!creatorQuizSnap.exists || !creatorContentSnap.exists) {
+                        setIsJumping(false);
+                        return showAlert("⚠️ 原作者已將此試卷刪除或隱藏，無法繼續作答！");
+                    }
+
+                    const creatorQuiz = creatorQuizSnap.data();
+                    const creatorContent = creatorContentSnap.data();
+
+                    // 即時覆蓋最新設定 (完美同步)
+                    finalRec.testName = creatorQuiz.testName || finalRec.testName;
+                    finalRec.correctAnswersInput = creatorQuiz.correctAnswersInput || '';
+                    finalRec.timeLimit = creatorQuiz.timeLimit || null;
+                    finalRec.hasTimer = creatorQuiz.hasTimer || false;
+                    finalRec.publishAnswers = creatorQuiz.publishAnswers !== false;
+                    finalRec.maxScore = creatorQuiz.maxScore || 100;
+                    finalRec.roundScore = creatorQuiz.roundScore !== false;
+
+                    // 即時覆蓋最新試題內容 (秒開且不用存本地)
+                    finalRec.questionText = creatorContent.questionText || '';
+                    finalRec.questionHtml = creatorContent.questionHtml || '';
+                    finalRec.explanationHtml = creatorContent.explanationHtml || '';
+
+                    // 智慧偵測答案更新：如果原作者改答案了，啟動重新算分
+                    if (finalRec.results && finalRec.correctAnswersInput !== (docSnap.data().correctAnswersInput || '')) {
+                        finalRec.hasAnswerUpdate = true;
+                        // 更新本地快取，防止無限重算
+                        window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update({
+                            correctAnswersInput: finalRec.correctAnswersInput
+                        }).catch(e=>console.warn(e));
+                    }
+                } 
+                // 原本的本地檔案抓取邏輯 (如果是自己建立的試題)
+                else if (finalRec.hasSeparatedContent) {
                     const contentSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get();
                     if (contentSnap.exists) {
                         const contentData = contentSnap.data();
@@ -2132,36 +2057,33 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     }
                 }
 
-                // ✨ 終極同步機制：如果是從任務牆下載的題目，再額外核對公版答案
+                // ✨ 任務牆同步機制 (保持原樣)
+                if (finalRec.isTask && finalRec.taskId) {
+                    const taskDoc = await window.db.collection('publicTasks').doc(finalRec.taskId).get({ source: 'server' });
+                    if (taskDoc.exists) {
+                        const taskData = taskDoc.data();
+                        const isAnsChanged = taskData.correctAnswersInput && taskData.correctAnswersInput !== finalRec.correctAnswersInput;
+                        
+                        const payload = {};
+                        if (taskData.testName && taskData.testName !== finalRec.testName) payload.testName = taskData.testName;
+                        if (taskData.questionHtml !== undefined) payload.questionHtml = taskData.questionHtml;
+                        if (taskData.questionText !== undefined) payload.questionText = taskData.questionText;
+                        if (taskData.explanationHtml !== undefined) payload.explanationHtml = taskData.explanationHtml;
+                        if (taskData.correctAnswersInput !== undefined) payload.correctAnswersInput = taskData.correctAnswersInput;
 
-            // ✨ 終極同步機制：如果是從任務牆下載的題目，再額外核對公版答案
-            if (finalRec.isTask && finalRec.taskId) {
-                const taskDoc = await window.db.collection('publicTasks').doc(finalRec.taskId).get({ source: 'server' });
-                if (taskDoc.exists) {
-                    const taskData = taskDoc.data();
-                    const isAnsChanged = taskData.correctAnswersInput && taskData.correctAnswersInput !== finalRec.correctAnswersInput;
-                    
-                    const payload = {};
-                    if (taskData.testName && taskData.testName !== finalRec.testName) payload.testName = taskData.testName;
-                    if (taskData.questionHtml !== undefined) payload.questionHtml = taskData.questionHtml;
-                    if (taskData.questionText !== undefined) payload.questionText = taskData.questionText;
-                    if (taskData.explanationHtml !== undefined) payload.explanationHtml = taskData.explanationHtml;
-                    if (taskData.correctAnswersInput !== undefined) payload.correctAnswersInput = taskData.correctAnswersInput;
+                        if (isAnsChanged && finalRec.results) payload.hasAnswerUpdate = true;
 
-                    if (isAnsChanged && finalRec.results) payload.hasAnswerUpdate = true;
-
-                    if (Object.keys(payload).length > 0) {
-                        await window.db.collection('users').doc(user.uid).collection('quizzes').doc(finalRec.id).update(payload);
-                        finalRec = { ...finalRec, ...payload };
+                        if (Object.keys(payload).length > 0) {
+                            await window.db.collection('users').doc(user.uid).collection('quizzes').doc(finalRec.id).update(payload);
+                            finalRec = { ...finalRec, ...payload };
+                        }
                     }
                 }
-            }
-        } catch(e) {
+            } catch(e) {
                 console.warn("載入試卷發生異常", e);
-                // 🚀 防呆機制：如果真的連內容都沒抓到，擋住不給進，以免使用者看到空白考卷
-                if (finalRec.hasSeparatedContent && !finalRec.questionHtml && !finalRec.questionText) {
+                if ((finalRec.hasSeparatedContent || finalRec.isShared) && !finalRec.questionHtml && !finalRec.questionText) {
                     setIsJumping(false);
-                    return showAlert("⚠️ 無法載入試題內容，請檢查網路連線或稍後再試！");
+                    return showAlert("⚠️ 無法載入試題內容，請檢查網路連線或原作者設定。");
                 }
             }
 
