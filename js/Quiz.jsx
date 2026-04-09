@@ -2113,22 +2113,26 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         let finalRec = { ...rec };
 
         try {
-            // ✨ 強制從伺服器抓取最新版，解決「不同步」問題
-            const docSnap = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).get({ source: 'server' });
-            if (docSnap.exists) {
-                finalRec = { id: docSnap.id, ...docSnap.data() };
-            }
-
-            // ✨ 救星：把存在獨立資料庫的「龐大考卷內容」抓下來合併
-            if (finalRec.hasSeparatedContent) {
-                const contentSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get({ source: 'server' });
-                if (contentSnap.exists) {
-                    const contentData = contentSnap.data();
-                    finalRec.questionText = contentData.questionText || '';
-                    finalRec.questionHtml = contentData.questionHtml || '';
-                    finalRec.explanationHtml = contentData.explanationHtml || '';
+                // 🚀 修復：移除強制 source: server，改用標準 get() 讓 Firebase 自動處理離線快取與不穩定的網路，徹底消滅空題庫
+                const docSnap = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).get();
+                if (docSnap.exists) {
+                    finalRec = { id: docSnap.id, ...docSnap.data() };
                 }
-            }
+
+                // ✨ 救星：把存在獨立資料庫的「龐大考卷內容」抓下來合併
+                if (finalRec.hasSeparatedContent) {
+                    const contentSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get();
+                    if (contentSnap.exists) {
+                        const contentData = contentSnap.data();
+                        finalRec.questionText = contentData.questionText || '';
+                        finalRec.questionHtml = contentData.questionHtml || '';
+                        finalRec.explanationHtml = contentData.explanationHtml || '';
+                    } else {
+                        throw new Error("找不到試題內容！");
+                    }
+                }
+
+                // ✨ 終極同步機制：如果是從任務牆下載的題目，再額外核對公版答案
 
             // ✨ 終極同步機制：如果是從任務牆下載的題目，再額外核對公版答案
             if (finalRec.isTask && finalRec.taskId) {
@@ -2153,10 +2157,15 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 }
             }
         } catch(e) {
-            console.warn("網路不穩，使用本地快取進入作答", e);
-        }
+                console.warn("載入試卷發生異常", e);
+                // 🚀 防呆機制：如果真的連內容都沒抓到，擋住不給進，以免使用者看到空白考卷
+                if (finalRec.hasSeparatedContent && !finalRec.questionHtml && !finalRec.questionText) {
+                    setIsJumping(false);
+                    return showAlert("⚠️ 無法載入試題內容，請檢查網路連線或稍後再試！");
+                }
+            }
 
-        if (finalRec.hasAnswerUpdate) {
+            if (finalRec.hasAnswerUpdate) {
             window.db.collection('users').doc(user.uid).collection('quizzes').doc(finalRec.id).update({ 
                 hasAnswerUpdate: window.firebase.firestore.FieldValue.delete() 
             }).catch(e=>console.error(e));
@@ -2961,7 +2970,8 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
 
                 // 2. 背景發起 Server 請求，檢查有沒有最新更新
                 try {
-                    const serverDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(initialRecord.id).get({ source: 'server' });
+                    // 🚀 修復：移除強制 source: server 避免斷線崩潰
+                    const serverDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(initialRecord.id).get();
                     if (serverDoc.exists && isMounted) {
                         const data = serverDoc.data();
                         const serverQText = safeDecompress(data.questionText, 'string');
