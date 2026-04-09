@@ -2156,11 +2156,11 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                         <button 
                             onClick={() => { 
                                 setIsRefreshing(true); 
-                                // ✨ 智慧同步：移除強制 server 標籤，利用 Firebase 背景機制自動實現「只抓沒抓過的資料」
+                                // ✨ 強制同步：加入 { source: 'server' } 確保跨裝置能立刻抓到最新資料
                                 window.db.collection('users').doc(user.uid).collection('quizzes')
                                     .orderBy('createdAt', 'desc')
                                     .limit(visibleLimit)
-                                    .get()
+                                    .get({ source: 'server' })
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
                                     .finally(() => setIsRefreshing(false));
@@ -2886,6 +2886,7 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     const [loadingWrongBookNum, setLoadingWrongBookNum] = useState(null); // ✨ 新增：收錄錯題時的載入狀態
     const [explanationModalItem, setExplanationModalItem] = useState(null); // ✨ 新增詳解彈窗狀態
     const [isEditLoading, setIsEditLoading] = useState(false); // ✨ 新增：編輯模式的載入狀態
+    const [taskScores, setTaskScores] = useState(null); // ✨ 修復：新增任務牆成績狀態，避免白屏當機
 
    // ✨ 核心升級：快取優先 (秒開) + 背景下載與更新通知機制
     useEffect(() => {
@@ -6358,8 +6359,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         <button 
                             onClick={() => { 
                                 setIsRefreshing(true); 
-                                // ✨ 智慧同步：移除強制的 source: 'server'，讓 Firebase 自己判斷「只抓沒有的資料」(Delta Sync)
-                                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get()
+                                // ✨ 強制同步：加入 { source: 'server' } 確保跨裝置能立刻抓到最新資料
+                                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get({ source: 'server' })
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
                                     .finally(() => setIsRefreshing(false));
