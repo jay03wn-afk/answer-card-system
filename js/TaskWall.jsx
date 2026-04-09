@@ -56,36 +56,41 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 setOpTasks(ops);
                 setMnTasks(mns);
                 setLoading(false);
-            }, err => {
+          }, err => {
                 console.error(err);
                 setLoading(false);
             });
 
-        const unsubMyQuizzes = window.db.collection('users').doc(user.uid).collection('quizzes')
-            .orderBy('createdAt', 'desc')
-            .limit(30)
-            .onSnapshot({ includeMetadataChanges: true }, snap => {
-                if (snap.empty && snap.metadata.fromCache) return; 
-                const myTaskMap = {};
-                snap.docs.forEach(doc => {
-                    const data = doc.data();
-                    if (data.taskId) {
-                        if (typeof data.userAnswers === 'string') data.userAnswers = safeDecompress(data.userAnswers, 'array');
-                        if (typeof data.results === 'string') data.results = safeDecompress(data.results, 'object');
-                        myTaskMap[data.taskId] = { id: doc.id, ...data };
-                    }
-                });
+        let unsubMyQuizzes = () => {};
+        
+        // ✨ 新增：如果有登入 (user 存在)，才去抓取使用者的作答進度，否則跳過
+        if (user && user.uid) {
+            unsubMyQuizzes = window.db.collection('users').doc(user.uid).collection('quizzes')
+                .orderBy('createdAt', 'desc')
+                .limit(30)
+                .onSnapshot({ includeMetadataChanges: true }, snap => {
+                    if (snap.empty && snap.metadata.fromCache) return; 
+                    const myTaskMap = {};
+                    snap.docs.forEach(doc => {
+                        const data = doc.data();
+                        if (data.taskId) {
+                            if (typeof data.userAnswers === 'string') data.userAnswers = safeDecompress(data.userAnswers, 'array');
+                            if (typeof data.results === 'string') data.results = safeDecompress(data.results, 'object');
+                            myTaskMap[data.taskId] = { id: doc.id, ...data };
+                        }
+                    });
 
-                snap.docs.forEach(doc => {
-                    const data = doc.data();
-                    if (!data.isShared && !data.isTask) {
-                        if (typeof data.userAnswers === 'string') data.userAnswers = safeDecompress(data.userAnswers, 'array');
-                        if (typeof data.results === 'string') data.results = safeDecompress(data.results, 'object');
-                        myTaskMap[doc.id] = { id: doc.id, ...data, isTask: true, taskId: doc.id };
-                    }
+                    snap.docs.forEach(doc => {
+                        const data = doc.data();
+                        if (!data.isShared && !data.isTask) {
+                            if (typeof data.userAnswers === 'string') data.userAnswers = safeDecompress(data.userAnswers, 'array');
+                            if (typeof data.results === 'string') data.results = safeDecompress(data.results, 'object');
+                            myTaskMap[doc.id] = { id: doc.id, ...data, isTask: true, taskId: doc.id };
+                        }
+                    });
+                    setMyTasks(myTaskMap);
                 });
-                setMyTasks(myTaskMap);
-            });
+        }
             
         return () => {
             unsubTasks();
@@ -93,7 +98,8 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
             setLoading(false);
         };
     
-    }, [user.uid, taskLimit]);
+    // ✨ 修改：加上問號 user?.uid 防止沒登入時造成依賴陣列報錯
+    }, [user?.uid, taskLimit]);
 
     const handlePlayTask = async (task, localRec) => {
         const executeEnter = async () => {
@@ -421,7 +427,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         let unsubQA = () => {};
         let unsubRecords = () => {};
 
-        const fetchQA = () => {
+       const fetchQA = () => {
+            if (!window.db) return; // ✨ 防呆機制：確保資料庫已載入，防止沒登入的人白畫面
             // ✨ 終極修復：移除手動 setLoading(true) 造成的死鎖，完全信任 Firebase 的背景同步機制
             try {
                 if (targetQaId) {
