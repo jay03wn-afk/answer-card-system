@@ -11,8 +11,8 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-// 1. 解決 404 Listen/channel 網路連線錯誤 (強制使用長輪詢繞過防火牆/防毒軟體阻擋)
-db.settings({ experimentalForceLongPolling: true, merge: true });
+// 1. 解決 404 Listen/channel 網路連線錯誤 (改用「自動偵測長輪詢」完美避開衝突)
+db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
 
 // 2. 解決每次跳回來都要重新加載的問題 (開啟本地快取，達到秒開且背景同步新資料)
 db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
