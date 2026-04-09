@@ -5190,10 +5190,10 @@ ${difficultyInstruction}
                                     const currentAns = userAnswers[actualIdx];
                                     const isStarred = starred[actualIdx];
                                     
-                                    // ✨ 新增：偷看答案相關邏輯
+                                    // ✨ 新增：偷看答案相關邏輯 (修正：開放好友分享的試卷也能偷看)
                                     const isPeeked = peekedAnswers && peekedAnswers[actualIdx];
-                                    const isNormalQuiz = !isTask && !isShared && taskType === 'normal';
-                                    const canPeek = allowPeek && isNormalQuiz;
+                                    const isNormalQuiz = !isTask && taskType === 'normal';
+                                    const canPeek = allowPeek && (isNormalQuiz || isShared);
                                     
                                     const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
                                     const keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
