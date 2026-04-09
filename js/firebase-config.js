@@ -18,7 +18,7 @@ db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
 // 移除 synchronizeTabs 以避免新裝置初次載入時發生 Failed to obtain primary lease 錯誤
 db.enablePersistence().catch((err) => {
     console.warn("本地快取啟動失敗: ", err);
-});ㄇ
+});
 
 const storage = firebase.storage(); // ✨ 新增這行
 
