@@ -16,8 +16,8 @@ window.auth = auth; // 確保全域可用
 window.db = db;     // 確保全域可用
 window.storage = storage; // ✨ 確保全域可用
 
-// 🚀 修正：移除延遲，確保在所有資料庫操作前優先啟動離線快取
-db.enablePersistence({ synchronizeTabs: true })
+// 🚀 修正：移除 { synchronizeTabs: true }，因為 Firebase 官方的多分頁同步在首次登入時極易引發 Unexpected state 底層當機
+db.enablePersistence()
     .then(() => {
         console.log("✅ 離線快取啟動成功！");
     })
