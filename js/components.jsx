@@ -1124,8 +1124,13 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                             {viewingNews.rewardType && viewingNews.rewardType !== 'none' && (
                                 <div className="mt-10 mb-8 p-6 bg-yellow-50 dark:bg-yellow-900/20 border-4 border-yellow-400 text-center shadow-inner">
                                     <h3 className="text-xl font-black text-yellow-800 dark:text-yellow-400 mb-2">🎁 專屬閱讀獎勵</h3>
-                                    {!user ? (
-                                        <p className="font-bold text-gray-500">請登入以領取專屬獎勵。</p>
+                                   {!user ? (
+                                        <div className="flex flex-col items-center gap-3">
+                                            <p className="font-bold text-gray-500">請登入以領取專屬獎勵。</p>
+                                            <button onClick={() => onRequireLogin && onRequireLogin()} className="bg-black text-white px-8 py-3 font-black text-lg no-round hover:bg-gray-800 transition-colors shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1">
+                                                🚀 立即登入解鎖鑽石
+                                            </button>
+                                        </div>
                                     ) : hasClaimed ? (
                                         <p className="font-bold text-green-600 text-lg">✅ 你已成功領取此篇的閱讀獎勵！</p>
                                     ) : (
@@ -1172,7 +1177,12 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                         <button onClick={postComment} className="bg-black dark:bg-gray-200 text-white dark:text-black px-6 font-black no-round transition-colors hover:bg-gray-800 dark:hover:bg-white">送出</button>
                                     </div>
                                 ) : (
-                                    <div className="text-center font-bold text-gray-500 bg-gray-100 dark:bg-gray-800 p-3">登入後即可參與留言討論。</div>
+                                    <button 
+                                        onClick={() => onRequireLogin && onRequireLogin()} 
+                                        className="w-full text-center font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 transition-colors no-round"
+                                    >
+                                        🔒 登入後即可參與留言討論，點此快速登入
+                                    </button>
                                 )}
                             </div>
 
