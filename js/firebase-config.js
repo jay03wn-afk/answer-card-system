@@ -15,9 +15,10 @@ const db = firebase.firestore();
 db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
 
 // 2. 解決每次跳回來都要重新加載的問題 (開啟本地快取，達到秒開且背景同步新資料)
-db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+// 移除 synchronizeTabs 以避免新裝置初次載入時發生 Failed to obtain primary lease 錯誤
+db.enablePersistence().catch((err) => {
     console.warn("本地快取啟動失敗: ", err);
-});
+});ㄇ
 
 const storage = firebase.storage(); // ✨ 新增這行
 
