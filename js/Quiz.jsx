@@ -2153,14 +2153,14 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                         {showHelp ? '關閉教學' : '❓ 系統教學'}
                     </button>
                     <div className="relative hidden md:block">
-                        <button 
+                       <button 
                             onClick={() => { 
                                 setIsRefreshing(true); 
-                                // ✨ 強制同步：加入 { source: 'server' } 確保跨裝置能立刻抓到最新資料
+                                // ✨ 復原：移除強制 server，讓 Firebase 自己處理快取，避免系統崩潰
                                 window.db.collection('users').doc(user.uid).collection('quizzes')
                                     .orderBy('createdAt', 'desc')
                                     .limit(visibleLimit)
-                                    .get({ source: 'server' })
+                                    .get()
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
                                     .finally(() => setIsRefreshing(false));
@@ -6359,8 +6359,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         <button 
                             onClick={() => { 
                                 setIsRefreshing(true); 
-                                // ✨ 強制同步：加入 { source: 'server' } 確保跨裝置能立刻抓到最新資料
-                                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get({ source: 'server' })
+                                // ✨ 復原：移除強制 server，讓 Firebase 自己處理快取，避免系統崩潰
+                                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get()
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
                                     .finally(() => setIsRefreshing(false));
