@@ -1,3 +1,5 @@
+// 🚀 從全域引入共用組件，防止 React 找不到變數而引發白屏崩潰！
+const { ContentEditableEditor, parseSmilesToHtml } = window;
 // 修改後的 McImg，能同時處理舊的 Base64 與新的 URL
 function McImg({ src, fallback, className }) {
     const [hasError, setHasError] = useState(false);
@@ -545,10 +547,11 @@ function NewsMiniRichEditor({ value, onChange, placeholder }) {
 
 function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPrompt, onContinueQuiz, targetNewsId, onClose, onRequireLogin }) {
     const isAdmin = user && (user.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
-    const [newsList, setNewsList] = useState([]);
-    const [events, setEvents] = useState([]);
-    const [categories, setCategories] = useState(['藥學電子報', '未分類']);
-    const [loading, setLoading] = useState(true);
+    // 🚀 記憶快取法：如果有暫存資料，就直接拿出來用，預設不顯示轉圈圈！
+    const [newsList, setNewsList] = useState(window._cachedNews || []);
+    const [events, setEvents] = useState(window._cachedEvents || []);
+    const [categories, setCategories] = useState(window._cachedCats || ['藥學電子報', '未分類']);
+    const [loading, setLoading] = useState(!window._hasLoadedNews);
     const [subs, setSubs] = useState(userProfile?.subscriptions || ['藥學電子報']);
     const [activeFeedTab, setActiveFeedTab] = useState('subscribed'); // 'subscribed' 訂閱頻道 or 'all' 所有電子報
     
@@ -581,29 +584,23 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
 
     useEffect(() => {
         let isMounted = true;
-        // 🚀 提速優化：設定 1.5 秒安全超時，時間一到強制解除載入畫面，絕不卡死
-        let fallbackTimer = setTimeout(() => {
-            if (isMounted) setLoading(false);
-        }, 1500);
-
         let unsubNews = () => {};
         let unsubEvents = () => {};
         let unsubCats = () => {};
 
-        const loadData = async () => {
-            setLoading(true);
+        const loadData = () => {
             unsubCats = window.db.collection('settings').doc('newspaper').onSnapshot(doc => {
                 if (doc.exists && doc.data().categories && isMounted) {
                     const loadedCats = doc.data().categories;
                     if (!loadedCats.includes('未分類')) loadedCats.push('未分類');
+                    window._cachedCats = loadedCats; // 💾 存入記憶體
                     setCategories(loadedCats);
                 }
             });
 
             if (targetNewsId) {
-                unsubNews = window.db.collection('newsletters').doc(targetNewsId).onSnapshot({ includeMetadataChanges: true }, doc => {
+                unsubNews = window.db.collection('newsletters').doc(targetNewsId).onSnapshot(doc => {
                     if (!isMounted) return;
-                    if (doc.metadata.fromCache && !doc.exists) return; 
                     if (doc.exists) {
                         const loaded = { id: doc.id, ...doc.data() };
                         setNewsList([loaded]);
@@ -612,30 +609,38 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                         showAlert('找不到此電子報，可能已被刪除！');
                     }
                     setLoading(false);
-                    clearTimeout(fallbackTimer);
+                }, err => {
+                    console.warn("特定報紙監聽延遲:", err.message);
+                    setLoading(false);
                 });
             } else {
                 unsubNews = window.db.collection('newsletters')
                 .orderBy('createdAt', 'desc')
                 .limit(5) 
-                .onSnapshot({ includeMetadataChanges: true }, snap => {
+                .onSnapshot(snap => {
                     if (!isMounted) return;
-                    // ✨ 放寬快取限制：讓畫面秒出！
-                    if (snap.empty && snap.metadata.fromCache && !snap.metadata.hasPendingWrites) return; 
-                    
-                    setNewsList(snap.docs.map(d => ({id: d.id, ...d.data()})));
+                    const data = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                    window._cachedNews = data; // 💾 存入記憶體
+                    window._hasLoadedNews = true; // 💾 標記已載入過
+                    setNewsList(data);
                     setLoading(false);
-                    clearTimeout(fallbackTimer);
+                }, err => {
+                    console.warn("電子報清單監聽延遲:", err.message);
+                    setLoading(false);
                 });
+
                 unsubEvents = window.db.collection('calendarEvents').orderBy('date', 'asc').onSnapshot(snap => {
-                    if (isMounted) setEvents(snap.docs.map(d => ({id: d.id, ...d.data()})));
-                });
+                    if (!isMounted) return;
+                    const data = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                    window._cachedEvents = data; // 💾 存入記憶體
+                    setEvents(data);
+                }, err => console.warn("行事曆監聽延遲:", err.message));
             }
         };
+        
         loadData();
-        return () => { isMounted = false; clearTimeout(fallbackTimer); unsubNews(); unsubEvents(); unsubCats(); };
+        return () => { isMounted = false; unsubNews(); unsubEvents(); unsubCats(); };
     }, [targetNewsId]);
-
     // 監聽閱讀視窗中的留言與獎勵領取狀態
     // 監聽閱讀視窗中的留言與獎勵領取狀態
     useEffect(() => {

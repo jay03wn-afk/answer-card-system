@@ -1,36 +1,9 @@
 // --- 任務牆看板組件 (含國考題金色分類與分析) ---
-const cleanQuizNameLocal = (name) => {
-    if (!name) return '';
-    return name.replace(/\[#(op|m?nm?st)\]/gi, '').trim();
-};
-
-const renderTestNameLocal = (rawName, isCompleted = false) => {
-    if (!rawName) return '';
-    const cleanName = cleanQuizNameLocal(rawName);
-    const isOp = /\[#op\]/i.test(rawName);
-    const isMnst = /\[#m?nm?st\]/i.test(rawName);
-
-    if (isOp) {
-        return (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 min-w-0 w-full">
-                <span className="bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-400 px-1.5 py-0.5 text-xs font-black shadow-sm no-round whitespace-nowrap self-start sm:self-auto shrink-0 mt-0.5 sm:mt-0">🏆 國考題</span>
-                <span className="text-yellow-700 dark:text-yellow-400 font-bold break-all sm:break-words min-w-0 flex-1">{cleanName}</span>
-            </div>
-        );
-    }
-    if (isMnst) {
-        return (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 min-w-0 w-full">
-                <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto shrink-0 mt-0.5 sm:mt-0">
-                    <span className="bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 border border-blue-400 px-1.5 py-0.5 text-xs font-black shadow-sm no-round whitespace-nowrap">📘 模擬考</span>
-                    {!isCompleted && <span className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-1 py-0.5 no-round whitespace-nowrap font-bold">💎 及格獎勵</span>}
-                </div>
-                <span className="text-blue-700 dark:text-blue-400 font-bold break-all sm:break-words min-w-0 flex-1">{cleanName}</span>
-            </div>
-        );
-    }
-    return <div className="break-all sm:break-words min-w-0 w-full">{cleanName}</div>;
-};
+// --- 任務牆看板組件 (含國考題金色分類與分析) ---
+// 🚀 從全域引入共用組件，防止 React 找不到變數而引發白屏崩潰！
+const { safeDecompress, LoadingSpinner, parseSmilesToHtml, ContentEditableEditor } = window;
+const cleanQuizNameLocal = window.cleanQuizName;
+const renderTestNameLocal = window.renderTestName;
 
 // --- 任務牆看板組件 (全新左右排版架構) ---
 function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
@@ -46,7 +19,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     const [selectedSubject, setSelectedSubject] = useState(null);
 
     useEffect(() => {
-        setTimeout(() => setLoading(false), 800);
+
 
         const unsubTasks = window.db.collection('publicTasks')
             .orderBy('createdAt', 'desc')
@@ -117,7 +90,9 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
         return () => {
             unsubTasks();
             unsubMyQuizzes();
+            setLoading(false);
         };
+    
     }, [user.uid, taskLimit]);
 
     const handlePlayTask = async (task, localRec) => {

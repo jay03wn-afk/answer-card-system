@@ -483,6 +483,7 @@ function Main() {
     };
 
     // ✨ 新增：完成新手教學的狀態更新
+    // ✨ 新增：完成新手教學的狀態更新
     const completeTutorial = () => {
         if (!user) return;
         window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: true })
@@ -491,37 +492,58 @@ function Main() {
     };
 
     useEffect(() => {
-        // 🚀 終極防卡死：1.5 秒內 Auth 沒反應，就直接強行關閉載入畫面，顯示登入表單！
+        // 🚀 終極防卡死：稍微放寬時間到 3000 (3秒)，讓 Firebase 有足夠時間去要通行證
         let isAuthResolved = false;
         const forceLoginTimer = setTimeout(() => {
             if (!isAuthResolved) {
                 isAuthResolved = true;
                 setLoading(false);
             }
-        }, 1500);
+        }, 3000);
 
-        const unsubscribe = window.auth.onAuthStateChanged(u => {
+        const unsubscribe = window.auth.onAuthStateChanged(async (u) => {
             if (!isAuthResolved) {
                 isAuthResolved = true;
                 clearTimeout(forceLoginTimer);
             }
 
             if (u) {
+                try {
+                    // 🚀 終極魔法：強制刷新 Token，強迫 Firestore 乖乖等到「最高權限通行證」發放後再行動！
+                    await u.getIdToken(true);
+                } catch(e) {
+                    console.warn("Token 刷新略過", e);
+                }
+                
+                // 拿到最高權限後，才把 user 交給系統，讓後續功能正常運作
                 setUser(u);
-                // 🚀 極速啟動：增加 1.2 秒強制超時，確保「步驟 1/3」不會因為網路小抖動而卡死
+                
                 let hasResolved = false;
                 const profileTimeout = setTimeout(() => {
                     if (!hasResolved) setLoading(false);
                 }, 1200);
 
-                window.db.collection('users').doc(u.uid).onSnapshot({ includeMetadataChanges: true }, doc => {
-                    if (doc.exists) setUserProfile(doc.data());
-                    if (!hasResolved) {
-                        hasResolved = true;
-                        setLoading(false);
-                        clearTimeout(profileTimeout);
+                // 🚀 終極安全網：加上錯誤攔截器，就算遇到網路閃斷，網頁也絕對不會白屏崩潰！
+                window.db.collection('users').doc(u.uid).onSnapshot(
+                    { includeMetadataChanges: true }, 
+                    doc => {
+                        if (doc.exists) setUserProfile(doc.data());
+                        if (!hasResolved) {
+                            hasResolved = true;
+                            setLoading(false);
+                            clearTimeout(profileTimeout);
+                        }
+                    },
+                    err => {
+                        // 當遇到短暫的權限不同步或離線，默默吞下錯誤並等待自動重連
+                        console.warn("🛡️ 已攔截背景同步延遲 (安全忽略):", err.message);
+                        if (!hasResolved) {
+                            hasResolved = true;
+                            setLoading(false);
+                            clearTimeout(profileTimeout);
+                        }
                     }
-                });
+                );
             } else {
                 setUser(null);
                 setLoading(false);
@@ -533,7 +555,7 @@ function Main() {
         };
     }, []);
 
-
+    // --- 新增：國考倒數計時器組件 ---
     // --- 新增：國考倒數計時器組件 ---
     const ExamCountdown = () => {
         const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, totalHours: 0 });

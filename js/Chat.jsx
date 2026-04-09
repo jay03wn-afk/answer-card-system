@@ -291,73 +291,31 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
         }, "🎁 贈送鑽石");
     };
 
-    // 更新：防呆機制，下載好友試卷時檢查是否重複
-  // 更新：防呆機制，下載好友試卷時檢查是否重複，且原作者是否已刪除
+    // 🚀 系統重寫：輕量化指標下載邏輯
     const downloadSharedQuiz = async (quizData) => {
         try {
-            const myQuizzesSnap = await db.collection('users').doc(user.uid).collection('quizzes').get();
-            const myQuizzes = myQuizzesSnap.docs.map(d => d.data());
-
-            // 在 Chat.jsx 裡的下載邏輯，確保只寫入這些欄位：
-            await window.db.collection('users').doc(user.uid).collection('quizzes').add({
-                testName: msg.quizData.testName + ' (來自好友分享)',
-                numQuestions: msg.quizData.numQuestions || 50,
-                userAnswers: Array(msg.quizData.numQuestions || 50).fill(''),
-                starred: Array(msg.quizData.numQuestions || 50).fill(false),
-                isShared: true, 
-                creatorUid: msg.quizData.ownerId, 
-                creatorQuizId: msg.quizData.quizId,
-                folder: '未分類', 
-                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-            });
-            // ⚠️ 記得把 Chat.jsx 裡面建立 quizContents 的程式碼刪掉喔！
-            // 如果不存在，跳出對應提示
-            if(!doc.exists) {
-                return showAlert('❌ 該試卷已失效或被原作者刪除！', '下載失敗');
-            }
-            
-            const originalData = doc.data();
-            const cleanIncomingName = originalData.testName.trim();
-            
-            const isContentDuplicate = myQuizzes.some(r => {
-                const cleanLocalName = (r.testName || '').replace(/\s*\(來自.*\)/, '').trim();
-                const isSameName = cleanLocalName === cleanIncomingName;
-                const isSameCount = Number(r.numQuestions) === Number(originalData.numQuestions);
-                return isSameName && isSameCount;
-            });
-
-            if (isContentDuplicate) {
-                return showAlert('⚠️ 你已經擁有此試卷！', '重複加入');
+            // 1. 檢查是否已經擁有這把鑰匙
+            if (quizData.shortCode) {
+                const check = await db.collection('users').doc(user.uid).collection('quizzes').where('shortCode', '==', quizData.shortCode).get();
+                if (!check.empty) return showAlert('⚠️ 你已經擁有此試卷！', '重複加入');
             }
 
-            const emptyAnswers = Array(Number(originalData.numQuestions)).fill('');
-            const emptyStarred = Array(Number(originalData.numQuestions)).fill(false);
-            
-            const newDocRef = await db.collection('users').doc(user.uid).collection('quizzes').add({
-                testName: originalData.testName + ' (來自好友)',
-                numQuestions: originalData.numQuestions,
-                questionFileUrl: originalData.questionFileUrl || '',
-                questionText: originalData.questionText || '',
-                questionHtml: originalData.questionHtml || '', // ✨ 補上這一行：將富文本題目一併下載過來！
-                explanationHtml: originalData.explanationHtml || '', // ✨ 補上詳解
-                correctAnswersInput: originalData.correctAnswersInput || '', 
-                publishAnswers: originalData.publishAnswers !== false, // ← 主要是補上這一行！
-                userAnswers: emptyAnswers,
-                starred: emptyStarred,
-                hasTimer: originalData.hasTimer || false,
-                timeLimit: originalData.timeLimit || null,
-                timeRemaining: originalData.hasTimer ? (originalData.timeLimit * 60) : null,
+            // 2. 建立本地「空殼」作答卡，只存最重要的鑰匙 (shortCode)
+            const numQ = Number(quizData.numQuestions || 50);
+            await db.collection('users').doc(user.uid).collection('quizzes').add({
+                testName: (quizData.testName || '未命名試卷') + ' (來自好友)',
+                numQuestions: numQ,
+                userAnswers: Array(numQ).fill(''),
+                starred: Array(numQ).fill(false),
                 isShared: true, 
+                shortCode: quizData.shortCode || null, // ✨ 核心：這把鑰匙決定了題目內容
+                creatorUid: quizData.ownerId || quizData.senderId, 
+                creatorQuizId: quizData.quizId,
                 folder: '未分類', 
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
 
-            await db.collection('users').doc(quizData.ownerId).collection('quizzes').doc(quizData.quizId).update({
-                sharedTo: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid, quizId: newDocRef.id })
-            });
-            
-            showAlert('✅ 已成功存入！\n請回到「我的題庫」查看並開始作答。');
-            
+            showAlert('✅ 已成功存入！\n題目將在進入作答時自動載入最新版本。');
         } catch (e) {
             showAlert('下載失敗：'+e.message);
         }

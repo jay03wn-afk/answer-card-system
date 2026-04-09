@@ -1,4 +1,6 @@
-// --- 新增：錯題編輯 Modal ---
+
+// 🚀 從全域引入共用組件，防止 React 找不到變數而引發白屏崩潰！
+const { safeDecompress, parseSmilesToHtml, RichInput, extractSpecificQuestion, extractSpecificExplanation, LoadingSpinner, cleanQuizName } = window;
 function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
     const [folder, setFolder] = useState(initialData?.folder || '未分類');
     const [newFolder, setNewFolder] = useState('');

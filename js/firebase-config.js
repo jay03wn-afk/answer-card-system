@@ -10,24 +10,20 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
+
+// 1. 解決 404 Listen/channel 網路連線錯誤 (強制使用長輪詢繞過防火牆/防毒軟體阻擋)
+db.settings({ experimentalForceLongPolling: true, merge: true });
+
+// 2. 解決每次跳回來都要重新加載的問題 (開啟本地快取，達到秒開且背景同步新資料)
+db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+    console.warn("本地快取啟動失敗: ", err);
+});
+
 const storage = firebase.storage(); // ✨ 新增這行
 
 window.auth = auth; // 確保全域可用
 window.db = db;     // 確保全域可用
 window.storage = storage; // ✨ 確保全域可用
-
-// 🚀 修正：移除 { synchronizeTabs: true }，因為 Firebase 官方的多分頁同步在首次登入時極易引發 Unexpected state 底層當機
-db.enablePersistence()
-    .then(() => {
-        console.log("✅ 離線快取啟動成功！");
-    })
-    .catch((err) => {
-        if (err.code === 'failed-precondition') {
-            console.warn("離線快取失敗：多個分頁同時開啟中");
-        } else if (err.code === 'unimplemented') {
-            console.warn("離線快取失敗：瀏覽器不支援");
-        }
-    });
 
 const { useState, useEffect, useRef } = React;
 
