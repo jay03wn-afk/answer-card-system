@@ -2643,6 +2643,8 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     const [aiCustomSubject, setAiCustomSubject] = useState(''); // ✨ 新增：自訂科目名稱
     const [aiPharmRatio, setAiPharmRatio] = useState(50); // ✨ 新增：藥理學佔比 (預設50%)
     const [aiNum, setAiNum] = useState(10);
+    const [aiEnableImages, setAiEnableImages] = useState(false); // ✨ 新增：是否開啟圖片生成
+    const [aiImageRatio, setAiImageRatio] = useState(30); // ✨ 新增：圖片題占比
     const [aiScope, setAiScope] = useState('');
     const [aiFileContent, setAiFileContent] = useState('');
     const [aiFileName, setAiFileName] = useState('');
@@ -3175,7 +3177,9 @@ const handleGenerateAI = async () => {
         const currentDiamonds = userProfile?.mcData?.diamonds || 0;
        const aiNumInt = Number(aiNum);
         // 新計費：基礎 50 鑽(含10題)，超過 10 題的部分每題加 3 鑽
-        const requiredDiamonds = 50 + Math.max(0, aiNumInt - 10) * 3;
+        // ✨ 新增：圖片題每題加 4 鑽
+        const imgCount = aiEnableImages ? Math.round(aiNumInt * (aiImageRatio / 100)) : 0;
+        const requiredDiamonds = 50 + Math.max(0, aiNumInt - 10) * 3 + (imgCount * 4);
         
         if (currentDiamonds < requiredDiamonds) {
             return showAlert(`💎 鑽石不足！生成 ${aiNumInt} 題共需 ${requiredDiamonds} 顆鑽石 (基礎50 + 超出10題部分*3)。`);
@@ -3312,8 +3316,17 @@ ${difficultyInstruction}
                     `.trim();
                 }
 
-                const fullPrompt = `
+                const imgCount = aiEnableImages ? Math.round(aiNum * (aiImageRatio / 100)) : 0;
+        const imageInstruction = aiEnableImages ? `
+        # 圖片題特別要求 (重要)
+        1. 請務必讓其中的 ${imgCount} 題成為「圖片輔助題」。
+        2. 這 ${imgCount} 題的題幹中，請選定一個核心藥物或結構，並將其名稱包裹在 <<:英文藥名:>> 標籤中。
+        3. 例如：「關於下圖 <<:Atropine:>> 的敘述，何者錯誤？」或「<<:Paracetamol:>> 的代謝路徑為何？」。
+        4. 系統會根據標籤內的英文名稱自動從數據庫抓取化學結構圖呈現給學生。` : "";
+
+        const fullPrompt = `
                     ${basePrompt}
+                    ${imageInstruction}
 
                     【使用者指定內容】
                     - 題數：${aiNum} 題
@@ -4835,6 +4848,34 @@ ${difficultyInstruction}
                                 <p className="text-xs text-blue-600/70 dark:text-blue-300/70 font-bold leading-relaxed italic">
                                     「系統預設」模式將採用藥師國考高階命題邏輯，專注於細節辨識、機轉比較與結構個論，適合衝刺期考生。
                                 </p>
+                            )}
+                        </div>
+
+                        {/* ✨ 新增：圖片生成控制區塊 */}
+                        <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+                            <label className="flex items-center justify-between cursor-pointer">
+                                <span className="text-sm font-black text-yellow-800 dark:text-yellow-400">🖼️ 自動檢索藥物圖片 (+4💎/題)</span>
+                                <input 
+                                    type="checkbox" 
+                                    checked={aiEnableImages} 
+                                    onChange={e => setAiEnableImages(e.target.checked)} 
+                                    className="w-5 h-5 accent-yellow-600"
+                                />
+                            </label>
+                            {aiEnableImages && (
+                                <div className="mt-3 animate-fade-in">
+                                    <div className="flex justify-between text-[10px] font-bold text-yellow-700 dark:text-yellow-300 mb-1">
+                                        <span>圖片題占比</span>
+                                        <span>{aiImageRatio}% (約 {Math.round(aiNum * (aiImageRatio / 100))} 題)</span>
+                                    </div>
+                                    <input 
+                                        type="range" min="10" max="100" step="10" 
+                                        value={aiImageRatio} 
+                                        onChange={e => setAiImageRatio(parseInt(e.target.value))} 
+                                        className="w-full h-1.5 bg-yellow-200 rounded-lg appearance-none cursor-pointer accent-yellow-600" 
+                                    />
+                                    <p className="text-[9px] text-yellow-600 dark:text-yellow-500 mt-1">💡 開啟後，AI 會自動標記藥名，系統將從雲端抓取結構圖嵌入題目中。</p>
+                                </div>
                             )}
                         </div>
 
