@@ -298,9 +298,19 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
             const myQuizzesSnap = await db.collection('users').doc(user.uid).collection('quizzes').get();
             const myQuizzes = myQuizzesSnap.docs.map(d => d.data());
 
-            // 抓取原作者的這份試卷
-            const doc = await db.collection('users').doc(quizData.ownerId).collection('quizzes').doc(quizData.quizId).get();
-            
+            // 在 Chat.jsx 裡的下載邏輯，確保只寫入這些欄位：
+            await window.db.collection('users').doc(user.uid).collection('quizzes').add({
+                testName: msg.quizData.testName + ' (來自好友分享)',
+                numQuestions: msg.quizData.numQuestions || 50,
+                userAnswers: Array(msg.quizData.numQuestions || 50).fill(''),
+                starred: Array(msg.quizData.numQuestions || 50).fill(false),
+                isShared: true, 
+                creatorUid: msg.quizData.ownerId, 
+                creatorQuizId: msg.quizData.quizId,
+                folder: '未分類', 
+                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+            // ⚠️ 記得把 Chat.jsx 裡面建立 quizContents 的程式碼刪掉喔！
             // 如果不存在，跳出對應提示
             if(!doc.exists) {
                 return showAlert('❌ 該試卷已失效或被原作者刪除！', '下載失敗');
