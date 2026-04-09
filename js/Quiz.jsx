@@ -1901,10 +1901,11 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             });
 
             // 5. 將獨立包裹裡的題目內容，存入自己的 quizContents (✨ 延遲載入大改造：確保壓縮)
+            // 🚀 終極修復：避免「雙重壓縮」導致試題變成亂碼白屏！先用 safeDecompress 解壓縮確保是明文，再壓縮存入！
             await window.db.collection('users').doc(user.uid).collection('quizContents').doc(newDocRef.id).set({
-                questionText: window.jzCompress && sharedData.questionText ? window.jzCompress(sharedData.questionText) : (sharedData.questionText || ''),
-                questionHtml: window.jzCompress && sharedData.questionHtml ? window.jzCompress(sharedData.questionHtml) : (sharedData.questionHtml || ''),
-                explanationHtml: window.jzCompress && sharedData.explanationHtml ? window.jzCompress(sharedData.explanationHtml) : (sharedData.explanationHtml || '')
+                questionText: window.jzCompress && sharedData.questionText ? window.jzCompress(safeDecompress(sharedData.questionText, 'string')) : (sharedData.questionText || ''),
+                questionHtml: window.jzCompress && sharedData.questionHtml ? window.jzCompress(safeDecompress(sharedData.questionHtml, 'string')) : (sharedData.questionHtml || ''),
+                explanationHtml: window.jzCompress && sharedData.explanationHtml ? window.jzCompress(safeDecompress(sharedData.explanationHtml, 'string')) : (sharedData.explanationHtml || '')
             });
 
             // 6. 嘗試通知原作者。如果因為對方權限沒開而報錯，我們用 catch 攔截並忽略，【絕對不影響匯入成功】！
@@ -1997,9 +1998,29 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         setIsGeneratingCode(false);
     };
 
-    const shareToFriend = (friend) => {
+    const shareToFriend = async (friend) => {
         const cleanTestName = cleanQuizName(showShareModal.testName);
         const chatId = [user.uid, friend.uid].sort().join('_');
+        
+        // ✨ 修復漏水點：確保分享給好友時，有去倉庫把被隱藏的「龐大試題內容」抓出來一起寄出！
+        let fullQuestionsText = showShareModal.questionText || '';
+        let fullQuestionsHtml = showShareModal.questionHtml || '';
+        let fullExplanationHtml = showShareModal.explanationHtml || '';
+
+        if (showShareModal.hasSeparatedContent) {
+            try {
+                const contentDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(showShareModal.id).get();
+                if (contentDoc.exists) {
+                    const cData = contentDoc.data();
+                    fullQuestionsText = cData.questionText || '';
+                    fullQuestionsHtml = cData.questionHtml || '';
+                    fullExplanationHtml = cData.explanationHtml || '';
+                }
+            } catch (e) {
+                console.error("抓取完整試題內容失敗", e);
+            }
+        }
+
         window.db.collection('chats').doc(chatId).collection('messages').add({
             senderId: user.uid,
             senderName: userProfile.displayName,
@@ -2011,9 +2032,9 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 quizId: showShareModal.id,
                 testName: cleanTestName,
                 questionFileUrl: showShareModal.questionFileUrl || '',
-                questionText: showShareModal.questionText || '',
-                questionHtml: showShareModal.questionHtml || '',
-                explanationHtml: showShareModal.explanationHtml || '',
+                questionText: fullQuestionsText,
+                questionHtml: fullQuestionsHtml,
+                explanationHtml: fullExplanationHtml,
                 correctAnswersInput: showShareModal.correctAnswersInput || ''
             }
         }).then(() => {
