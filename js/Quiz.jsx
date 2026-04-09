@@ -1860,7 +1860,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             const emptyAnswers = Array(numQ).fill('');
             const emptyStarred = Array(numQ).fill(false);
             
-            // 4. 將試卷基本設定存入自己的 quizzes
+            // 4. 將試卷基本設定存入自己的 quizzes (✨ 延遲載入大改造：保持輕量封面)
             const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
                 testName: cleanQuizName(sharedData.testName || '未命名試卷') + ' (來自代碼)',
                 numQuestions: numQ,
@@ -1881,13 +1881,14 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 shortCode: cleanCode, 
                 hasSeparatedContent: true, // 新架構統一強制使用分離儲存
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                // 🚀 注意：沒有存入笨重的 questionText 等內容
             });
 
-            // 5. 將獨立包裹裡的題目內容，存入自己的 quizContents
+            // 5. 將獨立包裹裡的題目內容，存入自己的 quizContents (✨ 延遲載入大改造：確保壓縮)
             await window.db.collection('users').doc(user.uid).collection('quizContents').doc(newDocRef.id).set({
-                questionText: sharedData.questionText || '',
-                questionHtml: sharedData.questionHtml || '',
-                explanationHtml: sharedData.explanationHtml || ''
+                questionText: window.jzCompress && sharedData.questionText ? window.jzCompress(sharedData.questionText) : (sharedData.questionText || ''),
+                questionHtml: window.jzCompress && sharedData.questionHtml ? window.jzCompress(sharedData.questionHtml) : (sharedData.questionHtml || ''),
+                explanationHtml: window.jzCompress && sharedData.explanationHtml ? window.jzCompress(sharedData.explanationHtml) : (sharedData.explanationHtml || '')
             });
 
             // 6. 嘗試通知原作者。如果因為對方權限沒開而報錯，我們用 catch 攔截並忽略，【絕對不影響匯入成功】！
@@ -3507,29 +3508,32 @@ ${difficultyInstruction}
         setQuestionHtml(finalQuestionHtml);
 
         try {
+            // ✨ 延遲載入大改造 1：主目錄只存「輕量封面」
             const docRef = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').add({
                 testName: finalTestName,
                 numQuestions, maxScore: Number(maxScore), roundScore, userAnswers: initialAnswers, starred: initialStarred, notes: initialNotes, peekedAnswers: initialPeeked, allowPeek, // ✨ 新增：存入初始筆記與偷看設定
                 correctAnswersInput: cleanKey,
                 publishAnswers: true, 
-                questionFileUrl: finalFileUrl,
+                questionFileUrl: finalFileUrl, // 網址很輕量，可以留著
                 hasTimer: hasTimer,
                 timeLimit: hasTimer ? Number(timeLimit) : null,
                 timeRemaining: hasTimer ? Number(timeLimit) * 60 : null,
                 folder: finalFolder, // ✨ 修正：使用自動判斷後的 [公開試題管理]
-                hasSeparatedContent: true,
+                hasSeparatedContent: true, // ✨ 告訴系統：這份考卷的內文被切出去了！
                 isCompleted: false,
                 taskType, examYear, examSubject, examTag, examRange, // ✨ 存入新標籤與範圍
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                // 🚀 注意：移除了 questionText, questionHtml, explanationHtml，主目錄瞬間變輕量！
             });
 
+            // ✨ 延遲載入大改造 2：笨重的考卷內容單獨存在 quizContents，等點擊才下載
             await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(docRef.id).set({
-                questionText: window.jzCompress(finalQuestionText),
-                questionHtml: finalQuestionHtml ? window.jzCompress(finalQuestionHtml) : '',
-                explanationHtml: explanationHtml ? window.jzCompress(explanationHtml) : ''
+                questionText: window.jzCompress ? window.jzCompress(finalQuestionText) : finalQuestionText,
+                questionHtml: finalQuestionHtml ? (window.jzCompress ? window.jzCompress(finalQuestionHtml) : finalQuestionHtml) : '',
+                explanationHtml: explanationHtml ? (window.jzCompress ? window.jzCompress(explanationHtml) : explanationHtml) : ''
             });
 
-           setQuizId(docRef.id);
+            setQuizId(docRef.id);
 
             if (taskType === 'official' || taskType === 'mock') {
                 window.db.collection('publicTasks').doc(docRef.id).set({
