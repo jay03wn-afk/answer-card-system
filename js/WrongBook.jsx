@@ -266,7 +266,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const handleGoToQuiz = async (quizId) => {
         setIsJumping(true); 
         try {
-            let doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'server' }).catch(() => null);
+            let doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get().catch(() => null);
             if (!doc || !doc.exists) {
                 doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'cache' });
             }

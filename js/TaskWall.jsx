@@ -755,7 +755,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                                         setJumpingQaId(qa.id);
                                                         try {
                                                             // ✨ 點擊挑戰時，強制向伺服器要這一題的最新資料 (確保絕不拿到舊題目)
-                                                            const docSnap = await window.db.collection('fastQA').doc(qa.id).get({ source: 'server' });
+                                                            const docSnap = await window.db.collection('fastQA').doc(qa.id).get();
                                                             if (docSnap.exists) {
                                                                 setActiveQA({ id: docSnap.id, ...docSnap.data() });
                                                             } else {

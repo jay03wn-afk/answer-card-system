@@ -680,7 +680,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 
                 setWrongItems(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 setLoading(false);
-                clearTimeout(fallbackTimer);
+               
             });
             
         const unsubUser = window.db.collection('users').doc(user.uid).onSnapshot(doc => {
@@ -832,7 +832,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const handleGoToQuiz = async (quizId) => {
         setIsJumping(true); 
         try {
-            let doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'server' }).catch(() => null);
+            let doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get().catch(() => null);
             if (!doc || !doc.exists) {
                 doc = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).get({ source: 'cache' });
             }
@@ -1180,12 +1180,15 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     ];
 
     useEffect(() => {
-        setTimeout(() => setLoading(false), 800);
+        // 🚀 移除 800ms 提早結束的 Bug，讓系統乖乖等雲端資料下載完
 
         const unsubTasks = window.db.collection('publicTasks')
             .orderBy('createdAt', 'desc')
             .limit(taskLimit) // ✨ 改吃我們設定的動態變數
             .onSnapshot({ includeMetadataChanges: true }, snap => {
+                // ✨ 新用戶防護：快取沒資料時繼續轉圈圈，等雲端
+                if (snap.empty && snap.metadata.fromCache) return;
+                
                 const groupedNormal = normalCategories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
                 const groupedOfficial = opCategories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
                 
@@ -1214,16 +1217,16 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 
                 setTasks(groupedNormal);
                 setOfficialTasks(groupedOfficial);
-                setLoading(false);
+                setLoading(false); // 雲端資料來了，才准關掉載入動畫！
             }, err => {
                 console.error(err);
                 setLoading(false);
             });
 
-        // 🚀 終極提速：加上 limit(30) 限制，避免每次開啟任務牆都把玩家「一輩子所有的考卷」全下載下來導致當機！
+        // 🚀 將 limit(30) 降為 limit(15)，因為舊版試卷夾帶了幾 MB 的垃圾資料，新用戶一次抓 30 份會等太久！
         const unsubMyQuizzes = window.db.collection('users').doc(user.uid).collection('quizzes')
             .orderBy('createdAt', 'desc')
-            .limit(30)
+            .limit(15)
             .onSnapshot({ includeMetadataChanges: true }, snap => {
                 if (snap.empty && snap.metadata.fromCache) return; // ✨ 擋掉空快取防閃爍
                 const myTaskMap = {};
@@ -1681,15 +1684,18 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
 
     useEffect(() => {
         let isMounted = true;
-        let fallbackTimer = setTimeout(() => {
-            if (isMounted) setLoading(false);
-        }, 800);
+        // 🚀 移除愚蠢的 800ms 強制關閉動畫，完全信任 Firebase 的連線狀態
 
         // 🚀 終極提速：利用 .limit() 讓 Firebase 每次只下載 15 份考卷，避開海量資料下載卡死
         const unsubscribe = window.db.collection('users').doc(user.uid).collection('quizzes')
             .orderBy('createdAt', 'desc')
             .limit(visibleLimit)
             .onSnapshot({ includeMetadataChanges: true }, snapshot => {
+                if (isMounted) {
+                    // ✨ 智慧判斷：如果是新用戶空快取，絕對不准提早關閉載入動畫！
+                    if (snapshot.empty && snapshot.metadata.fromCache) return;
+                }
+
                 if (isMounted) {
                     // 如果正在背景更新，且目前畫面是空的，則不准關閉 Loading
                     if (snapshot.metadata.hasPendingWrites && records.length === 0) {
@@ -1717,7 +1723,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                             return { id: doc.id, ...data };
                         }));
                         setLoading(false);
-                        clearTimeout(fallbackTimer);
+                       
                     }, 10);
                 }
             }, err => {
@@ -1727,7 +1733,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
 
         return () => {
             isMounted = false;
-            clearTimeout(fallbackTimer);
+            
             unsubscribe();
         };
     }, [user, visibleLimit, refreshTrigger]);
@@ -1826,6 +1832,9 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         if (!codeRegex.test(cleanCode)) return showAlert("⚠️ 代碼格式錯誤！請輸入 6 碼英數字。", "輸入錯誤");
 
         try {
+            // 🚀 核心修復 1：強制喚醒 Firebase 連線，解決「明明有網路卻報 offline」的 Bug
+            await window.db.enableNetwork().catch(() => {});
+
             const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
             if (isDuplicateCode) return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
 
@@ -1833,7 +1842,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             if (!codeDoc.exists) return showAlert("❌ 找不到該代碼，請確認代碼是否輸入正確，或代碼已失效。", "查無資料");
 
             const sharedData = codeDoc.data();
-            const safeOriginalQuizId = sharedData.originalQuizId || sharedData.quizId || 'MISSING_ID'; // 相容新舊版
+            const safeOriginalQuizId = sharedData.originalQuizId || sharedData.quizId || 'MISSING_ID'; 
             const safeOwnerId = sharedData.ownerId || 'MISSING_OWNER';
 
             if (safeOwnerId === user.uid) return showAlert("⚠️ 這是你自己的試卷！", "重複擁有");
@@ -1846,7 +1855,6 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             const emptyAnswers = Array(numQ).fill('');
             const emptyStarred = Array(numQ).fill(false);
             
-            // 🚀 核心升級：只在自己的資料庫建立一個「進度追蹤器 (Pointer)」
             await window.db.collection('users').doc(user.uid).collection('quizzes').add({
                 testName: cleanQuizName(sharedData.testName || sharedData.quizData?.testName || '未命名試卷') + ' (來自代碼)',
                 numQuestions: numQ,
@@ -1857,14 +1865,18 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 creatorQuizId: safeOriginalQuizId,
                 folder: '未分類', 
                 shortCode: cleanCode, 
-                // ⚠️ 絕對不要再把 questionHtml 塞進來，也不用建立 quizContents
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
 
             showAlert(`✅ 成功加入試卷！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
         } catch (e) {
             console.error("匯入錯誤詳細資訊:", e);
-            showAlert('❌ 發生非預期錯誤：' + e.message, "系統錯誤");
+            // 🚀 核心修復 2：友善提示。如果真的還在斷線重連中，引導使用者等待 3 秒
+            if (e.message.includes('offline')) {
+                showAlert('📶 系統剛從背景喚醒，正在重新連線中...\\n👉 請稍等 3 秒後「再點一次」即可成功匯入！', "連線恢復中");
+            } else {
+                showAlert('❌ 發生非預期錯誤：' + e.message, "系統錯誤");
+            }
         }
     };
 
@@ -2059,7 +2071,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
 
                 // ✨ 任務牆同步機制 (保持原樣)
                 if (finalRec.isTask && finalRec.taskId) {
-                    const taskDoc = await window.db.collection('publicTasks').doc(finalRec.taskId).get({ source: 'server' });
+                    const taskDoc = await window.db.collection('publicTasks').doc(finalRec.taskId).get();
                     if (taskDoc.exists) {
                         const taskData = taskDoc.data();
                         const isAnsChanged = taskData.correctAnswersInput && taskData.correctAnswersInput !== finalRec.correctAnswersInput;
@@ -2129,7 +2141,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                                 window.db.collection('users').doc(user.uid).collection('quizzes')
                                     .orderBy('createdAt', 'desc')
                                     .limit(visibleLimit)
-                                    .get({ source: 'server' })
+                                    .get()
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
                                     .finally(() => setIsRefreshing(false));
@@ -3506,10 +3518,11 @@ ${difficultyInstruction}
 
             if (taskType === 'official' || taskType === 'mock') {
                 window.db.collection('publicTasks').doc(docRef.id).set({
-                    testName: finalTestName, numQuestions, questionFileUrl: finalFileUrl, questionText: finalQuestionText, 
-                    questionHtml: finalQuestionHtml, explanationHtml: explanationHtml, correctAnswersInput: cleanKey,
+                    testName: finalTestName, numQuestions, questionFileUrl: finalFileUrl,
+                    // 🚀 提速優化：斬斷肥胖源頭！不再將 questionText, questionHtml 存入公開大廳
+                    correctAnswersInput: cleanKey,
                     hasTimer, timeLimit: hasTimer ? Number(timeLimit) : null, 
-                    taskType, examYear, examSubject, examTag, // ✨ 存入新標籤
+                    taskType, examYear, examSubject, examTag,
                     creatorUid: currentUser.uid,
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 }).catch(e => console.error("任務牆同步失敗", e));
@@ -3699,9 +3712,7 @@ ${difficultyInstruction}
                         timeLimit,
                         taskType, examYear, examSubject, examTag,
                         questionFileUrl: questionFileUrl || '',
-                        questionHtml: updates.questionHtml || oldData.questionHtml || '',
-                        questionText: updates.questionText || oldData.questionText || '',
-                        explanationHtml: updates.explanationHtml || oldData.explanationHtml || '',
+                        // 🚀 提速優化：斬斷肥胖源頭！不再將 questionHtml 等龐大內容存入任務牆
                         correctAnswersInput: cleanKey
                     };
 
@@ -3932,12 +3943,12 @@ ${difficultyInstruction}
         let latestKey = correctAnswersInput || '';
         try {
             // ✨ 強制從雲端抓取最新資料，解決按下重新算分卻沒抓到新資料的問題
-            const doc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get({ source: 'server' });
+            const doc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
             if (doc.exists) {
                 const data = doc.data();
                 latestKey = data.correctAnswersInput || '';
                 if (data.isTask && data.taskId) {
-                    const taskDoc = await window.db.collection('publicTasks').doc(data.taskId).get({ source: 'server' });
+                    const taskDoc = await window.db.collection('publicTasks').doc(data.taskId).get();
                     if (taskDoc.exists) {
                         latestKey = taskDoc.data().correctAnswersInput || latestKey;
                     }
@@ -6333,7 +6344,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                             onClick={() => { 
                                 setIsRefreshing(true); 
                                 // ✨ 恢復強制同步：快問快答很輕量，可直接用 server 確保最新
-                                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get({ source: 'server' })
+                                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get()
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
                                     .finally(() => setIsRefreshing(false));
@@ -6485,7 +6496,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                                         setJumpingQaId(qa.id);
                                                         try {
                                                             // ✨ 點擊挑戰時，強制向伺服器要這一題的最新資料 (確保絕不拿到舊題目)
-                                                            const docSnap = await window.db.collection('fastQA').doc(qa.id).get({ source: 'server' });
+                                                            const docSnap = await window.db.collection('fastQA').doc(qa.id).get();
                                                             if (docSnap.exists) {
                                                                 setActiveQA({ id: docSnap.id, ...docSnap.data() });
                                                             } else {
