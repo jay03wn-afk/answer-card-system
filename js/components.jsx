@@ -599,6 +599,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
             });
 
             if (targetNewsId) {
+                if (!window.db) return; // ✨ 新增防呆機制：確保資料庫已經準備好才去讀取，防止白畫面當機
                 unsubNews = window.db.collection('newsletters').doc(targetNewsId).onSnapshot(doc => {
                     if (!isMounted) return;
                     if (doc.exists) {
