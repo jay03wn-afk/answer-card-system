@@ -200,3 +200,38 @@ window.jzDecompressAsync = function(data, onProgress) {
         window.jzWorker.postMessage({ data, id });
     });
 };
+// ✨ 輕量級右下角全域 Toast 提示系統 (不依賴 React 結構，全域可用)
+window.showToast = (message, type = 'loading') => {
+    let toastEl = document.getElementById('global-toast');
+    
+    // 如果畫面上還沒有這個提示框，就動態建立一個
+    if (!toastEl) {
+        toastEl = document.createElement('div');
+        toastEl.id = 'global-toast';
+        document.body.appendChild(toastEl);
+    }
+    
+    // 根據不同狀態設定顏色與圖示 (使用你現有的 Tailwind CSS)
+    if (type === 'loading') {
+        toastEl.className = 'fixed bottom-6 right-6 z-[9999] bg-gray-800 px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 transition-all duration-300 transform translate-y-0 opacity-100 text-white font-bold text-sm md:text-base';
+        toastEl.innerHTML = `<div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div><span>${message}</span>`;
+    } else if (type === 'success') {
+        toastEl.className = 'fixed bottom-6 right-6 z-[9999] bg-green-600 px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 transition-all duration-300 transform translate-y-0 opacity-100 text-white font-bold text-sm md:text-base';
+        toastEl.innerHTML = `<span class="text-xl">✅</span><span>${message}</span>`;
+        
+        // 成功後 3 秒自動往下隱藏消失
+        setTimeout(() => {
+            toastEl.classList.remove('translate-y-0', 'opacity-100');
+            toastEl.classList.add('translate-y-10', 'opacity-0');
+        }, 3000);
+    } else if (type === 'error') {
+        toastEl.className = 'fixed bottom-6 right-6 z-[9999] bg-red-600 px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 transition-all duration-300 transform translate-y-0 opacity-100 text-white font-bold text-sm md:text-base';
+        toastEl.innerHTML = `<span class="text-xl">❌</span><span>${message}</span>`;
+        
+        // 錯誤後 3 秒自動往下隱藏消失
+        setTimeout(() => {
+            toastEl.classList.remove('translate-y-0', 'opacity-100');
+            toastEl.classList.add('translate-y-10', 'opacity-0');
+        }, 3000);
+    }
+};

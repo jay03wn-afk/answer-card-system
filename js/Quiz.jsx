@@ -1846,23 +1846,37 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
         const codeRegex = /^[A-Z0-9]{6}$/;
         if (!codeRegex.test(cleanCode)) return showAlert("⚠️ 代碼格式錯誤！請輸入 6 碼英數字。", "輸入錯誤");
 
+        window.showToast("正在匯入試題...", "loading"); // ✨ 新增：開始匯入時顯示右下角轉圈圈
+
         try {
             const isDuplicateCode = records.some(r => r.shortCode === cleanCode);
-            if (isDuplicateCode) return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
+            if (isDuplicateCode) {
+                window.showToast("匯入失敗：重複加入", "error"); // ✨ 新增錯誤提示
+                return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
+            }
 
             const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
-            if (!codeDoc.exists) return showAlert("❌ 找不到該代碼，請確認代碼是否輸入正確，或代碼已失效。", "查無資料");
+            if (!codeDoc.exists) {
+                window.showToast("匯入失敗：查無資料", "error"); // ✨ 新增錯誤提示
+                return showAlert("❌ 找不到該代碼，請確認代碼是否輸入正確，或代碼已失效。", "查無資料");
+            }
 
             const sharedData = codeDoc.data();
             const actualData = sharedData.quizData ? { ...sharedData, ...sharedData.quizData } : sharedData;
             const safeOriginalQuizId = actualData.originalQuizId || actualData.quizId || 'MISSING_ID'; 
             const safeOwnerId = actualData.ownerId || 'MISSING_OWNER';
 
-            if (safeOwnerId === user.uid) return showAlert("⚠️ 這是你自己的試卷！", "重複擁有");
+            if (safeOwnerId === user.uid) {
+                window.showToast("匯入失敗：自己的試卷", "error"); // ✨ 新增錯誤提示
+                return showAlert("⚠️ 這是你自己的試卷！", "重複擁有");
+            }
 
             const duplicateCheck = await window.db.collection('users').doc(user.uid).collection('quizzes')
                 .where('shortCode', '==', cleanCode).limit(1).get();
-            if (!duplicateCheck.empty) return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
+            if (!duplicateCheck.empty) {
+                window.showToast("匯入失敗：重複加入", "error"); // ✨ 新增錯誤提示
+                return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
+            }
 
             const numQ = Number(actualData.numQuestions || 50);
             
@@ -1880,9 +1894,11 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 // 🚀 核心：不儲存任何題目內文！進入試卷時直接拿 shortCode 鑰匙去大廳抓！
             });
 
+            window.showToast("試卷匯入成功！", "success"); // ✨ 新增：成功時變成綠色打勾
             showAlert(`✅ 成功加入試卷！\n試卷已自動放入「未分類」資料夾。`, "匯入成功");
         } catch (e) {
             console.error("匯入錯誤詳細資訊:", e);
+            window.showToast("匯入失敗", "error"); // ✨ 新增錯誤提示
             showAlert('❌ 發生非預期錯誤：' + e.message, "系統錯誤");
         }
     };

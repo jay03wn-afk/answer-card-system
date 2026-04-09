@@ -293,11 +293,16 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
 
     // 🚀 系統重寫：輕量化指標下載邏輯
     const downloadSharedQuiz = async (quizData) => {
+        window.showToast("正在下載好友分享的試題...", "loading"); // ✨ 新增：點擊下載時顯示右下角轉圈圈
+
         try {
             // 1. 檢查是否已經擁有這把鑰匙
             if (quizData.shortCode) {
                 const check = await db.collection('users').doc(user.uid).collection('quizzes').where('shortCode', '==', quizData.shortCode).get();
-                if (!check.empty) return showAlert('⚠️ 你已經擁有此試卷！', '重複加入');
+                if (!check.empty) {
+                    window.showToast("下載失敗：重複加入", "error"); // ✨ 新增錯誤提示
+                    return showAlert('⚠️ 你已經擁有此試卷！', '重複加入');
+                }
             }
 
             // 2. 建立本地「空殼」作答卡，只存最重要的鑰匙 (shortCode)
@@ -315,8 +320,10 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
 
+            window.showToast("成功接收好友試題！", "success"); // ✨ 新增：成功時變成綠色打勾
             showAlert('✅ 已成功存入！\n題目將在進入作答時自動載入最新版本。');
         } catch (e) {
+            window.showToast("下載失敗", "error"); // ✨ 新增錯誤提示
             showAlert('下載失敗：'+e.message);
         }
     };
