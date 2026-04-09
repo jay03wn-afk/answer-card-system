@@ -1855,7 +1855,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 return showAlert(`⚠️ 你已經擁有此試卷！`, "重複加入");
             }
 
-            const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get();
+            // 強制從伺服器抓取 (source: 'server')，避免因為快取機制誤判為離線
+            const codeDoc = await window.db.collection('shareCodes').doc(cleanCode).get({ source: 'server' });
             if (!codeDoc.exists) {
                 window.showToast("匯入失敗：查無資料", "error"); // ✨ 新增錯誤提示
                 return showAlert("❌ 找不到該代碼，請確認代碼是否輸入正確，或代碼已失效。", "查無資料");
