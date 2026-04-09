@@ -883,18 +883,26 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 const emptyAnswers = Array(filteredItems.length).fill('');
                 const emptyStarred = Array(filteredItems.length).fill(false);
 
+                // ✨ 延遲載入大改造 4：錯題重測生成時，也要把輕重資料切開
                 const docRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
                     testName: `[錯題重測] ${currentFolder}`,
                     numQuestions: filteredItems.length,
-                    questionHtml: qHtml,
-                    explanationHtml: eHtml,
+                    // 🚀 移除笨重內容
                     correctAnswersInput: cleanKey,
                     publishAnswers: true,
                     userAnswers: emptyAnswers,
                     starred: emptyStarred,
                     folder: '錯題重測', 
                     viewMode: 'interactive', 
+                    hasSeparatedContent: true, // ✨ 標記為已分離
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                // ✨ 單獨存入笨重內容 (套用壓縮機制)
+                await window.db.collection('users').doc(user.uid).collection('quizContents').doc(docRef.id).set({
+                    questionText: '',
+                    questionHtml: window.jzCompress ? window.jzCompress(qHtml) : qHtml,
+                    explanationHtml: window.jzCompress ? window.jzCompress(eHtml) : eHtml
                 });
 
                 if (!customFolders.includes('錯題重測')) {
@@ -904,7 +912,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 }
 
                 const docSnap = await docRef.get();
-                onContinueQuiz({ id: docSnap.id, ...docSnap.data(), forceStep: 'answering' });
+                onContinueQuiz({ id: docSnap.id, ...docSnap.data(), questionHtml: qHtml, explanationHtml: eHtml, forceStep: 'answering' });
 
             } catch (e) {
                 showAlert('生成錯題重測失敗：' + e.message);
@@ -1315,13 +1323,12 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 const emptyAnswers = Array(Number(task.numQuestions)).fill('');
                 const emptyStarred = Array(Number(task.numQuestions)).fill(false);
 
+                // ✨ 延遲載入大改造 3：任務牆參加任務時，也要把輕重資料切開
                 const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
                     testName: task.testName,
                     numQuestions: task.numQuestions,
                     questionFileUrl: task.questionFileUrl || '',
-                    questionText: task.questionText || '',
-                    questionHtml: task.questionHtml || '',
-                    explanationHtml: task.explanationHtml || '',
+                    // 🚀 移除笨重內容，保持清單輕量！
                     correctAnswersInput: task.correctAnswersInput || '',
                     publishAnswers: task.publishAnswers !== false,
                     userAnswers: emptyAnswers,
@@ -1334,11 +1341,20 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                     creatorUid: task.creatorUid || '', 
                     creatorQuizId: task.id,
                     folder: '任務牆',
+                    hasSeparatedContent: true, // ✨ 標記為已分離
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
 
+                // ✨ 單獨存入笨重內容
+                await window.db.collection('users').doc(user.uid).collection('quizContents').doc(newDocRef.id).set({
+                    questionText: task.questionText || '',
+                    questionHtml: task.questionHtml || '',
+                    explanationHtml: task.explanationHtml || ''
+                });
+
                 const newRec = await newDocRef.get();
-                onContinueQuiz({ id: newRec.id, ...newRec.data() });
+                // ✨ 把剛才切出去的內容手動塞回畫面，達到秒開效果
+                onContinueQuiz({ id: newRec.id, ...newRec.data(), questionText: task.questionText, questionHtml: task.questionHtml, explanationHtml: task.explanationHtml });
                 
             } catch (e) {
                 showAlert('啟動任務失敗：' + e.message);
@@ -2157,11 +2173,11 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                        <button 
                             onClick={() => { 
                                 setIsRefreshing(true); 
-                                // ✨ 復原：移除強制 server，讓 Firebase 自己處理快取，避免系統崩潰
+                                // ✨ 終極完成：資料已經輕量化，我們大膽加回 { source: 'server' } 實現跨裝置秒更新！
                                 window.db.collection('users').doc(user.uid).collection('quizzes')
                                     .orderBy('createdAt', 'desc')
                                     .limit(visibleLimit)
-                                    .get()
+                                    .get({ source: 'server' })
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
                                     .finally(() => setIsRefreshing(false));
@@ -6363,8 +6379,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         <button 
                             onClick={() => { 
                                 setIsRefreshing(true); 
-                                // ✨ 復原：移除強制 server，讓 Firebase 自己處理快取，避免系統崩潰
-                                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get()
+                                // ✨ 恢復強制同步：快問快答很輕量，可直接用 server 確保最新
+                                window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get({ source: 'server' })
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
                                     .finally(() => setIsRefreshing(false));
