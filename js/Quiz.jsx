@@ -4140,7 +4140,19 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ prompt: gradingPrompt })
                     });
-                    const data = await res.json();
+                    
+                    // ✨ 防護 1：檢查伺服器是否回應正常 (避免 504 Gateway Timeout)
+                    if (!res.ok) {
+                        throw new Error(`伺服器連線異常 (狀態碼: ${res.status})，可能是 AI 思考時間過長導致超時，請稍後再試一次！`);
+                    }
+                    
+                    // ✨ 防護 2：先轉成純文字檢查，避免 res.json() 遇到空字串當機
+                    const resText = await res.text();
+                    if (!resText) {
+                        throw new Error('伺服器回傳了空值，可能是處理超時！');
+                    }
+                    
+                    const data = JSON.parse(resText);
                     
                     clearInterval(simInterval);
                     setGradingProgress({ show: true, percent: 90, text: '正在結算所有題目的總分...' });
@@ -4355,36 +4367,42 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                 return showAlert(`⚠️ 第 ${item.number} 題已經收錄在錯題本中了！`);
             }
             
+            // ✨ 智慧擷取：計算該題的「局部題號 (qLocalNum)」與「題型 (qType)」
+            const actualIdx = item.number - 1;
+            const qType = parsedQuestionTypes[actualIdx] || 'Q';
+            const qLocalNum = parsedQuestionTypes.slice(0, actualIdx + 1).filter(t => t === qType).length;
+
             // ✨ 智慧擷取：判斷是否為富文本，並精準保留
             let extractedText = '';
             let extractedHtml = '';
-            
             if (questionHtml) {
-                // ✨ 修正：正規表達式加入 SQ 與 ASQ，並確保正確擷取題目本體
-                const regexStr = `\\[(?:Q|SQ|ASQ)\\.?0*${item.number}\\]([\\s\\S]*?)(?=\\[(?:Q|SQ|ASQ)\\.?\\d+\\]|\\[End\\]|$)`;
+                // ✨ 修正：正規表達式精準匹配當前題型 (Q/SQ/ASQ) 與局部題號
+                const regexStr = `\\[${qType}\\.?0*${qLocalNum}\\]([\\s\\S]*?)(?=\\[(?:Q|SQ|ASQ)\\.?\\d+\\]|\\[End\\]|$)`;
                 const match = questionHtml.match(new RegExp(regexStr, 'i'));
                 if (match) {
-                    extractedHtml = match[1].trim(); 
+                    extractedHtml = match[1].trim();
                 }
             } else {
-                extractedText = extractSpecificQuestion(questionText, item.number, false);
+                // ✨ 修正：純文字模式也需精準匹配題型與局部題號
+                extractedText = extractSpecificContent(questionText, qLocalNum, [qType]);
             }
 
-            const extractedExp = extractSpecificExplanation(explanationHtml, item.number);
+            // ✨ 修正：詳解也改用局部題號與對應題型擷取
+            const expTags = qType === 'Q' ? ['A'] : qType === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
+            const extractedExp = extractSpecificContent(explanationHtml, qLocalNum, expTags);
             const plainExp = extractedExp ? extractedExp.replace(/<[^>]+>/g, '').trim() : '';
-            
+
             // ✨ 新增：將該題的筆記自動帶入詳解下方
-            const actualIdx = item.number - 1;
             let finalExp = plainExp;
             if (notes && notes[actualIdx]) {
                 finalExp = finalExp ? `${finalExp}\n\n【我的筆記】\n${notes[actualIdx]}` : `【我的筆記】\n${notes[actualIdx]}`;
             }
 
-            setWrongBookAddingItem({ 
-                ...item, 
-                extractedQText: extractedText, 
+            setWrongBookAddingItem({
+                ...item,
+                extractedQText: extractedText,
                 extractedQHtml: extractedHtml,
-                extractedExp: finalExp 
+                extractedExp: finalExp
             });
         } catch (error) {
             console.error("收錄錯題發生錯誤:", error);
