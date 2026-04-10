@@ -4022,15 +4022,10 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         let latestKey = correctAnswersInput || '';
         try {
             // ✨ 強制從雲端抓取最新資料，解決按下重新算分卻沒抓到新資料的問題
-           const doc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
+            const doc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
             if (doc.exists) {
                 const data = doc.data();
                 latestKey = data.correctAnswersInput || '';
-
-                // ✨ 修正：重新算分前，先把雲端的填答紀錄抓回來存入狀態，避免本地狀態為空時洗掉答案
-                if (data.userAnswers) setUserAnswers(safeDecompress(data.userAnswers, 'array'));
-                if (data.shortAnswersInput) setShortAnswersInput(data.shortAnswersInput);
-
                 if (data.isTask && data.taskId) {
                     const taskDoc = await window.db.collection('publicTasks').doc(data.taskId).get();
                     if (taskDoc.exists) {
@@ -6428,9 +6423,8 @@ if (step === 'grading') return (
                             <style dangerouslySetInnerHTML={{__html: `.preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: ${immersiveTextSize}rem; line-height: 1.6; background-color: transparent !important; } .preview-rich-text img, .preview-rich-text canvas { display: block !important; max-width: 100% !important; height: auto !important; margin: 10px 0 !important; cursor: zoom-in; }`}} />
                             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 sm:p-4 flex justify-between items-center shadow-sm z-20 overflow-x-auto">
                                 <div className="flex items-center gap-4">
-                                    <button onClick={() => setShowQuestionGrid(!showQuestionGrid)} className="font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 px-3 py-1.5 rounded flex items-center gap-2">
+                                    <button onClick={() => setShowQuestionGrid(!showQuestionGrid)} className="font-bold text-blue-600 dark:text-blue-400 px-3 py-1.5 rounded flex items-center gap-2">
                                         <span>第 {currentInteractiveIndex + 1} / {parsedInteractiveQuestions.length} 題</span>
-                                        <span className="text-xs hidden sm:inline">{showQuestionGrid ? '▲ 收起' : '▼ 展開列表'}</span>
                                     </button>
                                     <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
                                         <button onClick={() => setImmersiveTextSize(prev => Math.max(0.6, prev - 0.2))} className="px-3 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-200 font-black">A-</button>
@@ -6462,25 +6456,6 @@ if (step === 'grading') return (
                                                 <div className="mb-6 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 p-4 rounded-lg text-sm text-gray-800 dark:text-gray-200">
                                                     <div className="font-bold text-purple-800 dark:text-purple-300 mb-1">🤖 AI 批改評語</div>
                                                     {aiFeedback[actualIdx]}
-                                                </div>
-                                            )}
-                                            {q.type === 'Q' && (
-                                                <div className="grid grid-cols-1 gap-2 mb-6">
-                                                    {['A', 'B', 'C', 'D'].map(opt => {
-                                                        const isSelected = userAnswers[actualIdx] === opt;
-                                                        const isCorrectOpt = currentCorrectAns.toLowerCase().includes(opt.toLowerCase()) || currentCorrectAns.toLowerCase() === 'z';
-                                                        let btnClasses = `text-left w-full py-2 px-4 border-2 transition-all flex items-start space-x-3 no-round flex-1 `;
-                                                        if (isCorrectOpt) btnClasses += 'bg-green-50 border-green-500 dark:bg-green-900/30 ';
-                                                        else if (isSelected) btnClasses += 'bg-red-50 border-red-500 dark:bg-red-900/30 ';
-                                                        else btnClasses += 'bg-white border-gray-200 dark:bg-gray-800 opacity-60 ';
-                                                        return (
-                                                            <div key={opt} className={btnClasses}>
-                                                                <span className="font-black">{opt}.</span>
-                                                                <div dangerouslySetInnerHTML={{ __html: q.options[opt] || '(無選項內容)' }} />
-                                                                {isCorrectOpt && <span className="ml-auto font-bold text-xs bg-green-500 text-white px-1.5 py-0.5 no-round">正確答案</span>}
-                                                            </div>
-                                                        );
-                                                    })}
                                                 </div>
                                             )}
                                             <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded">
