@@ -3934,7 +3934,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
 
         let totalDefinedScore = 0;
         let undefinedCount = 0;
-        let mcqCorrectCount = 0;
+        let totalCorrectCount = 0; // ✨ 修正：改為統計全題型總答對數
         const scoreConfig = [];
 
         parsedQuestionTypes.forEach((type, idx) => {
@@ -3960,10 +3960,11 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         const data = safeUserAnswers.map((ans, idx) => {
             const type = parsedQuestionTypes[idx] || 'Q';
             const config = scoreConfig[idx];
-            const maxPts = config.hasDefined ? config.point : baseWeight; // ✨ 取得該題配分
+            const maxPts = config.hasDefined ? config.point : baseWeight;
             let earnedPoints = 0;
             let isCorrect = false;
             let finalCorrectAns = '';
+            let aiScore = 0;
 
             if (type === 'Q') {
                 const key = keyArray[idx] || '-';
@@ -3973,7 +3974,6 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     isCorrect = key === key.toUpperCase() ? (ans === key) : key.toLowerCase().includes(ans.toLowerCase());
                     if (isCorrect) earnedPoints = maxPts;
                 }
-                if (isCorrect) mcqCorrectCount++;
             } else if (type === 'SQ') {
                 let saArray = []; try { saArray = JSON.parse(shortAnswersInput); } catch(e) { saArray = []; }
                 const nonMcqIndices = parsedQuestionTypes.map((t, i) => t !== 'Q' ? i : -1).filter(i => i !== -1);
@@ -3981,18 +3981,19 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                 finalCorrectAns = targetAns || '(無正解)';
                 if (targetAns && String(ans || '').trim().toLowerCase() === targetAns.toLowerCase()) { isCorrect = true; earnedPoints = maxPts; }
             } else if (type === 'ASQ') {
-                const scoreOutOf100 = aiScores[idx] !== undefined ? aiScores[idx] : 0;
-                earnedPoints = (scoreOutOf100 / 100) * maxPts;
-                finalCorrectAns = `AI 評分 ${scoreOutOf100}/100`;
-                isCorrect = scoreOutOf100 >= 60;
+                aiScore = aiScores[idx] !== undefined ? aiScores[idx] : 0;
+                earnedPoints = (aiScore / 100) * maxPts;
+                finalCorrectAns = `AI 評分 ${aiScore}/100`;
+                isCorrect = aiScore >= 60;
             }
 
+            if (isCorrect) totalCorrectCount++; // ✨ 只要判定正確就加 1
             finalTotalScore += earnedPoints;
-            return { number: idx + 1, userAns: ans || '未填', correctAns: finalCorrectAns, isCorrect, earnedPoints, maxPoints: maxPts };
+            return { number: idx + 1, userAns: ans || '未填', correctAns: finalCorrectAns, isCorrect, earnedPoints, maxPoints: maxPts, aiScore };
         });
 
         const scoreVal = roundScore ? Math.round(finalTotalScore) : Number(finalTotalScore.toFixed(2));
-        const newResults = { score: scoreVal, correctCount: mcqCorrectCount, total: safeNumQuestions, data };
+        const newResults = { score: scoreVal, correctCount: totalCorrectCount, total: safeNumQuestions, data };
         
         setResults(newResults);
         setStep('results');
@@ -4007,15 +4008,29 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
     const handleManualRegrade = async (isAuto = false) => {
         if (!results || !results.data) return;
 
-        setIsRegrading(true); // ✨ 提早開啟全螢幕載入畫面，避免畫面卡死
+        setIsRegrading(true); 
+
+        // ✨ 修正：重新算分前，先提取目前已有的 AI 分數，避免被清空
+        const currentAiScores = {};
+        results.data.forEach((item, idx) => {
+            if (parsedQuestionTypes[idx] === 'ASQ') {
+                const match = (item.correctAns || '').match(/AI 評分 (\d+)\/100/);
+                if (match) currentAiScores[idx] = parseInt(match[1], 10);
+            }
+        });
 
         let latestKey = correctAnswersInput || '';
         try {
             // ✨ 強制從雲端抓取最新資料，解決按下重新算分卻沒抓到新資料的問題
-            const doc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
+           const doc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
             if (doc.exists) {
                 const data = doc.data();
                 latestKey = data.correctAnswersInput || '';
+
+                // ✨ 修正：重新算分前，先把雲端的填答紀錄抓回來存入狀態，避免本地狀態為空時洗掉答案
+                if (data.userAnswers) setUserAnswers(safeDecompress(data.userAnswers, 'array'));
+                if (data.shortAnswersInput) setShortAnswersInput(data.shortAnswersInput);
+
                 if (data.isTask && data.taskId) {
                     const taskDoc = await window.db.collection('publicTasks').doc(data.taskId).get();
                     if (taskDoc.exists) {
@@ -5709,9 +5724,9 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                             </div>
                                             
                                             <div className="mb-4 text-gray-800 dark:text-gray-200 leading-relaxed preview-rich-text !border-none !p-0 !bg-transparent" dangerouslySetInnerHTML={{ __html: q.mainText }} />
-                                    
-                                    {/* ✨ AI 批改理由顯示 (閱卷後直接顯示) */}
-                                    {aiFeedback && aiFeedback[actualIdx] && (
+                                            
+                                            {/* ✨ AI 批改理由顯示 (僅在閱卷後顯示) */}
+                                            {step === 'results' && aiFeedback && aiFeedback[actualIdx] && (
                                         <div className="mb-6 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden shadow-sm transition-all">
                                             <div className="bg-purple-100 dark:bg-purple-800/80 px-4 py-2 flex justify-between items-center border-b border-purple-200 dark:border-purple-700">
                                                 <span className="font-bold text-xs text-purple-800 dark:text-purple-200 flex items-center">🤖 AI 批改評語</span>
@@ -6409,10 +6424,76 @@ if (step === 'grading') return (
                             <p className="text-gray-500 dark:text-gray-400 font-bold max-w-sm">出題者已將此試卷的標準答案隱藏。<br/>您的分數已記錄成功，您可以前往討論區與大家交流！</p>
                         </div>
                     ) : viewMode === 'interactive' ? (
-                        /* ✨ 新增：結果頁面的沉浸式視圖 - 複用剛才修正過的區塊即可 */
                         <div className="flex-grow flex flex-col w-full bg-slate-50 dark:bg-slate-950 transition-colors mt-2 overflow-hidden relative">
-                             {/* 這裡貼上與【第一步】中完全相同的沉浸式內容渲染邏輯 (從 <style> 一直到渲染區結束) */}
-                             {/* 基於長度考量，請將【第一步】中的所有沉浸式 UI 代碼複製到這裡 */}
+                            <style dangerouslySetInnerHTML={{__html: `.preview-rich-text { word-break: break-word; white-space: pre-wrap; font-size: ${immersiveTextSize}rem; line-height: 1.6; background-color: transparent !important; } .preview-rich-text img, .preview-rich-text canvas { display: block !important; max-width: 100% !important; height: auto !important; margin: 10px 0 !important; cursor: zoom-in; }`}} />
+                            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 sm:p-4 flex justify-between items-center shadow-sm z-20 overflow-x-auto">
+                                <div className="flex items-center gap-4">
+                                    <button onClick={() => setShowQuestionGrid(!showQuestionGrid)} className="font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 px-3 py-1.5 rounded flex items-center gap-2">
+                                        <span>第 {currentInteractiveIndex + 1} / {parsedInteractiveQuestions.length} 題</span>
+                                        <span className="text-xs hidden sm:inline">{showQuestionGrid ? '▲ 收起' : '▼ 展開列表'}</span>
+                                    </button>
+                                    <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
+                                        <button onClick={() => setImmersiveTextSize(prev => Math.max(0.6, prev - 0.2))} className="px-3 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-200 font-black">A-</button>
+                                        <button onClick={() => setImmersiveTextSize(prev => Math.min(3.0, prev + 0.2))} className="px-3 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-200 font-black">A+</button>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button disabled={currentInteractiveIndex === 0} onClick={() => setCurrentInteractiveIndex(prev => Math.max(0, prev - 1))} className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-1.5 font-bold disabled:opacity-30">上一題</button>
+                                    <button disabled={currentInteractiveIndex === parsedInteractiveQuestions.length - 1} onClick={() => setCurrentInteractiveIndex(prev => Math.min(parsedInteractiveQuestions.length - 1, prev + 1))} className="bg-black dark:bg-gray-200 text-white dark:text-black px-4 py-1.5 font-bold disabled:opacity-30 shadow-sm">下一題</button>
+                                </div>
+                            </div>
+                            <div className="flex-grow overflow-y-auto p-4 sm:p-6 custom-scrollbar relative z-10">
+                                {(() => {
+                                    const q = parsedInteractiveQuestions[currentInteractiveIndex];
+                                    if (!q) return null;
+                                    const actualIdx = q.globalIndex;
+                                    const itemData = results?.data?.find(d => d.number === (actualIdx + 1));
+                                    const currentCorrectAns = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '').includes(',') ? (correctAnswersInput.split(',')[actualIdx]) : (correctAnswersInput.match(/[A-DZ]|[a-dz]+/g)?.[actualIdx] || '');
+                                    const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
+                                    const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number);
+                                    return (
+                                        <div key={actualIdx} className={`bg-white dark:bg-gray-800 border-2 shadow-xl p-4 sm:p-6 mb-10 transition-all ${itemData?.isCorrect ? 'border-green-200 dark:border-green-900' : 'border-red-200 dark:border-red-900'}`}>
+                                            <div className="flex justify-between items-start mb-4 border-b dark:border-gray-700 pb-3">
+                                                <span className={`text-xl font-black ${q.type === 'Q' ? 'text-blue-600' : q.type === 'SQ' ? 'text-teal-600' : 'text-purple-600'}`}>第 {q.type === 'Q' ? q.number : `${q.type}.${q.number}`} 題</span>
+                                                <span className={`px-3 py-1 font-bold rounded ${itemData?.isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{itemData?.isCorrect ? '✅ 答對' : '❌ 答錯'}</span>
+                                            </div>
+                                            <div className="mb-6 preview-rich-text text-gray-800 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: q.mainText }} />
+                                            {aiFeedback && aiFeedback[actualIdx] && (
+                                                <div className="mb-6 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 p-4 rounded-lg text-sm text-gray-800 dark:text-gray-200">
+                                                    <div className="font-bold text-purple-800 dark:text-purple-300 mb-1">🤖 AI 批改評語</div>
+                                                    {aiFeedback[actualIdx]}
+                                                </div>
+                                            )}
+                                            {q.type === 'Q' && (
+                                                <div className="grid grid-cols-1 gap-2 mb-6">
+                                                    {['A', 'B', 'C', 'D'].map(opt => {
+                                                        const isSelected = userAnswers[actualIdx] === opt;
+                                                        const isCorrectOpt = currentCorrectAns.toLowerCase().includes(opt.toLowerCase()) || currentCorrectAns.toLowerCase() === 'z';
+                                                        let btnClasses = `text-left w-full py-2 px-4 border-2 transition-all flex items-start space-x-3 no-round flex-1 `;
+                                                        if (isCorrectOpt) btnClasses += 'bg-green-50 border-green-500 dark:bg-green-900/30 ';
+                                                        else if (isSelected) btnClasses += 'bg-red-50 border-red-500 dark:bg-red-900/30 ';
+                                                        else btnClasses += 'bg-white border-gray-200 dark:bg-gray-800 opacity-60 ';
+                                                        return (
+                                                            <div key={opt} className={btnClasses}>
+                                                                <span className="font-black">{opt}.</span>
+                                                                <div dangerouslySetInnerHTML={{ __html: q.options[opt] || '(無選項內容)' }} />
+                                                                {isCorrectOpt && <span className="ml-auto font-bold text-xs bg-green-500 text-white px-1.5 py-0.5 no-round">正確答案</span>}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                            <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded">
+                                                <div className="flex justify-between font-bold text-sm mb-2 border-b pb-2 dark:border-gray-700">
+                                                    <span className="text-gray-500">正確答案：<span className="text-black dark:text-white">{currentCorrectAns || '見解析'}</span></span>
+                                                    <span className="text-gray-500">您的作答：<span className={itemData?.isCorrect ? 'text-green-600' : 'text-red-600'}>{userAnswers[actualIdx] || '未填'}</span></span>
+                                                </div>
+                                                <div className="preview-rich-text text-sm" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(currentExp || '此題無解析') }} />
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
                         </div>
                     ) : (
                         <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white dark:bg-gray-800 transition-colors">
