@@ -2857,9 +2857,8 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
         }
     };
     
-    // ✨ 新增：自動解析沉浸式作答的題目與選項
+  // ✨ 新增：自動解析沉浸式作答的題目與選項
     const parsedInteractiveQuestions = React.useMemo(() => {
-        if (viewMode !== 'interactive') return [];
         const rawContent = questionHtml || questionText || '';
         if (!rawContent) return [];
         
@@ -4053,7 +4052,14 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
 
         // 情況 B：有更動，執行原本的批改邏輯更新分數
         try {
-            await handleGrade(latestKey); // 將最新解答傳入批改系統
+            // ✨ 提取現有的 AI 分數與回饋，避免重新算分時歸零
+            const existingAiScores = {};
+            results.data.forEach((item, idx) => {
+                if (parsedQuestionTypes[idx] === 'ASQ') {
+                    existingAiScores[idx] = item.aiScore || 0;
+                }
+            });
+            await handleGrade(latestKey, existingAiScores, aiFeedback); // 將最新解答傳入批改系統
 
             // ✨ 同步更新錯題本中的答案
             const wbSnapshot = await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').where('quizId', '==', quizId).get();
@@ -5779,17 +5785,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                                 </div>
                                             </div>
                                             
-                                            <div className="mb-4 text-gray-800 dark:text-gray-200 leading-relaxed preview-rich-text !border-none !p-0 !bg-transparent" dangerouslySetInnerHTML={{ __html: q.mainText }} />
-                                    
-                                    {/* ✨ AI 批改理由顯示 (閱卷後直接顯示) */}
-                                    {aiFeedback && aiFeedback[actualIdx] && (
-                                        <div className="mb-6 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden shadow-sm transition-all">
-                                            <div className="bg-purple-100 dark:bg-purple-800/80 px-4 py-2 flex justify-between items-center border-b border-purple-200 dark:border-purple-700">
-                                                <span className="font-bold text-xs text-purple-800 dark:text-purple-200 flex items-center">🤖 AI 批改評語</span>
-                                            </div>
-                                            <div className="p-4 text-sm text-gray-800 dark:text-gray-200 font-medium leading-relaxed" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(aiFeedback[actualIdx]) }} />
-                                        </div>
-                                    )}
+                                           <div className="mb-4 text-gray-800 dark:text-gray-200 leading-relaxed preview-rich-text !border-none !p-0 !bg-transparent" dangerouslySetInnerHTML={{ __html: q.mainText }} />
 
                                             <div className="grid grid-cols-1 gap-2">
                                                 {q.type === 'Q' ? ['A', 'B', 'C', 'D'].map(opt => {
@@ -6479,122 +6475,132 @@ if (step === 'grading') return (
                             <h3 className="font-black text-xl text-gray-700 dark:text-gray-300 mb-2">答案未公開</h3>
                             <p className="text-gray-500 dark:text-gray-400 font-bold max-w-sm">出題者已將此試卷的標準答案隱藏。<br/>您的分數已記錄成功，您可以前往討論區與大家交流！</p>
                         </div>
-                    ) : viewMode === 'interactive' ? (
-                        /* ✨ 新增：結果頁面的沉浸式視圖 - 複用剛才修正過的區塊即可 */
-                        <div className="flex-grow flex flex-col w-full bg-slate-50 dark:bg-slate-950 transition-colors mt-2 overflow-hidden relative">
-                             {/* 這裡貼上與【第一步】中完全相同的沉浸式內容渲染邏輯 (從 <style> 一直到渲染區結束) */}
-                             {/* 基於長度考量，請將【第一步】中的所有沉浸式 UI 代碼複製到這裡 */}
-                        </div>
                     ) : (
                         <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white dark:bg-gray-800 transition-colors">
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px 16px' }}>
-                              {results.data.filter(item => {
-                                    // ✨ 修改為 OR (聯集) 邏輯：只要勾選的條件有任何一個符合，就顯示
+                            {['Q', 'SQ', 'ASQ'].map(targetType => {
+                                const typeData = results.data.filter(item => {
+                                    const actualIdx = item.number - 1;
+                                    const qType = parsedQuestionTypes[actualIdx] || 'Q';
+                                    if (qType !== targetType) return false;
+
                                     if (!showOnlyWrong && !showOnlyStarred && !showOnlyNotes) return true;
                                     let show = false;
                                     if (showOnlyWrong && !item.isCorrect) show = true;
                                     if (showOnlyStarred && item.isStarred) show = true;
                                     if (showOnlyNotes && notes && notes[item.number - 1]) show = true;
                                     return show;
-                                }).map((item, i) => {
-                                    // ✨ 核心修正：計算該題的獨立題號與題型
-                                    const actualIdx = item.number - 1;
-                                    const qType = parsedQuestionTypes[actualIdx] || 'Q';
-                                    const qLocalNum = parsedQuestionTypes.slice(0, actualIdx + 1).filter(t => t === qType).length;
-                                    
-                                    return (
-                                   <div 
-                                        key={i} 
-                                        onClick={() => {
-                                            scrollToQuestion(item.number); // ✨ 新增：點擊卡片時同時讓左側題目跳轉
-                                            if (isTask && initialRecord.taskId) {
-                                                setCommentQNum(item.number.toString());
-                                                setShowDiscussion(true);
-                                                setTimeout(() => {
-                                                    discussionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                                }, 100);
-                                            }
-                                        }}
-                                        className={`break-avoid flex flex-col justify-between p-3 border border-gray-100 dark:border-gray-700 no-round transition-colors ${item.isCorrect ? 'bg-green-50 dark:bg-green-900/40' : 'bg-red-50 dark:bg-red-900/40'} cursor-pointer hover:opacity-80 hover:ring-2 ring-blue-400`}
-                                        title="點擊跳轉至此題題目與討論"
-                                    >
-                                        <div className="flex justify-between items-center w-full mb-2 border-b border-gray-200 dark:border-gray-600 pb-2">
-                                            <div className="flex items-center space-x-3 shrink-0">
-                                                <div className="flex items-center justify-center space-x-1">
-                                                    {item.isStarred && <span className="text-orange-500 text-xs shrink-0">★</span>}
-                                                    {notes && notes[item.number - 1] && <span className="text-blue-500 text-xs shrink-0">📝</span>}
-                                                    <span className={`font-mono text-lg font-bold hover:underline whitespace-nowrap ${item.isCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
-                                                        第 {qType === 'Q' ? qLocalNum : `${qType}.${qLocalNum}`} 題 <span className="ml-2 text-xs opacity-70">({(item.earnedPoints || 0).toFixed(1).replace(/\.0$/, '')} / {(item.maxPoints || 0).toFixed(1).replace(/\.0$/, '')})</span>
-                                                    </span>
-                                                    {qType !== 'Q' && <span className={`text-[10px] px-1.5 py-0.5 ml-1 rounded font-bold border whitespace-nowrap ${qType === 'SQ' ? 'bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-900 dark:text-teal-200' : 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900 dark:text-purple-200'}`}>{qType === 'SQ' ? '簡答題' : '問答題'}</span>}
-                                                </div>
-                                            </div>
-                                            <div className="flex flex-col items-end space-y-1">
-                                                <div className="flex items-center space-x-2 text-sm">
-                                                    <span className="text-gray-500 dark:text-gray-400 text-xs font-bold">你的答案</span>
-                                                    <span className={`font-black text-base min-w-[24px] text-right ${item.isCorrect ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{item.userAns}</span>
-                                                </div>
-                                                <div className="flex items-center space-x-2 text-sm">
-                                                    <span className="text-gray-500 dark:text-gray-400 text-xs font-bold">正確答案</span>
-                                                    <span className="font-black text-base min-w-[24px] text-right text-black dark:text-white">{qType === 'Q' ? (item.correctAns || '無') : '見解析'}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        {/* ✨ 新增：AI 批改回饋顯示區塊 (直接嵌在卡片內) */}
-                                        {qType === 'ASQ' && aiFeedback && aiFeedback[actualIdx] && (
-                                            <div className="mb-3 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden shadow-sm transition-all" onClick={e => e.stopPropagation()}>
-                                                <button 
-                                                    onClick={() => setAiFeedback(prev => ({...prev, [`show_${actualIdx}`]: !prev[`show_${actualIdx}`]}))}
-                                                    className="w-full bg-purple-100 dark:bg-purple-800/80 px-3 py-1.5 flex justify-between items-center hover:bg-purple-200 dark:hover:bg-purple-700 transition-colors"
-                                                >
-                                                    <span className="font-bold text-xs text-purple-800 dark:text-purple-200 flex items-center">
-                                                        🤖 查看 AI 評分理由
-                                                    </span>
-                                                    <span className="text-purple-600 dark:text-purple-300 font-black text-xs">{aiFeedback[`show_${actualIdx}`] ? '▲' : '▼'}</span>
-                                                </button>
-                                                {aiFeedback[`show_${actualIdx}`] && (
-                                                    <div className="p-3 text-xs text-gray-800 dark:text-gray-200 font-medium leading-relaxed border-t border-purple-200 dark:border-purple-700">
-                                                        <div className="mb-2 p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-600">
-                                                            <span className="font-bold text-gray-500">你的回答：</span><br/>
-                                                            {item.userAns}
-                                                        </div>
-                                                        <span className="font-bold text-purple-600 dark:text-purple-400">AI 評語：</span><br/>
-                                                        {aiFeedback[actualIdx]}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
+                                });
 
-                                        <div className="flex justify-end w-full gap-2">
-                                            {(() => {
-                                                // ✨ 確保「查看詳解」按鈕也是抓獨立題號
-                                                const expTags = qType === 'Q' ? ['A'] : qType === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
-                                                const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, qLocalNum, expTags) : extractSpecificExplanation(explanationHtml, qLocalNum);
+                                if (typeData.length === 0) return null;
+
+                                const typeLabel = targetType === 'Q' ? '🔵 選擇題' : targetType === 'SQ' ? '🟢 簡答題' : '🟣 問答題';
+
+                                return (
+                                    <div key={targetType} className="mb-8 last:mb-0">
+                                        <h4 className="font-bold text-lg mb-4 border-b-2 pb-2 dark:text-white border-gray-200 dark:border-gray-700">{typeLabel}</h4>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px 16px' }}>
+                                            {typeData.map((item, i) => {
+                                                const actualIdx = item.number - 1;
+                                                const qType = parsedQuestionTypes[actualIdx] || 'Q';
+                                                const qLocalNum = parsedQuestionTypes.slice(0, actualIdx + 1).filter(t => t === qType).length;
                                                 
-                                                if (currentExp || (notes && notes[item.number - 1])) {
-                                                    return (
-                                                        <button 
-                                                            onClick={(e) => { e.stopPropagation(); setExplanationModalItem({ number: item.number, content: currentExp, note: notes ? notes[item.number - 1] : '' }); }} 
-                                                            className="text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-green-600 dark:text-green-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
-                                                        >
-                                                            💡 詳解筆記
-                                                        </button>
-                                                    );
-                                                }
-                                                return null;
-                                            })()}
-                                           <button 
-                                                disabled={loadingWrongBookNum === item.number}
-                                                onClick={(e) => { e.stopPropagation(); handleAddToWrongBook(item); }} 
-                                                className={`text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm ${loadingWrongBookNum === item.number ? 'opacity-50 cursor-wait' : ''}`}
-                                            >
-                                                {loadingWrongBookNum === item.number ? '⏳ 處理中...' : '📓 收錄錯題'}
-                                            </button>
+                                                return (
+                                                   <div 
+                                                        key={`${targetType}-${i}`} 
+                                                        onClick={() => {
+                                                            scrollToQuestion(item.number); // ✨ 新增：點擊卡片時同時讓左側題目跳轉
+                                                            if (isTask && initialRecord.taskId) {
+                                                                setCommentQNum(item.number.toString());
+                                                                setShowDiscussion(true);
+                                                                setTimeout(() => {
+                                                                    discussionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                                }, 100);
+                                                            }
+                                                        }}
+                                                        className={`break-avoid flex flex-col justify-between p-3 border border-gray-100 dark:border-gray-700 no-round transition-colors ${item.isCorrect ? 'bg-green-50 dark:bg-green-900/40' : 'bg-red-50 dark:bg-red-900/40'} cursor-pointer hover:opacity-80 hover:ring-2 ring-blue-400`}
+                                                        title="點擊跳轉至此題題目與討論"
+                                                    >
+                                                        <div className="flex justify-between items-center w-full mb-2 border-b border-gray-200 dark:border-gray-600 pb-2">
+                                                            <div className="flex items-center space-x-3 shrink-0">
+                                                                <div className="flex items-center justify-center space-x-1">
+                                                                    {item.isStarred && <span className="text-orange-500 text-xs shrink-0">★</span>}
+                                                                    {notes && notes[item.number - 1] && <span className="text-blue-500 text-xs shrink-0">📝</span>}
+                                                                    <span className={`font-mono text-lg font-bold hover:underline whitespace-nowrap ${item.isCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                                                                        第 {qType === 'Q' ? qLocalNum : `${qType}.${qLocalNum}`} 題 <span className="ml-2 text-xs opacity-70">({(item.earnedPoints || 0).toFixed(1).replace(/\.0$/, '')} / {(item.maxPoints || 0).toFixed(1).replace(/\.0$/, '')})</span>
+                                                                    </span>
+                                                                    {qType !== 'Q' && <span className={`text-[10px] px-1.5 py-0.5 ml-1 rounded font-bold border whitespace-nowrap ${qType === 'SQ' ? 'bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-900 dark:text-teal-200' : 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900 dark:text-purple-200'}`}>{qType === 'SQ' ? '簡答題' : '問答題'}</span>}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-col items-end space-y-1">
+                                                                <div className="flex items-center space-x-2 text-sm">
+                                                                    <span className="text-gray-500 dark:text-gray-400 text-xs font-bold">你的答案</span>
+                                                                    <span className={`font-black text-base min-w-[24px] text-right ${item.isCorrect ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{item.userAns}</span>
+                                                                </div>
+                                                                <div className="flex items-center space-x-2 text-sm">
+                                                                    <span className="text-gray-500 dark:text-gray-400 text-xs font-bold">正確答案</span>
+                                                                    <span className="font-black text-base min-w-[24px] text-right text-black dark:text-white">{qType === 'Q' ? (item.correctAns || '無') : '見解析'}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* ✨ 新增：AI 批改回饋顯示區塊 (直接嵌在卡片內) */}
+                                                        {qType === 'ASQ' && aiFeedback && aiFeedback[actualIdx] && (
+                                                            <div className="mb-3 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden shadow-sm transition-all" onClick={e => e.stopPropagation()}>
+                                                                <button 
+                                                                    onClick={() => setAiFeedback(prev => ({...prev, [`show_${actualIdx}`]: !prev[`show_${actualIdx}`]}))}
+                                                                    className="w-full bg-purple-100 dark:bg-purple-800/80 px-3 py-1.5 flex justify-between items-center hover:bg-purple-200 dark:hover:bg-purple-700 transition-colors"
+                                                                >
+                                                                    <span className="font-bold text-xs text-purple-800 dark:text-purple-200 flex items-center">
+                                                                        🤖 查看 AI 評分理由
+                                                                    </span>
+                                                                    <span className="text-purple-600 dark:text-purple-300 font-black text-xs">{aiFeedback[`show_${actualIdx}`] ? '▲' : '▼'}</span>
+                                                                </button>
+                                                                {aiFeedback[`show_${actualIdx}`] && (
+                                                                    <div className="p-3 text-xs text-gray-800 dark:text-gray-200 font-medium leading-relaxed border-t border-purple-200 dark:border-purple-700">
+                                                                        <div className="mb-2 p-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-600">
+                                                                            <span className="font-bold text-gray-500">你的回答：</span><br/>
+                                                                            {item.userAns}
+                                                                        </div>
+                                                                        <span className="font-bold text-purple-600 dark:text-purple-400">AI 評語：</span><br/>
+                                                                        {aiFeedback[actualIdx]}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        <div className="flex justify-end w-full gap-2">
+                                                            {(() => {
+                                                                // ✨ 確保「查看詳解」按鈕也是抓獨立題號
+                                                                const expTags = qType === 'Q' ? ['A'] : qType === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
+                                                                const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, qLocalNum, expTags) : extractSpecificExplanation(explanationHtml, qLocalNum);
+                                                                
+                                                                if (currentExp || (notes && notes[item.number - 1])) {
+                                                                    return (
+                                                                        <button 
+                                                                            onClick={(e) => { e.stopPropagation(); setExplanationModalItem({ number: item.number, content: currentExp, note: notes ? notes[item.number - 1] : '' }); }} 
+                                                                            className="text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-green-600 dark:text-green-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                                                                        >
+                                                                            💡 詳解筆記
+                                                                        </button>
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            })()}
+                                                           <button 
+                                                                disabled={loadingWrongBookNum === item.number}
+                                                                onClick={(e) => { e.stopPropagation(); handleAddToWrongBook(item); }} 
+                                                                className={`text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm ${loadingWrongBookNum === item.number ? 'opacity-50 cursor-wait' : ''}`}
+                                                            >
+                                                                {loadingWrongBookNum === item.number ? '⏳ 處理中...' : '📓 收錄錯題'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
-                                )})}
-                            </div>
+                                );
+                            })}
                         </div>
                     )}
 
