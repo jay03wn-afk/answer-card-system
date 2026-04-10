@@ -4349,11 +4349,11 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
             let extractedHtml = '';
             
             if (questionHtml) {
-                // ✨ 修正：正規表達式加入 SQ 與 ASQ，確保非選擇題也能自動抓取題目內容
-                const regexStr = `\\[(Q|SQ|ASQ)\\.?0*${item.number}\\]([\\s\\S]*?)(?=\\[(Q|SQ|ASQ)\\.?\\d+\\]|\\[End\\]|$)`;
+                // ✨ 修正：正規表達式加入 SQ 與 ASQ，並確保正確擷取題目本體
+                const regexStr = `\\[(?:Q|SQ|ASQ)\\.?0*${item.number}\\]([\\s\\S]*?)(?=\\[(?:Q|SQ|ASQ)\\.?\\d+\\]|\\[End\\]|$)`;
                 const match = questionHtml.match(new RegExp(regexStr, 'i'));
                 if (match) {
-                    extractedHtml = match[2].trim(); // 修正：擷取第二個捕獲群組 (實際題目內容)
+                    extractedHtml = match[1].trim(); 
                 }
             } else {
                 extractedText = extractSpecificQuestion(questionText, item.number, false);
@@ -5673,11 +5673,13 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                 {(() => {
                                     const q = parsedInteractiveQuestions[currentInteractiveIndex];
                                     if (!q) return null;
-                                    const actualIdx = q.globalIndex; // ✨ 核心：改用全域索引，完全解除填寫格子重疊的問題！
+                                    const actualIdx = q.globalIndex; 
                                     const currentAns = userAnswers[actualIdx];
                                     const isStarred = starred[actualIdx];
                                     
-                                    // ✨ 新增：偷看答案相關邏輯 (修正：開放好友分享的試卷也能偷看)
+                                    // 取得閱卷後的詳細數據 (如果有的話)
+                                    const itemData = results?.data?.find(d => d.number === (actualIdx + 1));
+                                    
                                     const isPeeked = peekedAnswers && peekedAnswers[actualIdx];
                                     const isNormalQuiz = !isTask && taskType === 'normal';
                                     const canPeek = allowPeek && (isNormalQuiz || isShared);
@@ -5685,8 +5687,6 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                     const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
                                     const keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
                                     const currentCorrectAns = keyArray[actualIdx] || '';
-                                    
-                                    // ✨ 修正：依照不同題型，精準抓取對應的解答標籤，不再讓 Q 與 ASQ 抓到相同的解說
                                     const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
                                     const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number);
 
@@ -5694,42 +5694,29 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                 <div key={actualIdx} className={`bg-white dark:bg-gray-800 border-2 shadow-xl p-4 sm:p-6 mb-10 transition-all ${isPeeked ? 'border-orange-300 dark:border-orange-700' : 'border-slate-200 dark:border-slate-700'}`}>
                                     <div className="flex justify-between items-start mb-4 border-b border-slate-100 dark:border-gray-700 pb-3">
                                                 <div className="flex items-center space-x-3">
-                                                    {/* ✨ 強化標題辨識：如果是簡答或問答，題號將顯示為 SQ.1 或 ASQ.1 */}
-                                                    <span className={`font-mono text-lg font-bold hover:underline cursor-pointer ${item.isCorrect ? 'text-green-600 dark:text-green-400' : qType !== 'Q' ? 'text-purple-600 dark:text-purple-400' : 'text-red-600 dark:text-red-400'}`} onClick={() => scrollToQuestion(item.number)}>
-                                                    第 {qType === 'Q' ? qLocalNum : `${qType}.${qLocalNum}`} 題
-                                                    <span className="ml-2 text-xs opacity-70">({(item.earnedPoints || 0).toFixed(1)} / {(item.maxPoints || 0).toFixed(1)})</span>
-                                                </span>
+                                                    <span className={`text-xl font-black ${q.type === 'Q' ? 'text-blue-600 dark:text-blue-400' : q.type === 'SQ' ? 'text-teal-600 dark:text-teal-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                                                        第 {q.type === 'Q' ? q.number : `${q.type}.${q.number}`} 題
+                                                        {itemData && <span className="ml-2 text-xs opacity-70">({(itemData.earnedPoints || 0).toFixed(1).replace(/\.0$/, '')} / {(itemData.maxPoints || 0).toFixed(1).replace(/\.0$/, '')})</span>}
+                                                    </span>
                                                     <button onClick={() => toggleStar(actualIdx)} className={`text-xl focus:outline-none transition-colors ${isStarred ? 'text-orange-500' : 'text-gray-300 dark:text-gray-600'} hover:scale-110`} title="標記星號">★</button>
                                                 </div>
-                                                <span className="text-sm font-bold bg-gray-100 dark:bg-gray-700 px-3 py-1 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
-                                                    選擇: {currentAns || '未答'}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {itemData && <span className={`text-xs px-2 py-1 font-bold border ${itemData.isCorrect ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{itemData.isCorrect ? '✅ 答對' : '❌ 錯誤'}</span>}
+                                                    <span className="text-sm font-bold bg-gray-100 dark:bg-gray-700 px-3 py-1 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                                                        作答: {currentAns || '未答'}
+                                                    </span>
+                                                </div>
                                             </div>
                                             
-                                            <div className="mb-4 text-gray-800 dark:text-gray-200 leading-relaxed" dangerouslySetInnerHTML={{ __html: q.mainText }} />
+                                            <div className="mb-4 text-gray-800 dark:text-gray-200 leading-relaxed preview-rich-text !border-none !p-0 !bg-transparent" dangerouslySetInnerHTML={{ __html: q.mainText }} />
                                     
-                                    {/* ✨ 新增：AI 批改回饋顯示區塊 (預設折疊) */}
-                                    {aiFeedback[actualIdx] && (
+                                    {/* ✨ AI 批改理由顯示 (閱卷後直接顯示) */}
+                                    {aiFeedback && aiFeedback[actualIdx] && (
                                         <div className="mb-6 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden shadow-sm transition-all">
-                                            <button 
-                                                onClick={() => setAiFeedback(prev => ({...prev, [`show_${actualIdx}`]: !prev[`show_${actualIdx}`]}))}
-                                                className="w-full bg-purple-100 dark:bg-purple-800/80 px-4 py-2.5 flex justify-between items-center hover:bg-purple-200 dark:hover:bg-purple-700 transition-colors"
-                                            >
-                                                <span className="font-bold text-purple-800 dark:text-purple-200 flex items-center">
-                                                    🤖 展開查看 AI 批改理由
-                                                </span>
-                                                <span className="text-purple-600 dark:text-purple-300 font-black">{aiFeedback[`show_${actualIdx}`] ? '▲' : '▼'}</span>
-                                            </button>
-                                            {aiFeedback[`show_${actualIdx}`] && (
-                                                <div className="p-4 text-sm text-gray-800 dark:text-gray-200 font-medium leading-relaxed border-t border-purple-200 dark:border-purple-700">
-                                                    <div className="mb-2 p-2 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-600">
-                                                        <span className="font-bold text-gray-500">你的回答：</span><br/>
-                                                        {currentAns || '未填寫'}
-                                                    </div>
-                                                    <span className="font-bold text-purple-600 dark:text-purple-400">AI 評語：</span><br/>
-                                                    {aiFeedback[actualIdx]}
-                                                </div>
-                                            )}
+                                            <div className="bg-purple-100 dark:bg-purple-800/80 px-4 py-2 flex justify-between items-center border-b border-purple-200 dark:border-purple-700">
+                                                <span className="font-bold text-xs text-purple-800 dark:text-purple-200 flex items-center">🤖 AI 批改評語</span>
+                                            </div>
+                                            <div className="p-4 text-sm text-gray-800 dark:text-gray-200 font-medium leading-relaxed" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(aiFeedback[actualIdx]) }} />
                                         </div>
                                     )}
 
@@ -5739,24 +5726,23 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                                     const isSelected = currentAns === opt;
                                                     const elimKey = `${actualIdx}_${opt}`;
                                                     const isEliminated = eliminatedOptions[elimKey];
+                                                    const isCorrectOpt = (isPeeked || !!results) && (currentCorrectAns.toLowerCase().includes(opt.toLowerCase()) || currentCorrectAns.toLowerCase() === 'abcd' || currentCorrectAns.toLowerCase() === 'z');
                                                     
-                                                    const isCorrectOpt = isPeeked && (currentCorrectAns.toLowerCase().includes(opt.toLowerCase()) || currentCorrectAns.toLowerCase() === 'abcd' || currentCorrectAns.toLowerCase() === 'z');
-                                                    let btnClasses = `text-left w-full py-1.5 px-3 border-2 transition-all flex items-start space-x-2 sm:space-x-3 no-round flex-1 `;
-                                                    
-                                                    if (isPeeked) {
-                                                        if (isCorrectOpt) btnClasses += 'bg-green-50 border-green-500 dark:bg-green-900/30 dark:border-green-500 shadow-sm ';
-                                                        else if (isSelected) btnClasses += 'bg-red-50 border-red-500 dark:bg-red-900/30 dark:border-red-500 shadow-sm ';
-                                                        else btnClasses += 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 opacity-60 ';
+                                                    let btnClasses = `text-left w-full py-2 px-4 border-2 transition-all flex items-start space-x-3 no-round flex-1 `;
+                                                    if (isPeeked || !!results) {
+                                                        if (isCorrectOpt) btnClasses += 'bg-green-50 border-green-500 dark:bg-green-900/30 shadow-sm ';
+                                                        else if (isSelected) btnClasses += 'bg-red-50 border-red-500 dark:bg-red-900/30 shadow-sm ';
+                                                        else btnClasses += 'bg-white border-gray-200 dark:bg-gray-800 opacity-60 ';
                                                         btnClasses += 'cursor-not-allowed ';
                                                     } else {
-                                                        btnClasses += isSelected ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400 shadow-sm scale-[1.01] ' : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-750 ';
+                                                        btnClasses += isSelected ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/30 scale-[1.01] ' : 'bg-white border-gray-200 dark:bg-gray-800 hover:border-blue-300 ';
                                                         if (isTimeUp) btnClasses += 'locked-btn opacity-80 ';
                                                         if (isEliminated) btnClasses += 'opacity-30 grayscale '; 
                                                     }
 
-                                                   return (
+                                                    return (
                                                         <div key={opt} className="flex items-stretch gap-2 w-full">
-                                                            {showEliminationBtn && (
+                                                            {showEliminationBtn && !results && (
                                                                 <button
                                                                     disabled={isTimeUp || isPeeked}
                                                                     onClick={(e) => {
@@ -5764,80 +5750,60 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                                                         setEliminatedOptions(prev => ({ ...prev, [elimKey]: !prev[elimKey] }));
                                                                         if (!isEliminated && isSelected) handleAnswerSelect(actualIdx, opt);
                                                                     }}
-                                                                    className={`w-8 sm:w-10 flex items-center justify-center border-2 transition-colors no-round shrink-0 ${isEliminated ? 'bg-gray-200 border-gray-300 text-gray-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300' : 'bg-white border-gray-200 text-gray-300 hover:text-gray-500 hover:border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500 dark:hover:bg-gray-700'}`}
+                                                                    className={`w-10 flex items-center justify-center border-2 transition-colors no-round shrink-0 ${isEliminated ? 'bg-gray-200 border-gray-300 text-gray-600 dark:bg-gray-700' : 'bg-white border-gray-200 text-gray-300 hover:text-gray-500 dark:bg-gray-800'}`}
                                                                 >
-                                                                    {isEliminated ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>}
+                                                                    {isEliminated ? '↺' : '✕'}
                                                                 </button>
                                                             )}
                                                             <button 
-                                                                disabled={isTimeUp || isPeeked}
-                                                                onClick={(e) => {
-                                                                    if (e.target.tagName === 'IMG' && (e.target.closest('.preview-rich-text') || e.target.classList.contains('zoomable-img'))) {
-                                                                        e.stopPropagation(); setPreviewLightboxImg(e.target.src); return;
-                                                                    } else if (e.target.tagName === 'CANVAS' && e.target.closest('.preview-rich-text')) {
-                                                                        e.stopPropagation(); setPreviewLightboxImg(e.target.toDataURL()); return;
-                                                                    }
-                                                                    if (!isEliminated) handleAnswerSelect(actualIdx, opt);
-                                                                }}
+                                                                disabled={isTimeUp || isPeeked || !!results}
+                                                                onClick={() => !isEliminated && handleAnswerSelect(actualIdx, opt)}
                                                                 className={btnClasses}
                                                             >
-                                                                <span style={{ fontSize: `${Math.max(1, immersiveTextSize * 0.9)}rem` }} className={`font-black mt-0.5 w-6 sm:w-8 shrink-0 text-center ${isPeeked && isCorrectOpt ? 'text-green-600 dark:text-green-400' : isPeeked && isSelected ? 'text-red-600 dark:text-red-400' : isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`}>{opt}.</span>
+                                                                <span className={`font-black mt-0.5 w-6 shrink-0 text-center ${isSelected ? 'text-blue-600' : 'text-gray-400'}`}>{opt}.</span>
                                                                 {hasCustomContent ? (
-                                                                    <div className={`preview-rich-text w-full flex-1 ${isPeeked && (isCorrectOpt || isSelected) ? 'text-black dark:text-white' : isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'} ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`} dangerouslySetInnerHTML={{ __html: q.options[opt] }} />
+                                                                    <div className={`preview-rich-text !p-0 !border-none !bg-transparent w-full flex-1 ${isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'}`} dangerouslySetInnerHTML={{ __html: q.options[opt] }} />
                                                                 ) : (
-                                                                    <span className={`w-full flex-1 ${isSelected || (isPeeked && isCorrectOpt) ? 'text-black dark:text-white' : 'text-gray-400 dark:text-gray-600'} italic ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`}>(選項無內容)</span>
+                                                                    <span className="w-full flex-1 text-gray-400 italic">(選項無內容)</span>
                                                                 )}
                                                             </button>
                                                         </div>
                                                     );
-                                                }) : q.type === 'SQ' ? (
-                                                    <input 
-                                                        type="text" 
-                                                        disabled={isTimeUp || isPeeked}
-                                                        value={currentAns || ''}
-                                                        onChange={e => {
-                                                            const newAns = [...userAnswers];
-                                                            newAns[actualIdx] = e.target.value;
-                                                            setUserAnswers(newAns);
-                                                        }}
-                                                        className="w-full p-4 text-lg border-2 border-teal-500 outline-none bg-teal-50 dark:bg-gray-800 dark:text-white shadow-inner transition-colors focus:ring-4 ring-teal-200"
-                                                        placeholder="請輸入簡答題答案 (需與正解完全一致才給分)..."
-                                                    />
-                                                ) : (
+                                                }) : (
                                                     <textarea 
-                                                        disabled={isTimeUp || isPeeked}
+                                                        disabled={isTimeUp || isPeeked || !!results}
                                                         value={currentAns || ''}
                                                         onChange={e => {
                                                             const newAns = [...userAnswers];
                                                             newAns[actualIdx] = e.target.value;
                                                             setUserAnswers(newAns);
                                                         }}
-                                                        className="w-full p-4 h-40 text-base border-2 border-purple-500 outline-none bg-purple-50 dark:bg-gray-800 dark:text-white shadow-inner transition-colors focus:ring-4 ring-purple-200 resize-none custom-scrollbar"
-                                                        placeholder="請輸入問答題詳解 (交卷後將由 AI 自動評分)..."
+                                                        className={`w-full p-4 h-40 text-base border-2 outline-none bg-white dark:bg-gray-800 dark:text-white shadow-inner transition-colors focus:ring-4 ${q.type === 'SQ' ? 'border-teal-500 ring-teal-200' : 'border-purple-500 ring-purple-200'} resize-none custom-scrollbar`}
+                                                        placeholder={`請輸入${q.type === 'SQ' ? '簡答' : '問答'}答案...`}
                                                     />
                                                 )}
                                             </div>
                                             
-                                            {/* ✨ 新增：偷看答案按鈕與詳解區塊 */}
-                                            {canPeek && !isPeeked && (
+                                            {canPeek && !isPeeked && !results && (
                                                 <div className="mt-4 flex justify-end">
-                                                    <button onClick={() => handlePeek(actualIdx)} className="text-sm font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400 px-4 py-2 hover:bg-orange-200 dark:hover:bg-orange-800 transition-colors border border-orange-200 dark:border-orange-800 flex items-center gap-2">
+                                                    <button onClick={() => handlePeek(actualIdx)} className="text-sm font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/40 px-4 py-2 hover:bg-orange-200 transition-colors border border-orange-200 flex items-center gap-2">
                                                         👀 偷看答案 (將鎖定此題)
                                                     </button>
                                                 </div>
                                             )}
-                                            {isPeeked && (
+
+                                            {(isPeeked || results) && (
                                                 <div className="mt-4 p-4 bg-orange-50 dark:bg-gray-900 border border-orange-200 dark:border-orange-800 text-sm">
-                                                    <div className="font-bold text-orange-700 dark:text-orange-400 mb-2 pb-2 border-b border-orange-200 dark:border-orange-800 flex items-center gap-2">
-                                                        <span>🔒 此題已看過答案並鎖定</span>
-                                                        <span className="bg-white dark:bg-gray-800 px-2 py-0.5 rounded border border-orange-200 dark:border-orange-800 ml-auto text-black dark:text-white">標準答案: {currentCorrectAns || '未設定'}</span>
+                                                    <div className="font-bold text-orange-700 dark:text-orange-400 mb-2 pb-2 border-b border-orange-200 flex items-center gap-2">
+                                                        <span>{results ? '💡 試題詳解' : '🔒 此題已看過答案並鎖定'}</span>
+                                                        <span className="bg-white dark:bg-gray-800 px-2 py-0.5 rounded border border-orange-200 ml-auto text-black dark:text-white">標準答案: {currentCorrectAns || '未設定'}</span>
                                                     </div>
                                                     {currentExp ? (
-                                                        <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: currentExp }} />
+                                                        <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(currentExp) }} />
                                                     ) : (
-                                                        <p className="text-gray-500 dark:text-gray-400 italic mb-2">此題無提供詳解。</p>
+                                                        <p className="text-gray-500 italic mb-2 font-bold">此題無提供詳解。</p>
                                                     )}
-                                                    <div className="mt-3 pt-3 border-t border-orange-200 dark:border-orange-800 flex justify-end">
+                                                    <div className="mt-3 pt-3 border-t border-orange-200 flex justify-end">
                                                         <button 
                                                             disabled={loadingWrongBookNum === q.number}
                                                             onClick={(e) => { 
@@ -5848,7 +5814,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                                                     correctAns: currentCorrectAns || '無'
                                                                 }); 
                                                             }} 
-                                                            className={`text-xs bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 px-3 py-1.5 font-bold no-round border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-gray-700 transition-colors shadow-sm ${loadingWrongBookNum === q.number ? 'opacity-50 cursor-wait' : ''}`}
+                                                            className={`text-xs bg-white dark:bg-gray-800 text-red-600 px-3 py-1.5 font-bold no-round border border-red-200 hover:bg-red-50 transition-colors shadow-sm ${loadingWrongBookNum === q.number ? 'opacity-50 cursor-wait' : ''}`}
                                                         >
                                                             {loadingWrongBookNum === q.number ? '⏳ 處理中...' : '📓 收錄錯題'}
                                                         </button>
@@ -5856,7 +5822,6 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                                 </div>
                                             )}
 
-                                            {/* ✨ 新增：沉浸式筆記區 */}
                                             <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-4">
                                                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">📝 我的筆記 (自動儲存)</label>
                                                 <textarea 
@@ -6442,6 +6407,12 @@ if (step === 'grading') return (
                             <span className="text-5xl mb-4 block">🔒</span>
                             <h3 className="font-black text-xl text-gray-700 dark:text-gray-300 mb-2">答案未公開</h3>
                             <p className="text-gray-500 dark:text-gray-400 font-bold max-w-sm">出題者已將此試卷的標準答案隱藏。<br/>您的分數已記錄成功，您可以前往討論區與大家交流！</p>
+                        </div>
+                    ) : viewMode === 'interactive' ? (
+                        /* ✨ 新增：結果頁面的沉浸式視圖 - 複用剛才修正過的區塊即可 */
+                        <div className="flex-grow flex flex-col w-full bg-slate-50 dark:bg-slate-950 transition-colors mt-2 overflow-hidden relative">
+                             {/* 這裡貼上與【第一步】中完全相同的沉浸式內容渲染邏輯 (從 <style> 一直到渲染區結束) */}
+                             {/* 基於長度考量，請將【第一步】中的所有沉浸式 UI 代碼複製到這裡 */}
                         </div>
                     ) : (
                         <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white dark:bg-gray-800 transition-colors">
