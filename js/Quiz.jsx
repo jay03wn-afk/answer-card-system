@@ -166,11 +166,13 @@ const processQuestionContent = (content, isHtml) => {
     if (!content) return content;
     let processed = content;
     if (isHtml) {
-        processed = processed.replace(/\[Q\.?0*(\d+)\]/gi, '<span id="q-marker-$1" class="q-marker inline-block font-black text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-blue-200 dark:border-blue-700 mx-1">[Q.$1]</span>');
-        // ✨ 修正：清除 editor 殘留的化學式繪製標記，確保進入測驗時能重新繪製
+        processed = processed.replace(/\[(Q|SQ|ASQ)\.?0*(\d+)\]/gi, (match, type, num) => {
+            const color = type.toUpperCase() === 'Q' ? 'blue' : type.toUpperCase() === 'SQ' ? 'teal' : 'purple';
+            return `<span id="q-marker-${num}" class="q-marker inline-block font-black text-${color}-800 dark:text-${color}-200 bg-${color}-100 dark:bg-${color}-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-${color}-200 dark:border-${color}-700 mx-1">[${type.toUpperCase()}.${num}]</span>`;
+        });
+        processed = processed.replace(/\[s:(\d+)\]/gi, `<span class="inline-block font-black text-red-600 bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 rounded ml-1 border border-red-300 dark:border-red-700">(配分: $1)</span>`);
         processed = processed.replace(/data-drawn="true"/gi, '');
     }
-    // ✨ 讓一般測驗與預覽畫面支援 SMILES 顯示
     return parseSmilesToHtml(processed);
 };
 
@@ -178,11 +180,13 @@ const processExplanationContent = (content, isHtml) => {
     if (!content) return content;
     let processed = content;
     if (isHtml) {
-        processed = processed.replace(/\[A\.?0*(\d+)\]/gi, '<span id="a-marker-$1" class="a-marker inline-block font-black text-green-800 dark:text-green-200 bg-green-100 dark:bg-green-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-green-200 dark:border-green-700 mx-1">[A.$1]</span>');
-        // ✨ 修正：清除 editor 殘留的化學式繪製標記，確保詳解畫面能重新繪製
+        processed = processed.replace(/\[(A|SA|ASA|AS)\.?0*(\d+)\]/gi, (match, type, num) => {
+            const color = type.toUpperCase() === 'A' ? 'green' : type.toUpperCase() === 'AS' ? 'orange' : 'teal';
+            return `<span id="a-marker-${num}" class="a-marker inline-block font-black text-${color}-800 dark:text-${color}-200 bg-${color}-100 dark:bg-${color}-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-${color}-200 dark:border-${color}-700 mx-1">[${type.toUpperCase()}.${num}]</span>`;
+        });
+        processed = processed.replace(/\[s:(\d+)\]/gi, `<span class="inline-block font-black text-red-600 bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 rounded ml-1 border border-red-300 dark:border-red-700">(配分: $1)</span>`);
         processed = processed.replace(/data-drawn="true"/gi, '');
     }
-    // ✨ 讓詳解畫面支援 SMILES 顯示
     return parseSmilesToHtml(processed);
 };
 
@@ -191,38 +195,30 @@ const stripQuestionMarkers = (html) => {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = html;
     const markers = tempDiv.querySelectorAll('.q-marker, .a-marker');
-    markers.forEach(marker => {
-        marker.replaceWith(marker.textContent); 
-    });
+    markers.forEach(marker => { marker.replaceWith(marker.textContent); });
     return tempDiv.innerHTML;
 };
 
-const extractSpecificQuestion = (content, qNum, isHtml) => {
+const extractSpecificContent = (content, qNum, typePrefixes) => {
     if (!content) return '';
-    const regexStr = `\\[Q\\.?0*${qNum}\\]([\\s\\S]*?)(?=\\[Q\\.?\\d+\\]|\\[End\\]|$)`;
-    const regex = new RegExp(regexStr, 'i');
-    const match = content.match(regex);
-    if (match) {
-        const raw = match[1];
-        if (isHtml) {
-            const tmp = document.createElement('DIV');
-            tmp.innerHTML = raw;
-            return (tmp.textContent || tmp.innerText || '').trim();
-        }
-        return raw.trim();
+    const prefixGroup = Array.isArray(typePrefixes) ? typePrefixes.join('|') : typePrefixes;
+    const regexStr = `\\[(${prefixGroup})\\.?0*${qNum}\\]([\\s\\S]*?)(?=\\[(Q|SQ|ASQ|A|SA|ASA|AS)\\.?\\d+\\]|\\[End\\]|$)`;
+    const match = content.match(new RegExp(regexStr, 'i'));
+    return match ? match[2].trim() : '';
+};
+
+const extractSpecificQuestion = (content, qNum, isHtml) => {
+    const raw = extractSpecificContent(content, qNum, ['Q', 'SQ', 'ASQ']);
+    if (raw && isHtml) {
+        const tmp = document.createElement('DIV');
+        tmp.innerHTML = raw;
+        return (tmp.textContent || tmp.innerText || '').trim();
     }
-    return '';
+    return raw;
 };
 
 const extractSpecificExplanation = (content, qNum) => {
-    if (!content) return '';
-    const regexStr = `\\[A\\.?0*${qNum}\\]([\\s\\S]*?)(?=\\[A\\.?\\d+\\]|\\[End\\]|$)`;
-    const regex = new RegExp(regexStr, 'i');
-    const match = content.match(regex);
-    if (match) {
-        return match[1].trim(); // 保留 HTML 結構供顯示
-    }
-    return '';
+    return extractSpecificContent(content, qNum, ['A', 'SA', 'ASA', 'AS']);
 };
 
 // --- 新增：富文本/圖片輸入組件 ---
@@ -2451,83 +2447,141 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
 
 // ✨ 修改：將 AnswerGridInput 移到外部，避免 React 重新渲染導致手機鍵盤收起，並加入一鍵清空功能
 // ✨ 修改：將 AnswerGridInput 移到外部，避免 React 重新渲染導致手機鍵盤收起，並加入一鍵清空功能
-const AnswerGridInput = ({ value, onChange, maxQuestions, showConfirm }) => {
+// ✨ 升級：智慧型選擇題專用網格
+const AnswerGridInput = ({ value, onChange, parsedTypes, maxQuestions, showConfirm }) => {
+    const mcqIndices = parsedTypes ? parsedTypes.map((t, i) => t === 'Q' ? i : -1).filter(i => i !== -1) : Array.from({length: maxQuestions}).map((_,i)=>i);
+    if (mcqIndices.length === 0) return null;
+
     const handlePaste = (e) => {
         e.preventDefault();
         const pastedText = (e.clipboardData || window.clipboardData).getData('text');
-        
         const pastedParts = pastedText.match(/[A-DZ]|[a-dz]+/g) || [];
-
-        const valStr = value || '';
-        let currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
+        let currentArr = value ? value.split(',') : [];
         while(currentArr.length < maxQuestions) currentArr.push('');
-
-        for(let i=0; i<pastedParts.length && i<maxQuestions; i++) {
-            currentArr[i] = pastedParts[i];
+        
+        let pasteIdx = 0;
+        for(let i=0; i<maxQuestions; i++) {
+            if ((!parsedTypes || parsedTypes[i] === 'Q') && pasteIdx < pastedParts.length) {
+                currentArr[i] = pastedParts[pasteIdx];
+                pasteIdx++;
+            }
         }
         onChange(currentArr.join(','));
     };
 
     const handleChange = (index, char) => {
         let cleanChar = char.replace(/[^a-dA-DZz]/g, '');
-        
-        // ✨ 修正解析拆分邏輯：大寫字母只能一格一個，小寫才可以一格多個
-        if (/[A-DZ]/.test(cleanChar)) {
-            // 如果輸入包含大寫，強制只取最後輸入的一個字元，並保持大寫
-            cleanChar = cleanChar.slice(-1).toUpperCase();
-        } else {
-            // 全小寫，最多允許輸入 4 碼
-            cleanChar = cleanChar.slice(0, 4).toLowerCase();
-        }
+        if (/[A-DZ]/.test(cleanChar)) cleanChar = cleanChar.slice(-1).toUpperCase();
+        else cleanChar = cleanChar.slice(0, 4).toLowerCase();
 
-        const valStr = value || '';
-        let currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
+        let currentArr = value ? value.split(',') : [];
         while(currentArr.length < maxQuestions) currentArr.push('');
-        
         currentArr[index] = cleanChar;
         onChange(currentArr.join(','));
     };
 
     const handleClearAll = () => {
-        if (showConfirm) {
-            showConfirm("確定要清空所有已填寫的答案嗎？", () => {
-                onChange('');
-            });
-        } else {
-            onChange('');
-        }
+        if (showConfirm) showConfirm("確定要清空所有選擇題的答案嗎？", () => {
+            let currentArr = value ? value.split(',') : [];
+            while(currentArr.length < maxQuestions) currentArr.push('');
+            mcqIndices.forEach(i => currentArr[i] = '');
+            onChange(currentArr.join(','));
+        });
+        else onChange('');
     };
 
-    const valStr = value || '';
-    const currentArr = valStr.includes(',') ? valStr.split(',') : (valStr.match(/[A-DZ]|[a-dz]+/g) || []);
-    const filledCount = currentArr.slice(0, maxQuestions).filter(ans => ans && ans.trim() !== '').length;
+    let currentArr = value ? value.split(',') : [];
+    const filledCount = mcqIndices.filter(i => currentArr[i] && currentArr[i].trim() !== '').length;
 
     return (
-        <div className="w-full mb-4">
-            <div 
-                className="w-full mb-2 p-4 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 no-round max-h-64 overflow-y-auto custom-scrollbar"
-                onPaste={handlePaste}
-            >
+        <div className="w-full mb-4 animate-fade-in">
+            <div className="w-full mb-2 p-4 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 no-round max-h-64 overflow-y-auto custom-scrollbar" onPaste={handlePaste}>
                 <div className="text-xs text-gray-500 mb-3 font-bold flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-                    <span className="text-blue-600 dark:text-blue-400">💡 提示：點擊格子後 <b>Ctrl+V</b> 貼上答案 (Z表示送分 一格填入數個小寫表示複數答案)！</span>
+                    <span className="text-blue-600 dark:text-blue-400">💡 提示：點擊格子後 <b>Ctrl+V</b> 貼上選擇題答案 (Z表示送分)！</span>
                     <div className="flex items-center gap-3">
-                        <span className="bg-gray-200 dark:bg-gray-700 px-2 py-1">已填寫: {filledCount} / {maxQuestions}</span>
-                        <button 
-                            onClick={handleClearAll}
-                            className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-1 font-bold hover:bg-red-100 dark:hover:bg-red-900 transition-colors shadow-sm"
-                        >
-                            🗑️ 一鍵清空
-                        </button>
+                        <span className="bg-gray-200 dark:bg-gray-700 px-2 py-1">已填寫: {filledCount} / {mcqIndices.length}</span>
+                        <button onClick={handleClearAll} className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-1 font-bold hover:bg-red-100 dark:hover:bg-red-900 transition-colors shadow-sm">🗑️ 選擇題清空</button>
                     </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(48px, 1fr))', gap: '10px' }}>
-                    {Array.from({ length: maxQuestions }).map((_, i) => (
+                    {mcqIndices.map((i, localIndex) => (
                         <div key={i} className="flex flex-col items-center">
-                            <span className="text-[10px] text-gray-400 font-bold mb-1">{i + 1}.</span>
+                            <span className="text-[10px] text-gray-400 font-bold mb-1">{localIndex + 1}.</span>
+                            <input type="text" className="w-12 h-10 text-center border border-gray-300 dark:border-gray-500 font-black text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-white transition-all shadow-sm" maxLength={4} value={currentArr[i] || ''} onChange={(e) => handleChange(i, e.target.value)} />
+                        </div>
+                    ))}
+                </div>
+            </div>
+            <textarea className="w-full h-20 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" placeholder="或在此連續輸入 ABCD..." value={value} onChange={e => onChange(e.target.value.replace(/[^a-dA-DZz,]/g, ''))} ></textarea>
+        </div>
+    );
+};
+
+// ✨ 升級：非選擇題專屬網格 (可重複用於 SQ 與 ASQ)
+const SpecificAnswerGridInput = ({ value, onChange, parsedTypes, targetType, title, colorTheme, showConfirm }) => {
+    const indices = parsedTypes.map((t, i) => t === targetType ? i : -1).filter(i => i !== -1);
+    if (indices.length === 0) return null;
+
+    let currentArr = [];
+    try {
+        if (value && value.startsWith('[')) currentArr = JSON.parse(value);
+        else currentArr = (value || '').split(',').map(s => s.trim());
+    } catch(e) { currentArr = []; }
+    while(currentArr.length < parsedTypes.length) currentArr.push('');
+
+    const handlePaste = (e) => {
+        e.preventDefault();
+        const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+        const pastedParts = pastedText.split(/[,，\n]/).map(s => s.trim()).filter(s => s !== '');
+        const newArr = [...currentArr];
+        let pasteIdx = 0;
+        for(let i=0; i<parsedTypes.length; i++) {
+            if (parsedTypes[i] === targetType && pasteIdx < pastedParts.length) {
+                newArr[i] = pastedParts[pasteIdx];
+                pasteIdx++;
+            }
+        }
+        onChange(JSON.stringify(newArr));
+    };
+
+    const handleChange = (index, text) => {
+        const newArr = [...currentArr];
+        newArr[index] = text;
+        onChange(JSON.stringify(newArr));
+    };
+
+    const handleClearAll = () => {
+        if (showConfirm) showConfirm(`確定要清空所有${title}的答案嗎？`, () => {
+            const newArr = [...currentArr];
+            indices.forEach(i => newArr[i] = '');
+            onChange(JSON.stringify(newArr));
+        });
+        else onChange('[]');
+    };
+
+    const filledCount = indices.filter(i => currentArr[i] && currentArr[i].trim() !== '').length;
+    const isTeal = colorTheme === 'teal';
+
+    return (
+        <div className="w-full mb-4 animate-fade-in">
+            <div className={`w-full p-4 border bg-opacity-20 dark:bg-opacity-10 no-round max-h-80 overflow-y-auto custom-scrollbar ${isTeal ? 'border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-900' : 'border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-900'}`} onPaste={handlePaste}>
+                <div className={`text-xs mb-4 font-bold flex flex-col sm:flex-row justify-between sm:items-center gap-2 border-b pb-2 ${isTeal ? 'text-teal-700 dark:text-teal-400 border-teal-200 dark:border-teal-800' : 'text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800'}`}>
+                    <span>💡 點擊格子後 <b>Ctrl+V</b>，即可自動依「逗號」或「換行」將多個答案分割貼上！</span>
+                    <div className="flex items-center gap-3">
+                        <span className="bg-white dark:bg-gray-800 px-2 py-1 shadow-sm border border-gray-200 dark:border-gray-700">已填寫: {filledCount} / {indices.length}</span>
+                        <button onClick={handleClearAll} className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-1 font-bold hover:bg-red-100 dark:hover:bg-red-900 transition-colors shadow-sm">🗑️ {title}清空</button>
+                    </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
+                    {indices.map((i, localIndex) => (
+                        <div key={i} className={`flex items-stretch bg-white dark:bg-gray-800 border shadow-sm focus-within:ring-1 transition-all ${isTeal ? 'border-teal-300 dark:border-teal-600 focus-within:border-teal-500 ring-teal-500' : 'border-purple-300 dark:border-purple-600 focus-within:border-purple-500 ring-purple-500'}`}>
+                            <div className={`font-black flex items-center justify-center w-10 shrink-0 border-r text-xs ${isTeal ? 'bg-teal-100 dark:bg-teal-900/60 text-teal-800 dark:text-teal-200 border-teal-200 dark:border-teal-700' : 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 border-purple-200 dark:border-purple-700'}`}>
+                                {localIndex + 1}.
+                            </div>
                             <input 
                                 type="text"
-                                className="w-12 h-10 text-center border border-gray-300 dark:border-gray-500 font-black text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-white transition-all shadow-sm"
-                                maxLength={4}
+                                className="flex-1 w-full p-2 text-sm font-bold bg-transparent outline-none dark:text-white"
+                                placeholder={`第 ${localIndex + 1} 題解答`}
                                 value={currentArr[i] || ''}
                                 onChange={(e) => handleChange(i, e.target.value)}
                             />
@@ -2535,13 +2589,6 @@ const AnswerGridInput = ({ value, onChange, maxQuestions, showConfirm }) => {
                     ))}
                 </div>
             </div>
-            
-           <textarea 
-                className="w-full h-24 p-3 border border-gray-300 dark:border-gray-600 no-round font-mono outline-none tracking-widest text-lg uppercase custom-scrollbar bg-white dark:bg-gray-700 text-black dark:text-white focus:border-black dark:focus:border-white" 
-                placeholder="或者直接在這裡輸入/貼上連續的字母答案 (例如: ABCD...)" 
-                value={value} 
-                onChange={e => onChange(e.target.value.replace(/[^a-dA-DZz,]/g, ''))} 
-            ></textarea>
         </div>
     );
 };
@@ -2624,9 +2671,10 @@ function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard
     const [userAnswers, setUserAnswers] = useState(safeDecompress(initialRecord.userAnswers, 'array'));
     const [starred, setStarred] = useState(initialRecord.starred || []);
     const [notes, setNotes] = useState(initialRecord.notes || []); // ✨ 新增：筆記狀態
-    const [peekedAnswers, setPeekedAnswers] = useState(initialRecord.peekedAnswers || []); // ✨ 新增：偷看答案狀態
-    const [allowPeek, setAllowPeek] = useState(initialRecord.allowPeek !== false); // ✨ 新增：允許偷看開關
+   const [peekedAnswers, setPeekedAnswers] = useState(initialRecord.peekedAnswers || []); 
+    const [allowPeek, setAllowPeek] = useState(initialRecord.allowPeek !== false); 
     const [correctAnswersInput, setCorrectAnswersInput] = useState(initialRecord.correctAnswersInput || '');
+    const [shortAnswersInput, setShortAnswersInput] = useState(initialRecord.shortAnswersInput || '[]'); // ✨ 新增簡答題儲存陣列
     const [results, setResults] = useState(safeDecompress(initialRecord.results, 'object'));
     const [questionFileUrl, setQuestionFileUrl] = useState(initialRecord.questionFileUrl || '');
     const [questionText, setQuestionText] = useState(safeDecompress(initialRecord.questionText, 'string'));
@@ -2653,6 +2701,39 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     const [aiMediumRatio, setAiMediumRatio] = useState(40);
     const [aiHardRatio, setAiHardRatio] = useState(30);
     const [creatorSuggestions, setCreatorSuggestions] = useState([]);
+    
+    // ✨ 新增：AI 問答題自動評分狀態
+    const [isAiGrading, setIsAiGrading] = useState(false);
+
+    // ✨ 新增：自動解析題型 (選擇、簡答、問答) - 改為依序出現抓取，不受亂碼編號影響
+    const parsedQuestionTypes = React.useMemo(() => {
+        const rawContent = questionHtml || questionText || '';
+        const types = [];
+        const regex = /\[(Q|SQ|ASQ)\.?0*\d+\]/gi;
+        let match;
+        while ((match = regex.exec(rawContent)) !== null) {
+            types.push(match[1].toUpperCase());
+        }
+        if (types.length === 0) {
+            return Array(Number(numQuestions) || 50).fill('Q');
+        }
+        return types;
+    }, [questionHtml, questionText, numQuestions]);
+
+    // ✨ 新增：自動偵測並更新題數 - 總題數 = 選擇題+簡答題+問答題 的總數量
+    useEffect(() => {
+        if (step === 'setup' || step === 'edit') {
+            const rawContent = inputType === 'richtext' ? questionHtml : questionText;
+            if (!rawContent) return;
+            const matches = [...rawContent.matchAll(/\[(Q|SQ|ASQ)\.?0*\d+\]/gi)];
+            if (matches.length > 0) {
+                const totalCount = matches.length;
+                if (totalCount > 0 && totalCount <= 200 && totalCount !== Number(numQuestions)) {
+                    setNumQuestions(totalCount.toString());
+                }
+            }
+        }
+    }, [questionHtml, questionText, inputType, step]);
 
     // ✨ 新增：獨立出來的檔案處理邏輯 (供點擊與拖曳共用)
     const handleProcessAiFile = async (file) => {
@@ -2778,34 +2859,35 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
         };
 
         const result = [];
-        const qBlocks = rawContent.split(/\[Q\.?0*(\d+)\]/i); 
+        const qBlocks = rawContent.split(/\[(Q|SQ|ASQ)\.?0*(\d+)\]/i); 
         
-        for (let i = 1; i < qBlocks.length; i += 2) {
-            const qNum = parseInt(qBlocks[i], 10);
-            const qContent = qBlocks[i+1] || '';
+        for (let i = 1; i < qBlocks.length; i += 3) {
+            const qType = qBlocks[i].toUpperCase();
+            const qNum = parseInt(qBlocks[i+1], 10);
+            const qContent = qBlocks[i+2] || '';
             
-            const optRegex = /\[([A-D])\]([\s\S]*?)(?=\[[A-D]\]|\[End\]|$)/gi; 
-            let match;
-            const options = {};
+            let options = {};
             let questionMainText = qContent;
             
-            const firstOptIndex = qContent.search(/\[[A-D]\]/i);
-            if (firstOptIndex !== -1) {
-                questionMainText = qContent.substring(0, firstOptIndex).replace(/\[End\]/gi, '');
+            if (qType === 'Q') {
+                const optRegex = /\[([A-D])\]([\s\S]*?)(?=\[[A-D]\]|\[End\]|$)/gi; 
+                let match;
+                const firstOptIndex = qContent.search(/\[[A-D]\]/i);
+                if (firstOptIndex !== -1) {
+                    questionMainText = qContent.substring(0, firstOptIndex).replace(/\[End\]/gi, '');
+                } else {
+                    questionMainText = qContent.replace(/\[End\]/gi, '');
+                }
+                while ((match = optRegex.exec(qContent)) !== null) {
+                    const optLetter = match[1].toUpperCase();
+                    options[optLetter] = parseSmilesToHtml(superClean(match[2]));
+                }
             } else {
                 questionMainText = qContent.replace(/\[End\]/gi, '');
             }
             
-            // ✨ 修改：讓沉浸式作答的題目支援化學式渲染
             questionMainText = parseSmilesToHtml(superClean(questionMainText));
-
-            while ((match = optRegex.exec(qContent)) !== null) {
-                const optLetter = match[1].toUpperCase();
-                // ✨ 修改：讓沉浸式作答的選項也支援化學式渲染
-                options[optLetter] = parseSmilesToHtml(superClean(match[2]));
-            }
-
-            result.push({ number: qNum, mainText: questionMainText, options });
+            result.push({ number: qNum, type: qType, mainText: questionMainText, options });
         }
         return result;
     }, [questionHtml, questionText, viewMode]);
@@ -3013,6 +3095,7 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
             notes: cleanArray(notes, ''), 
             peekedAnswers: cleanArray(peekedAnswers, false), 
             correctAnswersInput: correctAnswersInput || '', 
+            shortAnswersInput: shortAnswersInput || '[]',
             questionFileUrl: questionFileUrl || '', 
             hasTimer: !!hasTimer, 
             timeLimit: Number(timeLimit) || 0, 
@@ -3076,6 +3159,7 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
                 notes: cleanArray(notes, ''), 
                 peekedAnswers: cleanArray(peekedAnswers, false), 
                 correctAnswersInput: correctAnswersInput || '', 
+                shortAnswersInput: shortAnswersInput || '[]',
                 questionFileUrl: questionFileUrl || '', 
                 hasTimer: !!hasTimer, 
                 timeLimit: Number(timeLimit) || 0, 
@@ -3494,6 +3578,7 @@ ${difficultyInstruction}
                 testName: finalTestName,
                 numQuestions, maxScore: Number(maxScore), roundScore, userAnswers: initialAnswers, starred: initialStarred, notes: initialNotes, peekedAnswers: initialPeeked, allowPeek, // ✨ 新增：存入初始筆記與偷看設定
                 correctAnswersInput: cleanKey,
+                shortAnswersInput: shortAnswersInput || '[]',
                 publishAnswers: true, 
                 questionFileUrl: finalFileUrl, // 網址很輕量，可以留著
                 hasTimer: hasTimer,
@@ -3677,7 +3762,7 @@ ${difficultyInstruction}
             return showAlert(e.message);
         }
         if (cleanKey !== (oldData.correctAnswersInput || '')) updates.correctAnswersInput = cleanKey;
-
+if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates.shortAnswersInput = shortAnswersInput || '[]';
         setIsEditLoading(false); 
 
         if (Object.keys(updates).length === 0) return showAlert("ℹ️ 資料無變動，無需儲存。");
@@ -3796,61 +3881,114 @@ ${difficultyInstruction}
         setStarred(newStar);
     };
 
-    const handleGrade = async (overrideKey = null) => {
-        // ✨ 終極修復 1：嚴格檢查 overrideKey 型別，防止誤收 React Event 物件導致 .replace 崩潰
+    const handleGrade = async (overrideKey = null, aiScores = {}) => {
         const sourceKey = typeof overrideKey === 'string' ? overrideKey : correctAnswersInput;
         const cleanKey = (sourceKey || '').replace(/[^a-dA-DZz,]/g, '');
+        if (!cleanKey && !isTask && !isShared && !parsedQuestionTypes.some(t => t !== 'Q')) return showAlert('請輸入標準答案後再批改！');
         
-        if (!cleanKey && !isTask && !isShared) return showAlert('請輸入標準答案後再批改！');
-        
-        // ✨ 加入智慧辨識：交卷時若沒有逗號，也能正確拆分大寫與連續小寫
         let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
-        let correctCount = 0;
-        
-        // ✨ 終極修復 2：防禦解壓縮失敗或非預期的資料型態，確保 userAnswers 絕對是陣列
         const safeUserAnswers = Array.isArray(userAnswers) ? userAnswers : [];
-        const safeNumQuestions = Number(numQuestions) || 1; // 防止除以 0 導致 NaN
+        const safeNumQuestions = Number(numQuestions) || 1; 
+        const safeMaxScore = Number(maxScore) || 100;
 
-        const data = safeUserAnswers.map((ans, idx) => {
-            const key = keyArray[idx] || '-';
-            // ✨ 終極修復 3：強制將答案轉為字串，防止 null 或 undefined 呼叫 .toLowerCase() 導致畫面卡死
-            const safeAns = String(ans || ''); 
-            let isCorrect = false;
+        // ✨ 準備簡答題的網格答案陣列
+        let saArray = [];
+        try {
+            if (shortAnswersInput && shortAnswersInput.startsWith('[')) saArray = JSON.parse(shortAnswersInput);
+            else saArray = (shortAnswersInput || '').split(',').map(s => s.trim());
+        } catch(e) { saArray = []; }
+        const nonMcqIndices = parsedQuestionTypes.map((t, i) => t !== 'Q' ? i : -1).filter(i => i !== -1);
 
-            // ✨ 多選與送分的批改邏輯
-            if (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') {
-                isCorrect = true; // Z 或 abcd 代表送分，有填沒填都給分
-            } else if (key !== '-' && key !== '' && safeAns !== '') {
-                if (key === key.toUpperCase()) {
-                    // 單選大寫
-                    isCorrect = (safeAns === key);
+        // ✨ 1. 智慧配分系統：解析所有 [s:X] 權重
+        let totalDefinedScore = 0;
+        let undefinedCount = 0;
+        let mcqCorrectCount = 0;
+        const scoreConfig = [];
+
+        parsedQuestionTypes.forEach((type, idx) => {
+            let rawExtracted = '';
+            if (type === 'SQ') rawExtracted = extractSpecificContent(explanationHtml, idx + 1, ['SA']);
+            if (type === 'ASQ') rawExtracted = extractSpecificContent(explanationHtml, idx + 1, ['AS', 'ASA']);
+            
+            if (type === 'Q') {
+                undefinedCount++;
+                scoreConfig[idx] = { point: 0, cleanText: '', hasDefined: false };
+            } else {
+                const scoreMatch = rawExtracted ? rawExtracted.match(/\[s:(\d+)\]/i) : null;
+                const point = scoreMatch ? parseInt(scoreMatch[1], 10) : 0; 
+                
+                if (point > 0) {
+                    totalDefinedScore += point;
+                    scoreConfig[idx] = { point, cleanText: rawExtracted.replace(/\[s:\d+\]/gi, '').trim(), hasDefined: true };
                 } else {
-                    // 複選小寫 (只要使用者的答案包含在小寫字串內就給分，例如填 A，答案是 ab，就給分)
-                    isCorrect = key.toLowerCase().includes(safeAns.toLowerCase());
+                    undefinedCount++;
+                    scoreConfig[idx] = { point: 0, cleanText: rawExtracted ? rawExtracted.trim() : '', hasDefined: false };
                 }
             }
+        });
 
-            if (isCorrect) correctCount++;
+        // ✨ 2. 平均分配剩下的分數給沒有標記 [s:X] 的題目 (包含選擇題以及沒設配分的簡答/問答題)
+        const remainingScore = Math.max(0, safeMaxScore - totalDefinedScore);
+        const baseWeight = undefinedCount > 0 ? remainingScore / undefinedCount : 0;
+        let finalTotalScore = 0;
+
+        const data = safeUserAnswers.map((ans, idx) => {
+            const type = parsedQuestionTypes[idx] || 'Q';
+            const config = scoreConfig[idx];
+            const safeAns = String(ans || '').trim(); 
+            let isCorrect = false;
+            let finalCorrectAns = '';
+            let earnedPoints = 0;
+
+            if (type === 'Q') {
+                const key = keyArray[idx] || '-';
+                finalCorrectAns = key;
+                if (key === 'Z' || key === 'z' || key.toLowerCase() === 'abcd') {
+                    isCorrect = true; earnedPoints = baseWeight;
+                } else if (key !== '-' && key !== '' && safeAns !== '') {
+                    if (key === key.toUpperCase()) isCorrect = (safeAns === key);
+                    else isCorrect = key.toLowerCase().includes(safeAns.toLowerCase());
+                    if (isCorrect) earnedPoints = baseWeight;
+                }
+                if (isCorrect) mcqCorrectCount++;
+            } else if (type === 'SQ') {
+                // ✨ 簡答題判斷邏輯：優先吃獨立網格的答案，若網格沒填才吃詳解區的答案
+                const saIndex = nonMcqIndices.indexOf(idx);
+                const gridAns = saArray[saIndex] || '';
+                const targetAns = gridAns || config.cleanText; 
+                
+                finalCorrectAns = targetAns || '(無標準答案)';
+                if (targetAns && safeAns.toLowerCase() === targetAns.toLowerCase()) {
+                    isCorrect = true; 
+                    earnedPoints = config.hasDefined ? config.point : baseWeight;
+                }
+            } else if (type === 'ASQ') {
+                // ✨ 問答題判斷邏輯：交給 AI 傳回來的分數比例來給分
+                const scoreOutOf100 = aiScores[idx + 1] || 0;
+                const maxPtsForThis = config.hasDefined ? config.point : baseWeight;
+                earnedPoints = (scoreOutOf100 / 100) * maxPtsForThis;
+                finalCorrectAns = maxPtsForThis > 0 ? `AI 評定 ${scoreOutOf100}/100 (實得: ${earnedPoints.toFixed(1)} / ${maxPtsForThis.toFixed(1)}分)` : `AI 評定 ${scoreOutOf100}/100`;
+                isCorrect = scoreOutOf100 >= 60; // 及格線顯示綠色
+            }
+
+            finalTotalScore += earnedPoints;
+
             return { 
                 number: idx + 1, 
                 userAns: safeAns || '未填', 
-                correctAns: key, 
+                correctAns: finalCorrectAns, 
                 isCorrect, 
                 isStarred: (starred && starred[idx]) || false 
             };
         });
 
-        const safeMaxScore = Number(maxScore) || 100;
-        const rawScore = (correctCount / safeNumQuestions) * safeMaxScore;
-        const scoreVal = roundScore ? Math.round(rawScore) : Number(rawScore.toFixed(2));
-        const newResults = { score: scoreVal, correctCount, total: safeNumQuestions, data };
+        const scoreVal = roundScore ? Math.round(finalTotalScore) : Number(finalTotalScore.toFixed(2));
+        const newResults = { score: scoreVal, correctCount: mcqCorrectCount, total: safeNumQuestions, data };
         
-        // 確保狀態正常更新，切換畫面
         setResults(newResults);
         setStep('results');
 
         try {
-            // 🚀 核心升級：交卷成績直接以原生物件存檔，不再壓縮，讓列表頁能瞬間讀取成績！
             await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
                     correctAnswersInput: cleanKey,
                     results: newResults,
@@ -4027,15 +4165,49 @@ ${difficultyInstruction}
         const unansweredCount = userAnswers.filter(a => !a).length;
         let warnMsg = unansweredCount > 0 ? `⚠️ 注意：你有 ${unansweredCount} 題尚未填寫！\n\n` : "";
         
-        if (isShared || isTask || testName.includes('[#op]')) {
-            showConfirm(`${warnMsg}確定要交卷嗎？\n交卷後系統將直接批改並鎖定答案，你無法再返回修改作答內容！`, () => {
+        const executeSubmission = async () => {
+            const hasASQ = parsedQuestionTypes.includes('ASQ');
+            if (hasASQ) {
+                setIsAiGrading(true);
+                try {
+                    let gradingPrompt = "請扮演專業閱卷老師，幫我批改以下學生的問答題，並嚴格遵循 [AS.題號] 所設定的評分標準給出 0~100 的分數。\n\n";
+                    let payloadCount = 0;
+                    parsedQuestionTypes.forEach((type, idx) => {
+                        if (type === 'ASQ') {
+                            const studentAns = userAnswers[idx] || '';
+                            const rubric = extractSpecificContent(explanationHtml, idx + 1, ['AS']) || '無特別標準，請依據合理性自由給分';
+                            const questionTextExt = extractSpecificContent(questionHtml || questionText, idx + 1, ['ASQ']) || '(題目無法辨識)';
+                            gradingPrompt += `【第 ${idx + 1} 題】\n題目：${questionTextExt}\n評分標準：${rubric}\n學生答案：${studentAns}\n\n`;
+                            payloadCount++;
+                        }
+                    });
+                    
+                    gradingPrompt += `請嚴格回傳一個純 JSON 字串格式，不要包含任何 markdown 或解說，格式如下：\n{"scores": {"題號數字": 80, "題號數字": 100}}`;
+                    
+                    const res = await fetch('/api/gemini', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt: gradingPrompt })
+                    });
+                    const data = await res.json();
+                    let cleanStr = data.result.replace(/```json/gi, '').replace(/```/gi, '').trim();
+                    const parsedScores = JSON.parse(cleanStr).scores || {};
+                    setIsAiGrading(false);
+                    handleGrade(null, parsedScores);
+                } catch(e) {
+                    setIsAiGrading(false);
+                    showAlert("AI 批改發生錯誤：" + e.message);
+                }
+            } else {
                 handleGrade();
-            });
+            }
+        };
+
+        if (isShared || isTask || testName.includes('[#op]') || parsedQuestionTypes.some(t => t !== 'Q')) {
+            showConfirm(`${warnMsg}確定要交卷嗎？\n交卷後系統將直接批改並鎖定答案！`, executeSubmission);
         } else {
             if (unansweredCount > 0) {
-                showConfirm(`${warnMsg}確定要交卷對答案嗎？`, () => {
-                    setStep('grading');
-                });
+                showConfirm(`${warnMsg}確定要交卷對答案嗎？`, () => setStep('grading'));
             } else {
                 setStep('grading');
             }
@@ -4423,54 +4595,209 @@ ${difficultyInstruction}
                     )}
                 </div>
                 
-                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源 (單選)</label>
-                <div className="flex flex-wrap space-x-4 mb-4 dark:text-white">
-                    <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
-                        <input type="radio" checked={inputType === 'url'} onChange={() => setInputType('url')} className="w-4 h-4 accent-black dark:accent-white" />
-                        <span>公開網址</span>
-                    </label>
-                    <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
-                        <input type="radio" checked={inputType === 'text'} onChange={() => setInputType('text')} className="w-4 h-4 accent-black dark:accent-white" />
-                        <span>純文字</span>
-                    </label>
-                   <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300 mt-2 sm:mt-0">
-                        <input type="radio" checked={inputType === 'richtext'} onChange={() => setInputType('richtext')} className="w-4 h-4 accent-black dark:accent-white" />
-                        <span className="text-blue-600 dark:text-blue-400 font-bold">富文本 (支援 Word 貼上)</span>
-                    </label>
-                </div>
+                {(() => {
+                    const isHtml = inputType === 'richtext';
+                    const activeContent = isHtml ? questionHtml : questionText;
+                    
+                    // ✨ 智慧提取核心：全域自動歸位系統，修正重複、多餘空行，並強制 UI 即時刷新
+                    const getParts = (text) => {
+                        let tempText = text || '';
+                        let sq = '', asq = '';
+                        
+                        const cleanBlock = (m) => m.trim().replace(/^(?:<br\s*\/?>|\s)+|(?:<br\s*\/?>|\s)+$/gi, '');
 
-                {inputType === 'url' ? (
-                    <input type="text" placeholder="請貼上試卷網址 (例如: Google Drive 連結)" className="w-full mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} />
-                ) : inputType === 'text' ? (
-                    <textarea placeholder="請貼上試題純文字..." className="w-full h-32 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar" value={questionText} onChange={e => setQuestionText(e.target.value)}></textarea>
-                ) : (
-                    <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." showAlert={showAlert} />
-                )}
+                        const sqRegex = /(?:<[^>]+>|\s)*\[SQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ)\.?0*\d+\]|$)/gi;
+                        let sqMatches = tempText.match(sqRegex);
+                        if (sqMatches) {
+                            sqMatches = Array.from(new Set(sqMatches.map(cleanBlock))); // 去重複
+                            sq = sqMatches.join(isHtml ? '<br><br>' : '\n\n');
+                            tempText = tempText.replace(sqRegex, '');
+                        }
+                        
+                        const asqRegex = /(?:<[^>]+>|\s)*\[ASQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ)\.?0*\d+\]|$)/gi;
+                        let asqMatches = tempText.match(asqRegex);
+                        if (asqMatches) {
+                            asqMatches = Array.from(new Set(asqMatches.map(cleanBlock))); // 去重複
+                            asq = asqMatches.join(isHtml ? '<br><br>' : '\n\n');
+                            tempText = tempText.replace(asqRegex, '');
+                        }
+                        
+                        // 清除多餘的殘留空行
+                        if (isHtml) {
+                            tempText = tempText.replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>').replace(/^(?:<br\s*\/?>\s*)+|(?:<br\s*\/?>\s*)+$/gi, '').trim();
+                        } else {
+                            tempText = tempText.replace(/\n{3,}/g, '\n\n').trim();
+                        }
+                        
+                        return { mcq: tempText, sq, asq };
+                    };
 
-              {/* ✨ 已將標準答案移至詳解上方 */}
-                <div className="flex gap-4 mb-4 mt-4">
-                    <div className="flex-1">
-                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗滿分</label>
-                        <input type="number" min="1" className="w-full p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={maxScore} onChange={e => setMaxScore(e.target.value)} />
-                    </div>
-                    <div className="flex-1 flex items-end pb-3">
-                        <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
-                            <input type="checkbox" checked={roundScore} onChange={e => setRoundScore(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
-                            <span>成績四捨五入至整數</span>
-                        </label>
-                    </div>
-                </div>
+                    const updateParts = (newMcq, newSq, newAsq) => {
+                        const sep = isHtml ? '<br><br>' : '\n\n';
+                        const res = [newMcq, newSq, newAsq].map(s=>s?.trim()).filter(Boolean).join(sep);
+                        if (isHtml) setQuestionHtml(res); else setQuestionText(res);
+                    };
 
-                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">標準答案</h3>
-                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} showConfirm={showConfirm} />
+                    const qParts = getParts(activeContent);
+                    const eParts = getParts(explanationHtml);
 
-                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解 (純文字)</h3>
-                <textarea 
-                    className="w-full h-48 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar"
-                    placeholder="在此貼上詳解純文字，並使用 [A.1], [A.02] 等標記對應題號..."
-                    value={explanationHtml}
-                    onChange={(e) => setExplanationHtml(e.target.value)}
-                />
+                    const forceSyncUI = () => {
+                        setTimeout(() => {
+                            if (document.activeElement && document.activeElement.getAttribute('contenteditable') === 'true') {
+                                document.activeElement.blur();
+                            }
+                        }, 10);
+                    };
+
+                    const redistributeContent = (mcqVal, sqVal, asqVal) => {
+                        const combined = [mcqVal, sqVal, asqVal].filter(Boolean).join(isHtml ? '<br><br>' : '\n\n');
+                        const parsed = getParts(combined);
+                        updateParts(parsed.mcq, parsed.sq, parsed.asq);
+                    };
+
+                    const handleMainChange = (val) => {
+                        const pastedParsed = getParts(val);
+                        redistributeContent(val, qParts.sq, qParts.asq);
+                        if (pastedParsed.sq || pastedParsed.asq) forceSyncUI(); // 觸發即時消失
+                    };
+                    const handleSqChange = (val) => redistributeContent(qParts.mcq, val, qParts.asq);
+                    const handleAsqChange = (val) => redistributeContent(qParts.mcq, qParts.sq, val);
+
+                    const handleExpMainChange = (val) => {
+                        let normalizedVal = val.replace(/\[SA\.?/gi, '[SQ.').replace(/\[ASA\.?/gi, '[ASQ.').replace(/\[AS\.?/gi, '[ASQ.');
+                        let normalizedOldSq = (eParts.sq || '').replace(/\[SA\.?/gi, '[SQ.');
+                        let normalizedOldAsq = (eParts.asq || '').replace(/\[ASA\.?/gi, '[ASQ.');
+                        
+                        const combined = [normalizedVal, normalizedOldSq, normalizedOldAsq].filter(Boolean).join(isHtml ? '<br><br>' : '\n\n');
+                        const parsed = getParts(combined);
+                        
+                        const finalSq = parsed.sq.replace(/\[SQ/gi, '[SA');
+                        const finalAsq = parsed.asq.replace(/\[ASQ/gi, '[ASA');
+                        
+                        const sep = isHtml ? '<br><br>' : '\n\n';
+                        setExplanationHtml([parsed.mcq, finalSq, finalAsq].map(s=>s?.trim()).filter(Boolean).join(sep));
+                        
+                        const pasted = getParts(normalizedVal);
+                        if (pasted.sq || pasted.asq) forceSyncUI(); // 觸發即時消失
+                    };
+
+                    return (
+                        <>
+                            <div className="relative flex items-center justify-between mb-2 mt-4">
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400">試題來源 (單選)</label>
+                                {(inputType === 'text' || inputType === 'richtext') && (
+                                    <div className="flex gap-2">
+                                        <label className="flex items-center space-x-1.5 text-xs font-bold text-teal-600 dark:text-teal-400 cursor-pointer bg-teal-50 dark:bg-teal-900/30 px-2 py-1 rounded border border-teal-200 dark:border-teal-800 hover:bg-teal-100 transition-colors">
+                                            <input type="checkbox" checked={!!qParts.sq} onChange={(e) => {
+                                                if (e.target.checked) updateParts(qParts.mcq, qParts.sq + (isHtml ? '\n<br>[SQ.001]<br>簡答題...\n<br>[End]' : '\n[SQ.001]\n簡答題...\n[End]'), qParts.asq);
+                                                else updateParts(qParts.mcq, '', qParts.asq);
+                                            }} className="w-3.5 h-3.5 accent-teal-500" />
+                                            <span>啟用簡答</span>
+                                        </label>
+                                        <label className="flex items-center space-x-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 cursor-pointer bg-purple-50 dark:bg-purple-900/30 px-2 py-1 rounded border border-purple-200 dark:border-purple-800 hover:bg-purple-100 transition-colors">
+                                            <input type="checkbox" checked={!!qParts.asq} onChange={(e) => {
+                                                if (e.target.checked) updateParts(qParts.mcq, qParts.sq, qParts.asq + (isHtml ? '\n<br>[ASQ.001]<br>問答題...\n<br>[End]' : '\n[ASQ.001]\n問答題...\n[End]'));
+                                                else updateParts(qParts.mcq, qParts.sq, '');
+                                            }} className="w-3.5 h-3.5 accent-purple-500" />
+                                            <span>啟用問答</span>
+                                        </label>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex flex-wrap space-x-4 mb-4 dark:text-white">
+                                <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
+                                    <input type="radio" checked={inputType === 'url'} onChange={() => setInputType('url')} className="w-4 h-4 accent-black dark:accent-white" />
+                                    <span>公開網址</span>
+                                </label>
+                                <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
+                                    <input type="radio" checked={inputType === 'text'} onChange={() => setInputType('text')} className="w-4 h-4 accent-black dark:accent-white" />
+                                    <span>純文字</span>
+                                </label>
+                                <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300 mt-2 sm:mt-0">
+                                    <input type="radio" checked={inputType === 'richtext'} onChange={() => setInputType('richtext')} className="w-4 h-4 accent-black dark:accent-white" />
+                                    <span className="text-blue-600 dark:text-blue-400 font-bold">富文本 (支援自動轉移)</span>
+                                </label>
+                            </div>
+
+                            {inputType === 'url' ? (
+                                <input type="text" placeholder="請貼上試卷網址 (例如: Google Drive 連結)" className="w-full mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} />
+                            ) : inputType === 'text' ? (
+                                <textarea placeholder="請貼上選擇題純文字... (貼上包含 [SQ] 的內容會自動轉移下方)" className="w-full h-32 mb-6 p-3 border border-blue-300 dark:border-blue-700 bg-blue-50/20 dark:bg-gray-800 text-black dark:text-white no-round outline-none focus:border-blue-500 text-sm custom-scrollbar" value={qParts.mcq} onChange={e => handleMainChange(e.target.value)} />
+                            ) : (
+                               <div className="border-2 border-blue-300 dark:border-blue-700 focus-within:border-blue-500 transition-colors bg-white dark:bg-gray-800 mb-6">
+                                   <ContentEditableEditor value={qParts.mcq} onChange={handleMainChange} placeholder="貼上選擇題... (若混雜 [SQ] / [ASQ] 內容，系統會自動轉移到專屬格子)" showAlert={showAlert} />
+                               </div>
+                            )}
+
+                           {!!qParts.sq && (
+                                <div className="mb-6 animate-fade-in">
+                                    <label className="block text-teal-700 dark:text-teal-400 font-bold mb-2">🟢 簡答題文本 [SQ.xxx]</label>
+                                    {inputType === 'richtext' ? (
+                                        <div className="border-2 border-teal-300 dark:border-teal-700 focus-within:border-teal-500 transition-colors bg-teal-50/30 dark:bg-teal-900/20">
+                                            <ContentEditableEditor value={qParts.sq} onChange={handleSqChange} placeholder="請輸入 [SQ.xxx] 開頭的簡答題..." />
+                                        </div>
+                                    ) : (
+                                        <textarea className="w-full p-4 border-2 border-teal-300 dark:border-teal-700 outline-none bg-teal-50/50 dark:bg-gray-800 dark:text-white focus:border-teal-500 transition-all resize-none shadow-inner custom-scrollbar h-32" value={qParts.sq} onChange={e => handleSqChange(e.target.value)}></textarea>
+                                    )}
+                                </div>
+                            )}
+
+                            {!!qParts.asq && (
+                                <div className="mb-6 animate-fade-in">
+                                    <label className="block text-purple-700 dark:text-purple-400 font-bold mb-2">🟣 問答題文本 [ASQ.xxx]</label>
+                                    {inputType === 'richtext' ? (
+                                        <div className="border-2 border-purple-300 dark:border-purple-700 focus-within:border-purple-500 transition-colors bg-purple-50/30 dark:bg-purple-900/20">
+                                            <ContentEditableEditor value={qParts.asq} onChange={handleAsqChange} placeholder="請輸入 [ASQ.xxx] 開頭的問答題..." />
+                                        </div>
+                                    ) : (
+                                        <textarea className="w-full p-4 border-2 border-purple-300 dark:border-purple-700 outline-none bg-purple-50/50 dark:bg-gray-800 dark:text-white focus:border-purple-500 transition-all resize-none shadow-inner custom-scrollbar h-32" value={qParts.asq} onChange={e => handleAsqChange(e.target.value)}></textarea>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="flex gap-4 mb-4 mt-4 border-t pt-4 dark:border-gray-700">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗總滿分</label>
+                                    <input type="number" min="1" className="w-full p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={maxScore} onChange={e => setMaxScore(e.target.value)} />
+                                </div>
+                                <div className="flex-1 flex items-end pb-3">
+                                    <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
+                                        <input type="checkbox" checked={roundScore} onChange={e => setRoundScore(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
+                                        <span>成績四捨五入至整數</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <h3 className="font-bold text-xs text-blue-600 dark:text-blue-400 mb-2 mt-4">🔵 選擇題標準答案</h3>
+                            <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} parsedTypes={parsedQuestionTypes} maxQuestions={numQuestions} showConfirm={showConfirm} />
+                            
+                            {!!qParts.sq && (
+                                <div className="mt-6 mb-2 animate-fade-in">
+                                    <h3 className="font-bold text-xs text-teal-600 dark:text-teal-400 mb-2">🟢 簡答題標準答案 (支援一鍵貼上多格)</h3>
+                                    <SpecificAnswerGridInput value={shortAnswersInput} onChange={setShortAnswersInput} parsedTypes={parsedQuestionTypes} targetType="SQ" title="簡答題" colorTheme="teal" showConfirm={showConfirm} />
+                                </div>
+                            )}
+
+                            <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解區 (亦可作為問答題的 AI 評分標準區)</h3>
+                            <div className="mb-6">
+                                {inputType === 'richtext' ? (
+                                    <div className="border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
+                                        <ContentEditableEditor value={explanationHtml} onChange={setExplanationHtml} placeholder="請輸入所有題目的詳解或問答題評分標準 [AS.xxx][s:20]..." />
+                                    </div>
+                                ) : (
+                                    <textarea 
+                                        className="w-full h-32 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none text-sm custom-scrollbar"
+                                        placeholder="請輸入所有題目的詳解..."
+                                        value={explanationHtml}
+                                        onChange={(e) => setExplanationHtml(e.target.value)}
+                                    />
+                                )}
+                            </div>
+                        </>
+                    );
+                })()}
+
+              
 
                 <div className="flex flex-col gap-3 mt-4 mb-8 bg-gray-50 dark:bg-gray-900 p-4 border border-gray-200 dark:border-gray-700">
                     <label className="flex items-center space-x-2 cursor-pointer dark:text-white font-bold text-sm">
@@ -4638,47 +4965,214 @@ ${difficultyInstruction}
                     <HelpTooltip show={showHelp} text="設定考卷總題數（決定答案卡有幾格）以及滿分（交卷時會自動幫你依比例算分）" position="top" className="left-1/3" />
                 </div>
 
-                <div className="relative">
-                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">試題來源 (單選)</label>
-                    <HelpTooltip show={showHelp} text="強烈推薦使用【富文本】，你可以直接把 Word 題庫複製貼上，排版、圖片跟表格都會完美保留！" position="bottom" className="left-1/4" />
-                </div>
-                <div className="flex flex-wrap space-x-4 mb-4 dark:text-white">
-                    <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
-                        <input type="radio" checked={inputType === 'url'} onChange={() => setInputType('url')} className="w-4 h-4 accent-black dark:accent-white" />
-                        <span>公開網址</span>
-                    </label>
-                    <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
-                        <input type="radio" checked={inputType === 'text'} onChange={() => setInputType('text')} className="w-4 h-4 accent-black dark:accent-white" />
-                        <span>純文字</span>
-                    </label>
-                    <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300 mt-2 sm:mt-0">
-                        <input type="radio" checked={inputType === 'richtext'} onChange={() => setInputType('richtext')} className="w-4 h-4 accent-black dark:accent-white" />
-                        <span className="text-blue-600 dark:text-blue-400 font-bold">富文本 (支援 Word 貼上)</span>
-                    </label>
-                </div>
+                {(() => {
+                    const isHtml = inputType === 'richtext';
+                    const activeContent = isHtml ? questionHtml : questionText;
+                    
+                    // ✨ 智慧提取核心：全域自動歸位系統，精準將錯誤貼上的題型移動到專屬區塊
+                    // ✨ 智慧提取核心：全域自動歸位系統，修正重複、多餘空行，並強制 UI 即時刷新
+                    const getParts = (text) => {
+                        let tempText = text || '';
+                        let sq = '', asq = '';
+                        
+                        const cleanBlock = (m) => m.trim().replace(/^(?:<br\s*\/?>|\s)+|(?:<br\s*\/?>|\s)+$/gi, '');
 
-                {inputType === 'url' ? (
-                    <input type="text" placeholder="請貼上 Google Drive 等連結" className="w-full mb-6 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} onFocus={handleFocusScroll} />
-                ) : inputType === 'text' ? (
-                    <textarea placeholder="請貼上試題純文字..." className="w-full h-32 mb-6 p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar" value={questionText} onChange={e => setQuestionText(e.target.value)} onFocus={handleFocusScroll} />
-                ) : (
-                   <ContentEditableEditor value={questionHtml} onChange={setQuestionHtml} placeholder="請直接在此貼上 Word 文件內容，將保留原本的排版格式..." showAlert={showAlert} />
-                )}
+                        const sqRegex = /(?:<[^>]+>|\s)*\[SQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ)\.?0*\d+\]|$)/gi;
+                        let sqMatches = tempText.match(sqRegex);
+                        if (sqMatches) {
+                            sqMatches = Array.from(new Set(sqMatches.map(cleanBlock))); // 去重複
+                            sq = sqMatches.join(isHtml ? '<br><br>' : '\n\n');
+                            tempText = tempText.replace(sqRegex, '');
+                        }
+                        
+                        const asqRegex = /(?:<[^>]+>|\s)*\[ASQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ)\.?0*\d+\]|$)/gi;
+                        let asqMatches = tempText.match(asqRegex);
+                        if (asqMatches) {
+                            asqMatches = Array.from(new Set(asqMatches.map(cleanBlock))); // 去重複
+                            asq = asqMatches.join(isHtml ? '<br><br>' : '\n\n');
+                            tempText = tempText.replace(asqRegex, '');
+                        }
+                        
+                        // 清除多餘的殘留空行
+                        if (isHtml) {
+                            tempText = tempText.replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>').replace(/^(?:<br\s*\/?>\s*)+|(?:<br\s*\/?>\s*)+$/gi, '').trim();
+                        } else {
+                            tempText = tempText.replace(/\n{3,}/g, '\n\n').trim();
+                        }
+                        
+                        return { mcq: tempText, sq, asq };
+                    };
+
+                    const updateParts = (newMcq, newSq, newAsq) => {
+                        const sep = isHtml ? '<br><br>' : '\n\n';
+                        const res = [newMcq, newSq, newAsq].map(s=>s?.trim()).filter(Boolean).join(sep);
+                        if (isHtml) setQuestionHtml(res); else setQuestionText(res);
+                    };
+
+                    const qParts = getParts(activeContent);
+                    const eParts = getParts(explanationHtml);
+
+                    const forceSyncUI = () => {
+                        setTimeout(() => {
+                            if (document.activeElement && document.activeElement.getAttribute('contenteditable') === 'true') {
+                                document.activeElement.blur();
+                            }
+                        }, 10);
+                    };
+
+                    const redistributeContent = (mcqVal, sqVal, asqVal) => {
+                        const combined = [mcqVal, sqVal, asqVal].filter(Boolean).join(isHtml ? '<br><br>' : '\n\n');
+                        const parsed = getParts(combined);
+                        updateParts(parsed.mcq, parsed.sq, parsed.asq);
+                    };
+
+                    const handleMainChange = (val) => {
+                        const pastedParsed = getParts(val);
+                        redistributeContent(val, qParts.sq, qParts.asq);
+                        if (pastedParsed.sq || pastedParsed.asq) forceSyncUI(); // 觸發即時消失
+                    };
+                    const handleSqChange = (val) => redistributeContent(qParts.mcq, val, qParts.asq);
+                    const handleAsqChange = (val) => redistributeContent(qParts.mcq, qParts.sq, val);
+
+                    const handleExpMainChange = (val) => {
+                        let normalizedVal = val.replace(/\[SA\.?/gi, '[SQ.').replace(/\[ASA\.?/gi, '[ASQ.').replace(/\[AS\.?/gi, '[ASQ.');
+                        let normalizedOldSq = (eParts.sq || '').replace(/\[SA\.?/gi, '[SQ.');
+                        let normalizedOldAsq = (eParts.asq || '').replace(/\[ASA\.?/gi, '[ASQ.');
+                        
+                        const combined = [normalizedVal, normalizedOldSq, normalizedOldAsq].filter(Boolean).join(isHtml ? '<br><br>' : '\n\n');
+                        const parsed = getParts(combined);
+                        
+                        const finalSq = parsed.sq.replace(/\[SQ/gi, '[SA');
+                        const finalAsq = parsed.asq.replace(/\[ASQ/gi, '[ASA');
+                        
+                        const sep = isHtml ? '<br><br>' : '\n\n';
+                        setExplanationHtml([parsed.mcq, finalSq, finalAsq].map(s=>s?.trim()).filter(Boolean).join(sep));
+                        
+                        const pasted = getParts(normalizedVal);
+                        if (pasted.sq || pasted.asq) forceSyncUI(); // 觸發即時消失
+                    };
+
+                    return (
+                        <>
+                            <div className="relative flex items-center justify-between mb-2 mt-4">
+                                <div className="flex flex-col">
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400">試題來源 (單選)</label>
+                                    <HelpTooltip show={showHelp} text="強烈推薦使用【富文本】，你可以直接把 Word 題庫複製貼上，排版、圖片跟表格都會完美保留！" position="bottom" className="left-1/4" />
+                                </div>
+                                {(inputType === 'text' || inputType === 'richtext') && (
+                                    <div className="flex gap-2">
+                                        <label className="flex items-center space-x-1.5 text-xs font-bold text-teal-600 dark:text-teal-400 cursor-pointer bg-teal-50 dark:bg-teal-900/30 px-2 py-1 rounded border border-teal-200 dark:border-teal-800 hover:bg-teal-100 transition-colors">
+                                            <input type="checkbox" checked={!!qParts.sq} onChange={(e) => {
+                                                if (e.target.checked) updateParts(qParts.mcq, qParts.sq + (isHtml ? '\n<br>[SQ.001]<br>簡答題...\n<br>[End]' : '\n[SQ.001]\n簡答題...\n[End]'), qParts.asq);
+                                                else updateParts(qParts.mcq, '', qParts.asq);
+                                            }} className="w-3.5 h-3.5 accent-teal-500" />
+                                            <span>啟用簡答</span>
+                                        </label>
+                                        <label className="flex items-center space-x-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 cursor-pointer bg-purple-50 dark:bg-purple-900/30 px-2 py-1 rounded border border-purple-200 dark:border-purple-800 hover:bg-purple-100 transition-colors">
+                                            <input type="checkbox" checked={!!qParts.asq} onChange={(e) => {
+                                                if (e.target.checked) updateParts(qParts.mcq, qParts.sq, qParts.asq + (isHtml ? '\n<br>[ASQ.001]<br>問答題...\n<br>[End]' : '\n[ASQ.001]\n問答題...\n[End]'));
+                                                else updateParts(qParts.mcq, qParts.sq, '');
+                                            }} className="w-3.5 h-3.5 accent-purple-500" />
+                                            <span>啟用問答</span>
+                                        </label>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex flex-wrap space-x-4 mb-4 dark:text-white">
+                                <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
+                                    <input type="radio" checked={inputType === 'url'} onChange={() => setInputType('url')} className="w-4 h-4 accent-black dark:accent-white" />
+                                    <span>公開網址</span>
+                                </label>
+                                <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300">
+                                    <input type="radio" checked={inputType === 'text'} onChange={() => setInputType('text')} className="w-4 h-4 accent-black dark:accent-white" />
+                                    <span>純文字</span>
+                                </label>
+                                <label className="flex items-center space-x-2 text-sm cursor-pointer hover:text-black dark:hover:text-gray-300 mt-2 sm:mt-0">
+                                    <input type="radio" checked={inputType === 'richtext'} onChange={() => setInputType('richtext')} className="w-4 h-4 accent-black dark:accent-white" />
+                                    <span className="text-blue-600 dark:text-blue-400 font-bold">富文本 (支援自動轉移)</span>
+                                </label>
+                            </div>
+
+                            {inputType === 'url' ? (
+                                <input type="text" placeholder="請貼上試卷網址 (例如: Google Drive 連結)" className="w-full mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={questionFileUrl} onChange={e => setQuestionFileUrl(e.target.value)} onFocus={handleFocusScroll} />
+                            ) : inputType === 'text' ? (
+                                <textarea placeholder="請貼上選擇題純文字... (貼上包含 [SQ] 的內容會自動轉移下方)" className="w-full h-32 mb-6 p-3 border border-blue-300 dark:border-blue-700 bg-blue-50/20 dark:bg-gray-800 text-black dark:text-white no-round outline-none focus:border-blue-500 text-sm custom-scrollbar" value={qParts.mcq} onChange={e => handleMainChange(e.target.value)} onFocus={handleFocusScroll} />
+                            ) : (
+                               <div className="border-2 border-blue-300 dark:border-blue-700 focus-within:border-blue-500 transition-colors bg-white dark:bg-gray-800 mb-6">
+                                   <ContentEditableEditor value={qParts.mcq} onChange={handleMainChange} placeholder="貼上選擇題... (若混雜 [SQ] / [ASQ] 內容，系統會自動轉移到專屬格子)" showAlert={showAlert} />
+                               </div>
+                            )}
+
+                            {!!qParts.sq && (
+                                <div className="mb-6 animate-fade-in">
+                                    <label className="block text-teal-700 dark:text-teal-400 font-bold mb-2">🟢 簡答題文本 [SQ.xxx]</label>
+                                    {inputType === 'richtext' ? (
+                                        <div className="border-2 border-teal-300 dark:border-teal-700 focus-within:border-teal-500 transition-colors bg-teal-50/30 dark:bg-teal-900/20">
+                                            <ContentEditableEditor value={qParts.sq} onChange={handleSqChange} placeholder="請輸入 [SQ.xxx] 開頭的簡答題..." />
+                                        </div>
+                                    ) : (
+                                        <textarea className="w-full p-4 border-2 border-teal-300 dark:border-teal-700 outline-none bg-teal-50/50 dark:bg-gray-800 dark:text-white focus:border-teal-500 transition-all resize-none shadow-inner custom-scrollbar h-32" value={qParts.sq} onChange={e => handleSqChange(e.target.value)} onFocus={handleFocusScroll}></textarea>
+                                    )}
+                                </div>
+                            )}
+
+                            {!!qParts.asq && (
+                                <div className="mb-6 animate-fade-in">
+                                    <label className="block text-purple-700 dark:text-purple-400 font-bold mb-2">🟣 問答題文本 [ASQ.xxx]</label>
+                                    {inputType === 'richtext' ? (
+                                        <div className="border-2 border-purple-300 dark:border-purple-700 focus-within:border-purple-500 transition-colors bg-purple-50/30 dark:bg-purple-900/20">
+                                            <ContentEditableEditor value={qParts.asq} onChange={handleAsqChange} placeholder="請輸入 [ASQ.xxx] 開頭的問答題..." />
+                                        </div>
+                                    ) : (
+                                        <textarea className="w-full p-4 border-2 border-purple-300 dark:border-purple-700 outline-none bg-purple-50/50 dark:bg-gray-800 dark:text-white focus:border-purple-500 transition-all resize-none shadow-inner custom-scrollbar h-32" value={qParts.asq} onChange={e => handleAsqChange(e.target.value)} onFocus={handleFocusScroll}></textarea>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="flex gap-4 mb-4 mt-4 border-t pt-4 dark:border-gray-700">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗總滿分</label>
+                                    <input type="number" min="1" className="w-full p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm" value={maxScore} onChange={e => setMaxScore(e.target.value)} onFocus={handleFocusScroll} />
+                                </div>
+                                <div className="flex-1 flex items-end pb-3">
+                                    <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
+                                        <input type="checkbox" checked={roundScore} onChange={e => setRoundScore(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
+                                        <span>成績四捨五入至整數</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <h3 className="font-bold text-xs text-blue-600 dark:text-blue-400 mb-2 mt-4">🔵 選擇題標準答案</h3>
+                            <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} parsedTypes={parsedQuestionTypes} maxQuestions={numQuestions} showConfirm={showConfirm} />
+                            
+                            {!!qParts.sq && (
+                                <div className="mt-6 mb-2 animate-fade-in">
+                                    <h3 className="font-bold text-xs text-teal-600 dark:text-teal-400 mb-2">🟢 簡答題標準答案 (支援一鍵貼上多格)</h3>
+                                    <SpecificAnswerGridInput value={shortAnswersInput} onChange={setShortAnswersInput} parsedTypes={parsedQuestionTypes} targetType="SQ" title="簡答題" colorTheme="teal" showConfirm={showConfirm} />
+                                </div>
+                            )}
+
+                            <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解區 (亦可作為問答題的 AI 評分標準區)</h3>
+                            <div className="mb-6">
+                                {inputType === 'richtext' ? (
+                                    <div className="border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
+                                        <ContentEditableEditor value={explanationHtml} onChange={setExplanationHtml} placeholder="請輸入所有題目的詳解或問答題評分標準 [AS.xxx][s:20]..." />
+                                    </div>
+                                ) : (
+                                    <textarea 
+                                        className="w-full h-32 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none text-sm custom-scrollbar"
+                                        placeholder="請輸入所有題目的詳解..."
+                                        value={explanationHtml}
+                                        onChange={(e) => setExplanationHtml(e.target.value)}
+                                        onFocus={handleFocusScroll}
+                                    />
+                                )}
+                            </div>
+                        </>
+                    );
+                })()}
                 
-              {/* ✨ 已將標準答案移至詳解上方 */}
-                <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">標準答案 (選填，交卷時會自動批改)</h3>
-                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} showConfirm={showConfirm} />
-
-                <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2">測驗詳解 (純文字，選填)</h3>
-
-                
-                <textarea 
-                    className="w-full h-32 mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white no-round outline-none focus:border-black dark:focus:border-white text-sm custom-scrollbar"
-                    placeholder="在此貼上詳解純文字，並使用 [A.1], [A.02] 等標記對應題號..."
-                    value={explanationHtml}
-                    onChange={(e) => setExplanationHtml(e.target.value)}
-                    onFocus={handleFocusScroll}
-                />
+            
 
                 <div className="mb-6 border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-700 no-round flex flex-col gap-3">
                     <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
@@ -4984,7 +5478,7 @@ ${difficultyInstruction}
 
                 <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
                     {/* ✨ 新增：沉浸式作答切換按鈕 (偵測到有題目格式才顯示) */}
-                    {(questionHtml || questionText)?.match(/\[Q\.?0*\d+\]/i) && (
+                    {(questionHtml || questionText)?.match(/\[(Q|SQ|ASQ)\.?0*\d+\]/i) && (
                         <button onClick={() => setViewMode(prev => prev === 'split' ? 'interactive' : 'split')} className="bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-3 py-1.5 no-round font-bold border border-blue-200 dark:border-blue-700 text-xs hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors">
                             {viewMode === 'split' ? '✨ 沉浸式作答' : '🔙 傳統雙視窗'}
                         </button>
@@ -5219,89 +5713,88 @@ ${difficultyInstruction}
                                             />
 
                                             <div className="grid grid-cols-1 gap-2">
-                                                {['A', 'B', 'C', 'D'].map(opt => {
+                                                {q.type === 'Q' ? ['A', 'B', 'C', 'D'].map(opt => {
                                                     const hasCustomContent = !!q.options[opt];
                                                     const isSelected = currentAns === opt;
                                                     const elimKey = `${actualIdx}_${opt}`;
                                                     const isEliminated = eliminatedOptions[elimKey];
                                                     
-                                                    // ✨ 新增：偷看答案後的選項樣式
                                                     const isCorrectOpt = isPeeked && (currentCorrectAns.toLowerCase().includes(opt.toLowerCase()) || currentCorrectAns.toLowerCase() === 'abcd' || currentCorrectAns.toLowerCase() === 'z');
                                                     let btnClasses = `text-left w-full py-1.5 px-3 border-2 transition-all flex items-start space-x-2 sm:space-x-3 no-round flex-1 `;
                                                     
                                                     if (isPeeked) {
-                                                        if (isCorrectOpt) {
-                                                            btnClasses += 'bg-green-50 border-green-500 dark:bg-green-900/30 dark:border-green-500 shadow-sm ';
-                                                        } else if (isSelected) {
-                                                            btnClasses += 'bg-red-50 border-red-500 dark:bg-red-900/30 dark:border-red-500 shadow-sm ';
-                                                        } else {
-                                                            btnClasses += 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 opacity-60 ';
-                                                        }
+                                                        if (isCorrectOpt) btnClasses += 'bg-green-50 border-green-500 dark:bg-green-900/30 dark:border-green-500 shadow-sm ';
+                                                        else if (isSelected) btnClasses += 'bg-red-50 border-red-500 dark:bg-red-900/30 dark:border-red-500 shadow-sm ';
+                                                        else btnClasses += 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 opacity-60 ';
                                                         btnClasses += 'cursor-not-allowed ';
                                                     } else {
                                                         btnClasses += isSelected ? 'bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400 shadow-sm scale-[1.01] ' : 'bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-gray-50 dark:hover:bg-gray-750 ';
                                                         if (isTimeUp) btnClasses += 'locked-btn opacity-80 ';
-                                                        if (isEliminated) btnClasses += 'opacity-30 grayscale '; // ✨ 刪去法樣式
+                                                        if (isEliminated) btnClasses += 'opacity-30 grayscale '; 
                                                     }
 
                                                    return (
                                                         <div key={opt} className="flex items-stretch gap-2 w-full">
-                                                            
-                                                            {/* ✨ 修改：刪去法按鈕移到左邊，改用專業 SVG 圖示，並支援開關隱藏 */}
                                                             {showEliminationBtn && (
                                                                 <button
                                                                     disabled={isTimeUp || isPeeked}
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         setEliminatedOptions(prev => ({ ...prev, [elimKey]: !prev[elimKey] }));
-                                                                        if (!isEliminated && isSelected) {
-                                                                            handleAnswerSelect(actualIdx, opt);
-                                                                        }
+                                                                        if (!isEliminated && isSelected) handleAnswerSelect(actualIdx, opt);
                                                                     }}
                                                                     className={`w-8 sm:w-10 flex items-center justify-center border-2 transition-colors no-round shrink-0 ${isEliminated ? 'bg-gray-200 border-gray-300 text-gray-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300' : 'bg-white border-gray-200 text-gray-300 hover:text-gray-500 hover:border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-500 dark:hover:bg-gray-700'}`}
-                                                                    title={isEliminated ? '取消刪去' : '刪去此選項'}
                                                                 >
-                                                                    {isEliminated ? (
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
-                                                                    ) : (
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
-                                                                    )}
+                                                                    {isEliminated ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>}
                                                                 </button>
                                                             )}
-
                                                             <button 
                                                                 disabled={isTimeUp || isPeeked}
                                                                 onClick={(e) => {
-                                                                    // ✨ 修復：點擊圖片時直接觸發放大檢視，並且阻擋事件往上傳遞，徹底解決按鈕衝突問題！
                                                                     if (e.target.tagName === 'IMG' && (e.target.closest('.preview-rich-text') || e.target.classList.contains('zoomable-img'))) {
-                                                                        e.stopPropagation();
-                                                                        setPreviewLightboxImg(e.target.src);
-                                                                        return;
+                                                                        e.stopPropagation(); setPreviewLightboxImg(e.target.src); return;
                                                                     } else if (e.target.tagName === 'CANVAS' && e.target.closest('.preview-rich-text')) {
-                                                                        e.stopPropagation();
-                                                                        setPreviewLightboxImg(e.target.toDataURL());
-                                                                        return;
+                                                                        e.stopPropagation(); setPreviewLightboxImg(e.target.toDataURL()); return;
                                                                     }
-                                                                    
                                                                     if (!isEliminated) handleAnswerSelect(actualIdx, opt);
                                                                 }}
                                                                 className={btnClasses}
                                                             >
                                                                 <span style={{ fontSize: `${Math.max(1, immersiveTextSize * 0.9)}rem` }} className={`font-black mt-0.5 w-6 sm:w-8 shrink-0 text-center ${isPeeked && isCorrectOpt ? 'text-green-600 dark:text-green-400' : isPeeked && isSelected ? 'text-red-600 dark:text-red-400' : isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'} ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`}>{opt}.</span>
                                                                 {hasCustomContent ? (
-                                                                    <div 
-                                                                        className={`preview-rich-text w-full flex-1 ${isPeeked && (isCorrectOpt || isSelected) ? 'text-black dark:text-white' : isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'} ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`}
-                                                                        dangerouslySetInnerHTML={{ __html: q.options[opt] }}
-                                                                    />
+                                                                    <div className={`preview-rich-text w-full flex-1 ${isPeeked && (isCorrectOpt || isSelected) ? 'text-black dark:text-white' : isSelected ? 'text-black dark:text-white' : 'text-gray-700 dark:text-gray-300'} ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`} dangerouslySetInnerHTML={{ __html: q.options[opt] }} />
                                                                 ) : (
-                                                                    <span className={`w-full flex-1 ${isSelected || (isPeeked && isCorrectOpt) ? 'text-black dark:text-white' : 'text-gray-400 dark:text-gray-600'} italic ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`}>(選項無內容，但可點擊作答)</span>
+                                                                    <span className={`w-full flex-1 ${isSelected || (isPeeked && isCorrectOpt) ? 'text-black dark:text-white' : 'text-gray-400 dark:text-gray-600'} italic ${isEliminated ? 'line-through opacity-40 grayscale' : ''}`}>(選項無內容)</span>
                                                                 )}
-                                                                {isPeeked && isCorrectOpt && <span className="text-green-500 font-bold ml-2 shrink-0">✅</span>}
-                                                                {isPeeked && isSelected && !isCorrectOpt && <span className="text-red-500 font-bold ml-2 shrink-0">❌</span>}
                                                             </button>
                                                         </div>
                                                     );
-                                                })}
+                                                }) : q.type === 'SQ' ? (
+                                                    <input 
+                                                        type="text" 
+                                                        disabled={isTimeUp || isPeeked}
+                                                        value={currentAns || ''}
+                                                        onChange={e => {
+                                                            const newAns = [...userAnswers];
+                                                            newAns[actualIdx] = e.target.value;
+                                                            setUserAnswers(newAns);
+                                                        }}
+                                                        className="w-full p-4 text-lg border-2 border-teal-500 outline-none bg-teal-50 dark:bg-gray-800 dark:text-white shadow-inner transition-colors focus:ring-4 ring-teal-200"
+                                                        placeholder="請輸入簡答題答案 (需與正解完全一致才給分)..."
+                                                    />
+                                                ) : (
+                                                    <textarea 
+                                                        disabled={isTimeUp || isPeeked}
+                                                        value={currentAns || ''}
+                                                        onChange={e => {
+                                                            const newAns = [...userAnswers];
+                                                            newAns[actualIdx] = e.target.value;
+                                                            setUserAnswers(newAns);
+                                                        }}
+                                                        className="w-full p-4 h-40 text-base border-2 border-purple-500 outline-none bg-purple-50 dark:bg-gray-800 dark:text-white shadow-inner transition-colors focus:ring-4 ring-purple-200 resize-none custom-scrollbar"
+                                                        placeholder="請輸入問答題詳解 (交卷後將由 AI 自動評分)..."
+                                                    />
+                                                )}
                                             </div>
                                             
                                             {/* ✨ 新增：偷看答案按鈕與詳解區塊 */}
@@ -5445,48 +5938,112 @@ ${difficultyInstruction}
                         <span className="font-bold text-xs text-gray-600 dark:text-gray-300">✏️ 答案卡 {isTimeUp && <span className="text-red-500 ml-2">(已鎖定)</span>}</span>
                     </div>
                     <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white dark:bg-gray-800 transition-colors">
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px 16px' }}>
-                            {userAnswers.map((ans, i) => {
-                                // ✨ 新增：即時判斷此題是否為送分題 (Z 或 z)
-                                const currentCleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
-                                const key = currentCleanKey[i] || '-';
-                                const isBonus = (key === 'Z' || key === 'z');
+                        
+                        {/* 🔵 選擇題作答區塊 */}
+                        {parsedQuestionTypes.some(t => t === 'Q') && (
+                            <>
+                                <h4 className="font-bold text-blue-600 dark:text-blue-400 mb-2 border-b-2 border-blue-200 dark:border-blue-800 pb-1">🔵 選擇題作答區</h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px 16px', marginBottom: '24px' }}>
+                                    {userAnswers.map((ans, i) => {
+                                        if (parsedQuestionTypes[i] !== 'Q') return null;
+                                        const currentCleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz]/g, '');
+                                        const key = currentCleanKey[i] || '-';
+                                        const isBonus = (key === 'Z' || key === 'z');
 
-                                return (
-                                    <div key={i} id={`answer-card-${i+1}`} className={`break-avoid flex items-center justify-between py-2.5 border-b border-gray-50 dark:border-gray-700 pr-2 transition-colors rounded ${isBonus ? 'bg-yellow-50 dark:bg-yellow-900/40 hover:bg-yellow-100 dark:hover:bg-yellow-900/60' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
-                                        <div className="flex items-center space-x-2 shrink-0 w-20">
-                                            {/* ✨ 修改：將 span 替換為可點擊跳轉的 button */}
-                                            <button 
-                                                onClick={() => scrollToQuestion(i+1)}
-                                                className={`font-mono text-sm font-bold transition-colors cursor-pointer ${isBonus ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400'}`}
-                                                title="點擊跳轉至此題題目"
-                                            >{i+1}.</button>
-                                            <button 
-                                                disabled={isTimeUp}
-                                                onClick={() => toggleStar(i)} 
-                                                className={`text-sm focus:outline-none ${starred[i] ? 'text-orange-500' : 'text-gray-200 dark:text-gray-600'} ${isTimeUp ? 'cursor-not-allowed opacity-50' : 'hover:text-gray-300 dark:hover:text-gray-500'}`}
-                                            >★</button>
-                                            {/* ✨ 新增：送分題 UI 閃爍標籤 */}
-                                            {isBonus && <span className="text-[10px] bg-yellow-400 text-black px-1.5 py-0.5 rounded-sm font-bold animate-pulse shadow-sm">🎁 送分</span>}
-                                        </div>
-                                        <div className="flex space-x-1 shrink-0 items-center">
-                                            {peekedAnswers && peekedAnswers[i] && <span className="text-xs mr-2 text-orange-500 font-bold" title="已偷看答案並鎖定">🔒</span>}
-                                            {['A','B','C','D'].map(o => (
-                                                <button 
-                                                    key={o} 
-                                                    disabled={isTimeUp || (peekedAnswers && peekedAnswers[i])}
-                                                    onClick={() => handleAnswerSelect(i, o)} 
-                                                    className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all 
-                                                        ${ans === o ? 'bg-black dark:bg-gray-200 border-black dark:border-gray-200 text-white dark:text-black scale-105 shadow-sm' : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-400'}
-                                                        ${isTimeUp || (peekedAnswers && peekedAnswers[i]) ? 'locked-btn opacity-60' : 'hover:border-gray-500 dark:hover:border-gray-400'}
-                                                        ${isBonus && ans !== o && !isTimeUp ? 'border-yellow-300 dark:border-yellow-700' : ''}`}
-                                                >{o}</button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                        return (
+                                            <div key={i} id={`answer-card-${i+1}`} className={`break-avoid flex items-center justify-between py-2.5 border-b border-blue-50 dark:border-blue-900/30 pr-2 transition-colors rounded ${isBonus ? 'bg-yellow-50 dark:bg-yellow-900/40' : 'bg-blue-50/30 dark:bg-blue-900/10 hover:bg-blue-50 dark:hover:bg-blue-900/40'}`}>
+                                                <div className="flex items-center space-x-2 shrink-0 w-20 pl-1">
+                                                    <button 
+                                                        onClick={() => scrollToQuestion(i+1)}
+                                                        className={`font-mono text-sm font-bold transition-colors cursor-pointer ${isBonus ? 'text-yellow-600 dark:text-yellow-400' : 'text-blue-800 dark:text-blue-300'}`}
+                                                        title="點擊跳轉至此題"
+                                                    >{i+1}.</button>
+                                                    <button 
+                                                        disabled={isTimeUp}
+                                                        onClick={() => toggleStar(i)} 
+                                                        className={`text-sm focus:outline-none ${starred[i] ? 'text-orange-500' : 'text-gray-300 dark:text-gray-600'} ${isTimeUp ? 'cursor-not-allowed opacity-50' : 'hover:text-gray-400'}`}
+                                                    >★</button>
+                                                    {isBonus && <span className="text-[10px] bg-yellow-400 text-black px-1.5 py-0.5 rounded-sm font-bold animate-pulse shadow-sm">🎁 送分</span>}
+                                                </div>
+                                                <div className="flex space-x-1 shrink-0 items-center flex-1">
+                                                    {peekedAnswers && peekedAnswers[i] && <span className="text-xs mr-2 text-orange-500 font-bold" title="已偷看答案">🔒</span>}
+                                                    {['A','B','C','D'].map(o => (
+                                                        <button 
+                                                            key={o} 
+                                                            disabled={isTimeUp || (peekedAnswers && peekedAnswers[i])}
+                                                            onClick={() => handleAnswerSelect(i, o)} 
+                                                            className={`w-8 h-8 text-sm font-bold border-2 no-round transition-all 
+                                                                ${ans === o ? 'bg-blue-600 border-blue-600 text-white scale-105 shadow-sm' : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-400'}
+                                                                ${isTimeUp || (peekedAnswers && peekedAnswers[i]) ? 'locked-btn opacity-60' : 'hover:border-blue-400'}
+                                                                ${isBonus && ans !== o && !isTimeUp ? 'border-yellow-300 dark:border-yellow-700' : ''}`}
+                                                        >{o}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        )}
+
+                        {/* 🟢 非選擇題作答區塊 */}
+                        {parsedQuestionTypes.some(t => t !== 'Q') && (
+                            <>
+                                <h4 className="font-bold text-teal-600 dark:text-teal-400 mb-2 border-b-2 border-teal-200 dark:border-teal-800 pb-1 mt-4">🟢 非選擇題作答區</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {userAnswers.map((ans, i) => {
+                                        const type = parsedQuestionTypes[i];
+                                        if (type === 'Q') return null;
+
+                                        return (
+                                            <div key={i} id={`answer-card-${i+1}`} className="flex flex-col space-y-2 bg-teal-50/30 dark:bg-teal-900/10 p-3 border border-teal-100 dark:border-teal-900/50 rounded">
+                                                <div className="flex justify-between items-center w-full">
+                                                    <div className="flex items-center space-x-2">
+                                                        <button 
+                                                            onClick={() => scrollToQuestion(i+1)}
+                                                            className="font-mono text-sm font-bold text-teal-800 dark:text-teal-300 hover:underline"
+                                                        >{i+1}. {type === 'SQ' ? '簡答題' : '問答題'}</button>
+                                                        <button 
+                                                            disabled={isTimeUp}
+                                                            onClick={() => toggleStar(i)} 
+                                                            className={`text-sm focus:outline-none ${starred[i] ? 'text-orange-500' : 'text-gray-300 dark:text-gray-600'}`}
+                                                        >★</button>
+                                                    </div>
+                                                    {peekedAnswers && peekedAnswers[i] && <span className="text-xs text-orange-500 font-bold">🔒 已鎖定</span>}
+                                                </div>
+                                                
+                                                {type === 'SQ' ? (
+                                                    <input 
+                                                        type="text"
+                                                        disabled={isTimeUp || (peekedAnswers && peekedAnswers[i])}
+                                                        value={ans || ''}
+                                                        onChange={(e) => {
+                                                            const newAns = [...userAnswers];
+                                                            newAns[i] = e.target.value;
+                                                            setUserAnswers(newAns);
+                                                        }}
+                                                        placeholder="請輸入簡答..."
+                                                        className="w-full text-sm p-2 border-2 border-teal-200 focus:border-teal-400 dark:border-teal-700 dark:bg-gray-800 text-black dark:text-white outline-none font-bold shadow-inner transition-colors"
+                                                    />
+                                                ) : (
+                                                    <textarea 
+                                                        disabled={isTimeUp || (peekedAnswers && peekedAnswers[i])}
+                                                        value={ans || ''}
+                                                        onChange={(e) => {
+                                                            const newAns = [...userAnswers];
+                                                            newAns[i] = e.target.value;
+                                                            setUserAnswers(newAns);
+                                                        }}
+                                                        placeholder="請輸入問答詳解..."
+                                                        className="w-full h-24 text-sm p-2 border-2 border-purple-200 focus:border-purple-400 dark:border-purple-700 dark:bg-gray-800 text-black dark:text-white outline-none font-bold shadow-inner resize-none custom-scrollbar transition-colors"
+                                                    />
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -5536,20 +6093,27 @@ ${difficultyInstruction}
             )}
         </div>
     );
-
-    if (step === 'grading') return (
-                <div className="flex flex-col min-h-[100dvh] items-center justify-center p-4 relative py-10 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors">
-                    <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">
-                        ← 返回作答
-                    </button>
-                    <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-lg no-round border border-gray-200 dark:border-gray-700 mt-10 transition-colors">
-                        <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-4 text-center">請輸入正確答案以進行批改</h3>
-                        <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} maxQuestions={numQuestions} showConfirm={showConfirm} />
-                        
-                        <button onClick={() => handleGrade()} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors mt-4">開始批改</button>
+if (step === 'grading') return (
+        <div className="flex flex-col min-h-[100dvh] items-center justify-center p-4 relative py-10 overflow-y-auto bg-gray-100 dark:bg-gray-900 transition-colors">
+            <button onClick={() => setStep('answering')} className="absolute top-6 left-6 text-sm text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white font-bold z-10 transition-colors">
+                ← 返回作答
+            </button>
+            <div className="bg-white dark:bg-gray-800 p-8 shadow-md w-full max-w-lg no-round border border-gray-200 dark:border-gray-700 mt-10 transition-colors">
+                <h3 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-4 text-center">請輸入正確答案以進行批改</h3>
+                
+                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} parsedTypes={parsedQuestionTypes} maxQuestions={numQuestions} showConfirm={showConfirm} />
+                
+                {parsedQuestionTypes.some(t => t === 'SQ') && (
+                    <div className="mt-6 mb-2 animate-fade-in">
+                        <h3 className="font-bold text-xs text-teal-600 dark:text-teal-400 mb-2">🟢 簡答題標準答案</h3>
+                        <SpecificAnswerGridInput value={shortAnswersInput} onChange={setShortAnswersInput} parsedTypes={parsedQuestionTypes} targetType="SQ" title="簡答題" colorTheme="teal" showConfirm={showConfirm} />
                     </div>
-                </div>
-            );
+                )}
+
+                <button onClick={() => handleGrade()} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors mt-4">開始批改</button>
+            </div>
+        </div>
+    );
 
     if (step === 'results') return (
         <div className="flex flex-col h-[100dvh] bg-gray-100 dark:bg-gray-900 p-2 sm:p-4 w-full overflow-hidden transition-colors" onClick={handleRichTextClick}>
@@ -6006,6 +6570,17 @@ ${difficultyInstruction}
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4 cursor-zoom-out" onClick={() => setPreviewLightboxImg(null)}>
                     <img src={previewLightboxImg} className="max-w-full max-h-[90vh] object-contain shadow-2xl bg-white p-2 rounded" alt="放大預覽" />
                     <button className="absolute top-4 right-4 text-white text-3xl font-bold bg-black/50 w-12 h-12 rounded-full flex items-center justify-center hover:bg-black/80">✖</button>
+                </div>
+            )}
+
+            {/* ✨ 新增：AI 問答題批改載入 Modal */}
+            {isAiGrading && (
+                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-purple-500">
+                        <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-700 border-t-purple-500 rounded-full animate-spin mx-auto mb-6"></div>
+                        <h3 className="text-xl font-black mb-2 dark:text-white">🤖 AI 正在用心批閱試卷...</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">這可能需要幾秒鐘的時間，請稍候</p>
+                    </div>
                 </div>
             )}
 
