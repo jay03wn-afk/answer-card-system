@@ -2036,13 +2036,21 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
             let finalRec = { ...rec };
             
             // ✨ 修復：如果試卷內容被分離了，必須從 quizContents 抓回來，否則從首頁進入編輯會是一片空白！
+            // ✨ 修復：改為快取優先，避免卡死
             if (finalRec.hasSeparatedContent) {
-                const contentSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get();
-                if (contentSnap.exists) {
-                    const contentData = contentSnap.data();
-                    finalRec.questionText = contentData.questionText || '';
-                    finalRec.questionHtml = contentData.questionHtml || '';
-                    finalRec.explanationHtml = contentData.explanationHtml || '';
+                try {
+                    let contentSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get({ source: 'cache' }).catch(() => null);
+                    if (!contentSnap || !contentSnap.exists) {
+                        contentSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get();
+                    }
+                    if (contentSnap && contentSnap.exists) {
+                        const contentData = contentSnap.data();
+                        finalRec.questionText = window.safeDecompress(contentData.questionText);
+                        finalRec.questionHtml = window.safeDecompress(contentData.questionHtml);
+                        finalRec.explanationHtml = window.safeDecompress(contentData.explanationHtml);
+                    }
+                } catch (err) {
+                    console.warn("載入內容發生錯誤:", err);
                 }
             }
 
@@ -2125,12 +2133,20 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     return showAlert("⚠️ 原作者已停止分享此試卷。");
                 }
             } else if (finalRec.hasSeparatedContent) {
-                const cSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get();
-                if (cSnap.exists) {
-                    const d = cSnap.data();
-                    finalRec.questionText = window.safeDecompress(d.questionText);
-                    finalRec.questionHtml = window.safeDecompress(d.questionHtml);
-                    finalRec.explanationHtml = window.safeDecompress(d.explanationHtml);
+                // ✨ 抓蟲修復：第二次載入卡死的原因是 .get() 等待網路回應。我們改為「快取優先」！
+                try {
+                    let cSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get({ source: 'cache' }).catch(() => null);
+                    if (!cSnap || !cSnap.exists) {
+                        cSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(rec.id).get();
+                    }
+                    if (cSnap && cSnap.exists) {
+                        const d = cSnap.data();
+                        finalRec.questionText = window.safeDecompress(d.questionText);
+                        finalRec.questionHtml = window.safeDecompress(d.questionHtml);
+                        finalRec.explanationHtml = window.safeDecompress(d.explanationHtml);
+                    }
+                } catch (err) {
+                    console.warn("載入內容發生錯誤:", err);
                 }
             }
 
@@ -2147,6 +2163,8 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     return;
                 }
             }
+            
+            setIsJumping(false); // ✨ 確保解開 UI 鎖定
             onContinueQuiz(finalRec);
         } catch(e) {
             setIsJumping(false);
@@ -4472,14 +4490,21 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
             if (doc.exists) {
                 const data = doc.data();
                 
-                // ✨ 讀取獨立儲存的肥大內容
+                // ✨ 讀取獨立儲存的肥大內容，改用快取優先
                 if (data.hasSeparatedContent) {
-                    const contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get();
-                    if (contentDoc.exists) {
-                        const contentData = contentDoc.data();
-                        data.questionText = contentData.questionText || '';
-                        data.questionHtml = contentData.questionHtml || '';
-                        data.explanationHtml = contentData.explanationHtml || '';
+                    try {
+                        let contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get({ source: 'cache' }).catch(() => null);
+                        if (!contentDoc || !contentDoc.exists) {
+                            contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get();
+                        }
+                        if (contentDoc && contentDoc.exists) {
+                            const contentData = contentDoc.data();
+                            data.questionText = contentData.questionText || '';
+                            data.questionHtml = contentData.questionHtml || '';
+                            data.explanationHtml = contentData.explanationHtml || '';
+                        }
+                    } catch (err) {
+                        console.warn("還原資料失敗", err);
                     }
                 }
 
