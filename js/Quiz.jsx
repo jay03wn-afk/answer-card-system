@@ -2671,6 +2671,7 @@ function safeDecompress(val, fallbackType = 'string') {
 function QuizApp({ currentUser, userProfile, activeQuizRecord, onBackToDashboard: originalBack, showAlert, showConfirm, showPrompt }) {
     // (退出機制已移至下方與存檔功能整合)
     const [showHelp, setShowHelp] = useState(false); // ✨ 新增：測驗內部的教學模式開關
+    const lastExtractValRef = useRef({ mcq: null, sq: null, asq: null, exp: null }); // ✨ 終極修復：防止自動轉移重複提取的記憶點
 
     // ✨ 新增：判斷是否為管理員
     const isAdmin = currentUser && (currentUser.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
@@ -4732,14 +4733,27 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     };
 
                     const handleMainChange = (val) => {
+                        if (val === lastExtractValRef.current.mcq) return; // ✨ 防重複觸發
+                        lastExtractValRef.current.mcq = val;
+                        
                         const pastedParsed = getParts(val);
                         redistributeContent(val, qParts.sq, qParts.asq);
                         if (pastedParsed.sq || pastedParsed.asq || pastedParsed.exp || pastedParsed.ans) forceSyncUI(); // 觸發即時消失
                     };
-                    const handleSqChange = (val) => redistributeContent(qParts.mcq, val, qParts.asq);
-                    const handleAsqChange = (val) => redistributeContent(qParts.mcq, qParts.sq, val);
+                    const handleSqChange = (val) => {
+                        if (val === lastExtractValRef.current.sq) return;
+                        lastExtractValRef.current.sq = val;
+                        redistributeContent(qParts.mcq, val, qParts.asq);
+                    };
+                    const handleAsqChange = (val) => {
+                        if (val === lastExtractValRef.current.asq) return;
+                        lastExtractValRef.current.asq = val;
+                        redistributeContent(qParts.mcq, qParts.sq, val);
+                    };
 
                     const handleExpMainChange = (val) => {
+                        if (val === lastExtractValRef.current.exp) return;
+                        lastExtractValRef.current.exp = val;
                         let normalizedVal = val.replace(/\[SA\.?/gi, '[SQ.').replace(/\[ASA\.?/gi, '[ASQ.').replace(/\[AS\.?/gi, '[ASQ.');
                         let normalizedOldSq = (eParts.sq || '').replace(/\[SA\.?/gi, '[SQ.');
                         let normalizedOldAsq = (eParts.asq || '').replace(/\[ASA\.?/gi, '[ASQ.');
@@ -5135,15 +5149,28 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                         }
                     };
 
-                    const handleMainChange = (val) => {
+                   const handleMainChange = (val) => {
+                        if (val === lastExtractValRef.current.mcq) return; // ✨ 防重複觸發
+                        lastExtractValRef.current.mcq = val;
+                        
                         const pastedParsed = getParts(val);
                         redistributeContent(val, qParts.sq, qParts.asq);
                         if (pastedParsed.sq || pastedParsed.asq || pastedParsed.exp || pastedParsed.ans) forceSyncUI(); // 觸發即時消失
                     };
-                    const handleSqChange = (val) => redistributeContent(qParts.mcq, val, qParts.asq);
-                    const handleAsqChange = (val) => redistributeContent(qParts.mcq, qParts.sq, val);
+                    const handleSqChange = (val) => {
+                        if (val === lastExtractValRef.current.sq) return;
+                        lastExtractValRef.current.sq = val;
+                        redistributeContent(qParts.mcq, val, qParts.asq);
+                    };
+                    const handleAsqChange = (val) => {
+                        if (val === lastExtractValRef.current.asq) return;
+                        lastExtractValRef.current.asq = val;
+                        redistributeContent(qParts.mcq, qParts.sq, val);
+                    };
 
                     const handleExpMainChange = (val) => {
+                        if (val === lastExtractValRef.current.exp) return;
+                        lastExtractValRef.current.exp = val;
                         let normalizedVal = val.replace(/\[SA\.?/gi, '[SQ.').replace(/\[ASA\.?/gi, '[ASQ.').replace(/\[AS\.?/gi, '[ASQ.');
                         let normalizedOldSq = (eParts.sq || '').replace(/\[SA\.?/gi, '[SQ.');
                         let normalizedOldAsq = (eParts.asq || '').replace(/\[ASA\.?/gi, '[ASQ.');
