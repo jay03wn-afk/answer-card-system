@@ -5722,6 +5722,11 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                             </button>
                                             {aiFeedback[`show_${actualIdx}`] && (
                                                 <div className="p-4 text-sm text-gray-800 dark:text-gray-200 font-medium leading-relaxed border-t border-purple-200 dark:border-purple-700">
+                                                    <div className="mb-2 p-2 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-600">
+                                                        <span className="font-bold text-gray-500">你的回答：</span><br/>
+                                                        {currentAns || '未填寫'}
+                                                    </div>
+                                                    <span className="font-bold text-purple-600 dark:text-purple-400">AI 評語：</span><br/>
                                                     {aiFeedback[actualIdx]}
                                                 </div>
                                             )}
