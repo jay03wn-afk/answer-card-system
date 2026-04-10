@@ -3973,8 +3973,8 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     earnedPoints = config.hasDefined ? config.point : baseWeight;
                 }
             } else if (type === 'ASQ') {
-                // ✨ 問答題判斷邏輯：交給 AI 傳回來的分數比例來給分
-                const scoreOutOf100 = aiScores[idx + 1] || 0;
+                // ✨ 問答題判斷邏輯：精準使用全域索引 idx 對接 AI 傳回的分數
+                const scoreOutOf100 = aiScores[idx] !== undefined ? aiScores[idx] : 0;
                 const maxPtsForThis = config.hasDefined ? config.point : baseWeight;
                 earnedPoints = (scoreOutOf100 / 100) * maxPtsForThis;
                 finalCorrectAns = maxPtsForThis > 0 ? `AI 評定 ${scoreOutOf100}/100 (實得: ${earnedPoints.toFixed(1)} / ${maxPtsForThis.toFixed(1)}分)` : `AI 評定 ${scoreOutOf100}/100`;
@@ -4193,7 +4193,14 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                         }
                     });
                     
-                    gradingPrompt += `請嚴格回傳一個純 JSON 字串格式，不要包含任何 markdown 或解說。⚠️ 注意：reason 欄位內的雙引號必須加上反斜線跳脫 (例如 \\")，且不得包含真實換行符號。格式如下：\n{"scores": {"全域題號數字": {"score": 80, "reason": "給分理由"}}}`;
+                    gradingPrompt += `
+請嚴格執行閱卷任務，並遵守以下準則：
+1. 評分邏輯一致性：給出的 [score] 必須與 [reason] 理由完全吻合。若評語說答案正確，分數必須為 100；若完全錯誤則為 0。
+2. JSON Key 格式：必須使用我提供的【全域索引】數字作為 JSON 的 Key 名稱。
+3. 轉義要求：reason 內容若包含雙引號請使用 \\" 跳脫，且不得包含真實換行符。
+
+回傳格式如下：
+{"scores": {"0": {"score": 100, "reason": "答案完全正確"}, "5": {"score": 0, "reason": "觀念錯誤，... "}}}`;
                     
                     let simInterval = setInterval(() => {
                         setGradingProgress(p => ({ ...p, percent: Math.min(p.percent + 5, 85) }));
@@ -4209,33 +4216,33 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     clearInterval(simInterval);
                     setGradingProgress({ show: true, percent: 90, text: '正在結算所有題目的總分...' });
                     
-                    // ✨ 終極防呆：清理 AI 回傳的 JSON 字串，避免引號或換行字元導致解析崩潰
+                    // ✨ 終極防呆：清理 AI 回傳字串
                     let cleanStr = data.result.trim();
-                    if (cleanStr.startsWith('```json')) cleanStr = cleanStr.replace(/^```json\n?/, '');
-                    if (cleanStr.startsWith('```')) cleanStr = cleanStr.replace(/^```\n?/, '');
-                    if (cleanStr.endsWith('```')) cleanStr = cleanStr.replace(/\n?```$/, '');
-                    cleanStr = cleanStr.replace(/[\u0000-\u0019]+/g, ""); // 清除隱藏控制字元與真實換行
+                    cleanStr = cleanStr.replace(/^```json\s*/i, '').replace(/```\s*$/, '');
+                    cleanStr = cleanStr.replace(/[\u0000-\u0019]+/g, ""); 
                     
                     let aiResult = {};
                     try {
-                        aiResult = JSON.parse(cleanStr).scores || {};
+                        const parsedBody = JSON.parse(cleanStr);
+                        aiResult = parsedBody.scores || {};
                     } catch (parseError) {
-                        console.error("AI JSON 解析失敗，原始字串:", cleanStr);
-                        throw new Error("AI 回傳的格式異常，請再試一次");
+                        console.error("AI JSON 解析失敗:", cleanStr);
+                        throw new Error("AI 閱卷格式異常，請再試一次");
                     }
                     
                     let finalScores = {};
                     let finalFeedback = {};
                     for (let key in aiResult) {
+                        const numericKey = key.toString(); // 確保 key 是字串格式
                         if (typeof aiResult[key] === 'object') {
-                            finalScores[key] = aiResult[key].score;
-                            finalFeedback[key] = aiResult[key].reason; // 提取 AI 理由
+                            finalScores[numericKey] = aiResult[key].score;
+                            finalFeedback[numericKey] = aiResult[key].reason;
                         } else {
-                            finalScores[key] = aiResult[key];
+                            finalScores[numericKey] = aiResult[key];
                         }
                     }
                     
-                    setAiFeedback(prev => ({ ...prev, ...finalFeedback })); // 儲存回饋到 State
+                    setAiFeedback(prev => ({ ...prev, ...finalFeedback })); // 儲存回饋
                     await handleGrade(null, finalScores);
                     
                     setGradingProgress({ show: true, percent: 100, text: '批改完成！即將顯示結果' });
