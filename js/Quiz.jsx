@@ -4193,7 +4193,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                         }
                     });
                     
-                    gradingPrompt += `請嚴格回傳一個純 JSON 字串格式，不要包含任何 markdown 或解說，格式如下：\n{"scores": {"全域題號數字": {"score": 80, "reason": "給分理由"}}}`;
+                    gradingPrompt += `請嚴格回傳一個純 JSON 字串格式，不要包含任何 markdown 或解說。⚠️ 注意：reason 欄位內的雙引號必須加上反斜線跳脫 (例如 \\")，且不得包含真實換行符號。格式如下：\n{"scores": {"全域題號數字": {"score": 80, "reason": "給分理由"}}}`;
                     
                     let simInterval = setInterval(() => {
                         setGradingProgress(p => ({ ...p, percent: Math.min(p.percent + 5, 85) }));
@@ -4209,8 +4209,20 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     clearInterval(simInterval);
                     setGradingProgress({ show: true, percent: 90, text: '正在結算所有題目的總分...' });
                     
-                    let cleanStr = data.result.replace(/```json/gi, '').replace(/```/gi, '').trim();
-                    const aiResult = JSON.parse(cleanStr).scores || {};
+                    // ✨ 終極防呆：清理 AI 回傳的 JSON 字串，避免引號或換行字元導致解析崩潰
+                    let cleanStr = data.result.trim();
+                    if (cleanStr.startsWith('```json')) cleanStr = cleanStr.replace(/^```json\n?/, '');
+                    if (cleanStr.startsWith('```')) cleanStr = cleanStr.replace(/^```\n?/, '');
+                    if (cleanStr.endsWith('```')) cleanStr = cleanStr.replace(/\n?```$/, '');
+                    cleanStr = cleanStr.replace(/[\u0000-\u0019]+/g, ""); // 清除隱藏控制字元與真實換行
+                    
+                    let aiResult = {};
+                    try {
+                        aiResult = JSON.parse(cleanStr).scores || {};
+                    } catch (parseError) {
+                        console.error("AI JSON 解析失敗，原始字串:", cleanStr);
+                        throw new Error("AI 回傳的格式異常，請再試一次");
+                    }
                     
                     let finalScores = {};
                     let finalFeedback = {};
