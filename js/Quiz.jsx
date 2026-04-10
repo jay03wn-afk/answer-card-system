@@ -2093,7 +2093,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
     });
 
  // ✨ 系統重寫 5：進入試卷 (完美零死鎖、秒開、即時同步原作者更新)
-   // ✨ 系統重寫 5：進入試卷 (直接從大廳抓取 Live 資料，達成毫秒級同步)
+  // ✨ 系統重寫 5：進入試卷 (直接從大廳抓取 Live 資料，達成毫秒級同步)
     const handleEnterQuiz = async (rec) => {
         setIsJumping(true); 
         let finalRec = { ...rec };
@@ -2103,17 +2103,22 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 const sharedDoc = await window.db.collection('shareCodes').doc(finalRec.shortCode).get();
                 if (sharedDoc.exists) {
                     const liveData = sharedDoc.data();
+                    // ✨ 抓蟲修正 2：相容兩種分享結構，並正確提取壓縮的題目內容
+                    const contentSource = liveData.contentData || liveData;
+                    const quizDataSource = liveData.quizData || liveData;
+
                     finalRec = { 
                         ...finalRec, 
-                        ...liveData, // 毫秒同步：直接用雲端大廳的內容覆蓋本地
-                        questionText: window.safeDecompress(liveData.questionText),
-                        questionHtml: window.safeDecompress(liveData.questionHtml),
-                        explanationHtml: window.safeDecompress(liveData.explanationHtml)
+                        ...quizDataSource, // 毫秒同步：直接用雲端大廳的內容覆蓋本地
+                        questionText: window.safeDecompress(contentSource.questionText),
+                        questionHtml: window.safeDecompress(contentSource.questionHtml),
+                        explanationHtml: window.safeDecompress(contentSource.explanationHtml),
+                        hasSeparatedContent: false // 🚀 強制設為 false，避免 QuizApp 去空的本地資料庫找而卡死
                     };
                     // 如果原作者改了答案，本地也要自動重新算分
-                    if (finalRec.results && liveData.correctAnswersInput !== rec.correctAnswersInput) {
+                    if (finalRec.results && quizDataSource.correctAnswersInput !== rec.correctAnswersInput) {
                         finalRec.hasAnswerUpdate = true;
-                        window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update({ correctAnswersInput: liveData.correctAnswersInput });
+                        window.db.collection('users').doc(user.uid).collection('quizzes').doc(rec.id).update({ correctAnswersInput: quizDataSource.correctAnswersInput });
                     }
                 } else {
                     setIsJumping(false);
@@ -3021,7 +3026,7 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
                     setIsQuizLoading(false);
                 }
 
-                // 2. 背景發起 Server 請求，檢查有沒有最新更新
+               // 2. 背景發起 Server 請求，檢查有沒有最新更新
                 try {
                     // 🚀 修復：移除強制 source: server 避免斷線崩潰
                     const serverDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(initialRecord.id).get();
@@ -3047,6 +3052,9 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
                             });
                             setBackgroundUpdateReady(true); // 觸發畫面上的更新通知按鈕
                         }
+                    } else if (isMounted) {
+                        // ✨ 抓蟲修正 1：如果雲端找不到分離的文件，必須強制關閉載入，否則會永遠卡在轉圈圈
+                        setIsQuizLoading(false);
                     }
                 } catch (e) {
                     console.error("背景更新檢查失敗:", e);
