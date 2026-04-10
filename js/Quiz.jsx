@@ -4141,7 +4141,11 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     
                     // ✨ 終極防呆：清理 AI 回傳字串
                     let cleanStr = data.result.trim();
-                    cleanStr = cleanStr.replace(/^```json\s*/i, '').replace(/```\s*$/, '');
+                    // ✨ 更強大的 JSON 提取正則，不受 Markdown 標籤影響
+                    const jsonMatch = cleanStr.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        cleanStr = jsonMatch[0];
+                    }
                     cleanStr = cleanStr.replace(/[\u0000-\u0019]+/g, ""); 
                     
                     let aiResult = {};
@@ -4584,11 +4588,32 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     // ✨ 智慧提取核心：全域自動歸位系統，修正重複、多餘空行，並強制 UI 即時刷新
                     const getParts = (text) => {
                         let tempText = text || '';
-                        let sq = '', asq = '';
+                        let sq = '', asq = '', exp = '', ans = '';
                         
                         const cleanBlock = (m) => m.trim().replace(/^(?:<br\s*\/?>|\s)+|(?:<br\s*\/?>|\s)+$/gi, '');
 
-                        const sqRegex = /(?:<[^>]+>|\s)*\[SQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ)\.?0*\d+\]|$)/gi;
+                        // 1. 提取標準答案 [ans]...[AnsEnd]
+                        const ansRegex = /\[ans\]([\s\S]*?)\[AnsEnd\]/gi;
+                        let match;
+                        while ((match = ansRegex.exec(tempText)) !== null) {
+                            ans += match[1] + ',';
+                        }
+                        if (ans) {
+                            ans = ans.replace(/,+$/, '').trim();
+                            tempText = tempText.replace(ansRegex, '');
+                        }
+
+                        // 2. 提取詳解 [A.xxx], [SA.xxx], [AS.xxx], [ASA.xxx]
+                        const expRegex = /(?:<[^>]+>|\s)*\[(?:A|SA|AS|ASA)\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ|A|SA|AS|ASA)\.?0*\d+\]|\[ans\]|$)/gi;
+                        let expMatches = tempText.match(expRegex);
+                        if (expMatches) {
+                            expMatches = Array.from(new Set(expMatches.map(cleanBlock)));
+                            exp = expMatches.join(isHtml ? '<br><br>' : '\n\n');
+                            tempText = tempText.replace(expRegex, '');
+                        }
+
+                        // 3. 提取簡答題 [SQ.xxx]
+                        const sqRegex = /(?:<[^>]+>|\s)*\[SQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ|A|SA|AS|ASA)\.?0*\d+\]|$)/gi;
                         let sqMatches = tempText.match(sqRegex);
                         if (sqMatches) {
                             sqMatches = Array.from(new Set(sqMatches.map(cleanBlock))); // 去重複
@@ -4596,7 +4621,8 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                             tempText = tempText.replace(sqRegex, '');
                         }
                         
-                        const asqRegex = /(?:<[^>]+>|\s)*\[ASQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ)\.?0*\d+\]|$)/gi;
+                        // 4. 提取問答題 [ASQ.xxx]
+                        const asqRegex = /(?:<[^>]+>|\s)*\[ASQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ|A|SA|AS|ASA)\.?0*\d+\]|$)/gi;
                         let asqMatches = tempText.match(asqRegex);
                         if (asqMatches) {
                             asqMatches = Array.from(new Set(asqMatches.map(cleanBlock))); // 去重複
@@ -4611,7 +4637,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                             tempText = tempText.replace(/\n{3,}/g, '\n\n').trim();
                         }
                         
-                        return { mcq: tempText, sq, asq };
+                        return { mcq: tempText, sq, asq, exp, ans };
                     };
 
                     const updateParts = (newMcq, newSq, newAsq) => {
@@ -4635,12 +4661,23 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                         const combined = [mcqVal, sqVal, asqVal].filter(Boolean).join(isHtml ? '<br><br>' : '\n\n');
                         const parsed = getParts(combined);
                         updateParts(parsed.mcq, parsed.sq, parsed.asq);
+                        
+                        // ✨ 將提取出的答案與詳解存入對應欄位
+                        if (parsed.ans) {
+                            setCorrectAnswersInput(prev => {
+                                const newAns = prev ? prev + ',' + parsed.ans : parsed.ans;
+                                return newAns.replace(/[^a-dA-DZz,]/g, '');
+                            });
+                        }
+                        if (parsed.exp) {
+                            setExplanationHtml(prev => prev ? prev + (isHtml ? '<br><br>' : '\n\n') + parsed.exp : parsed.exp);
+                        }
                     };
 
                     const handleMainChange = (val) => {
                         const pastedParsed = getParts(val);
                         redistributeContent(val, qParts.sq, qParts.asq);
-                        if (pastedParsed.sq || pastedParsed.asq) forceSyncUI(); // 觸發即時消失
+                        if (pastedParsed.sq || pastedParsed.asq || pastedParsed.exp || pastedParsed.ans) forceSyncUI(); // 觸發即時消失
                     };
                     const handleSqChange = (val) => redistributeContent(qParts.mcq, val, qParts.asq);
                     const handleAsqChange = (val) => redistributeContent(qParts.mcq, qParts.sq, val);
@@ -4955,11 +4992,32 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     // ✨ 智慧提取核心：全域自動歸位系統，修正重複、多餘空行，並強制 UI 即時刷新
                     const getParts = (text) => {
                         let tempText = text || '';
-                        let sq = '', asq = '';
+                        let sq = '', asq = '', exp = '', ans = '';
                         
                         const cleanBlock = (m) => m.trim().replace(/^(?:<br\s*\/?>|\s)+|(?:<br\s*\/?>|\s)+$/gi, '');
 
-                        const sqRegex = /(?:<[^>]+>|\s)*\[SQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ)\.?0*\d+\]|$)/gi;
+                        // 1. 提取標準答案 [ans]...[AnsEnd]
+                        const ansRegex = /\[ans\]([\s\S]*?)\[AnsEnd\]/gi;
+                        let match;
+                        while ((match = ansRegex.exec(tempText)) !== null) {
+                            ans += match[1] + ',';
+                        }
+                        if (ans) {
+                            ans = ans.replace(/,+$/, '').trim();
+                            tempText = tempText.replace(ansRegex, '');
+                        }
+
+                        // 2. 提取詳解 [A.xxx], [SA.xxx], [AS.xxx], [ASA.xxx]
+                        const expRegex = /(?:<[^>]+>|\s)*\[(?:A|SA|AS|ASA)\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ|A|SA|AS|ASA)\.?0*\d+\]|\[ans\]|$)/gi;
+                        let expMatches = tempText.match(expRegex);
+                        if (expMatches) {
+                            expMatches = Array.from(new Set(expMatches.map(cleanBlock)));
+                            exp = expMatches.join(isHtml ? '<br><br>' : '\n\n');
+                            tempText = tempText.replace(expRegex, '');
+                        }
+
+                        // 3. 提取簡答題 [SQ.xxx]
+                        const sqRegex = /(?:<[^>]+>|\s)*\[SQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ|A|SA|AS|ASA)\.?0*\d+\]|$)/gi;
                         let sqMatches = tempText.match(sqRegex);
                         if (sqMatches) {
                             sqMatches = Array.from(new Set(sqMatches.map(cleanBlock))); // 去重複
@@ -4967,7 +5025,8 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                             tempText = tempText.replace(sqRegex, '');
                         }
                         
-                        const asqRegex = /(?:<[^>]+>|\s)*\[ASQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ)\.?0*\d+\]|$)/gi;
+                        // 4. 提取問答題 [ASQ.xxx]
+                        const asqRegex = /(?:<[^>]+>|\s)*\[ASQ\.?0*\d+\][\s\S]*?(?=(?:<[^>]+>|\s)*\[(?:Q|SQ|ASQ|A|SA|AS|ASA)\.?0*\d+\]|$)/gi;
                         let asqMatches = tempText.match(asqRegex);
                         if (asqMatches) {
                             asqMatches = Array.from(new Set(asqMatches.map(cleanBlock))); // 去重複
@@ -4982,7 +5041,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                             tempText = tempText.replace(/\n{3,}/g, '\n\n').trim();
                         }
                         
-                        return { mcq: tempText, sq, asq };
+                        return { mcq: tempText, sq, asq, exp, ans };
                     };
 
                     const updateParts = (newMcq, newSq, newAsq) => {
@@ -5006,12 +5065,23 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                         const combined = [mcqVal, sqVal, asqVal].filter(Boolean).join(isHtml ? '<br><br>' : '\n\n');
                         const parsed = getParts(combined);
                         updateParts(parsed.mcq, parsed.sq, parsed.asq);
+                        
+                        // ✨ 將提取出的答案與詳解存入對應欄位
+                        if (parsed.ans) {
+                            setCorrectAnswersInput(prev => {
+                                const newAns = prev ? prev + ',' + parsed.ans : parsed.ans;
+                                return newAns.replace(/[^a-dA-DZz,]/g, '');
+                            });
+                        }
+                        if (parsed.exp) {
+                            setExplanationHtml(prev => prev ? prev + (isHtml ? '<br><br>' : '\n\n') + parsed.exp : parsed.exp);
+                        }
                     };
 
                     const handleMainChange = (val) => {
                         const pastedParsed = getParts(val);
                         redistributeContent(val, qParts.sq, qParts.asq);
-                        if (pastedParsed.sq || pastedParsed.asq) forceSyncUI(); // 觸發即時消失
+                        if (pastedParsed.sq || pastedParsed.asq || pastedParsed.exp || pastedParsed.ans) forceSyncUI(); // 觸發即時消失
                     };
                     const handleSqChange = (val) => redistributeContent(qParts.mcq, val, qParts.asq);
                     const handleAsqChange = (val) => redistributeContent(qParts.mcq, qParts.sq, val);
