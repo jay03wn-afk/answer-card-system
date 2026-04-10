@@ -166,9 +166,11 @@ const processQuestionContent = (content, isHtml) => {
     if (!content) return content;
     let processed = content;
     if (isHtml) {
+        let globalCounter = 0; // ✨ 加入全域計數器，避免不同題型共用題號時錨點衝突
         processed = processed.replace(/\[(Q|SQ|ASQ)\.?0*(\d+)\]/gi, (match, type, num) => {
+            globalCounter++;
             const color = type.toUpperCase() === 'Q' ? 'blue' : type.toUpperCase() === 'SQ' ? 'teal' : 'purple';
-            return `<span id="q-marker-${num}" class="q-marker inline-block font-black text-${color}-800 dark:text-${color}-200 bg-${color}-100 dark:bg-${color}-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-${color}-200 dark:border-${color}-700 mx-1">[${type.toUpperCase()}.${num}]</span>`;
+            return `<span id="q-marker-${globalCounter}" class="q-marker inline-block font-black text-${color}-800 dark:text-${color}-200 bg-${color}-100 dark:bg-${color}-900 px-1.5 py-0.5 rounded shadow-sm transition-all border border-${color}-200 dark:border-${color}-700 mx-1">[${type.toUpperCase()}.${num}]</span>`;
         });
         processed = processed.replace(/\[s:(\d+)\]/gi, `<span class="inline-block font-black text-red-600 bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 rounded ml-1 border border-red-300 dark:border-red-700">(配分: $1)</span>`);
         processed = processed.replace(/data-drawn="true"/gi, '');
@@ -2702,8 +2704,9 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     const [aiHardRatio, setAiHardRatio] = useState(30);
     const [creatorSuggestions, setCreatorSuggestions] = useState([]);
     
-    // ✨ 新增：AI 問答題自動評分狀態
+   // ✨ 新增：AI 問答題自動評分狀態
     const [isAiGrading, setIsAiGrading] = useState(false);
+    const [gradingProgress, setGradingProgress] = useState({ show: false, percent: 0, text: '' }); // ✨ 新增：批改進度條狀態
 
     // ✨ 新增：自動解析題型 (選擇、簡答、問答) - 改為依序出現抓取，不受亂碼編號影響
     const parsedQuestionTypes = React.useMemo(() => {
@@ -2860,6 +2863,7 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
 
         const result = [];
         const qBlocks = rawContent.split(/\[(Q|SQ|ASQ)\.?0*(\d+)\]/i); 
+        let globalIdxCounter = 0; // ✨ 新增全域索引，徹底解決非選擇題與選擇題重疊格子的問題
         
         for (let i = 1; i < qBlocks.length; i += 3) {
             const qType = qBlocks[i].toUpperCase();
@@ -2887,7 +2891,9 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
             }
             
             questionMainText = parseSmilesToHtml(superClean(questionMainText));
-            result.push({ number: qNum, type: qType, mainText: questionMainText, options });
+            // ✨ 將 globalIndex 綁定到該題目物件上
+            result.push({ number: qNum, globalIndex: globalIdxCounter, type: qType, mainText: questionMainText, options });
+            globalIdxCounter++;
         }
         return result;
     }, [questionHtml, questionText, viewMode]);
@@ -4170,9 +4176,11 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         
         const executeSubmission = async () => {
             const hasASQ = parsedQuestionTypes.includes('ASQ');
+            setGradingProgress({ show: true, percent: 10, text: '正在封裝您的答案卡...' }); // ✨ 啟動進度條
+            
             if (hasASQ) {
-                setIsAiGrading(true);
                 try {
+                    setGradingProgress({ show: true, percent: 25, text: '正在呼叫 AI 閱卷老師...' });
                     let gradingPrompt = "請扮演專業閱卷老師，幫我批改以下學生的問答題，並嚴格遵循 [AS.題號] 所設定的評分標準給出 0~100 的分數。\n\n";
                     let payloadCount = 0;
                     parsedQuestionTypes.forEach((type, idx) => {
@@ -4187,27 +4195,37 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     
                     gradingPrompt += `請嚴格回傳一個純 JSON 字串格式，不要包含任何 markdown 或解說，格式如下：\n{"scores": {"題號數字": 80, "題號數字": 100}}`;
                     
+                    // ✨ 利用計時器模擬 AI 思考的進度推移
+                    let simInterval = setInterval(() => {
+                        setGradingProgress(p => ({ ...p, percent: Math.min(p.percent + 5, 85) }));
+                    }, 800);
+
                     const res = await fetch('/api/gemini', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ prompt: gradingPrompt })
                     });
                     const data = await res.json();
+                    
+                    clearInterval(simInterval);
+                    setGradingProgress({ show: true, percent: 90, text: '正在結算所有題目的總分...' });
+                    
                     let cleanStr = data.result.replace(/```json/gi, '').replace(/```/gi, '').trim();
                     const parsedScores = JSON.parse(cleanStr).scores || {};
-                    setIsAiGrading(false);
                     
-                    setIsRegrading(true); // ✨ 開啟批改中動畫
                     await handleGrade(null, parsedScores);
-                    setIsRegrading(false); // ✨ 關閉動畫
+                    
+                    setGradingProgress({ show: true, percent: 100, text: '批改完成！即將顯示結果' });
+                    setTimeout(() => setGradingProgress({ show: false, percent: 0, text: '' }), 600);
                 } catch(e) {
-                    setIsAiGrading(false);
+                    setGradingProgress({ show: false, percent: 0, text: '' });
                     showAlert("AI 批改發生錯誤：" + e.message);
                 }
             } else {
-                setIsRegrading(true); // ✨ 開啟批改中動畫
+                setGradingProgress({ show: true, percent: 50, text: '正在結算所有題目的總分...' });
                 await handleGrade();
-                setIsRegrading(false); // ✨ 關閉動畫
+                setGradingProgress({ show: true, percent: 100, text: '批改完成！即將顯示結果' });
+                setTimeout(() => setGradingProgress({ show: false, percent: 0, text: '' }), 500);
             }
         };
 
@@ -5651,36 +5669,47 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                 </div>
                             </div>
 
-                            {/* 展開的題號網格面板 */}
+                           {/* 展開的題號網格面板 */}
                             {showQuestionGrid && (
-                                <div className="absolute top-[60px] left-0 right-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-lg p-4 z-30 max-h-[50vh] overflow-y-auto custom-scrollbar">
-                                    <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3">
-                                        {parsedInteractiveQuestions.map((q, idx) => {
-                                            const actualIdx = q.number - 1;
-                                            const isAnswered = !!userAnswers[actualIdx];
-                                            const isStarred = starred[actualIdx];
-                                            const hasNote = notes && !!notes[actualIdx]; // ✨ 新增：判斷有無筆記
-                                            const isCurrent = currentInteractiveIndex === idx;
-                                            
-                                            return (
-                                                <button
-                                                    key={q.number}
-                                                    onClick={() => {
-                                                        setCurrentInteractiveIndex(idx);
-                                                        setShowQuestionGrid(false);
-                                                    }}
-                                                    className={`relative py-2 font-bold text-sm border-2 transition-colors
-                                                        ${isCurrent ? 'border-black dark:border-white bg-gray-100 dark:bg-gray-700 text-black dark:text-white' : 'border-gray-200 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-400 text-gray-600 dark:text-gray-300'}
-                                                        ${isAnswered && !isCurrent ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : ''}
-                                                    `}
-                                                >
-                                                    {q.number}
-                                                    {isStarred && <span className="absolute -top-3 -right-3 text-orange-500 drop-shadow-sm text-lg z-10">★</span>}
-                                                    {hasNote && <span className="absolute -top-3 left-0 text-blue-500 drop-shadow-sm text-xs z-10">📝</span>}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                <div className="absolute top-[60px] left-0 right-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-lg p-4 z-30 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                                    {['Q', 'SQ', 'ASQ'].map(targetType => {
+                                        const typeQuestions = parsedInteractiveQuestions.filter(q => q.type === targetType);
+                                        if (typeQuestions.length === 0) return null;
+                                        const typeLabel = targetType === 'Q' ? '🔵 選擇題' : targetType === 'SQ' ? '🟢 簡答題' : '🟣 問答題';
+                                        
+                                        return (
+                                            <div key={targetType} className="mb-4 last:mb-0">
+                                                <h4 className="text-sm font-black text-gray-600 dark:text-gray-300 mb-2 border-b dark:border-gray-600 pb-1">{typeLabel}</h4>
+                                                <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3">
+                                                    {typeQuestions.map((q) => {
+                                                        const actualIdx = q.globalIndex; // ✨ 改用全域索引
+                                                        const isAnswered = !!userAnswers[actualIdx];
+                                                        const isStarred = starred[actualIdx];
+                                                        const hasNote = notes && !!notes[actualIdx];
+                                                        const isCurrent = currentInteractiveIndex === actualIdx;
+                                                        
+                                                        return (
+                                                            <button
+                                                                key={actualIdx}
+                                                                onClick={() => {
+                                                                    setCurrentInteractiveIndex(actualIdx); // 利用全域索引跳轉
+                                                                    setShowQuestionGrid(false);
+                                                                }}
+                                                                className={`relative py-2 font-bold text-sm border-2 transition-colors
+                                                                    ${isCurrent ? 'border-black dark:border-white bg-gray-100 dark:bg-gray-700 text-black dark:text-white' : 'border-gray-200 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-400 text-gray-600 dark:text-gray-300'}
+                                                                    ${isAnswered && !isCurrent ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : ''}
+                                                                `}
+                                                            >
+                                                                {q.number}
+                                                                {isStarred && <span className="absolute -top-3 -right-3 text-orange-500 drop-shadow-sm text-lg z-10">★</span>}
+                                                                {hasNote && <span className="absolute -top-3 left-0 text-blue-500 drop-shadow-sm text-xs z-10">📝</span>}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
 
@@ -5689,7 +5718,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                 {(() => {
                                     const q = parsedInteractiveQuestions[currentInteractiveIndex];
                                     if (!q) return null;
-                                    const actualIdx = q.number - 1; 
+                                    const actualIdx = q.globalIndex; // ✨ 核心：改用全域索引，完全解除填寫格子重疊的問題！
                                     const currentAns = userAnswers[actualIdx];
                                     const isStarred = starred[actualIdx];
                                     
@@ -5704,10 +5733,13 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                     const currentExp = extractSpecificExplanation(explanationHtml, q.number);
 
                                     return (
-                                <div key={q.number} className={`bg-white dark:bg-gray-800 border-2 shadow-xl p-4 sm:p-6 mb-10 transition-all ${isPeeked ? 'border-orange-300 dark:border-orange-700' : 'border-slate-200 dark:border-slate-700'}`}>
+                                <div key={actualIdx} className={`bg-white dark:bg-gray-800 border-2 shadow-xl p-4 sm:p-6 mb-10 transition-all ${isPeeked ? 'border-orange-300 dark:border-orange-700' : 'border-slate-200 dark:border-slate-700'}`}>
                                     <div className="flex justify-between items-start mb-4 border-b border-slate-100 dark:border-gray-700 pb-3">
                                                 <div className="flex items-center space-x-3">
-                                                    <span className="text-xl font-black text-blue-600 dark:text-blue-400">第 {q.number} 題</span>
+                                                    {/* ✨ 強化標題辨識：如果是簡答或問答，加上顏色與類型提示 */}
+                                                    <span className={`text-xl font-black ${q.type === 'Q' ? 'text-blue-600 dark:text-blue-400' : q.type === 'SQ' ? 'text-teal-600 dark:text-teal-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                                                        第 {q.number} 題 {q.type !== 'Q' && <span className="text-sm border border-current px-1 ml-1 rounded font-bold">{q.type === 'SQ' ? '簡答' : '問答'}</span>}
+                                                    </span>
                                                     <button onClick={() => toggleStar(actualIdx)} className={`text-xl focus:outline-none transition-colors ${isStarred ? 'text-orange-500' : 'text-gray-300 dark:text-gray-600'} hover:scale-110`} title="標記星號">★</button>
                                                 </div>
                                                 <span className="text-sm font-bold bg-gray-100 dark:bg-gray-700 px-3 py-1 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
@@ -6585,13 +6617,24 @@ if (step === 'grading') return (
                 </div>
             )}
 
-            {/* ✨ 新增：AI 問答題批改載入 Modal */}
-            {isAiGrading && (
-                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
-                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-purple-500">
-                        <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-700 border-t-purple-500 rounded-full animate-spin mx-auto mb-6"></div>
-                        <h3 className="text-xl font-black mb-2 dark:text-white">🤖 AI 正在用心批閱試卷...</h3>
-                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">這可能需要幾秒鐘的時間，請稍候</p>
+            {/* ✨ 新增：交卷批改專用進度條 Modal */}
+            {gradingProgress.show && (
+                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-md no-round shadow-2xl text-center border-t-8 border-green-500">
+                        <div className="text-4xl mb-4">{gradingProgress.percent >= 100 ? '🎉' : '⏳'}</div>
+                        <h3 className="text-xl font-black mb-4 dark:text-white">{gradingProgress.percent >= 100 ? '批改完成！' : '正在批改試卷...'}</h3>
+                        
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 h-4 no-round overflow-hidden mb-3 relative">
+                            <div 
+                                className={`h-full transition-all duration-300 ease-out ${gradingProgress.percent >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                                style={{ width: `${gradingProgress.percent}%` }}
+                            ></div>
+                        </div>
+                        
+                        <p className="text-gray-600 dark:text-gray-300 font-bold text-sm">{gradingProgress.text}</p>
+                        {gradingProgress.percent < 100 && gradingProgress.percent > 25 && (
+                            <p className="text-xs text-gray-400 mt-2">若是包含問答題，AI 閱卷約需 10~20 秒，請耐心等候。</p>
+                        )}
                     </div>
                 </div>
             )}
