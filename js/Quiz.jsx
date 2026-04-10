@@ -4234,6 +4234,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                 }
             } else {
                 setGradingProgress({ show: true, percent: 50, text: '正在結算所有題目的總分...' });
+                await new Promise(r => setTimeout(r, 800)); // ✨ 加入延遲，讓畫面停留在作答區展示進度條
                 await handleGrade();
                 setGradingProgress({ show: true, percent: 100, text: '批改完成！即將顯示結果' });
                 setTimeout(() => setGradingProgress({ show: false, percent: 0, text: '' }), 500);
@@ -6183,10 +6184,22 @@ if (step === 'grading') return (
 
                 <button onClick={async () => {
                     setIsRegrading(true);
+                    await new Promise(r => setTimeout(r, 600)); // ✨ 人工延遲讓玩家看到載入畫面
                     await handleGrade();
                     setIsRegrading(false);
                 }} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors mt-4">開始批改</button>
             </div>
+
+            {/* ✨ 確保在手動填寫解答頁面也能看到重新算分的 Modal */}
+            {isRegrading && (
+                <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-blue-500">
+                        <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-700 border-t-blue-500 rounded-full animate-spin mx-auto mb-6"></div>
+                        <h3 className="text-xl font-black mb-2 dark:text-white">🔄 正在處理與批改...</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">系統正在為您結算成績與同步資料，請稍候</p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 
@@ -6445,7 +6458,7 @@ if (step === 'grading') return (
                     ) : (
                         <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-white dark:bg-gray-800 transition-colors">
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px 16px' }}>
-                               {results.data.filter(item => {
+                              {results.data.filter(item => {
                                     // ✨ 修改為 OR (聯集) 邏輯：只要勾選的條件有任何一個符合，就顯示
                                     if (!showOnlyWrong && !showOnlyStarred && !showOnlyNotes) return true;
                                     let show = false;
@@ -6453,7 +6466,13 @@ if (step === 'grading') return (
                                     if (showOnlyStarred && item.isStarred) show = true;
                                     if (showOnlyNotes && notes && notes[item.number - 1]) show = true;
                                     return show;
-                                }).map((item, i) => (
+                                }).map((item, i) => {
+                                    // ✨ 核心修正：計算該題的獨立題號與題型
+                                    const actualIdx = item.number - 1;
+                                    const qType = parsedQuestionTypes[actualIdx] || 'Q';
+                                    const qLocalNum = parsedQuestionTypes.slice(0, actualIdx + 1).filter(t => t === qType).length;
+                                    
+                                    return (
                                    <div 
                                         key={i} 
                                         onClick={() => {
@@ -6466,37 +6485,70 @@ if (step === 'grading') return (
                                                 }, 100);
                                             }
                                         }}
-                                        className={`break-avoid flex flex-col justify-between p-3 border border-gray-100 dark:border-gray-700 no-round transition-colors ${item.isCorrect ? 'bg-green-50 dark:bg-green-900' : 'bg-red-50 dark:bg-red-900'} cursor-pointer hover:opacity-80 hover:ring-2 ring-blue-400`}
+                                        className={`break-avoid flex flex-col justify-between p-3 border border-gray-100 dark:border-gray-700 no-round transition-colors ${item.isCorrect ? 'bg-green-50 dark:bg-green-900/40' : 'bg-red-50 dark:bg-red-900/40'} cursor-pointer hover:opacity-80 hover:ring-2 ring-blue-400`}
                                         title="點擊跳轉至此題題目與討論"
                                     >
                                         <div className="flex justify-between items-center w-full mb-2 border-b border-gray-200 dark:border-gray-600 pb-2">
                                             <div className="flex items-center space-x-3 shrink-0">
-                                                <div className="flex items-center justify-center w-8">
-                                                    {item.isStarred && <span className="text-orange-500 text-xs mr-1">★</span>}
-                                                    {notes && notes[item.number - 1] && <span className="text-blue-500 text-xs mr-1">📝</span>}
-                                                    <span className={`font-mono text-lg font-bold hover:underline ${item.isCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>{item.number}.</span>
+                                                <div className="flex items-center justify-center space-x-1">
+                                                    {item.isStarred && <span className="text-orange-500 text-xs shrink-0">★</span>}
+                                                    {notes && notes[item.number - 1] && <span className="text-blue-500 text-xs shrink-0">📝</span>}
+                                                    <span className={`font-mono text-lg font-bold hover:underline whitespace-nowrap ${item.isCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                                                        第 {qType === 'Q' ? qLocalNum : `${qType}.${qLocalNum}`} 題
+                                                    </span>
+                                                    {qType !== 'Q' && <span className={`text-[10px] px-1.5 py-0.5 ml-1 rounded font-bold border whitespace-nowrap ${qType === 'SQ' ? 'bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-900 dark:text-teal-200' : 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900 dark:text-purple-200'}`}>{qType === 'SQ' ? '簡答題' : '問答題'}</span>}
                                                 </div>
                                             </div>
                                             <div className="flex flex-col items-end space-y-1">
                                                 <div className="flex items-center space-x-2 text-sm">
                                                     <span className="text-gray-500 dark:text-gray-400 text-xs font-bold">你的答案</span>
-                                                    <span className={`font-black text-base w-6 text-center ${item.isCorrect ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{item.userAns}</span>
+                                                    <span className={`font-black text-base min-w-[24px] text-right ${item.isCorrect ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{item.userAns}</span>
                                                 </div>
                                                 <div className="flex items-center space-x-2 text-sm">
                                                     <span className="text-gray-500 dark:text-gray-400 text-xs font-bold">正確答案</span>
-                                                    <span className="font-black text-base w-6 text-center text-black dark:text-white">{item.correctAns}</span>
+                                                    <span className="font-black text-base min-w-[24px] text-right text-black dark:text-white">{qType === 'Q' ? (item.correctAns || '無') : '見解析'}</span>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex justify-end w-full gap-2">
-                                            {((explanationHtml && extractSpecificExplanation(explanationHtml, item.number)) || (notes && notes[item.number - 1])) && (
+                                        
+                                        {/* ✨ 新增：AI 批改回饋顯示區塊 (直接嵌在卡片內) */}
+                                        {qType === 'ASQ' && aiFeedback && aiFeedback[actualIdx] && (
+                                            <div className="mb-3 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden shadow-sm transition-all" onClick={e => e.stopPropagation()}>
                                                 <button 
-                                                    onClick={(e) => { e.stopPropagation(); setExplanationModalItem({ number: item.number, content: extractSpecificExplanation(explanationHtml, item.number), note: notes ? notes[item.number - 1] : '' }); }} 
-                                                    className="text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-green-600 dark:text-green-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                                                    onClick={() => setAiFeedback(prev => ({...prev, [`show_${actualIdx}`]: !prev[`show_${actualIdx}`]}))}
+                                                    className="w-full bg-purple-100 dark:bg-purple-800/80 px-3 py-1.5 flex justify-between items-center hover:bg-purple-200 dark:hover:bg-purple-700 transition-colors"
                                                 >
-                                                    💡 查看詳解與筆記
+                                                    <span className="font-bold text-xs text-purple-800 dark:text-purple-200 flex items-center">
+                                                        🤖 查看 AI 評分理由
+                                                    </span>
+                                                    <span className="text-purple-600 dark:text-purple-300 font-black text-xs">{aiFeedback[`show_${actualIdx}`] ? '▲' : '▼'}</span>
                                                 </button>
-                                            )}
+                                                {aiFeedback[`show_${actualIdx}`] && (
+                                                    <div className="p-3 text-xs text-gray-800 dark:text-gray-200 font-medium leading-relaxed border-t border-purple-200 dark:border-purple-700">
+                                                        {aiFeedback[actualIdx]}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div className="flex justify-end w-full gap-2">
+                                            {(() => {
+                                                // ✨ 確保「查看詳解」按鈕也是抓獨立題號
+                                                const expTags = qType === 'Q' ? ['A'] : qType === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
+                                                const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, qLocalNum, expTags) : extractSpecificExplanation(explanationHtml, qLocalNum);
+                                                
+                                                if (currentExp || (notes && notes[item.number - 1])) {
+                                                    return (
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); setExplanationModalItem({ number: item.number, content: currentExp, note: notes ? notes[item.number - 1] : '' }); }} 
+                                                            className="text-[10px] sm:text-xs bg-white dark:bg-gray-800 text-green-600 dark:text-green-400 px-3 py-1.5 font-bold no-round border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                                                        >
+                                                            💡 詳解筆記
+                                                        </button>
+                                                    );
+                                                }
+                                                return null;
+                                            })()}
                                            <button 
                                                 disabled={loadingWrongBookNum === item.number}
                                                 onClick={(e) => { e.stopPropagation(); handleAddToWrongBook(item); }} 
@@ -6506,7 +6558,7 @@ if (step === 'grading') return (
                                             </button>
                                         </div>
                                     </div>
-                                ))}
+                                )})}
                             </div>
                         </div>
                     )}
