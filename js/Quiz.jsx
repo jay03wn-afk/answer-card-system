@@ -2706,7 +2706,8 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     
    // ✨ 新增：AI 問答題自動評分狀態
     const [isAiGrading, setIsAiGrading] = useState(false);
-    const [gradingProgress, setGradingProgress] = useState({ show: false, percent: 0, text: '' }); // ✨ 新增：批改進度條狀態
+    const [gradingProgress, setGradingProgress] = useState({ show: false, percent: 0, text: '' }); 
+    const [aiFeedback, setAiFeedback] = useState({}); // ✨ 新增：儲存 AI 批改理由
 
     // ✨ 新增：自動解析題型 (選擇、簡答、問答) - 改為依序出現抓取，不受亂碼編號影響
     const parsedQuestionTypes = React.useMemo(() => {
@@ -4175,27 +4176,25 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         let warnMsg = unansweredCount > 0 ? `⚠️ 注意：你有 ${unansweredCount} 題尚未填寫！\n\n` : "";
         
         const executeSubmission = async () => {
-            const hasASQ = parsedQuestionTypes.includes('ASQ');
-            setGradingProgress({ show: true, percent: 10, text: '正在封裝您的答案卡...' }); // ✨ 啟動進度條
+            const hasASQ = parsedInteractiveQuestions.some(q => q.type === 'ASQ');
+            setGradingProgress({ show: true, percent: 10, text: '正在封裝您的答案卡...' }); 
             
             if (hasASQ) {
                 try {
                     setGradingProgress({ show: true, percent: 25, text: '正在呼叫 AI 閱卷老師...' });
-                    let gradingPrompt = "請扮演專業閱卷老師，幫我批改以下學生的問答題，並嚴格遵循 [AS.題號] 所設定的評分標準給出 0~100 的分數。\n\n";
-                    let payloadCount = 0;
-                    parsedQuestionTypes.forEach((type, idx) => {
-                        if (type === 'ASQ') {
-                            const studentAns = userAnswers[idx] || '';
-                            const rubric = extractSpecificContent(explanationHtml, idx + 1, ['AS']) || '無特別標準，請依據合理性自由給分';
-                            const questionTextExt = extractSpecificContent(questionHtml || questionText, idx + 1, ['ASQ']) || '(題目無法辨識)';
-                            gradingPrompt += `【第 ${idx + 1} 題】\n題目：${questionTextExt}\n評分標準：${rubric}\n學生答案：${studentAns}\n\n`;
-                            payloadCount++;
+                    let gradingPrompt = "請扮演專業閱卷老師，幫我批改以下學生的問答題，並嚴格遵循 [ASA.題號] 或 [AS.題號] 所設定的評分標準給出 0~100 的分數，並請一定要給予簡單的給分理由。\n\n";
+                    
+                    parsedInteractiveQuestions.forEach((q) => {
+                        if (q.type === 'ASQ') {
+                            const studentAns = userAnswers[q.globalIndex] || '';
+                            // ✨ 修正：指定抓取 ASA 或 AS 標籤，並傳入正確的 q.number
+                            const rubric = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, ['ASA', 'AS', 'ASQ']) : '無特別標準，請依據合理性自由給分';
+                            gradingPrompt += `【全域題號：${q.globalIndex}】(題目代號: ASQ.${q.number})\n題目：${q.mainText}\n評分標準：${rubric}\n學生答案：${studentAns}\n\n`;
                         }
                     });
                     
-                    gradingPrompt += `請嚴格回傳一個純 JSON 字串格式，不要包含任何 markdown 或解說，格式如下：\n{"scores": {"題號數字": 80, "題號數字": 100}}`;
+                    gradingPrompt += `請嚴格回傳一個純 JSON 字串格式，不要包含任何 markdown 或解說，格式如下：\n{"scores": {"全域題號數字": {"score": 80, "reason": "給分理由"}}}`;
                     
-                    // ✨ 利用計時器模擬 AI 思考的進度推移
                     let simInterval = setInterval(() => {
                         setGradingProgress(p => ({ ...p, percent: Math.min(p.percent + 5, 85) }));
                     }, 800);
@@ -4211,9 +4210,21 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     setGradingProgress({ show: true, percent: 90, text: '正在結算所有題目的總分...' });
                     
                     let cleanStr = data.result.replace(/```json/gi, '').replace(/```/gi, '').trim();
-                    const parsedScores = JSON.parse(cleanStr).scores || {};
+                    const aiResult = JSON.parse(cleanStr).scores || {};
                     
-                    await handleGrade(null, parsedScores);
+                    let finalScores = {};
+                    let finalFeedback = {};
+                    for (let key in aiResult) {
+                        if (typeof aiResult[key] === 'object') {
+                            finalScores[key] = aiResult[key].score;
+                            finalFeedback[key] = aiResult[key].reason; // 提取 AI 理由
+                        } else {
+                            finalScores[key] = aiResult[key];
+                        }
+                    }
+                    
+                    setAiFeedback(prev => ({ ...prev, ...finalFeedback })); // 儲存回饋到 State
+                    await handleGrade(null, finalScores);
                     
                     setGradingProgress({ show: true, percent: 100, text: '批改完成！即將顯示結果' });
                     setTimeout(() => setGradingProgress({ show: false, percent: 0, text: '' }), 600);
@@ -5730,15 +5741,18 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                     const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
                                     const keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
                                     const currentCorrectAns = keyArray[actualIdx] || '';
-                                    const currentExp = extractSpecificExplanation(explanationHtml, q.number);
+                                    
+                                    // ✨ 修正：依照不同題型，精準抓取對應的解答標籤，不再讓 Q 與 ASQ 抓到相同的解說
+                                    const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
+                                    const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number);
 
                                     return (
                                 <div key={actualIdx} className={`bg-white dark:bg-gray-800 border-2 shadow-xl p-4 sm:p-6 mb-10 transition-all ${isPeeked ? 'border-orange-300 dark:border-orange-700' : 'border-slate-200 dark:border-slate-700'}`}>
                                     <div className="flex justify-between items-start mb-4 border-b border-slate-100 dark:border-gray-700 pb-3">
                                                 <div className="flex items-center space-x-3">
-                                                    {/* ✨ 強化標題辨識：如果是簡答或問答，加上顏色與類型提示 */}
+                                                    {/* ✨ 強化標題辨識：如果是簡答或問答，題號將顯示為 SQ.1 或 ASQ.1 */}
                                                     <span className={`text-xl font-black ${q.type === 'Q' ? 'text-blue-600 dark:text-blue-400' : q.type === 'SQ' ? 'text-teal-600 dark:text-teal-400' : 'text-purple-600 dark:text-purple-400'}`}>
-                                                        第 {q.number} 題 {q.type !== 'Q' && <span className="text-sm border border-current px-1 ml-1 rounded font-bold">{q.type === 'SQ' ? '簡答' : '問答'}</span>}
+                                                        第 {q.type === 'Q' ? q.number : `${q.type}.${q.number}`} 題 {q.type !== 'Q' && <span className="text-sm border border-current px-1 ml-1 rounded font-bold">{q.type === 'SQ' ? '簡答' : '問答'}</span>}
                                                     </span>
                                                     <button onClick={() => toggleStar(actualIdx)} className={`text-xl focus:outline-none transition-colors ${isStarred ? 'text-orange-500' : 'text-gray-300 dark:text-gray-600'} hover:scale-110`} title="標記星號">★</button>
                                                 </div>
@@ -5747,10 +5761,27 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                                 </span>
                                             </div>
                                             
-                                            <div 
-                                                className="preview-rich-text text-black dark:text-white mb-6 font-medium"
-                                                dangerouslySetInnerHTML={{ __html: q.mainText }}
-                                            />
+                                            <div className="mb-4 text-gray-800 dark:text-gray-200 leading-relaxed" dangerouslySetInnerHTML={{ __html: q.mainText }} />
+                                    
+                                    {/* ✨ 新增：AI 批改回饋顯示區塊 (預設折疊) */}
+                                    {aiFeedback[actualIdx] && (
+                                        <div className="mb-6 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-lg overflow-hidden shadow-sm transition-all">
+                                            <button 
+                                                onClick={() => setAiFeedback(prev => ({...prev, [`show_${actualIdx}`]: !prev[`show_${actualIdx}`]}))}
+                                                className="w-full bg-purple-100 dark:bg-purple-800/80 px-4 py-2.5 flex justify-between items-center hover:bg-purple-200 dark:hover:bg-purple-700 transition-colors"
+                                            >
+                                                <span className="font-bold text-purple-800 dark:text-purple-200 flex items-center">
+                                                    🤖 展開查看 AI 批改理由
+                                                </span>
+                                                <span className="text-purple-600 dark:text-purple-300 font-black">{aiFeedback[`show_${actualIdx}`] ? '▲' : '▼'}</span>
+                                            </button>
+                                            {aiFeedback[`show_${actualIdx}`] && (
+                                                <div className="p-4 text-sm text-gray-800 dark:text-gray-200 font-medium leading-relaxed border-t border-purple-200 dark:border-purple-700">
+                                                    {aiFeedback[actualIdx]}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
 
                                             <div className="grid grid-cols-1 gap-2">
                                                 {q.type === 'Q' ? ['A', 'B', 'C', 'D'].map(opt => {
