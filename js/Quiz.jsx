@@ -3024,7 +3024,7 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
         return () => { isMounted = false; };
     }, [initialRecord.id, currentUser.uid]); // 只依賴 ID，避免死迴圈
 
-    // ✨ 新增：點進試題時，自動檢查答案是否更新的監聽器
+    // ✨ 新增：點進試題時，自動檢查答案是否更新的監聽器 (修正：只比對選擇題，避免簡答/問答題造成無限迴圈)
     useEffect(() => {
         if (step === 'results' && results && results.data) {
             const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
@@ -3032,9 +3032,12 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
             
             let hasChanges = false;
             results.data.forEach((item, idx) => {
-                const oldKey = item.correctAns === '-' ? '' : item.correctAns;
-                const newKey = keyArray[idx] || '';
-                if (oldKey !== newKey) hasChanges = true;
+                const type = parsedQuestionTypes[idx] || 'Q';
+                if (type === 'Q') { // 只有選擇題才用 correctAnswersInput 來比對是否異動
+                    const oldKey = item.correctAns === '-' ? '' : item.correctAns;
+                    const newKey = keyArray[idx] || '';
+                    if (oldKey !== newKey) hasChanges = true;
+                }
             });
 
             if (hasChanges) {
@@ -3042,7 +3045,7 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
                 handleManualRegrade(true);
             }
         }
-    }, [step, results, correctAnswersInput]); // 只要這些改變，就觸發檢查
+    }, [step, results, correctAnswersInput, parsedQuestionTypes]); // 加入 parsedQuestionTypes 依賴
 
     const starredIndices = starred.map((s, i) => s ? i + 1 : null).filter(Boolean);
     const canSeeAnswers = initialRecord.publishAnswers !== false;
@@ -4193,13 +4196,18 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     let cleanStr = data.result.replace(/```json/gi, '').replace(/```/gi, '').trim();
                     const parsedScores = JSON.parse(cleanStr).scores || {};
                     setIsAiGrading(false);
-                    handleGrade(null, parsedScores);
+                    
+                    setIsRegrading(true); // ✨ 開啟批改中動畫
+                    await handleGrade(null, parsedScores);
+                    setIsRegrading(false); // ✨ 關閉動畫
                 } catch(e) {
                     setIsAiGrading(false);
                     showAlert("AI 批改發生錯誤：" + e.message);
                 }
             } else {
-                handleGrade();
+                setIsRegrading(true); // ✨ 開啟批改中動畫
+                await handleGrade();
+                setIsRegrading(false); // ✨ 關閉動畫
             }
         };
 
@@ -6110,7 +6118,11 @@ if (step === 'grading') return (
                     </div>
                 )}
 
-                <button onClick={() => handleGrade()} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors mt-4">開始批改</button>
+                <button onClick={async () => {
+                    setIsRegrading(true);
+                    await handleGrade();
+                    setIsRegrading(false);
+                }} className="w-full bg-black dark:bg-gray-200 text-white dark:text-black p-3 font-bold no-round hover:bg-gray-800 dark:hover:bg-gray-300 text-lg transition-colors mt-4">開始批改</button>
             </div>
         </div>
     );
@@ -6584,13 +6596,13 @@ if (step === 'grading') return (
                 </div>
             )}
 
-            {/* ✨ 新增：重新算分時的光速載入 Modal */}
+            {/* ✨ 新增：重新算分與批改交卷時的光速載入 Modal */}
             {isRegrading && (
                 <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] p-4">
                     <div className="bg-white dark:bg-gray-800 p-8 w-full max-w-sm no-round shadow-2xl text-center border-t-8 border-blue-500">
                         <div className="w-16 h-16 border-4 border-gray-200 dark:border-gray-700 border-t-blue-500 rounded-full animate-spin mx-auto mb-6"></div>
-                        <h3 className="text-xl font-black mb-2 dark:text-white">🔄 正在光速重新算分...</h3>
-                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">正在比對最新解答與同步錯題本，請稍候</p>
+                        <h3 className="text-xl font-black mb-2 dark:text-white">🔄 正在處理與批改...</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">系統正在為您結算成績與同步資料，請稍候</p>
                     </div>
                 </div>
             )}
