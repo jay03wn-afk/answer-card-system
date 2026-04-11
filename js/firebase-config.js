@@ -12,8 +12,7 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 
 // 1. 解決 404 Listen/channel 網路連線錯誤 (改用「自動偵測長輪詢」完美避開衝突)
-db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
-
+db.settings({ experimentalAutoDetectLongPolling: true });
 // 2. 解決每次跳回來都要重新加載的問題 (開啟本地快取，達到秒開且背景同步新資料)
 // 移除 synchronizeTabs 以避免新裝置初次載入時發生 Failed to obtain primary lease 錯誤
 db.enablePersistence().catch((err) => {
