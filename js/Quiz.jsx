@@ -468,7 +468,6 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                 try {
                     // ✨ 終極淨化：只保留排版與純文字，徹底消滅字體、顏色、無意義空行與 Word 專屬標籤
                     let cleanedHtml = htmlData
-                        .replace(/[\r\n]+/g, " ") 
                         // 🚀 終極修復：修正 Word 標籤正則匹配，防止無限迴圈與崩潰當機！
                         .replace(/<(xml|style|meta|link|title|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "") 
                         .replace(/<\!--[\s\S]*?-->/g, "") 
@@ -483,6 +482,7 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                         .replace(/<(p|div|h[1-6])[^>]*>/gi, "") 
                         .replace(/<\/?(span|font|a|strong|b|i|u|em)[^>]*>/gi, "") 
                         .replace(/&nbsp;/gi, " ") 
+                        .replace(/[\r\n]+/g, "<br>") // ✨ 修改：將原始的換行符號轉為 <br>，保留使用者排版
                         .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") 
                         .replace(/(<br>){3,}/gi, "<br><br>") 
                         .replace(/^(<br>)+|(<br>)+$/gi, "");
@@ -618,7 +618,6 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
             
             if (pasteHtml) {
                 let cleanedHtml = pasteHtml
-                    .replace(/[\r\n]+/g, " ") 
                     .replace(/<(xml|style|meta|link|title|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "") 
                     .replace(/<\!--[\s\S]*?-->/g, "") 
                     .replace(/<!\[[^\]]+\]>/g, "") 
@@ -632,6 +631,7 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                     .replace(/<(p|div|h[1-6])[^>]*>/gi, "") 
                     .replace(/<\/?(span|font|a|strong|b|i|u|em)[^>]*>/gi, "") 
                     .replace(/&nbsp;/gi, " ") 
+                    .replace(/[\r\n]+/g, "<br>") // ✨ 修改：將原始的換行符號轉為 <br>，保留使用者排版
                     .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") 
                     .replace(/(<br>){3,}/gi, "<br><br>") 
                     .replace(/^(<br>)+|(<br>)+$/gi, "");
