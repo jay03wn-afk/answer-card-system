@@ -469,11 +469,14 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                         .replace(/<\!--[\s\S]*?-->/g, "") 
                         .replace(/<!\[[^\]]+\]>/g, "") 
                         .replace(/<\/?(html|head|body)[^>]*>/gi, "") 
-                        .replace(/\s*(style|class|lang|dir|align|width|height|cellpadding|cellspacing|valign|border)="[^"]*"/gi, "") 
+                        .replace(/<([a-zA-Z0-9]+)([^>]*?)>/gi, (match, tag, attrs) => {
+                            if (tag.toLowerCase() === 'img') return match;
+                            return `<${tag}>`;
+                        })
                         .replace(/<o:p>[\s\S]*?<\/o:p>/gi, "")
                         .replace(/<\/(p|div|h[1-6])>/gi, "<br>") 
                         .replace(/<(p|div|h[1-6])[^>]*>/gi, "") 
-                        .replace(/<\/?(span|font)[^>]*>/gi, "") 
+                        .replace(/<\/?(span|font|a|strong|b|i|u|em)[^>]*>/gi, "") 
                         .replace(/&nbsp;/gi, " ") 
                         .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") 
                         .replace(/(<br>){3,}/gi, "<br><br>") 
@@ -604,10 +607,40 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
 
         // 情況 2：一般 Word、純文字或包含 SMILES 的文字
         if (hasTextFormat) {
+            e.preventDefault();
+            let pasteHtml = clipboardData.getData('text/html');
+            let pasteText = clipboardData.getData('text/plain');
+            
+            if (pasteHtml) {
+                let cleanedHtml = pasteHtml
+                    .replace(/[\r\n]+/g, " ") 
+                    .replace(/<(xml|style|meta|link|title|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "") 
+                    .replace(/<\!--[\s\S]*?-->/g, "") 
+                    .replace(/<!\[[^\]]+\]>/g, "") 
+                    .replace(/<\/?(html|head|body)[^>]*>/gi, "") 
+                    .replace(/<([a-zA-Z0-9]+)([^>]*?)>/gi, (match, tag, attrs) => {
+                        if (tag.toLowerCase() === 'img') return match;
+                        return `<${tag}>`;
+                    })
+                    .replace(/<o:p>[\s\S]*?<\/o:p>/gi, "")
+                    .replace(/<\/(p|div|h[1-6])>/gi, "<br>") 
+                    .replace(/<(p|div|h[1-6])[^>]*>/gi, "") 
+                    .replace(/<\/?(span|font|a|strong|b|i|u|em)[^>]*>/gi, "") 
+                    .replace(/&nbsp;/gi, " ") 
+                    .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") 
+                    .replace(/(<br>){3,}/gi, "<br><br>") 
+                    .replace(/^(<br>)+|(<br>)+$/gi, "");
+
+                document.execCommand('insertHTML', false, cleanedHtml);
+            } else {
+                const textHtml = pasteText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+                document.execCommand('insertHTML', false, textHtml);
+            }
+
             setTimeout(() => {
                 if (editorRef.current) {
-                    const changed = processSmilesInDOM(editorRef.current);
-                    if (changed) handleInput();
+                    processSmilesInDOM(editorRef.current);
+                    handleInput(); // 無論如何都觸發更新，確保淨化內容存檔
                 }
             }, 50);
             return; 
@@ -3805,11 +3838,14 @@ ${difficultyInstruction}
                        .replace(/<\!--[\s\S]*?-->/g, "")
                        .replace(/<!\[[^\]]+\]>/g, "") 
                        .replace(/<\/?(html|head|body)[^>]*>/gi, "") 
-                       .replace(/\s*(style|class|lang|dir|align|width|height|cellpadding|cellspacing|valign|border)="[^"]*"/gi, "")
+                       .replace(/<([a-zA-Z0-9]+)([^>]*?)>/gi, (match, tag, attrs) => {
+                           if (tag.toLowerCase() === 'img') return match;
+                           return `<${tag}>`;
+                       })
                        .replace(/<o:p>[\s\S]*?<\/o:p>/gi, "")
                        .replace(/<\/(p|div|h[1-6])>/gi, "<br>")
                        .replace(/<(p|div|h[1-6])[^>]*>/gi, "")
-                       .replace(/<\/?(span|font)[^>]*>/gi, "")
+                       .replace(/<\/?(span|font|a|strong|b|i|u|em)[^>]*>/gi, "")
                        .replace(/&nbsp;/gi, " ")
                        .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") 
                        .replace(/(<br>){3,}/gi, "<br><br>")
@@ -4062,15 +4098,27 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         let keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
         
         let changedDetails = [];
-        
         // 比對每一題的舊答案與新答案
         results.data.forEach((item, idx) => {
-            const oldKey = item.correctAns === '-' ? '' : item.correctAns;
-            const newKey = keyArray[idx] || '';
-            
-            if (oldKey !== newKey) {
-                changedDetails.push(`第 ${item.number} 題： ${oldKey || '(空)'} ➔ ${newKey || '(空)'}`);
+            const type = parsedQuestionTypes[idx] || 'Q';
+            if (type === 'Q') {
+                const oldKey = item.correctAns === '-' ? '' : item.correctAns;
+                const newKey = keyArray[idx] || '';
+                if (oldKey !== newKey) {
+                    changedDetails.push(`第 ${item.number} 題： ${oldKey || '(空)'} ➔ ${newKey || '(空)'}`);
+                }
+            } else if (type === 'SQ') {
+                let saArray = [];
+                try { saArray = JSON.parse(shortAnswersInput); } catch(e) {}
+                const nonMcqIndices = parsedQuestionTypes.map((t, i) => t !== 'Q' ? i : -1).filter(i => i !== -1);
+                const targetAns = saArray[nonMcqIndices.indexOf(idx)] || '';
+                const oldKey = item.correctAns || '';
+                const newKey = targetAns || '';
+                if (oldKey !== newKey && oldKey !== '(無正解)') {
+                    changedDetails.push(`第 ${item.number} 題 (簡答)： ${oldKey || '(空)'} ➔ ${newKey || '(空)'}`);
+                }
             }
+            // AI 問答題 (ASQ) 本身不會因為編輯題目就產生分數變化，因此不在此列入「有更動」來觸發算分洗版。
         });
 
         // 情況 A：沒有任何更動
