@@ -335,6 +335,12 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
     const [isFocused, setIsFocused] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
 
+    // ✨ 修復：使用 useRef 隨時保持最新的 onChange，避免 setTimeout 內的閉包抓到舊狀態導致資料消失
+    const onChangeRef = useRef(onChange);
+    useEffect(() => {
+        onChangeRef.current = onChange;
+    }, [onChange]);
+
     useEffect(() => {
         if (editorRef.current && editorRef.current.innerHTML !== value && !isFocused) {
             editorRef.current.innerHTML = value || '';
@@ -348,7 +354,7 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
             cleanHtml = cleanHtml.replace(/color:\s*(black|#000000|#000|rgb\(0,\s*0,\s*0\)|windowtext);?/gi, '')
                                  .replace(/data-drawn="true"/gi, '')
                                  .replace(/[\u200B-\u200D\uFEFF]/g, '');
-            onChange(cleanHtml);
+            onChangeRef.current(cleanHtml);
         }
     };
 
@@ -616,6 +622,25 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
             let pasteHtml = clipboardData.getData('text/html');
             let pasteText = clipboardData.getData('text/plain');
             
+            const insertHTMLSafe = (htmlStr) => {
+                if (!document.execCommand('insertHTML', false, htmlStr)) {
+                    try {
+                        const sel = window.getSelection();
+                        if (sel && sel.rangeCount > 0) {
+                            const range = sel.getRangeAt(0);
+                            const frag = document.createRange().createContextualFragment(htmlStr);
+                            range.deleteContents();
+                            range.insertNode(frag);
+                            range.collapse(false);
+                        } else if (editorRef.current) {
+                            editorRef.current.innerHTML += htmlStr;
+                        }
+                    } catch (err) {
+                        if (editorRef.current) editorRef.current.innerHTML += htmlStr;
+                    }
+                }
+            };
+
             if (pasteHtml) {
                 let cleanedHtml = pasteHtml
                     .replace(/<(xml|style|meta|link|title|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "") 
@@ -633,13 +658,12 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                     .replace(/&nbsp;/gi, " ") 
                     .replace(/[\r\n]+/g, "<br>") // ✨ 修改：將原始的換行符號轉為 <br>，保留使用者排版
                     .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") 
-                    .replace(/(<br>){3,}/gi, "<br><br>") 
-                    .replace(/^(<br>)+|(<br>)+$/gi, "");
+                    .replace(/^(<br>)+|(<br>)+$/gi, ""); // ✨ 移除強制壓縮連續 <br> 的邏輯，完全保留使用者排版
 
-                document.execCommand('insertHTML', false, cleanedHtml);
+                insertHTMLSafe(cleanedHtml);
             } else {
-                const textHtml = pasteText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-                document.execCommand('insertHTML', false, textHtml);
+                const textHtml = pasteText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r?\n/g, '<br>');
+                insertHTMLSafe(textHtml);
             }
 
             setTimeout(() => {
@@ -4049,12 +4073,11 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                 finalCorrectAns = targetAns || '(無正解)';
                 if (targetAns && String(ans || '').trim().toLowerCase() === targetAns.toLowerCase()) { isCorrect = true; earnedPoints = maxPts; }
             } else if (type === 'ASQ') {
-                aiScore = aiScores[idx] !== undefined ? aiScores[idx] : 0;
-                earnedPoints = (aiScore / 100) * maxPts;
-                finalCorrectAns = `AI 評分 ${aiScore}/100`;
-                isCorrect = aiScore >= 60;
-            }
-
+                    aiScore = aiScores[idx] !== undefined ? aiScores[idx] : 0;
+                    earnedPoints = (aiScore / 100) * maxPts;
+                    finalCorrectAns = `AI 評分 ${aiScore}/100`;
+                    isCorrect = aiScore >= 100;
+                }
             if (isCorrect) totalCorrectCount++; // ✨ 只要判定正確就加 1
             finalTotalScore += earnedPoints;
             return { number: idx + 1, userAns: ans || '未填', correctAns: finalCorrectAns, isCorrect, earnedPoints, maxPoints: maxPts, aiScore };
@@ -4487,12 +4510,12 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
             // ✨ 修正：詳解也改用局部題號與對應題型擷取
                 const expTags = qType === 'Q' ? ['A'] : qType === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
                 const extractedExp = extractSpecificContent(explanationHtml, qLocalNum, expTags);
-
-            // ✨ 新增：將該題的筆記自動帶入詳解下方
-            let finalExp = plainExp;
-            if (notes && notes[actualIdx]) {
-                finalExp = finalExp ? `${finalExp}\n\n【我的筆記】\n${notes[actualIdx]}` : `【我的筆記】\n${notes[actualIdx]}`;
-            }
+        
+        // ✨ 新增：將該題的筆記自動帶入詳解下方
+        let finalExp = extractedExp;
+        if (notes && notes[actualIdx]) {
+            finalExp = finalExp ? `${finalExp}\n\n【我的筆記】\n${notes[actualIdx]}` : `【我的筆記】\n${notes[actualIdx]}`;
+        }
 
             setWrongBookAddingItem({
                 ...item,
@@ -4722,10 +4745,10 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     
                     // ✨ 智慧提取核心：全域自動歸位系統，修正重複、多餘空行，並強制 UI 即時刷新
                     const getParts = (text) => {
-                        let tempText = text || '';
-                        let sq = '', asq = '', exp = '', ans = '';
-                        
-                        const cleanBlock = (m) => m.trim().replace(/^(?:<br\s*\/?>|\s)+|(?:<br\s*\/?>|\s)+$/gi, '');
+        let tempText = text || '';
+        let sq = '', asq = '', exp = '', ans = '';
+        const cleanBlock = (m) => m.trim();
+        // 1. 提取標準答案 [ans]...[AnsEnd]
 
                         // 1. 提取標準答案 [ans]...[AnsEnd]
                         const ansRegex = /\[ans\]([\s\S]*?)\[AnsEnd\]/gi;
@@ -5183,13 +5206,13 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                         }
                         
                         // 清除多餘的殘留空行
-                        if (isHtml) {
-                            tempText = tempText.replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br><br>').replace(/^(?:<br\s*\/?>\s*)+|(?:<br\s*\/?>\s*)+$/gi, '').trim();
-                        } else {
-                            tempText = tempText.replace(/\n{3,}/g, '\n\n').trim();
-                        }
-                        
-                        return { mcq: tempText, sq, asq, exp, ans };
+                        // 清除多餘的殘留空行
+        if (isHtml) {
+            tempText = tempText.trim();
+        } else {
+            tempText = tempText.trim();
+        }
+        return { mcq: tempText, sq, asq, exp, ans };
                     };
 
                     const updateParts = (newMcq, newSq, newAsq) => {
