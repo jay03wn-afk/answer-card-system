@@ -343,7 +343,12 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
 
     const handleInput = () => {
         if (editorRef.current) {
-            onChange(editorRef.current.innerHTML);
+            let cleanHtml = editorRef.current.innerHTML;
+            // ✨ 回應要求：提早抹除格式亂碼，確保絕對不存入資料庫
+            cleanHtml = cleanHtml.replace(/color:\s*(black|#000000|#000|rgb\(0,\s*0,\s*0\)|windowtext);?/gi, '')
+                                 .replace(/data-drawn="true"/gi, '')
+                                 .replace(/[\u200B-\u200D\uFEFF]/g, '');
+            onChange(cleanHtml);
         }
     };
 
@@ -4480,9 +4485,8 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
             }
 
             // ✨ 修正：詳解也改用局部題號與對應題型擷取
-            const expTags = qType === 'Q' ? ['A'] : qType === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
-            const extractedExp = extractSpecificContent(explanationHtml, qLocalNum, expTags);
-            const plainExp = extractedExp ? extractedExp.replace(/<[^>]+>/g, '').trim() : '';
+                const expTags = qType === 'Q' ? ['A'] : qType === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
+                const extractedExp = extractSpecificContent(explanationHtml, qLocalNum, expTags);
 
             // ✨ 新增：將該題的筆記自動帶入詳解下方
             let finalExp = plainExp;
@@ -5915,8 +5919,8 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                     const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
                                     const keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
                                     const currentCorrectAns = keyArray[actualIdx] || '';
-                                    const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
-                                    const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number);
+                                const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
+                                const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number);
 
                                     return (
                                 <div key={actualIdx} className={`bg-white dark:bg-gray-800 border-2 shadow-xl p-4 sm:p-6 mb-10 transition-all ${isPeeked ? 'border-orange-300 dark:border-orange-700' : 'border-slate-200 dark:border-slate-700'}`}>
