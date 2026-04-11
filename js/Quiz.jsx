@@ -2759,9 +2759,10 @@ const [publishAnswersToggle, setPublishAnswersToggle] = useState(initialRecord.p
     const [creatorSuggestions, setCreatorSuggestions] = useState([]);
     
    // ✨ 新增：AI 問答題自動評分狀態
-   const [isAiGrading, setIsAiGrading] = useState(false);
+    const [isAiGrading, setIsAiGrading] = useState(false);
     const [gradingProgress, setGradingProgress] = useState({ show: false, percent: 0, text: '' }); 
     const [aiFeedback, setAiFeedback] = useState(initialRecord.aiFeedback || {}); // ✨ 修正：初始載入時儲存 AI 批改理由
+    const aiRetryCountRef = useRef(0); // ✨ 新增：記錄 AI 批改失敗次數
 
     // ✨ 新增：自動解析題型 (選擇、簡答、問答) - 改為依序出現抓取，不受亂碼編號影響
     const parsedQuestionTypes = React.useMemo(() => {
@@ -3948,7 +3949,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         setStarred(newStar);
     };
 
-    const handleGrade = async (overrideKey = null, aiScores = {}, aiFeedbackData = null) => {
+    const handleGrade = async (overrideKey = null, aiScores = {}, aiFeedbackData = null, hasPendingASQ = false) => {
         const sourceKey = typeof overrideKey === 'string' ? overrideKey : correctAnswersInput;
         const cleanKey = (sourceKey || '').replace(/[^a-dA-DZz,]/g, '');
         if (!cleanKey && !isTask && !isShared && !parsedQuestionTypes.some(t => t !== 'Q')) return showAlert('請輸入標準答案後再批改！');
@@ -4019,8 +4020,10 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         });
 
         const scoreVal = roundScore ? Math.round(finalTotalScore) : Number(finalTotalScore.toFixed(2));
+
         const newResults = { score: scoreVal, correctCount: totalCorrectCount, total: safeNumQuestions, data };
-        
+        if (hasPendingASQ) newResults.hasPendingASQ = true;
+
         setResults(newResults);
         setStep('results');
 
@@ -4086,7 +4089,8 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     existingAiScores[idx] = item.aiScore || 0;
                 }
             });
-            await handleGrade(latestKey, existingAiScores, aiFeedback); // 將最新解答傳入批改系統
+
+            await handleGrade(latestKey, existingAiScores, aiFeedback, results.hasPendingASQ); // 將最新解答傳入批改系統
 
             // ✨ 同步更新錯題本中的答案
             const wbSnapshot = await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').where('quizId', '==', quizId).get();
@@ -4118,17 +4122,21 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         }
     };
 
-    const handleSubmitClick = () => {
+    const handleSubmitClick = (skipASQ = false, bypassConfirm = false) => {
+        const isSkipping = skipASQ === true;
+        const isBypassing = bypassConfirm === true;
         const unansweredCount = userAnswers.filter(a => !a).length;
         let warnMsg = unansweredCount > 0 ? `⚠️ 注意：你有 ${unansweredCount} 題尚未填寫！\n\n` : "";
-        
+
         const executeSubmission = async () => {
-            const hasASQ = parsedInteractiveQuestions.some(q => q.type === 'ASQ');
-            setGradingProgress({ show: true, percent: 10, text: '正在封裝您的答案卡...' }); 
-            
+            const hasASQ = !isSkipping && parsedInteractiveQuestions.some(q => q.type === 'ASQ');
+            setGradingProgress({ show: true, percent: 10, text: '正在封裝您的答案卡...' });
+
             if (hasASQ) {
+                let simInterval;
                 try {
                     setGradingProgress({ show: true, percent: 25, text: '正在呼叫 AI 閱卷老師...' });
+
                     let gradingPrompt = `請扮演專業閱卷老師，幫我批閱學生的問答題。
                     
                     ⚠️ 【最高安全指令 - 違規判定】
@@ -4158,7 +4166,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
 回傳格式如下：
 {"scores": {"0": {"score": 100, "reason": "答案完全正確"}, "5": {"score": 0, "reason": "觀念錯誤，... "}}}`;
                     
-                    let simInterval = setInterval(() => {
+                    simInterval = setInterval(() => {
                         setGradingProgress(p => ({ ...p, percent: Math.min(p.percent + 5, 85) }));
                     }, 800);
 
@@ -4214,22 +4222,31 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                         }
                     }
                     
-                    setAiFeedback(prev => ({ ...prev, ...finalFeedback })); 
+                    setAiFeedback(prev => ({ ...prev, ...finalFeedback }));
                     // ✨ 核心修正：將 AI 理由同步存入資料庫，確保退出後再進來還看得到
-                    await handleGrade(null, finalScores, finalFeedback);
-                    
+                    await handleGrade(null, finalScores, finalFeedback, false);
                     setGradingProgress({ show: true, percent: 100, text: '批改完成！即將顯示結果' });
                     setTimeout(() => setGradingProgress({ show: false, percent: 0, text: '' }), 600);
+
                 } catch(e) {
+                    if (simInterval) clearInterval(simInterval);
                     setGradingProgress({ show: false, percent: 0, text: '' });
-                    showAlert("AI 批改發生錯誤：" + e.message);
+                    
+                    aiRetryCountRef.current += 1;
+                    if (aiRetryCountRef.current >= 4) {
+                        showConfirm(`AI 批改發生錯誤 (${e.message})。\n已經嘗試 ${aiRetryCountRef.current} 次仍未成功。\n\n是否要「先批改選擇題」？\n(將標記該試卷非選擇題尚未批改，您可以稍後再回來按下「批改非選擇題」)`, () => {
+                            handleSubmitClick(true, true);
+                        });
+                    } else {
+                        showAlert(`交卷失敗：AI 生成發生錯誤，請多試幾次！(已嘗試 ${aiRetryCountRef.current} 次)\n\n錯誤詳情：${e.message}`);
+                    }
                 }
             } else {
                 setGradingProgress({ show: true, percent: 50, text: '正在結算所有題目的總分...' });
                 await new Promise(r => setTimeout(r, 800)); // ✨ 加入延遲，讓畫面停留在作答區展示進度條
-                await handleGrade();
+                await handleGrade(null, {}, null, isSkipping);
                 setGradingProgress({ show: true, percent: 100, text: '批改完成！即將顯示結果' });
-                setTimeout(() => setGradingProgress({ show: false, percent: 0, text: '' }), 500);
+                setTimeout(() => setGradingProgress({ show: false, percent: 0, text: '' }), 600);
             }
         };
 
@@ -6502,14 +6519,14 @@ if (step === 'grading') return (
                                 <span className="text-xs font-normal text-gray-500 ml-2 mt-1 mr-2">(答對 {results.correctCount}/{results.total} 題)</span>
                             </span>
                             {/* ✨ 修改：重新算分按鈕改為常駐顯示，點擊後觸發比對與提示 */}
-                            <button 
-                                onClick={() => handleManualRegrade(false)} 
-                                className="bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 px-3 py-1 text-xs font-bold no-round shadow-sm transition-colors active:scale-95 flex items-center gap-1"
-                                disabled={isRegrading}
-                            >
-                                {isRegrading ? <div className="w-3 h-3 border-2 border-blue-400 border-t-blue-800 rounded-full animate-spin"></div> : '🔄'}
-                                重新算分
+                            <button onClick={() => handleManualRegrade(false)} className="bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 px-3 py-1 text-xs font-bold no-round shadow-sm transition-colors active:scale-95 flex items-center gap-1" disabled={isRegrading} >
+                                {isRegrading ? <div className="w-3 h-3 border-2 border-blue-400 border-t-blue-800 rounded-full animate-spin"></div> : '🔄'} 重新算分
                             </button>
+                            {results.hasPendingASQ && (
+                                <button onClick={() => handleSubmitClick(false, true)} className="bg-purple-100 hover:bg-purple-200 text-purple-800 border border-purple-300 px-3 py-1 text-xs font-bold no-round shadow-sm transition-colors active:scale-95 flex items-center gap-1" disabled={gradingProgress.show} >
+                                    ✨ 批改非選擇題
+                                </button>
+                            )}
                         </div>
                         
                         {canSeeAnswers && (
