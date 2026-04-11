@@ -4575,7 +4575,15 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                 }
 
                 setTestName(data.testName || '');
+                setNumQuestions(data.numQuestions || 50);
+                setTaskType(data.taskType || 'normal');
+                setExamYear(data.examYear || '');
+                setExamSubject(data.examSubject || '');
+                setExamTag(data.examTag || '講義出題');
+                setExamRange(data.examRange || '');
                 setCorrectAnswersInput(data.correctAnswersInput || '');
+                setShortAnswersInput(data.shortAnswersInput || '[]');
+                setAllowPeek(data.allowPeek !== false);
                 setQuestionFileUrl(data.questionFileUrl || '');
                 setQuestionText(safeDecompress(data.questionText, 'string'));
                 setQuestionHtml(safeDecompress(data.questionHtml, 'string'));
