@@ -1,141 +1,206 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-    
-    <title>JJay線上測驗</title>
-    
-    <link rel="icon" type="image/png" href="https://i.postimg.cc/Xv71FMnf/1.png" />
+const firebaseConfig = {
+    apiKey: "AIzaSyBAGM92NBQnUlI1gnLRK-mufM6YtDq5sHk",
+    authDomain: "anser-card.firebaseapp.com",
+    projectId: "anser-card",
+    storageBucket: "anser-card.firebasestorage.app", // ✨ 新增這行！告訴系統要把圖片傳到哪
+    messagingSenderId: "224666683961",
+    appId: "1:224666683961:web:351991d6cbc8543b181be8"
+};
 
-   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-    <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: { extend: {} }
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const storage = firebase.storage(); // ✨ 新增這行
+
+window.auth = auth; // 確保全域可用
+window.db = db;     // 確保全域可用
+window.storage = storage; // ✨ 確保全域可用
+
+// 🚀 修正：移除 { synchronizeTabs: true }，因為 Firebase 官方的多分頁同步在首次登入時極易引發 Unexpected state 底層當機
+db.enablePersistence()
+    .then(() => {
+        console.log("✅ 離線快取啟動成功！");
+    })
+    .catch((err) => {
+        if (err.code === 'failed-precondition') {
+            console.warn("離線快取失敗：多個分頁同時開啟中");
+        } else if (err.code === 'unimplemented') {
+            console.warn("離線快取失敗：瀏覽器不支援");
         }
-    </script>
-    
-   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+    });
 
-    <style>
-        .no-round { border-radius: 2px !important; }
-        .break-avoid { break-inside: avoid; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+const { useState, useEffect, useRef } = React;
+
+const handleFocusScroll = (e) => {
+    const target = e.target;
+    setTimeout(() => { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 300);
+};
+
+const getEmbedUrl = (url) => {
+    if (!url) return '';
+    try {
+        const driveRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
+        const match = url.match(driveRegex);
+        if (match && match[1]) return `https://drive.google.com/file/d/${match[1]}/preview`;
+        return url;
+    } catch(e) { return url; }
+};
+
+const formatTime = (seconds) => {
+    if (seconds == null || seconds < 0) return '00:00';
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+};
+
+// 新增功能：官方與任務標籤渲染 (自動隱藏標籤並加上特效)
+// 新增功能：官方與任務標籤渲染 (自動隱藏標籤並加上特效、動態切換完成狀態)
+const renderTestName = (name, isCompleted = false) => {
+    if (!name) return '未命名測驗';
+    let displayName = name;
+    let isOfficial = false;
+    let isTask = false;
+
+    if (displayName.includes('[#op]')) {
+        isOfficial = true;
+        displayName = displayName.replace(/\[#op\]/g, '').trim();
+    }
+    // 兼容 #mnst 與 #nmst 兩種打法
+    if (displayName.includes('[#mnst]') || displayName.includes('[#nmst]')) {
+        isTask = true;
+        displayName = displayName.replace(/\[#m?nm?st\]/g, '').trim();
+    }
+
+    if (isOfficial || isTask) {
+        // 未完成時淺藍色閃爍，已完成時紫色不閃爍
+        const taskColorClass = isCompleted 
+            ? 'text-purple-600 dark:text-purple-400' 
+            : 'text-cyan-500 dark:text-cyan-400 animate-pulse';
         
-        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; }
-        .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        const taskBadgeClass = isCompleted
+            ? 'bg-purple-500 text-white shadow-[0_0_8px_rgba(168,85,247,0.5)]'
+            : 'bg-cyan-500 text-white shadow-[0_0_8px_rgba(6,182,212,0.8)]';
 
-        input, textarea, button, select { font-size: 16px !important; }
-        .locked-btn { cursor: not-allowed; opacity: 0.5; filter: grayscale(100%); }
-        .pixelated { image-rendering: pixelated; }
-        
-        .mc-bg {
-            background-color: #7d7d7d;
-            background-image: url('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png');
-            background-size: 64px;
-            image-rendering: pixelated;
+        return (
+            <span className={`font-bold drop-shadow-md ${isTask ? taskColorClass : 'text-yellow-500'}`}>
+                {displayName} 
+                {isOfficial && <span className="text-[10px] bg-yellow-500 text-black px-1.5 py-0.5 rounded-sm ml-1 tracking-widest align-middle">官方</span>}
+                {isTask && <span className={`text-[10px] px-1.5 py-0.5 rounded-sm ml-1 tracking-widest align-middle ${taskBadgeClass}`}>特殊任務</span>}
+            </span>
+        );
+    }
+    return name;
+};
+// --- JZ 壓縮引擎 (省空間與加速載入) ---
+window.jzCompress = function(data) {
+    if (!data) return data;
+    let str = typeof data === 'string' ? data : JSON.stringify(data);
+    if (str.length < 50) return data; // 太短不壓縮
+    let dict = new Map();
+    let nextCode = 1000000;
+    let phrase = str[0];
+    let out = [];
+    for (let i = 1; i < str.length; i++) {
+        let char = str[i];
+        if (dict.has(phrase + char)) phrase += char;
+        else {
+            out.push(phrase.length > 1 ? dict.get(phrase) : phrase.charCodeAt(0));
+            dict.set(phrase + char, nextCode++);
+            phrase = char;
         }
-        .mc-ui {
-            background-color: #c6c6c6;
-            border: 4px solid;
-            border-top-color: #ffffff;
-            border-left-color: #ffffff;
-            border-bottom-color: #555555;
-            border-right-color: #555555;
-            font-family: 'Courier New', Courier, monospace;
+    }
+    out.push(phrase.length > 1 ? dict.get(phrase) : phrase.charCodeAt(0));
+    return "JZC|" + out.map(n => n.toString(36)).join('.');
+};
+
+window.jzDecompress = function(data) {
+    if (typeof data !== 'string' || !data.startsWith("JZC|")) return data;
+    try {
+        let outArr = data.substring(4).split('.').map(s => parseInt(s, 36));
+        let dict = new Map();
+        let nextCode = 1000000;
+        let phrase = String.fromCharCode(outArr[0]);
+        let oldPhrase = phrase;
+        let res = [phrase];
+        for (let i = 1; i < outArr.length; i++) {
+            let currCode = outArr[i];
+            if (currCode < 1000000) phrase = String.fromCharCode(currCode);
+            else phrase = dict.has(currCode) ? dict.get(currCode) : (oldPhrase + oldPhrase[0]);
+            res.push(phrase);
+            dict.set(nextCode++, oldPhrase + phrase[0]);
+            oldPhrase = phrase;
         }
-        .mc-panel-dark {
-            background-color: rgba(0, 0, 0, 0.65);
-            border: 2px solid #111;
-            box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.15);
-            padding: 16px;
+        let finalStr = res.join("");
+        try { return JSON.parse(finalStr); } catch(e) { return finalStr; }
+    } catch (e) { return data; } 
+};
+
+// --- 新增功能：Web Worker 非同步解壓縮引擎 (含進度回報) ---
+const decompressWorkerCode = `
+    self.onmessage = function(e) {
+        const { data, id } = e.data;
+        if (typeof data !== 'string' || !data.startsWith("JZC|")) {
+            self.postMessage({ id, result: data, progress: 100 });
+            return;
         }
-        .mc-btn {
-            background-color: #c6c6c6;
-            border: 4px solid;
-            border-top-color: #ffffff;
-            border-left-color: #ffffff;
-            border-bottom-color: #555555;
-            border-right-color: #555555;
-            color: #000;
-            font-weight: bold;
-            cursor: pointer;
+        try {
+            let outArr = data.substring(4).split('.').map(s => parseInt(s, 36));
+            let dict = new Map();
+            let nextCode = 1000000;
+            let phrase = String.fromCharCode(outArr[0]);
+            let oldPhrase = phrase;
+            let res = [phrase];
+            
+            let i = 1;
+            const total = outArr.length;
+            const chunkSize = 2000; // 每次處理兩千筆，避免卡死主線程
+
+            function processChunk() {
+                const end = Math.min(i + chunkSize, total);
+                for (; i < end; i++) {
+                    let currCode = outArr[i];
+                    if (currCode < 1000000) phrase = String.fromCharCode(currCode);
+                    else phrase = dict.has(currCode) ? dict.get(currCode) : (oldPhrase + oldPhrase[0]);
+                    res.push(phrase);
+                    dict.set(nextCode++, oldPhrase + phrase[0]);
+                    oldPhrase = phrase;
+                }
+                
+                const progress = Math.floor((i / total) * 100);
+                self.postMessage({ id, progress, status: 'decompressing' });
+
+                if (i < total) {
+                    setTimeout(processChunk, 0); // 讓出執行緒給畫面更新
+                } else {
+                    let finalStr = res.join("");
+                    let finalObj = finalStr;
+                    try { finalObj = JSON.parse(finalStr); } catch(e) {}
+                    self.postMessage({ id, result: finalObj, progress: 100, status: 'done' });
+                }
+            }
+            processChunk();
+        } catch (e) {
+            self.postMessage({ id, result: data, progress: 100, status: 'error' });
         }
-        .mc-btn:active {
-            border-top-color: #555555;
-            border-left-color: #555555;
-            border-bottom-color: #ffffff;
-            border-right-color: #ffffff;
-            background-color: #b0b0b0;
-        }
-        /* ✨ 修正：富文本容器，強制鎖定白底黑字以符合使用者需求 */
-.rich-text-container, .preview-rich-text-white {
-    background-color: #ffffff !important;
-    color: #1a1a1a !important;
-    padding: 15px;
-    border-radius: 8px;
-}
+    };
+`;
+const blob = new Blob([decompressWorkerCode], { type: 'application/javascript' });
+window.jzWorker = new Worker(URL.createObjectURL(blob));
 
-/* 確保裡面的圖片不會超出範圍 */
-.rich-text-container img, .preview-rich-text img {
-    max-width: 100% !important;
-    height: auto !important;
-    margin: 10px 0;
-    display: block;
-}
-
-/* 強制清除 Word 夾帶的顏色樣式，讓字體在深色模式變白 */
-.rich-text-container *, .preview-rich-text * {
-    background-color: transparent !important;
-    color: inherit !important; 
-}
-
-.rich-text-container img, .preview-rich-text img {
-    max-width: 100% !important;
-    height: auto !important;
-    border: 1px solid #ddd;
-    margin: 10px auto !important;
-    display: block !important;
-}
-
-/* 確保裡面的圖片不會因為 dark 樣式縮放或濾鏡 */
-.rich-text-container img {
-    max-width: 100% !important;
-    height: auto !important;
-    border: 1px solid #eee !important;
-    margin: 10px auto !important;
-    display: block !important;
-}
-    </style>
-</head>
-<body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100 font-sans h-screen h-[100dvh] overflow-hidden transition-colors duration-200">    <div id="root" class="h-full"></div>
-
-    <script type="text/babel" src="./js/firebase-config.js?v=1.1"></script>
-    <script type="text/babel" src="./js/components.jsx?v=1.1"></script>
-    <script type="text/babel" src="./js/Minecraft.jsx?v=1.1"></script>
-    <script type="text/babel" src="./js/Chat.jsx?v=1.1"></script>
-   <script type="text/babel" src="./js/Quiz.jsx?v=1.1"></script>
-    <script type="text/babel" src="./js/WrongBook.jsx?v=1.1"></script>
-    <script type="text/babel" src="./js/TaskWall.jsx?v=1.1"></script>
-    <script src="js/useExamFeatures.js" type="text/babel"></script>
-    <script type="text/babel" src="./js/App.jsx?v=1.1"></script>
-</body>
-</html>
+window.jzDecompressAsync = function(data, onProgress) {
+    return new Promise((resolve) => {
+        const id = Date.now() + Math.random();
+        const handler = (e) => {
+            if (e.data.id === id) {
+                if (e.data.status === 'decompressing' && onProgress) {
+                    onProgress(e.data.progress);
+                } else if (e.data.progress === 100) {
+                    window.jzWorker.removeEventListener('message', handler);
+                    resolve(e.data.result);
+                }
+            }
+        };
+        window.jzWorker.addEventListener('message', handler);
+        window.jzWorker.postMessage({ data, id });
+    });
+};
