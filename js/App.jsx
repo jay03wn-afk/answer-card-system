@@ -27,7 +27,7 @@ function ExamProgressDashboard({ examFeatures, user }) {
         { id: 'skim', label: '速讀', color: 'bg-amber-500' },
         { id: 'deep', label: '細讀', color: 'bg-emerald-500' },
         { id: 'master', label: '熟讀', color: 'bg-amber-500' },
-        { id: 'practice', label: '刷題', color: 'bg-stone-600500' }
+        { id: 'practice', label: '刷題', color: 'bg-rose-500' }
     ];
 
     const toggleSelectedItem = (itemId) => {
@@ -777,7 +777,25 @@ function Main() {
     }
 
  return (
-        <div className="h-[100dvh] flex flex-col overflow-hidden bg-[#F0EFEB] dark:bg-stone-950 transition-colors relative duration-500">
+        <div className="h-[100dvh] flex flex-col overflow-hidden bg-[#F0EFEB] dark:bg-stone-900 transition-colors relative duration-500">       
+            
+            {/* ✨ 全域字體注入：Noto Sans TC 搭配圓潤的 Quicksand */}
+            <style dangerouslySetInnerHTML={{__html: `
+                @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Quicksand:wght@400;500;600;700&display=swap');
+
+                /* 強制套用到所有元素 */
+                *, body, button, input, textarea, select {
+                    font-family: 'Quicksand', 'Noto Sans TC', sans-serif !important;
+                    -webkit-font-smoothing: antialiased;
+                    -moz-osx-font-smoothing: grayscale;
+                    letter-spacing: 0.02em; /* 增加一點字距，更有高級感 */
+                }
+
+                /* 標題類文字可以加粗一點 */
+                h1, h2, h3, .font-black {
+                    font-weight: 700 !important;
+                }
+            `}} />
                 {/* ✨ 新增：AI 背景生成全域右下角小通知 (不阻擋使用者操作，跨頁面皆存活) */}
             {globalToast && (
                 <div className={`fixed bottom-6 right-6 p-4 shadow-2xl z-[9999] border-l-4 transition-all max-w-sm w-full font-bold text-sm flex items-start gap-3 animate-fade-in-up
@@ -804,7 +822,7 @@ function Main() {
             {/* ✨ 新增：已經登入的玩家，如果網址有 qaId 或 newsId，直接蓋一個滿版視窗在最上層 */}
             {user && currentQaId && (
                 <div className="fixed inset-0 z-[60] bg-stone-800/80 flex items-center justify-center p-2 sm:p-4 animate-fade-in">
-                    <div className="bg-stone-50 dark:bg-stone-900 w-full max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl relative shadow-2xl border-4 border-stone-600400">
+                    <div className="bg-stone-50 dark:bg-stone-900 w-full max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl relative shadow-2xl border-4 border-rose-500">
                         <button onClick={closeFastQA} className="absolute top-4 right-4 text-3xl z-20 hover:scale-110 transition-transform bg-[#FCFBF7] dark:bg-stone-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md border border-gray-300 dark:border-gray-600">❌</button>
                         <div className="p-4 sm:p-8 pt-16">
                             <FastQASection user={user} showAlert={showAlert} showConfirm={showConfirm} targetQaId={currentQaId} onClose={closeFastQA} />

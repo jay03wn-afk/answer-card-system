@@ -586,39 +586,39 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     };
 
     return (
-        <div className={`border border-amber-200 bg-[#FCFBF7] dark:bg-stone-900 p-6 shadow-xl relative rounded-3xl w-full ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
-            <div className="flex justify-between items-center mb-4 border-b border-stone-100 dark:border-stone-800 pb-4">
+        <div className={`border border-rose-200 bg-[#FCFBF7] dark:bg-stone-900 p-6 shadow-xl relative rounded-3xl w-full ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
+           <div className="flex justify-between items-center mb-5 border-b border-rose-100 dark:border-stone-800 pb-4">
                 <div className="flex items-center gap-3">
-                    <h2 className="text-xl font-black text-stone-800 dark:text-amber-500 flex items-center">⚡ 快問快答挑戰</h2>
+                    <h2 className="text-xl font-black text-rose-700 dark:text-rose-400 flex items-center">⚡ 快問快答挑戰</h2>
                     {!targetQaId && (
                         <button 
                             onClick={() => { 
                                 setIsRefreshing(true); 
-                                // ✨ 智慧同步：移除強制的 source: 'server'，讓 Firebase 自己判斷「只抓沒有的資料」(Delta Sync)
                                 window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).get()
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
                                     .finally(() => setIsRefreshing(false));
                             }}
                             disabled={isRefreshing}
-                            className="text-xs bg-[#FCFBF7] hover:bg-stone-60050 text-stone-600600 border border-stone-600200 px-2 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 rounded-2xl disabled:opacity-50"
-                            title="同步最新題目 (系統會自動過濾已下載的資料)"
+                            className="text-xs bg-[#FCFBF7] dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 px-3 py-1.5 font-bold transition-all shadow-sm flex items-center gap-1 rounded-xl disabled:opacity-50"
+                            title="同步最新題目"
                         >
-                            {isRefreshing ? <div className="w-3 h-3 border-2 border-stone-600400 border-t-stone-600600 rounded-full animate-spin"></div> : '🔄'} 重新整理
+                            {isRefreshing ? <div className="w-3 h-3 border-2 border-stone-400 border-t-stone-600 rounded-full animate-spin"></div> : '🔄'} 重新整理
                         </button>
                     )}
                 </div>
                 {isAdmin && !targetQaId && (
-                    <button onClick={() => setShowAdminMode(!showAdminMode)} className="bg-stone-600600 text-white text-xs px-3 py-1 font-bold rounded-2xl hover:bg-stone-600700">
+                    <button onClick={() => setShowAdminMode(!showAdminMode)} className="bg-stone-800 dark:bg-stone-100 text-stone-50 dark:text-stone-900 text-xs px-4 py-2 font-bold rounded-xl hover:bg-stone-700 dark:hover:bg-stone-200 transition-all shadow-sm active:scale-95">
                         {showAdminMode ? '關閉管理' : '管理試題'}
                     </button>
                 )}
             </div>
 
-            {isAdmin && showAdminMode && !targetQaId && (
-                <div className="mb-6 border-2 border-stone-600300 rounded-2xl bg-[#FCFBF7] dark:bg-stone-800">
-                    <button onClick={() => setIsEditExpanded(!isEditExpanded)} className="w-full flex justify-between p-4 bg-stone-600100 hover:bg-stone-600200 font-bold text-stone-600700">
-                        <span>✏️ 新增快問快答 (自訂升級版)</span><span>{isEditExpanded ? '▼' : '▲'}</span>
+           {isAdmin && showAdminMode && !targetQaId && (
+                <div className="mb-6 border border-rose-200 rounded-2xl bg-[#FCFBF7] dark:bg-stone-800 overflow-hidden shadow-lg">
+                    <button onClick={() => setIsEditExpanded(!isEditExpanded)} className="w-full flex justify-between p-5 bg-rose-50 dark:bg-stone-700 hover:bg-rose-100 dark:hover:bg-stone-600 font-bold text-rose-800 dark:text-rose-200 transition-colors">
+                        <span className="flex items-center gap-2">✏️ 新增快問快答系統面板</span>
+                        <span>{isEditExpanded ? '▼' : '▲'}</span>
                     </button>
                     {isEditExpanded && (
                         <div className="p-4 border-t border-stone-600200 dark:text-gray-200">
@@ -733,7 +733,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                                 )}
                                                 <button 
                                                     disabled={jumpingQaId === qa.id}
-                                                   onClick={async () => { 
+                                                    onClick={async () => { 
                                                         setJumpingQaId(qa.id);
                                                         try {
                                                             // ✨ 點擊挑戰時，強制向伺服器要這一題的最新資料 (確保絕不拿到舊題目)
@@ -751,7 +751,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                                         setShowResult(!!rec); 
                                                         setJumpingQaId(null);
                                                     }} 
-                                                    className="bg-stone-600500 hover:bg-stone-600600 text-white px-3 py-1.5 text-sm font-bold rounded-2xl flex items-center gap-1 disabled:opacity-70"
+                                                    className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 text-sm font-bold rounded-xl flex items-center gap-1 transition-all shadow-md active:scale-95 disabled:opacity-70"
                                                 >
                                                     {jumpingQaId === qa.id ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : null}
                                                     {(user && rec) ? '查看紀錄' : '立即挑戰'}
@@ -856,10 +856,10 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
 
             {showShareModal && (
                 <div className="fixed inset-0 bg-stone-800/60 flex items-center justify-center z-[100] p-4">
-                    <div className="bg-[#FCFBF7] p-5 w-full max-w-xs border-2 border-stone-600400">
+                    <div className="bg-[#FCFBF7] p-5 w-full max-w-xs border-2 border-rose-500">
                         <h3 className="font-black text-stone-600600 mb-3 flex justify-between">
                             <span>🔗 分享此題</span><button onClick={() => setShowShareModal(false)}>✕</button></h3>
-                <textarea readOnly value={shareContent} className="w-full h-36 p-3 text-sm border-2 border-stone-200 mb-4 outline-none resize-none bg-[#FCFBF7] text-stone-800" onClick={e => e.target.select()} /><button onClick={() => { navigator.clipboard.writeText(shareContent); showAlert('✅ 已複製！'); setShowShareModal(false); }} className="w-full bg-stone-600500 text-white font-bold py-2.5 text-sm mb-2">📋 複製文本</button></div></div>
+                <textarea readOnly value={shareContent} className="w-full h-36 p-3 text-sm border-2 border-stone-200 mb-4 outline-none resize-none bg-[#FCFBF7] text-stone-800" onClick={e => e.target.select()} /><button onClick={() => { navigator.clipboard.writeText(shareContent); showAlert('✅ 已複製！'); setShowShareModal(false); }} className="w-full bg-rose-500 text-white font-bold py-2.5 text-sm mb-2">📋 複製文本</button></div></div>
             )}
         </div>
     );

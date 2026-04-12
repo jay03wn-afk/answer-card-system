@@ -964,12 +964,12 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
                     {gameState === 'start' && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-800 bg-opacity-80 text-white z-20 px-4">
-                            <h2 className="text-4xl font-black mb-4 text-stone-600400 drop-shadow-md tracking-widest">🏐 史萊姆排球</h2>
+                            <h2 className="text-4xl font-black mb-4 text-rose-500 drop-shadow-md tracking-widest">🏐 史萊姆排球</h2>
                             <p className="mb-4 font-bold text-center text-sm sm:text-base">把史萊姆球打過網得分！<br/><span className="text-amber-300">支援單機打村民，與 WebRTC 線上真人連線！</span></p>
                             
                             {netModeUI === 'offline' && !connStatus ? (
                                 <div className="flex flex-col gap-3 w-full max-w-sm">
-                                    <button onClick={() => { setNetMode('offline'); startGame('offline'); }} className="bg-stone-600600 hover:bg-stone-600500 border-4 border-stone-600800 text-white font-bold py-3 text-xl shadow-lg active:tranamber-y-1 pixelated-border">單人模式 (打村民 - 耗1飽食)</button>
+                                    <button onClick={() => { setNetMode('offline'); startGame('offline'); }} className="bg-stone-600600 hover:bg-rose-500 border-4 border-stone-600800 text-white font-bold py-3 text-xl shadow-lg active:tranamber-y-1 pixelated-border">單人模式 (打村民 - 耗1飽食)</button>
                                     <button onClick={createRoom} className="bg-amber-600 hover:bg-amber-500 border-4 border-amber-800 text-white font-bold py-3 text-xl shadow-lg active:tranamber-y-1 pixelated-border">📡 建立線上房間 (房主)</button>
                                     <button onClick={() => {
                                         if (!window.Peer) return showAlert("套件載入中...");
@@ -2690,7 +2690,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         <button onClick={() => setShowMiniGame(true)} className="bg-amber-600 hover:bg-amber-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-amber-800 font-bold transition-colors whitespace-nowrap shadow-md">
                         🛻 礦車探險
                     </button>
-                    <button onClick={() => setShowVolleyball(true)} className="bg-stone-600600 hover:bg-stone-600500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-stone-600800 font-bold transition-colors whitespace-nowrap shadow-md">
+                    <button onClick={() => setShowVolleyball(true)} className="bg-stone-600600 hover:bg-rose-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-stone-600800 font-bold transition-colors whitespace-nowrap shadow-md">
                         🏐 史萊姆排球
                     </button>
                 </div>
@@ -4267,7 +4267,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                 if (existingIdx !== -1) h[existingIdx] = null;
                                 h[activeHotbarIndex] = 'poppy'; 
                                 setHotbar(h); 
-                            }} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'poppy' ? 'bg-stone-600500 border-stone-600700 text-white' : 'bg-gray-700 text-gray-300 border-gray-500'}`}>🌺 送小花</button>
+                            }} className={`w-full py-1 text-xs font-bold border ${selectedBlock === 'poppy' ? 'bg-rose-500 border-stone-600700 text-white' : 'bg-gray-700 text-gray-300 border-gray-500'}`}>🌺 送小花</button>
                             <button onClick={() => { 
                                 const h = [...hotbar]; 
                                 const existingIdx = h.indexOf('sign');

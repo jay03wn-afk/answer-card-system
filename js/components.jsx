@@ -1104,7 +1104,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                         <button onClick={() => {
                                             if (!user) return onRequireLogin && onRequireLogin();
                                             window.location.href = `/?qaId=${viewingNews.embeddedQaId}`;
-                                        }} className="flex-1 bg-stone-600100 border border-stone-600400 text-stone-600700 font-black py-3 hover:bg-stone-600200 transition-colors rounded-2xl shadow-sm text-center">
+                                        }} className="flex-1 bg-stone-600100 border border-rose-500 text-stone-600700 font-black py-3 hover:bg-stone-600200 transition-colors rounded-2xl shadow-sm text-center">
                                             ⚡ 挑戰相關快問快答
                                         </button>
                                     )}

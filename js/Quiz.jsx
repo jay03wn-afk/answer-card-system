@@ -7279,10 +7279,10 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     };
 
     return (
-        <div className={`border-2 border-stone-600400 bg-stone-60050 dark:bg-stone-600900/20 p-4 shadow-md relative rounded-2xl w-full ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
+        <div className={`border-2 border-rose-500 bg-stone-60050 dark:bg-stone-600900/20 p-4 shadow-md relative rounded-2xl w-full ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
             <div className="flex justify-between items-center mb-4 border-b border-stone-600200 dark:border-stone-600800 pb-2">
                 <div className="flex items-center gap-3">
-                    <h2 className="text-xl font-black text-stone-600600 dark:text-stone-600400 flex items-center">⚡ 快問快答挑戰</h2>
+                    <h2 className="text-xl font-black text-stone-600600 dark:text-rose-500 flex items-center">⚡ 快問快答挑戰</h2>
                     {!targetQaId && (
                         <button 
                             onClick={() => { 
@@ -7297,7 +7297,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                             className="text-xs bg-[#FCFBF7] hover:bg-stone-60050 text-stone-600600 border border-stone-600200 px-2 py-1 font-bold transition-colors shadow-sm flex items-center gap-1 rounded-2xl disabled:opacity-50"
                             title="同步最新題目 (系統會自動過濾已下載的資料)"
                         >
-                            {isRefreshing ? <div className="w-3 h-3 border-2 border-stone-600400 border-t-stone-600600 rounded-full animate-spin"></div> : '🔄'} 重新整理
+                            {isRefreshing ? <div className="w-3 h-3 border-2 border-rose-500 border-t-stone-600600 rounded-full animate-spin"></div> : '🔄'} 重新整理
                         </button>
                     )}
                 </div>
@@ -7454,7 +7454,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                                         setShowResult(!!rec); 
                                                         setJumpingQaId(null);
                                                     }} 
-                                                    className="bg-stone-600500 hover:bg-stone-600600 text-white px-3 py-1.5 text-sm font-bold rounded-2xl flex items-center gap-1 disabled:opacity-70"
+                                                    className="bg-rose-500 hover:bg-stone-600600 text-white px-3 py-1.5 text-sm font-bold rounded-2xl flex items-center gap-1 disabled:opacity-70"
                                                 >
                                                     {jumpingQaId === qa.id ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : null}
                                                     {(user && rec) ? '查看紀錄' : '立即挑戰'}
@@ -7558,8 +7558,16 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
             )}
 
             {showShareModal && (
-                <div className="fixed inset-0 bg-stone-800/60 flex items-center justify-center z-[100] p-4"><div className="bg-[#FCFBF7] p-5 w-full max-w-xs border-2 border-stone-600400"><h3 className="font-black text-stone-600600 mb-3 flex justify-between"><span>🔗 分享此題</span><button onClick={() => setShowShareModal(false)}>✕</button></h3>
-                <textarea readOnly value={shareContent} className="w-full h-36 p-3 text-sm border-2 border-stone-200 mb-4 outline-none resize-none bg-[#FCFBF7] text-stone-800" onClick={e => e.target.select()} /><button onClick={() => { navigator.clipboard.writeText(shareContent); showAlert('✅ 已複製！'); setShowShareModal(false); }} className="w-full bg-stone-600500 text-white font-bold py-2.5 text-sm mb-2">📋 複製文本</button></div></div>
+                <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+                    <div className="bg-[#FCFBF7] p-6 w-full max-w-xs border border-rose-200 rounded-3xl shadow-2xl">
+                        <h3 className="font-black text-rose-600 mb-4 flex justify-between items-center">
+                            <span className="flex items-center gap-2">🔗 分享此題</span>
+                            <button onClick={() => setShowShareModal(false)} className="text-stone-400 hover:text-stone-600">✕</button>
+                        </h3>
+                        <textarea readOnly value={shareContent} className="w-full h-36 p-3 text-sm border border-stone-200 rounded-xl mb-4 outline-none resize-none bg-stone-50 text-stone-700 font-bold" onClick={e => e.target.select()} />
+                        <button onClick={() => { navigator.clipboard.writeText(shareContent); showAlert('✅ 已複製！'); setShowShareModal(false); }} className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-3 rounded-xl text-sm mb-2 transition-colors shadow-md active:scale-95">📋 複製邀請文本</button>
+                    </div>
+                </div>
             )}
         </div>
     );
