@@ -377,31 +377,41 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                         // 確保不會跑出場外或撞網
                         if (aiTargetX < state.net.x + 35) aiTargetX = state.net.x + 35;
                         if (aiTargetX > state.w - 30) aiTargetX = state.w - 30;
-
-                        // 判斷跳躍時機
+// 判斷跳躍時機
                         let xDist = state.opponent.x - state.ball.x; 
-                        // 防守跳躍：擴大跳躍範圍，讓 AI 積極往前撲接小球
+                        
+                        // 1. 防守跳躍：擴大跳躍範圍，讓 AI 積極往前撲接小球
                         if (xDist > -25 && xDist < 90 && state.ball.y > 100 && state.ball.y < 300 && state.ball.vy > -1) {
                             aiShouldJump = true;
                         }
                         
-                        // ✨ 攻擊跳躍：如果球高高飛過來且靠近網子，提早起跳準備殺球
-                        if (state.ball.x < state.net.x + 180 && xDist > -10 && xDist < 60 && state.ball.y < 200 && state.ball.vy < 2) {
+                        // 2. ✨ 強化版攻擊預判跳躍：只要球正飛過來且有一定高度，AI 走到定點附近就提早起跳！
+                        if (state.ball.vx > 0 && state.ball.x > state.net.x - 30 && state.ball.y < 280) {
+                            // 如果 AI 距離自己預判的落點 (aiTargetX) 已經很近了，就直接起跳準備空中擊球
+                            if (Math.abs(state.opponent.x - aiTargetX) < 40) {
+                                aiShouldJump = true;
+                            }
+                        }
+                        
+                        // 3. 原本的攻擊跳躍保留作為極限補救
+                        if (state.ball.x < state.net.x + 200 && xDist > -20 && xDist < 80 && state.ball.y < 200 && state.ball.vy < 3) {
                             aiShouldJump = true;
                         }
 
-                        // ✨ 判斷殺球時機 (縮小範圍，避免自爆觸網)
+                       // ✨ 動態計算安全殺球高度：稍微放寬限制，讓 AI 更有侵略性
+                        let safeSpikeY = state.net.y - 5 - ((state.opponent.x - state.net.x) * 0.15);
+
+                        // ✨ 判斷殺球時機 (全場皆可殺，放寬 X/Y 軸的擊球判定寬容度)
                         if (state.opponent.y < state.groundY - 10 && 
-                            state.ball.y < state.net.y - 10 && // 修正 1：球必須明顯高於網子，避免直接扣殺掛網
-                            state.opponent.x < state.net.x + 160 && // 修正 2：限制 AI 必須靠近網子前場才允許殺球，避免後場殺球砸地
-                            state.ball.x < state.opponent.x + 15 && 
-                            state.ball.x > state.opponent.x - 35 && // 修正 3：縮小身前判定，避免球太遠往前撈著殺直接下網
-                            state.ball.y < state.opponent.y + 15 && 
-                            state.ball.y > state.opponent.y - 60 &&
-                            state.opponent.stamina >= 35) { 
+                            state.ball.y < safeSpikeY && 
+                            state.ball.x < state.opponent.x + 30 &&   // 放寬前方判定
+                            state.ball.x > state.opponent.x - 50 &&   // 放寬後方判定
+                            state.ball.y < state.opponent.y + 30 &&   // 放寬下方判定
+                            state.ball.y > state.opponent.y - 80 &&   // 放寬上方判定
+                            state.opponent.stamina >= 30) {           // 確保有足夠體力 (30)
                             
-                            // ✨ 降低每幀觸發率至 8%，讓出手時機更謹慎更漂亮
-                            if (Math.random() < 0.08) {
+                            // ✨ 能殺就殺：大幅提升觸發率 (從 12% 提升到 85%)，保留一點點隨機性讓動作看起來自然
+                            if (Math.random() < 0.85) {
                                 aiTrySpike = true;
                             }
                         }
