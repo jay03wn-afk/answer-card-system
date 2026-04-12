@@ -297,8 +297,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 if (!state.isServing) state.ball.vy += 0.35;
             }
 
-            if (state.ball.x > state.net.x + state.net.w / 2) state.serveSkillLockP = false;
-            if (state.ball.x < state.net.x + state.net.w / 2) state.serveSkillLockO = false;
+            // ✨ 移除根據球過網來解鎖技能的舊邏輯，改為「對手擊球後解鎖」
 
             state.player.vy += 0.6;
             state.opponent.vy += 0.6;
@@ -391,17 +390,18 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                             aiShouldJump = true;
                         }
 
-                        // ✨ 判斷殺球時機 (大幅放寬空間判定)
+                        // ✨ 判斷殺球時機 (縮小範圍，避免自爆觸網)
                         if (state.opponent.y < state.groundY - 10 && 
-                            state.ball.y < state.net.y + 15 && // 允許球稍微低一點點也能殺
-                            state.ball.x < state.opponent.x + 25 && 
-                            state.ball.x > state.opponent.x - 65 &&
-                            state.ball.y < state.opponent.y + 25 && 
-                            state.ball.y > state.opponent.y - 85 &&
+                            state.ball.y < state.net.y - 10 && // 修正 1：球必須明顯高於網子，避免直接扣殺掛網
+                            state.opponent.x < state.net.x + 160 && // 修正 2：限制 AI 必須靠近網子前場才允許殺球，避免後場殺球砸地
+                            state.ball.x < state.opponent.x + 15 && 
+                            state.ball.x > state.opponent.x - 35 && // 修正 3：縮小身前判定，避免球太遠往前撈著殺直接下網
+                            state.ball.y < state.opponent.y + 15 && 
+                            state.ball.y > state.opponent.y - 60 &&
                             state.opponent.stamina >= 35) { 
                             
-                            // ✨ 每幀 15% 觸發率 (滯空期間約有 50%~60% 總機率會殺球，避免太過死板每球必殺)
-                            if (Math.random() < 0.15) {
+                            // ✨ 降低每幀觸發率至 8%，讓出手時機更謹慎更漂亮
+                            if (Math.random() < 0.08) {
                                 aiTrySpike = true;
                             }
                         }
@@ -573,6 +573,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
                     if (isPlayer) {
                         state.touches.p += 1;
+                        state.serveSkillLockO = false; // ✨ 玩家擊球後，解除對手的技能封印
+                        
                         if (state.touches.p >= 4) {
                             state.isPointOver = true; state.score.o += 1; state.serving = 'opponent';
                             triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/no1.ogg');
@@ -584,6 +586,8 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                         }
                     } else {
                         state.touches.o += 1;
+                        state.serveSkillLockP = false; // ✨ 對手擊球後，解除玩家的技能封印
+                        
                         if (state.touches.o >= 4) {
                             state.isPointOver = true; state.score.p += 1; state.serving = 'player';
                             triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/levelup.ogg');
