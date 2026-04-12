@@ -362,14 +362,17 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 let aiTryBlock = false;
                 let aiTrySpike = false;
 
-                if (!state.isServing) {
+               if (!state.isServing) {
                     if (state.ball.x > state.net.x) {
                         // 🏐【進攻/接球狀態】球在 AI 半場
-                        // ✨ 修正 1：預防四觸犯規！
-                        // 為了把球往對面(左)打，AI 必須刻意站在球的「右側」，讓身體的物理碰撞產生往左的推力
                         let offset = 15; 
-                        if (state.touches.o >= 1) offset = 30; // 已經碰過一次球，更用力往右站，強迫球往左飛
+                        if (state.touches.o >= 1) offset = 30; 
                         
+                        // ✨ 極限救球機制：如果球已經很低了且 AI 距離較遠，取消防守站位，全速往球的落點衝過去！
+                        if (state.ball.y > 200 && state.opponent.x - state.ball.x > 30) {
+                            offset = -10; 
+                        }
+
                         aiTargetX = state.ball.x + (state.ball.vx * 10) + offset; 
                         
                         // 確保不會跑出場外或撞網
@@ -378,19 +381,29 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
                         // 判斷跳躍時機
                         let xDist = state.opponent.x - state.ball.x; 
-                        if (xDist > -15 && xDist < 60 && state.ball.y > 100 && state.ball.y < 280 && state.ball.vy > -1) {
+                        // 防守跳躍：擴大跳躍範圍，讓 AI 積極往前撲接小球
+                        if (xDist > -25 && xDist < 90 && state.ball.y > 100 && state.ball.y < 300 && state.ball.vy > -1) {
+                            aiShouldJump = true;
+                        }
+                        
+                        // ✨ 攻擊跳躍：如果球高高飛過來且靠近網子，提早起跳準備殺球
+                        if (state.ball.x < state.net.x + 180 && xDist > -10 && xDist < 60 && state.ball.y < 200 && state.ball.vy < 2) {
                             aiShouldJump = true;
                         }
 
-                        // ✨ 修正 2：判斷殺球時機，嚴禁在網子下方殺球
-                        if (state.opponent.y < state.groundY - 15 && 
-                            state.ball.y < state.net.y - 15 && // 🏐 核心修正：球必須「高於網子」才能觸發殺球
-                            state.ball.x < state.opponent.x + 15 && 
-                            state.ball.x > state.opponent.x - 50 &&
-                            state.ball.y < state.opponent.y + 10 && 
-                            state.ball.y > state.opponent.y - 65 &&
+                        // ✨ 判斷殺球時機 (大幅放寬空間判定)
+                        if (state.opponent.y < state.groundY - 10 && 
+                            state.ball.y < state.net.y + 15 && // 允許球稍微低一點點也能殺
+                            state.ball.x < state.opponent.x + 25 && 
+                            state.ball.x > state.opponent.x - 65 &&
+                            state.ball.y < state.opponent.y + 25 && 
+                            state.ball.y > state.opponent.y - 85 &&
                             state.opponent.stamina >= 35) { 
-                            aiTrySpike = true;
+                            
+                            // ✨ 每幀 15% 觸發率 (滯空期間約有 50%~60% 總機率會殺球，避免太過死板每球必殺)
+                            if (Math.random() < 0.15) {
+                                aiTrySpike = true;
+                            }
                         }
                     } else {
                         // 🛡️【防守狀態】球在玩家半場
@@ -406,16 +419,23 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                                     aiTryBlock = true;
                                 }
                             } else {
-                                // 一般球或高吊球，退到中後場判斷落點
-                                aiTargetX = 660 + (state.ball.vx * 15);
+                                // 一般球或高吊球，根據球的位置與速度動態預判落點
+                                aiTargetX = state.ball.x + (state.ball.vx * 30);
+                                
+                                // ✨ 針對網前小球(球速慢)特化：強制把預判點拉到網前，避免傻傻站後場
+                                if (state.ball.vx < 4.5) {
+                                    aiTargetX = state.net.x + 50;
+                                }
+
+                                if (aiTargetX < state.net.x + 40) aiTargetX = state.net.x + 40;
                                 if (aiTargetX > 760) aiTargetX = 760;
                             }
                         } else {
-                            // 🕵️ 球還沒飛過來，AI 保持在防守黃金位置
-                            aiTargetX = 660; 
-                            if (state.player.x > state.net.x - 80 && state.player.y < state.groundY - 20) {
-                                aiTargetX = 580;
-                            }
+                            // 🕵️ 球還沒飛過來 (可能是剛發球或往後飛)
+                            // ✨ 取代固定站位，改為「鏡像隨動」，球靠近網子 AI 就跟著靠近
+                            aiTargetX = 600 - ((state.net.x - state.ball.x) * 0.4);
+                            if (aiTargetX < state.net.x + 60) aiTargetX = state.net.x + 60;
+                            if (aiTargetX > 700) aiTargetX = 700;
                         }
                     }
                 } else {
