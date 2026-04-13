@@ -34,8 +34,9 @@ function DialogOverlay({ dialog, onClose }) {
     return (
         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md flex items-center justify-center z-[100] p-4">
             <div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-sm rounded-3xl shadow-2xl transform transition-all border border-stone-200 dark:border-stone-700">
-                <h3 className="font-bold text-xl mb-3 flex items-center text-stone-800 dark:text-stone-100">
-                    {dialog.type === 'alert' ? 'ℹ️ 系統提示' : '🤔 請確認'}
+                <h3 className="font-bold text-xl mb-3 flex items-center gap-2 text-stone-800 dark:text-stone-100">
+                    <span className="material-symbols-outlined text-[24px]">{dialog.type === 'alert' ? 'info' : 'help'}</span>
+                    <span>{dialog.type === 'alert' ? '系統提示' : '請確認'}</span>
                 </h3>
                 <p className="mb-5 text-gray-600 dark:text-gray-300 text-sm whitespace-pre-wrap leading-relaxed">{dialog.message}</p>
                 {dialog.type === 'prompt' && (
@@ -57,50 +58,50 @@ function TutorialOverlay({ onComplete }) {
 
     const steps = [
         {
-            title: "🎉 歡迎來到 JJay 線上測驗",
-            icon: "🚀",
+            title: "歡迎來到 JJay 線上測驗",
+            icon: "rocket_launch",
             content: "這是一個結合「測驗」、「社群」與「遊戲化」的國考練功房！\n接下來我們將花 1 分鐘，帶你快速認識所有的超酷功能！",
             color: "border-black dark:border-white"
         },
         {
-            title: "📰 JJay 日報",
-            icon: "📰",
+            title: "JJay 日報",
+            icon: "newspaper",
             content: "每天發布最新的考試重點或資訊。重點是：看完文章後，通常滑到最下方可以【領取免費鑽石】喔！",
             color: "border-amber-500"
         },
         {
-            title: "📚 我的題庫",
-            icon: "📚",
+            title: "我的題庫",
+            icon: "library_books",
             content: "首創雙螢幕排版！可自訂資料夾分類，支援【輸入代碼】直接下載別人的測驗卷。左邊看題目，右邊畫卡，超級方便！",
             color: "border-emerald-500"
         },
         {
-            title: "🎯 任務牆 & 📓 錯題整理",
-            icon: "🎯",
+            title: "任務牆 & 錯題整理",
+            icon: "task_alt",
             content: "每天完成【每日任務】可賺取大量鑽石！而你在測驗中答錯的題目，都會自動收錄到【錯題整理】，考前複習最有效率！",
             color: "border-red-500"
         },
         {
-            title: "💬 社群交流",
-            icon: "💬",
+            title: "社群交流",
+            icon: "forum",
             content: "不再是一個人讀書！你可以加好友、即時對話，還能一鍵打包自己的測驗卷分享給好友作答。支援圖片閱後即焚！",
             color: "border-stone-600500"
         },
         {
-            title: "⛏️ 史蒂夫養成",
-            icon: "⛏️",
+            title: "史蒂夫養成",
+            icon: "sports_esports",
             content: "讀書也要有儀式感。用賺來的【鑽石】購買傢俱佈置你的專屬家園，還能玩滑板小遊戲與好友競爭等級排名！",
             color: "border-amber-500"
         },
         {
-            title: "📈 國考戰況追蹤",
-            icon: "📈",
+            title: "國考戰況追蹤",
+            icon: "trending_up",
             content: "掌控你的全科複習進度！支援【打卡連動】與超強的【AI 口訣小幫手】，只要輸入重點，AI 馬上幫你生出好背的口訣！",
             color: "border-cyan-500"
         },
         {
-            title: "👤 隨時重新觀看",
-            icon: "⚙️",
+            title: "隨時重新觀看",
+            icon: "settings",
             content: "如果忘記這些功能怎麼用，隨時可以到左側選單的【個人檔案】中，點擊下方按鈕【重新觀看新手教學】喔！",
             color: "border-amber-700500"
         }
@@ -118,14 +119,15 @@ function TutorialOverlay({ onComplete }) {
 
     return (
         <div className="fixed inset-0 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 transition-opacity duration-300">
-            <div key={step} className={`bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-lg rounded-3xl shadow-2xl relative border-t-4 ${current.color} animate-fade-in-up flex flex-col`}>
-                <div className="text-6xl text-center mb-4 animate-bounce drop-shadow-md">{current.icon}</div>
+         <div key={step} className={`bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-lg rounded-3xl shadow-2xl relative border-t-4 ${current.color} animate-fade-in-up flex flex-col`}>
+                <div className="text-center mb-4 animate-bounce drop-shadow-md text-stone-800 dark:text-stone-100">
+                    <span className="material-symbols-outlined" style={{ fontSize: '64px' }}>{current.icon}</span>
+                </div>
                 <h2 className="text-2xl font-black mb-4 text-center tracking-wider dark:text-stone-100">{current.title}</h2>
                 <div className="text-stone-700 dark:text-stone-300 mb-8 min-h-[110px] flex items-center justify-center bg-stone-50 dark:bg-stone-900 p-5 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-inner">
                     <p className="text-base leading-relaxed font-bold text-center whitespace-pre-wrap">{current.content}</p>
                 </div>
                 
-                {/* 下方的進度小點點 */}
                 <div className="flex justify-center gap-2 mb-6">
                     {steps.map((_, idx) => (
                         <div key={idx} className={`h-2.5 w-2.5 rounded-full transition-all duration-300 ${idx === step ? 'bg-stone-800 dark:bg-[#FCFBF7] scale-125' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
@@ -138,8 +140,8 @@ function TutorialOverlay({ onComplete }) {
                             上一步
                         </button>
                     )}
-                    <button onClick={nextStep} className="flex-1 bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 p-3 font-bold rounded-2xl hover:bg-stone-800 dark:hover:bg-gray-300 text-lg transition-transform active:scale-95 shadow-md">
-                        {step < steps.length - 1 ? '下一步 ➡️' : '🚀 開始體驗'}
+                    <button onClick={nextStep} className="flex-1 flex justify-center items-center gap-2 bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 p-3 font-bold rounded-2xl hover:bg-stone-800 dark:hover:bg-gray-300 text-lg transition-transform active:scale-95 shadow-md">
+                        {step < steps.length - 1 ? <>下一步 <span className="material-symbols-outlined text-[20px]">arrow_forward</span></> : <><span className="material-symbols-outlined text-[20px]">rocket_launch</span> 開始體驗</>}
                     </button>
                 </div>
             </div>
@@ -241,8 +243,8 @@ function AuthScreen({ showAlert }) {
             <div className="flex w-full md:w-1/2 items-center justify-center p-4 overflow-y-auto bg-stone-50 dark:bg-stone-900">
                 <div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 shadow-2xl w-full max-w-sm border-t-4 border-amber-500 rounded-3xl">
                     
-                    <div className="w-20 h-20 bg-stone-50 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-6 border-2 border-stone-200 dark:border-gray-600 overflow-hidden">
-                        <span className="text-4xl font-black">📝</span>
+                   <div className="w-20 h-20 bg-stone-50 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-6 border-2 border-stone-200 dark:border-gray-600 overflow-hidden text-stone-800 dark:text-white">
+                        <span className="material-symbols-outlined" style={{ fontSize: '40px' }}>edit_document</span>
                     </div>
                     
                     <h2 className="text-2xl font-black mb-6 tracking-tight text-center dark:text-white">登入你的帳號</h2>
@@ -332,8 +334,8 @@ function ProfilePage({ user, userProfile, showAlert }) {
                 ctx.drawImage(img, 0, 0, w, h);
                 
                 canvas.toBlob(async (blob) => {
-                    if (!blob) return showAlert("圖片處理失敗");
-                    showAlert("圖片上傳中，請稍候...", "提示"); 
+                    if (!blob) return showAlert("[錯誤] 圖片處理失敗");
+                    showAlert("[提示] 圖片上傳中，請稍候...", "提示"); 
                     
                     try {
                         const filePath = `avatars/${user.uid}_${Date.now()}.jpg`;
@@ -341,9 +343,9 @@ function ProfilePage({ user, userProfile, showAlert }) {
                         await storageRef.put(blob);
                         const downloadURL = await storageRef.getDownloadURL();
                         await window.db.collection('users').doc(user.uid).update({ avatar: downloadURL });
-                        showAlert("✅ 頭像更新成功！");
+                        showAlert("[成功] 頭像更新成功！");
                     } catch (err) {
-                        showAlert("頭像上傳失敗：" + err.message);
+                        showAlert("[錯誤] 頭像上傳失敗：" + err.message);
                     }
                 }, 'image/jpeg', 0.6);
             };
@@ -353,37 +355,34 @@ function ProfilePage({ user, userProfile, showAlert }) {
     };
 
     const saveProfile = () => {
-        if (!displayName.trim()) return showAlert("社群暱稱不能為空！");
+        if (!displayName.trim()) return showAlert("[錯誤] 社群暱稱不能為空！");
         setIsSaving(true);
         window.db.collection('users').doc(user.uid).update({ 
             bio: bio,
             displayName: displayName.trim() 
         })
-          .then(() => showAlert("✅ 個人檔案已儲存變更！"))
-          .catch(e => showAlert("儲存失敗：" + e.message))
+          .then(() => showAlert("[成功] 個人檔案已儲存變更！"))
+          .catch(e => showAlert("[錯誤] 儲存失敗：" + e.message))
           .finally(() => setIsSaving(false));
     };
 
-    // ✨ 新增：手動綁定 Google 帳號功能
     const handleLinkGoogle = async () => {
         try {
             const provider = new window.firebase.auth.GoogleAuthProvider();
-            // 強制將 Google 帳號綁定到當前登入的 UID
             const result = await user.linkWithPopup(provider);
             
-            // 綁定成功後，順便幫他把 Google 頭像更新過去 (如果他原本沒有頭像的話)
             if (!userProfile.avatar && result.user.photoURL) {
                 await window.db.collection('users').doc(user.uid).update({
                     avatar: result.user.photoURL
                 });
             }
             
-            showAlert("✅ 成功綁定 Google 帳號！\n以後您可以直接使用 Google 一鍵登入，所有資料已完美保留！");
+            showAlert("[成功] 成功綁定 Google 帳號！\n以後您可以直接使用 Google 一鍵登入，所有資料已完美保留！");
         } catch (err) {
             if (err.code === 'auth/credential-already-in-use') {
-                showAlert("❌ 綁定失敗：這個 Google 帳號已經被另一個帳號註冊過了！請使用其他 Google 帳號。");
+                showAlert("[錯誤] 綁定失敗：這個 Google 帳號已經被另一個帳號註冊過了！請使用其他 Google 帳號。");
             } else if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
-                showAlert("綁定失敗：" + err.message);
+                showAlert("[錯誤] 綁定失敗：" + err.message);
             }
         }
     };
@@ -394,8 +393,7 @@ function ProfilePage({ user, userProfile, showAlert }) {
             <div className="flex flex-col md:flex-row items-center md:items-start gap-8">
                 <div className="flex flex-col items-center">
                     <div className="w-32 h-32 bg-stone-100 dark:bg-gray-700 rounded-full flex items-center justify-center overflow-hidden border-4 border-gray-300 dark:border-gray-600 mb-4 cursor-pointer" onClick={() => fileInputRef.current.click()}>
-                        {userProfile.avatar ? <img src={userProfile.avatar} className="w-full h-full object-cover" /> : <span className="text-4xl text-gray-400">👤</span>}
-                    </div>
+{userProfile.avatar ? <img src={userProfile.avatar} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-4xl text-gray-400">person</span>}                    </div>
                     <button onClick={() => fileInputRef.current.click()} className="text-sm font-bold bg-stone-50 dark:bg-gray-700 px-4 py-2 hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors dark:text-white border border-gray-300 dark:border-gray-600 rounded-2xl">更換大頭照</button>
                     <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
                 </div>
@@ -417,7 +415,6 @@ function ProfilePage({ user, userProfile, showAlert }) {
                             {isSaving ? '儲存中...' : '儲存變更'}
                         </button>
                         
-                        {/* ✨ 判斷：如果還沒綁定 Google，就顯示綁定按鈕 */}
                         {user.providerData.every(p => p.providerId !== 'google.com') && (
                             <button 
                                 onClick={handleLinkGoogle} 
@@ -436,11 +433,10 @@ function ProfilePage({ user, userProfile, showAlert }) {
                         <button 
                             onClick={() => {
                                 window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: false })
-                                
                             }} 
-                            className="bg-stone-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 px-6 py-2 font-bold rounded-2xl hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors"
+                            className="bg-stone-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 px-6 py-2 font-bold rounded-2xl hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-1"
                         >
-                            📖 重新觀看新手教學
+                            <span className="material-symbols-outlined text-[18px]">menu_book</span> 重新觀看新手教學
                         </button>
                     </div>
                 </div>
@@ -463,7 +459,7 @@ function ExamAlertPopup({ user, userProfile }) {
 
         const subs = userProfile.subscriptions || ['藥學電子報'];
         const now = new Date().getTime();
-        const nextWeek = now + 14 * 24 * 60 * 60 * 1000; // 抓未來 14 天內
+        const nextWeek = now + 14 * 24 * 60 * 60 * 1000; 
 
         window.db.collection('calendarEvents').get().then(snap => {
             const upcoming = [];
@@ -471,7 +467,6 @@ function ExamAlertPopup({ user, userProfile }) {
                 const data = doc.data();
                 if (subs.includes(data.category)) {
                     const eventTime = new Date(data.date).getTime();
-                    // 檢查是否在未來 14 天內
                     if (eventTime >= now && eventTime <= nextWeek) {
                         upcoming.push({ id: doc.id, ...data });
                     }
@@ -497,9 +492,9 @@ function ExamAlertPopup({ user, userProfile }) {
     return (
     <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md flex items-center justify-center z-[100] p-4">
         <div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-sm rounded-3xl shadow-2xl transform transition-all border border-stone-100 dark:border-stone-700">
-                <button onClick={closePopup} className="absolute top-3 right-3 text-gray-400 hover:text-stone-800 dark:hover:text-white font-bold text-xl">✖</button>
-                <h3 className="text-xl font-black mb-4 flex items-center dark:text-white border-b-2 border-stone-200 dark:border-stone-700 pb-2">
-                    📅 近期考試提醒
+                <button onClick={closePopup} className="absolute top-3 right-3 text-gray-400 hover:text-stone-800 dark:hover:text-white font-bold text-xl flex items-center"><span className="material-symbols-outlined">close</span></button>
+                <h3 className="text-xl font-black mb-4 flex items-center dark:text-white border-b-2 border-stone-200 dark:border-stone-700 pb-2 gap-2">
+                    <span className="material-symbols-outlined text-[24px]">event</span> 近期考試提醒
                 </h3>
                 <div className="space-y-3 mb-6 max-h-60 overflow-y-auto custom-scrollbar pr-2">
                     {examAlerts.map(ex => {
@@ -547,17 +542,15 @@ function NewsMiniRichEditor({ value, onChange, placeholder }) {
 
 function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPrompt, onContinueQuiz, targetNewsId, onClose, onRequireLogin }) {
     const isAdmin = user && (user.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
-    // 🚀 記憶快取法：如果有暫存資料，就直接拿出來用，預設不顯示轉圈圈！
     const [newsList, setNewsList] = useState(window._cachedNews || []);
     const [events, setEvents] = useState(window._cachedEvents || []);
     const [categories, setCategories] = useState(window._cachedCats || ['藥學電子報', '未分類']);
     const [loading, setLoading] = useState(!window._hasLoadedNews);
     const [subs, setSubs] = useState(userProfile?.subscriptions || ['藥學電子報']);
-    const [activeFeedTab, setActiveFeedTab] = useState('subscribed'); // 'subscribed' 訂閱頻道 or 'all' 所有電子報
+    const [activeFeedTab, setActiveFeedTab] = useState('subscribed'); 
     
-    // 編輯器狀態
     const [showEditor, setShowEditor] = useState(false);
-    const [editMode, setEditMode] = useState(''); // 'news' 或 'event'
+    const [editMode, setEditMode] = useState(''); 
     const [editingId, setEditingId] = useState(null);
     const [newsTitle, setNewsTitle] = useState('');
     const [newsCat, setNewsCat] = useState('藥學電子報');
@@ -565,17 +558,14 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
     const [embeddedQaId, setEmbeddedQaId] = useState('');
     const [embeddedQuizCode, setEmbeddedQuizCode] = useState('');
     
-    // 獎勵設定 (新增)
-    const [rewardType, setRewardType] = useState('none'); // 'none', 'fixed', 'random'
-    const [rewardVal1, setRewardVal1] = useState(''); // 固定數量 或 隨機最小值
-    const [rewardVal2, setRewardVal2] = useState(''); // 隨機最大值
+    const [rewardType, setRewardType] = useState('none'); 
+    const [rewardVal1, setRewardVal1] = useState(''); 
+    const [rewardVal2, setRewardVal2] = useState(''); 
 
-    // 行事曆表單
     const [eventTitle, setEventTitle] = useState('');
     const [eventDate, setEventDate] = useState('');
     const [eventCat, setEventCat] = useState('藥學電子報');
 
-    // 閱讀視窗狀態 (新增)
     const [viewingNews, setViewingNews] = useState(null);
     const [newsComments, setNewsComments] = useState([]);
     const [newComment, setNewComment] = useState('');
@@ -593,13 +583,13 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                 if (doc.exists && doc.data().categories && isMounted) {
                     const loadedCats = doc.data().categories;
                     if (!loadedCats.includes('未分類')) loadedCats.push('未分類');
-                    window._cachedCats = loadedCats; // 💾 存入記憶體
+                    window._cachedCats = loadedCats;
                     setCategories(loadedCats);
                 }
             });
 
             if (targetNewsId) {
-                if (!window.db) return; // ✨ 新增防呆機制：確保資料庫已經準備好才去讀取，防止白畫面當機
+                if (!window.db) return; 
                 unsubNews = window.db.collection('newsletters').doc(targetNewsId).onSnapshot(doc => {
                     if (!isMounted) return;
                     if (doc.exists) {
@@ -607,7 +597,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                         setNewsList([loaded]);
                         setViewingNews(loaded);
                     } else {
-                        showAlert('找不到此電子報，可能已被刪除！');
+                        showAlert('[錯誤] 找不到此電子報，可能已被刪除！');
                     }
                     setLoading(false);
                 }, err => {
@@ -621,8 +611,8 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                 .onSnapshot(snap => {
                     if (!isMounted) return;
                     const data = snap.docs.map(d => ({id: d.id, ...d.data()}));
-                    window._cachedNews = data; // 💾 存入記憶體
-                    window._hasLoadedNews = true; // 💾 標記已載入過
+                    window._cachedNews = data;
+                    window._hasLoadedNews = true; 
                     setNewsList(data);
                     setLoading(false);
                 }, err => {
@@ -633,7 +623,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                 unsubEvents = window.db.collection('calendarEvents').orderBy('date', 'asc').onSnapshot(snap => {
                     if (!isMounted) return;
                     const data = snap.docs.map(d => ({id: d.id, ...d.data()}));
-                    window._cachedEvents = data; // 💾 存入記憶體
+                    window._cachedEvents = data;
                     setEvents(data);
                 }, err => console.warn("行事曆監聽延遲:", err.message));
             }
@@ -642,13 +632,10 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
         loadData();
         return () => { isMounted = false; unsubNews(); unsubEvents(); unsubCats(); };
     }, [targetNewsId]);
-    // 監聽閱讀視窗中的留言與獎勵領取狀態
-    // 監聽閱讀視窗中的留言與獎勵領取狀態
+
     useEffect(() => {
         if (!viewingNews) return;
         
-        // ✨ 新增：每次開啟新電子報時，強制先將領取狀態設為「未領取」
-        // 這樣就不會看到上一篇文章留下來的狀態
         setHasClaimed(true); 
         setIsClaiming(false);
 
@@ -656,9 +643,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
         
         if (user) {
             const checkClaim = async () => {
-                // 從雲端抓取最新的領取紀錄
                 const doc = await window.db.collection('users').doc(user.uid).collection('newsRewards').doc(viewingNews.id).get();
-                // 只有當雲端回傳「確定沒有領取紀錄」時，才把 hasClaimed 設為 false，讓按鈕出現
                 setHasClaimed(doc.exists); 
             };
             checkClaim();
@@ -686,13 +671,13 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                 await window.db.collection('settings').doc('newspaper').update({
                     categories: window.firebase.firestore.FieldValue.arrayUnion(val)
                 });
-                showAlert('分類新增成功！');
+                showAlert('[成功] 分類新增成功！');
             }
         });
     };
 
     const saveNews = async () => {
-        if (!newsTitle || !newsContent) return showAlert('標題與內容為必填！');
+        if (!newsTitle || !newsContent) return showAlert('[提示] 標題與內容為必填！');
         const data = {
             title: newsTitle,
             category: newsCat || '未分類',
@@ -706,25 +691,25 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
         };
         if (editingId) {
             await window.db.collection('newsletters').doc(editingId).update(data);
-            showAlert('✅ 報紙更新成功！');
+            showAlert('[成功] 報紙更新成功！');
         } else {
             data.createdAt = window.firebase.firestore.FieldValue.serverTimestamp();
             data.likes = [];
             await window.db.collection('newsletters').add(data);
-            showAlert('✅ 報紙發佈成功！');
+            showAlert('[成功] 報紙發佈成功！');
         }
         closeEditor();
     };
 
     const saveEvent = async () => {
-        if (!eventTitle || !eventDate) return showAlert('標題與日期為必填！');
+        if (!eventTitle || !eventDate) return showAlert('[提示] 標題與日期為必填！');
         const data = { title: eventTitle, date: eventDate, category: eventCat, updatedAt: window.firebase.firestore.FieldValue.serverTimestamp() };
         if (editingId) {
             await window.db.collection('calendarEvents').doc(editingId).update(data);
-            showAlert('✅ 考試日程更新成功！');
+            showAlert('[成功] 考試日程更新成功！');
         } else {
             await window.db.collection('calendarEvents').add(data);
-            showAlert('✅ 考試日程新增成功！');
+            showAlert('[成功] 考試日程新增成功！');
         }
         closeEditor();
     };
@@ -756,13 +741,11 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
 
     const closeEditor = () => { setShowEditor(false); setEditMode(''); setEditingId(null); };
 
-    // 互動功能：按讚與留言與獎勵
     const toggleLike = async () => {
         if (!user) return onRequireLogin && onRequireLogin();
         const likes = viewingNews.likes || [];
         const isLiked = likes.includes(user.uid);
         
-        // 樂觀更新
         setViewingNews(prev => ({ ...prev, likes: isLiked ? prev.likes.filter(id => id !== user.uid) : [...(prev.likes || []), user.uid] }));
         
         if (isLiked) {
@@ -773,7 +756,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
     };
 
     const postComment = async () => {
-        if (!newComment.trim()) return showAlert("請輸入留言內容！");
+        if (!newComment.trim()) return showAlert("[提示] 請輸入留言內容！");
         if (!user) return onRequireLogin && onRequireLogin();
         await window.db.collection('newsletters').doc(viewingNews.id).collection('comments').add({
             uid: user.uid,
@@ -784,28 +767,22 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
         setNewComment('');
     };
 
-    
-
     const claimReward = async () => {
-        // 基本檢查
         if (hasClaimed || isClaiming || !user || !viewingNews.rewardType || viewingNews.rewardType === 'none') return;
         
         setIsClaiming(true);
 
-        // 🛡️ 最後一道雲端校驗：點擊瞬間再去雲端看一眼，確保這 0.1 秒內沒有被領過
         try {
             const safetyCheck = await window.db.collection('users').doc(user.uid).collection('newsRewards').doc(viewingNews.id).get();
             if (safetyCheck.exists) {
-                setHasClaimed(true); // 如果雲端說領過了，立刻更新狀態並跳出
+                setHasClaimed(true); 
                 setIsClaiming(false);
-                return showAlert("⚠️ 系統偵測到您已領取過此獎勵囉！");
+                return showAlert("[警告] 系統偵測到您已領取過此獎勵囉！");
             }
         } catch (e) {
             setIsClaiming(false);
             return;
         }
-        
-        // 接下來才是你原本的領取獎勵邏輯...
         
         setIsClaiming(true);
         
@@ -819,11 +796,9 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
         }
 
         if (amount > 0) {
-            // ✨ 極速優化：先改介面狀態，不等待資料庫回傳
             setHasClaimed(true); 
-            showAlert(`🎉 恭喜！你${viewingNews.rewardType === 'random' ? '抽中' : '獲得'}了 ${amount} 💎 閱讀獎勵！`);
+            showAlert(`[恭喜] 你${viewingNews.rewardType === 'random' ? '抽中' : '獲得'}了 ${amount} 閱讀獎勵！`);
 
-            // 背景默默執行資料庫更新
             const rewardRef = window.db.collection('users').doc(user.uid).collection('newsRewards').doc(viewingNews.id);
             
             rewardRef.set({
@@ -835,7 +810,6 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                 }, { merge: true });
             }).catch(e => {
                 console.error("獎勵背景同步失敗", e);
-                // 如果真的失敗（例如網路斷線），再把狀態改回來
                 setHasClaimed(false);
             });
         }
@@ -844,20 +818,18 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
 
     const handleShareNews = (news) => {
         const url = `${window.location.origin}/?newsId=${news.id}`;
-        const text = `📰 JJay 日報推薦\n【${news.category}】${news.title}\n\n👇 點擊下方連結，立即閱讀完整內容！\n${url}`;
+        const text = `[推薦] JJay 日報\n【${news.category}】${news.title}\n\n點擊下方連結，立即閱讀完整內容！\n${url}`;
         navigator.clipboard.writeText(text);
-        showAlert(`✅ 已複製電子報專屬連結與文案！快貼給朋友吧！`);
+        showAlert(`[成功] 已複製電子報專屬連結與文案！快貼給朋友吧！`);
     };
 
-
-    // 決定顯示的文章列表
     const displayedNews = activeFeedTab === 'subscribed' ? newsList.filter(n => subs.includes(n.category) || isAdmin) : newsList;
 
     return (
         <div className={`max-w-[1600px] w-full mx-auto p-4 h-full overflow-y-auto custom-scrollbar w-full ${targetNewsId ? 'bg-[#FCFBF7] dark:bg-stone-900 border-4 border-black' : ''}`}>
             
-            <div className="flex flex-wrap justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 gap-3 shrink-0">
-                <h1 className="text-2xl font-black dark:text-white flex items-center">📰 JJay 日報</h1>
+           <div className="flex flex-wrap justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 gap-3 shrink-0">
+                <h1 className="text-2xl font-black dark:text-white flex items-center gap-2"><span className="material-symbols-outlined text-[28px]">newspaper</span> JJay 日報</h1>
                 {targetNewsId && !user && (
                     <button onClick={() => onClose ? onClose() : window.history.replaceState({}, '', window.location.pathname)} className="text-gray-500 font-bold text-sm hover:text-stone-800 dark:hover:text-white transition-colors">
                         ⬅ 返回首頁
@@ -872,12 +844,13 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                 )}
             </div>
 
-            {/* 管理員編輯器 */}
             {showEditor && (
                 <div className="mb-8 p-6 bg-amber-50 dark:bg-stone-800 border-2 border-black dark:border-white rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] animate-fade-in-up">
                     <div className="flex justify-between items-center mb-6 border-b border-gray-300 dark:border-gray-600 pb-2">
-                        <h2 className="text-xl font-black dark:text-white">{editMode === 'news' ? (editingId ? '📝 編輯報紙' : '📢 發佈新報紙') : (editingId ? '📝 編輯考試' : '📅 新增考試')}</h2>
-                        <button onClick={closeEditor} className="text-gray-500 font-bold hover:text-red-500">✖ 關閉</button>
+                        <h2 className="text-xl font-black dark:text-white flex items-center gap-2">
+                            {editMode === 'news' ? (editingId ? <><span className="material-symbols-outlined text-[24px]">edit_document</span> 編輯報紙</> : <><span className="material-symbols-outlined text-[24px]">campaign</span> 發佈新報紙</>) : (editingId ? <><span className="material-symbols-outlined text-[24px]">edit_calendar</span> 編輯考試</> : <><span className="material-symbols-outlined text-[24px]">event_note</span> 新增考試</>)}
+                        </h2>
+                        <button onClick={closeEditor} className="text-gray-500 font-bold hover:text-red-500 flex items-center"><span className="material-symbols-outlined text-[20px]">close</span> 關閉</button>
                     </div>
                     
                     {editMode === 'news' ? (
@@ -894,37 +867,36 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                 <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">報紙內容 (支援圖文與格式)</label>
                                 <select value="" onChange={e => { 
                                     if(e.target.value) {
-                                        const htmlBlock = `<div style="padding:12px; background-color:#eff6ff; border-left:4px solid #3b82f6; margin:10px 0; font-weight:bold; color:#1e40af;">📅 考試提醒：【${e.target.value.split('|')[0]}】將於 ${e.target.value.split('|')[1]} 舉行！</div><p><br></p>`;
+                                        const htmlBlock = `<div style="padding:12px; background-color:#eff6ff; border-left:4px solid #3b82f6; margin:10px 0; font-weight:bold; color:#1e40af;">[考試提醒]：【${e.target.value.split('|')[0]}】將於 ${e.target.value.split('|')[1]} 舉行！</div><p><br></p>`;
                                         setNewsContent(prev => prev + htmlBlock);
                                     }
                                 }} className="p-1 border border-gray-300 text-xs dark:bg-gray-700 dark:text-white outline-none cursor-pointer">
-                                    <option value="" disabled>➕ 嵌入近期考試方塊...</option>
+                                    <option value="" disabled>[+] 嵌入近期考試方塊...</option>
                                     {events.map(ev => (
                                         <option key={ev.id} value={`${ev.title}|${ev.date.replace('T', ' ')}`}>{ev.title} ({ev.date})</option>
                                     ))}
                                 </select>
                             </div>
-                            {/* ✨ 替換為支援自動圖片壓縮上傳至 Storage 的高級編輯器 */}
-<ContentEditableEditor 
-    value={newsContent} 
-    onChange={setNewsContent} 
-    placeholder="在此貼上文章內容或圖片，圖片將自動壓縮並上傳至雲端..." 
-    showAlert={showAlert} 
-/>
+                            <ContentEditableEditor 
+                                value={newsContent} 
+                                onChange={setNewsContent} 
+                                placeholder="在此貼上文章內容或圖片，圖片將自動壓縮並上傳至雲端..." 
+                                showAlert={showAlert} 
+                            />
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-[#FCFBF7] dark:bg-stone-900 p-4 border border-dashed border-gray-400">
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">🔗 嵌入快問快答 ID (選填)</label>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">link</span> 嵌入快問快答 ID (選填)</label>
                                     <input type="text" placeholder="輸入 QA 的資料庫 ID" value={embeddedQaId} onChange={e=>setEmbeddedQaId(e.target.value)} className="w-full p-2 border border-gray-300 dark:bg-gray-700 dark:text-white text-sm rounded-2xl outline-none" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">📥 嵌入試卷代碼 (選填)</label>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">move_to_inbox</span> 嵌入試卷代碼 (選填)</label>
                                     <input type="text" placeholder="輸入 6 碼試卷代碼" value={embeddedQuizCode} onChange={e=>setEmbeddedQuizCode(e.target.value)} className="w-full p-2 border border-gray-300 dark:bg-gray-700 dark:text-white text-sm rounded-2xl outline-none" />
                                 </div>
                             </div>
 
                             <div className="bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-400 mt-4">
-                                <label className="block text-sm font-bold text-amber-800 dark:text-amber-400 mb-2">🎁 閱讀獎勵設定 (放置於報紙最下方)</label>
+                                <label className="block text-sm font-bold text-amber-800 dark:text-amber-400 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">redeem</span> 閱讀獎勵設定 (放置於報紙最下方)</label>
                                 <div className="flex flex-col sm:flex-row gap-3">
                                     <select value={rewardType} onChange={e=>setRewardType(e.target.value)} className="p-2 border border-gray-300 rounded-2xl font-bold dark:bg-stone-800 dark:text-white">
                                         <option value="none">無獎勵</option>
@@ -942,7 +914,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                 </div>
                             </div>
                             
-                            <button onClick={saveNews} className="w-full bg-amber-600 text-white font-black py-3 text-lg rounded-2xl hover:bg-amber-700 transition-colors shadow-sm mt-4">💾 發佈報紙</button>
+                            <button onClick={saveNews} className="w-full bg-amber-600 text-white font-black py-3 text-lg rounded-2xl hover:bg-amber-700 transition-colors shadow-sm mt-4 flex items-center justify-center gap-2"><span className="material-symbols-outlined">publish</span> 發佈報紙</button>
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -954,29 +926,26 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                             <select value={eventCat} onChange={e=>setEventCat(e.target.value)} className="w-full p-3 border border-black dark:bg-gray-700 dark:text-white rounded-2xl outline-none cursor-pointer">
                                 {categories.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
-                            <button onClick={saveEvent} className="w-full bg-emerald-600 text-white font-black py-3 text-lg rounded-2xl hover:bg-emerald-700 transition-colors shadow-sm mt-4">💾 儲存考試</button>
+                            <button onClick={saveEvent} className="w-full bg-emerald-600 text-white font-black py-3 text-lg rounded-2xl hover:bg-emerald-700 transition-colors shadow-sm mt-4 flex items-center justify-center gap-2"><span className="material-symbols-outlined">save</span> 儲存考試</button>
                         </div>
                     )}
                 </div>
             )}
 
-            {/* 列表與行事曆區塊 */}
             {!viewingNews && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
                     <div className="lg:col-span-2 flex flex-col gap-4">
-                        {/* 頻道切換 */}
                         {!targetNewsId && user && (
                             <div className="flex border-b-2 border-stone-200 dark:border-stone-700 mb-4">
-                                <button onClick={() => setActiveFeedTab('subscribed')} className={`pb-2 px-4 font-black text-lg transition-colors ${activeFeedTab === 'subscribed' ? 'border-b-4 border-black dark:border-white text-stone-800 dark:text-white' : 'text-gray-400 hover:text-gray-600'}`}>
-                                    📡 我的訂閱頻道
+                                <button onClick={() => setActiveFeedTab('subscribed')} className={`pb-2 px-4 font-black text-lg transition-colors flex items-center gap-2 ${activeFeedTab === 'subscribed' ? 'border-b-4 border-black dark:border-white text-stone-800 dark:text-white' : 'text-gray-400 hover:text-gray-600'}`}>
+                                    <span className="material-symbols-outlined text-[20px]">rss_feed</span> 我的訂閱頻道
                                 </button>
-                                <button onClick={() => setActiveFeedTab('all')} className={`pb-2 px-4 font-black text-lg transition-colors ${activeFeedTab === 'all' ? 'border-b-4 border-black dark:border-white text-stone-800 dark:text-white' : 'text-gray-400 hover:text-gray-600'}`}>
-                                    🗂️ 探索所有文章
+                                <button onClick={() => setActiveFeedTab('all')} className={`pb-2 px-4 font-black text-lg transition-colors flex items-center gap-2 ${activeFeedTab === 'all' ? 'border-b-4 border-black dark:border-white text-stone-800 dark:text-white' : 'text-gray-400 hover:text-gray-600'}`}>
+                                    <span className="material-symbols-outlined text-[20px]">explore</span> 探索所有文章
                                 </button>
                             </div>
                         )}
 
-                        {/* ✨ 非同步載入狀態：不阻擋整個頁面，只在內容區顯示 */}
                         {loading ? (
                             <div className="flex flex-col items-center justify-center p-16 bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700">
                                 <div className="w-12 h-12 border-4 border-stone-200 dark:border-gray-600 border-t-black dark:border-white rounded-full animate-spin mb-4"></div>
@@ -995,19 +964,19 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                     <div key={news.id} onClick={() => setViewingNews(news)} className="bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl p-5 cursor-pointer hover:shadow-xl hover:border-amber-400 hover:-tranamber-y-1 transition-all duration-300 group">
                                         <div className="flex justify-between items-start mb-2">
                                             <span className="text-xs font-black bg-stone-800 dark:bg-stone-700 text-amber-400 px-3 py-1 rounded-full tracking-widest shadow-sm">{news.category}</span>
-                                            <span className="text-xs text-gray-500 font-bold">{news.createdAt?.toDate().toLocaleDateString('zh-TW') || '剛剛'}</span>
+                                            <span className="text-xs text-gray-500 font-bold">{news.createdAt?.toDate().toLocaleDateString('zh-TW')}</span>
                                         </div>
                                         <h2 className="text-xl sm:text-2xl font-black mb-2 dark:text-white group-hover:text-amber-600 transition-colors">{news.title}</h2>
                                         <p className="text-gray-600 dark:text-gray-400 text-sm font-bold mb-4">{plainText}</p>
                                         
                                         <div className="flex justify-between items-center border-t border-gray-100 dark:border-stone-700 pt-3">
-                                            <div className="flex gap-2">
-                                                <span className="text-xs font-bold text-gray-500">❤️ {news.likes?.length || 0}</span>
-                                                <span className="text-xs font-bold text-gray-500">💬 留言</span>
+                                            <div className="flex gap-4">
+                                                <span className="text-xs font-bold text-gray-500 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">favorite</span> {news.likes?.length || 0}</span>
+                                                <span className="text-xs font-bold text-gray-500 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">chat_bubble</span> 留言</span>
                                             </div>
                                             <div className="flex gap-2">
-                                                {news.rewardType && news.rewardType !== 'none' && <span className="text-[10px] bg-amber-100 text-amber-800 font-black px-1.5 py-0.5 border border-amber-300">🎁 獎勵</span>}
-                                                {(news.embeddedQaId || news.embeddedQuizCode) && <span className="text-[10px] bg-amber-100 text-amber-800 font-black px-1.5 py-0.5 border border-amber-300">📝 測驗</span>}
+                                                {news.rewardType && news.rewardType !== 'none' && <span className="text-[10px] bg-amber-100 text-amber-800 font-black px-1.5 py-0.5 border border-amber-300 flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">redeem</span> 獎勵</span>}
+                                                {(news.embeddedQaId || news.embeddedQuizCode) && <span className="text-[10px] bg-amber-100 text-amber-800 font-black px-1.5 py-0.5 border border-amber-300 flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">quiz</span> 測驗</span>}
                                             </div>
                                         </div>
                                     </div>
@@ -1018,16 +987,15 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
 
                     {!targetNewsId && user && (
                         <div className="lg:col-span-1">
-                            {/* 訂閱設定區塊 */}
                             <div className="bg-gray-50 dark:bg-stone-800 border-2 border-black dark:border-gray-600 p-5 rounded-2xl mb-6">
-                                <h3 className="font-black mb-3 text-sm dark:text-white flex items-center gap-2">📡 頻道訂閱管理</h3>
+                                <h3 className="font-black mb-3 text-sm dark:text-white flex items-center gap-2"><span className="material-symbols-outlined">rss_feed</span> 頻道訂閱管理</h3>
                                 <div className="flex flex-wrap gap-2">
                                     {categories.map(cat => {
                                         if (cat === '未分類') return null;
                                         return (
                                             <label key={cat} className={`flex items-center space-x-1 cursor-pointer px-2 py-1 border transition-colors ${subs.includes(cat) ? 'bg-stone-800 text-white border-black' : 'bg-[#FCFBF7] text-gray-600 border-gray-300 hover:bg-stone-50'}`}>
                                                 <input type="checkbox" checked={subs.includes(cat)} onChange={() => toggleSub(cat)} className="hidden" />
-                                                <span className="font-bold text-[10px]">{subs.includes(cat) ? '✔' : '+'} {cat}</span>
+                                                <span className="font-bold text-[10px] flex items-center gap-1">{subs.includes(cat) ? <span className="material-symbols-outlined text-[12px]">check</span> : '+'} {cat}</span>
                                             </label>
                                         );
                                     })}
@@ -1035,7 +1003,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                             </div>
 
                             <div className="bg-[#FCFBF7] dark:bg-stone-800 border-2 border-black dark:border-gray-600 p-5 rounded-2xl shadow-xl sticky top-4">
-                                <h2 className="text-xl font-black mb-5 flex items-center border-b-2 border-black dark:border-gray-600 pb-2 dark:text-white tracking-widest">📅 考試行事曆</h2>
+                                <h2 className="text-xl font-black mb-5 flex items-center border-b-2 border-black dark:border-gray-600 pb-2 dark:text-white tracking-widest gap-2"><span className="material-symbols-outlined">calendar_month</span> 考試行事曆</h2>
                                 <div className="space-y-4 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2">
                                     {events.filter(e => subs.includes(e.category) || isAdmin).length === 0 ? (
                                         <div className="text-sm text-gray-500 font-bold text-center py-4 border border-dashed border-gray-300">近期無考試安排。</div>
@@ -1047,7 +1015,7 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                                 <div key={ev.id} className={`p-4 border-l-4 border border-gray-100 dark:border-stone-700 relative ${isPast ? 'border-l-gray-400 bg-gray-50 dark:bg-stone-900 opacity-50' : (daysLeft <= 7 ? 'border-l-red-500 bg-red-50 dark:bg-red-900/20' : 'border-l-amber-500 bg-amber-50 dark:bg-amber-900/20')}`}>
                                                     <div className="flex justify-between items-start mb-2">
                                                         <span className="text-[10px] font-black text-white bg-gray-400 px-1.5 py-0.5">{ev.category}</span>
-                                                        {isAdmin && <button onClick={() => deleteEvent(ev.id)} className="text-[10px] text-red-600 font-bold px-1 border">刪除</button>}
+                                                        {isAdmin && <button onClick={() => deleteEvent(ev.id)} className="text-[10px] text-red-600 font-bold px-1 border flex items-center"><span className="material-symbols-outlined text-[12px]">delete</span></button>}
                                                     </div>
                                                     <div className={`font-black text-sm ${isPast ? 'line-through text-gray-500' : 'dark:text-white'}`}>{ev.title}</div>
                                                     <div className={`text-xs mt-1 font-black ${isPast ? 'text-gray-400' : (daysLeft <= 7 ? 'text-red-600' : 'text-amber-600')}`}>
@@ -1064,14 +1032,13 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                 </div>
             )}
 
-            {/* 視窗化閱讀 Modal */}
             {viewingNews && (
                 <div className="fixed inset-0 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center z-[100] p-2 sm:p-4 animate-fade-in">
                     <div className="bg-stone-50 dark:bg-stone-900 w-full max-w-3xl h-[95vh] rounded-3xl relative shadow-2xl border border-stone-200 dark:border-stone-700 flex flex-col overflow-hidden">
                         
                         <div className="bg-stone-800 dark:bg-stone-950 text-amber-50 px-5 py-4 flex justify-between items-center shrink-0 shadow-md z-10 border-b border-stone-700">
-                            <h2 className="text-lg font-black truncate pr-4 text-amber-400">📰 {viewingNews.title}</h2>
-                            <button onClick={() => setViewingNews(null)} className="text-xl hover:text-amber-200 font-bold transition-colors">✕</button>
+                            <h2 className="text-lg font-black truncate pr-4 text-amber-400 flex items-center gap-2"><span className="material-symbols-outlined">article</span> {viewingNews.title}</h2>
+                            <button onClick={() => setViewingNews(null)} className="text-xl hover:text-amber-200 font-bold transition-colors flex items-center"><span className="material-symbols-outlined">close</span></button>
                         </div>
 
                         <div className="p-4 sm:p-8 flex-grow overflow-y-auto custom-scrollbar relative">
@@ -1081,15 +1048,13 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                     <span className="text-xs text-gray-500 font-bold">{viewingNews.createdAt?.toDate().toLocaleDateString('zh-TW')}</span>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button onClick={() => handleShareNews(viewingNews)} className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1">🔗 分享</button>
-                                    {isAdmin && <button onClick={() => { setViewingNews(null); openNewsEditor(viewingNews); }} className="text-xs font-bold text-amber-700600 bg-amber-70050 border border-amber-700200 px-2 py-1">編輯</button>}
-                                    {isAdmin && <button onClick={() => deleteNews(viewingNews.id)} className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1">刪除</button>}
+                                    <button onClick={() => handleShareNews(viewingNews)} className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">share</span> 分享</button>
+                                    {isAdmin && <button onClick={() => { setViewingNews(null); openNewsEditor(viewingNews); }} className="text-xs font-bold text-amber-700600 bg-amber-70050 border border-amber-700200 px-2 py-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">edit</span> 編輯</button>}
+                                    {isAdmin && <button onClick={() => deleteNews(viewingNews.id)} className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">delete</span> 刪除</button>}
                                 </div>
                             </div>
 
-                            {/* 內文 */}
                             <style dangerouslySetInnerHTML={{__html: `
-                                /* 強制電子報內容永遠是白底黑字，無視暗色模式 */
 .news-rich-text { background-color: white !important; color: black !important; padding: 20px; border: 1px solid #ddd; }
 .news-rich-text * { color: black !important; } 
 .news-rich-text img { max-width: 100%; height: auto; display: block; margin: 10px auto; border: 1px solid #ccc; }
@@ -1097,66 +1062,63 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                             `}} />
                             <div className="news-rich-text text-gray-800 dark:text-gray-200 text-base leading-relaxed mb-8 font-medium" dangerouslySetInnerHTML={{ __html: viewingNews.content }}></div>
 
-                            {/* 嵌入測驗 */}
                             {(viewingNews.embeddedQaId || viewingNews.embeddedQuizCode) && (
                                 <div className="bg-amber-50 dark:bg-stone-800 p-4 border-2 border-dashed border-amber-300 dark:border-gray-600 mb-8 flex flex-col sm:flex-row gap-4">
                                     {viewingNews.embeddedQaId && (
                                         <button onClick={() => {
                                             if (!user) return onRequireLogin && onRequireLogin();
                                             window.location.href = `/?qaId=${viewingNews.embeddedQaId}`;
-                                        }} className="flex-1 bg-stone-600100 border border-rose-500 text-stone-600700 font-black py-3 hover:bg-stone-600200 transition-colors rounded-2xl shadow-sm text-center">
-                                            ⚡ 挑戰相關快問快答
+                                        }} className="flex-1 bg-stone-600100 border border-rose-500 text-stone-600700 font-black py-3 hover:bg-stone-600200 transition-colors rounded-2xl shadow-sm flex items-center justify-center gap-2">
+                                            <span className="material-symbols-outlined">bolt</span> 挑戰相關快問快答
                                         </button>
                                     )}
                                     {viewingNews.embeddedQuizCode && (
                                         <button onClick={() => {
                                             if (!user) return onRequireLogin && onRequireLogin();
                                             navigator.clipboard.writeText(viewingNews.embeddedQuizCode);
-                                            showAlert(`✅ 已複製試卷代碼: ${viewingNews.embeddedQuizCode}\n\n請前往「我的題庫」，點擊「📥 輸入代碼」下載此測驗卷！`);
-                                        }} className="flex-1 bg-[#FCFBF7] border border-amber-400 text-amber-700 font-black py-3 hover:bg-amber-50 transition-colors rounded-2xl shadow-sm text-center">
-                                            📥 領取試卷 ({viewingNews.embeddedQuizCode})
+                                            showAlert(`[成功] 已複製試卷代碼: ${viewingNews.embeddedQuizCode}\n\n請前往「我的題庫」，點擊「輸入代碼」下載此測驗卷！`);
+                                        }} className="flex-1 bg-[#FCFBF7] border border-amber-400 text-amber-700 font-black py-3 hover:bg-amber-50 transition-colors rounded-2xl shadow-sm flex items-center justify-center gap-2">
+                                            <span className="material-symbols-outlined">move_to_inbox</span> 領取試卷 ({viewingNews.embeddedQuizCode})
                                         </button>
                                     )}
                                 </div>
                             )}
 
-                            {/* 閱讀獎勵區塊 */}
                             {viewingNews.rewardType && viewingNews.rewardType !== 'none' && (
                                 <div className="mt-10 mb-8 p-6 bg-amber-50 dark:bg-amber-900/20 border-4 border-amber-400 text-center shadow-inner">
-                                    <h3 className="text-xl font-black text-amber-800 dark:text-amber-400 mb-2">🎁 專屬閱讀獎勵</h3>
+                                    <h3 className="text-xl font-black text-amber-800 dark:text-amber-400 mb-2 flex items-center justify-center gap-2"><span className="material-symbols-outlined">redeem</span> 專屬閱讀獎勵</h3>
                                    {!user ? (
                                         <div className="flex flex-col items-center gap-3">
                                             <p className="font-bold text-gray-500">請登入以領取專屬獎勵。</p>
-                                            <button onClick={() => onRequireLogin && onRequireLogin()} className="bg-stone-800 text-white px-8 py-3 font-black text-lg rounded-2xl hover:bg-stone-800 transition-colors shadow-xl active:shadow-none active:tranamber-x-1 active:tranamber-y-1">
-                                                🚀 立即登入解鎖鑽石
+                                            <button onClick={() => onRequireLogin && onRequireLogin()} className="bg-stone-800 text-white px-8 py-3 font-black text-lg rounded-2xl hover:bg-stone-800 transition-colors shadow-xl active:shadow-none active:tranamber-x-1 active:tranamber-y-1 flex items-center gap-2">
+                                                <span className="material-symbols-outlined">login</span> 立即登入解鎖鑽石
                                             </button>
                                         </div>
                                     ) : hasClaimed ? (
-                                        <p className="font-bold text-emerald-600 text-lg">✅ 你已成功領取此篇的閱讀獎勵！</p>
+                                        <p className="font-bold text-emerald-600 text-lg flex items-center justify-center gap-2"><span className="material-symbols-outlined">check_circle</span> 你已成功領取此篇的閱讀獎勵！</p>
                                     ) : (
                                         <>
                                             <p className="text-sm font-bold text-amber-700 dark:text-amber-500 mb-4">感謝你的閱讀！點擊下方按鈕領取獎勵鑽石。</p>
                                             <button 
                                                 onClick={claimReward} 
                                                 disabled={isClaiming} 
-                                                className={`bg-amber-400 hover:bg-amber-500 text-stone-800 font-black px-8 py-3 shadow-xl active:shadow-none active:tranamber-x-1 active:tranamber-y-1 transition-all ${isClaiming ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                className={`bg-amber-400 hover:bg-amber-500 text-stone-800 font-black px-8 py-3 shadow-xl active:shadow-none active:tranamber-x-1 active:tranamber-y-1 transition-all flex items-center justify-center gap-2 mx-auto ${isClaiming ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
-                                                {isClaiming ? '處理中...' : (viewingNews.rewardType === 'fixed' ? `💎 立即領取 ${viewingNews.rewardVal1} 鑽石` : '🧧 抽取隨機鑽石紅包')}
+                                                {isClaiming ? '處理中...' : (viewingNews.rewardType === 'fixed' ? <><span className="material-symbols-outlined">diamond</span> 立即領取 {viewingNews.rewardVal1} 鑽石</> : <><span className="material-symbols-outlined">redeem</span> 抽取隨機鑽石紅包</>)}
                                             </button>
                                         </>
                                     )}
                                 </div>
                             )}
 
-                            {/* 按讚與留言 */}
                             <div className="border-t-2 border-stone-200 dark:border-stone-700 pt-6">
                                 <div className="flex items-center gap-4 mb-6">
-                                    <button onClick={toggleLike} className={`font-black px-6 py-2 border-2 transition-colors ${viewingNews.likes?.includes(user?.uid) ? 'bg-stone-600100 border-stone-600500 text-stone-600700' : 'bg-stone-50 dark:bg-stone-800 border-gray-300 dark:border-gray-600 hover:bg-stone-100 dark:hover:bg-gray-700 dark:text-white'}`}>
-                                        {viewingNews.likes?.includes(user?.uid) ? '❤️ 已按讚' : '🤍 給個讚'} ({viewingNews.likes?.length || 0})
+                                    <button onClick={toggleLike} className={`font-black px-6 py-2 border-2 transition-colors flex items-center gap-2 ${viewingNews.likes?.includes(user?.uid) ? 'bg-stone-600100 border-stone-600500 text-stone-600700' : 'bg-stone-50 dark:bg-stone-800 border-gray-300 dark:border-gray-600 hover:bg-stone-100 dark:hover:bg-gray-700 dark:text-white'}`}>
+                                        <span className="material-symbols-outlined">{viewingNews.likes?.includes(user?.uid) ? 'favorite' : 'favorite_border'}</span> {viewingNews.likes?.includes(user?.uid) ? '已按讚' : '給個讚'} ({viewingNews.likes?.length || 0})
                                     </button>
                                 </div>
 
-                                <h4 className="font-black mb-4 dark:text-white text-lg">💬 讀者留言區</h4>
+                                <h4 className="font-black mb-4 dark:text-white text-lg flex items-center gap-2"><span className="material-symbols-outlined">forum</span> 讀者留言區</h4>
                                 <div className="space-y-3 mb-6">
                                     {newsComments.length === 0 ? <p className="text-sm text-gray-400 font-bold">還沒有人留言，來搶頭香吧！</p> : 
                                         newsComments.map(c => (
@@ -1179,9 +1141,9 @@ function NewspaperDashboard({ user, userProfile, showAlert, showConfirm, showPro
                                 ) : (
                                     <button 
                                         onClick={() => onRequireLogin && onRequireLogin()} 
-                                        className="w-full text-center font-bold text-gray-600 dark:text-gray-300 bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-gray-700 border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 transition-colors rounded-2xl"
+                                        className="w-full flex justify-center items-center gap-2 text-center font-bold text-gray-600 dark:text-gray-300 bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-gray-700 border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 transition-colors rounded-2xl"
                                     >
-                                        🔒 登入後即可參與留言討論，點此快速登入
+                                        <span className="material-symbols-outlined">lock</span> 登入後即可參與留言討論，點此快速登入
                                     </button>
                                 )}
                             </div>

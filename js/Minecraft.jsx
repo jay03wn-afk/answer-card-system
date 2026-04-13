@@ -2847,7 +2847,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         <button onClick={() => setShowMiniGame(true)} className="bg-amber-600 hover:bg-amber-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-amber-800 font-bold transition-colors whitespace-nowrap shadow-md">
                         🛻 礦車探險
                     </button>
-                    <button onClick={() => setShowVolleyball(true)} className="bg-stone-600600 hover:bg-rose-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-stone-600800 font-bold transition-colors whitespace-nowrap shadow-md">
+                    <button onClick={() => setShowVolleyball(true)} className="bg-stone-600 hover:bg-rose-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-stone-600800 font-bold transition-colors whitespace-nowrap shadow-md">
                         🏐 史萊姆排球
                     </button>
                 </div>
@@ -4080,7 +4080,7 @@ function SandboxGame({ user, userProfile, mcData, updateMcData, showAlert, onQui
                                                     <button onClick={() => handleInboxAction(item, 'open')} className="bg-emerald-600 text-white px-2 py-1 text-xs font-bold rounded">打開</button>
                                                 )}
                                                 {item.type === 'poppy' && (
-                                                    <button onClick={() => handleInboxAction(item, 'claim')} className="bg-stone-600600 text-white px-2 py-1 text-xs font-bold rounded">領3💎</button>
+                                                    <button onClick={() => handleInboxAction(item, 'claim')} className="bg-stone-600 text-white px-2 py-1 text-xs font-bold rounded">領3💎</button>
                                                 )}
                                                 <button onClick={() => handleInboxAction(item, 'delete')} className="bg-red-600 text-white px-2 py-1 text-xs font-bold rounded">丟棄</button>
                                             </div>

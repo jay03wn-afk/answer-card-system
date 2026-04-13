@@ -122,7 +122,7 @@ function ExamProgressDashboard({ examFeatures, user }) {
             <div className="bg-[#FCFBF7] dark:bg-stone-800 rounded-2xl p-6 shadow-sm border border-cyan-100 dark:border-stone-700 relative overflow-hidden">
                 <div className="absolute bottom-0 right-0 w-32 h-32 bg-cyan-50/50 dark:bg-cyan-900/20 rounded-tl-full -z-10"></div>
                 <div className="flex items-center gap-2 text-amber-700 dark:text-gray-200 mb-2">
-                    <span className="text-2xl">🎯</span>
+                    <span className="material-symbols-outlined text-2xl">donut_large</span>
                     <h2 className="text-xl font-bold">國考備戰總完成度</h2>
                 </div>
                 <div className="text-4xl font-black text-cyan-600 dark:text-cyan-400 mb-4">
@@ -613,12 +613,14 @@ function Main() {
                 {user && (
                     <div className="flex items-center space-x-3 md:space-x-4">
                         <ExamCountdown />
-                        <button onClick={handleShareSite} className="text-xl hover:scale-110 transition-transform" title="分享網站給好友">🔗</button>
-                        <button onClick={() => setIsDark(!isDark)} className="text-xl hover:scale-110 transition-transform" title="切換日/夜間模式">
-                            {isDark ? '☀️' : '🌙'}
+                        <button onClick={handleShareSite} className="text-xl hover:scale-110 transition-transform text-stone-300 hover:text-white flex items-center" title="分享網站給好友">
+                            <span className="material-symbols-outlined text-[22px]">link</span>
+                        </button>
+                        <button onClick={() => setIsDark(!isDark)} className="text-xl hover:scale-110 transition-transform text-stone-300 hover:text-white flex items-center" title="切換日/夜間模式">
+                            <span className="material-symbols-outlined text-[22px]">{isDark ? 'light_mode' : 'dark_mode'}</span>
                         </button>
                         <div className="w-8 h-8 bg-gray-700 rounded-2xl overflow-hidden border border-gray-600">
-                            {userProfile.avatar ? <img src={userProfile.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-xs">👤</div>}
+                            {userProfile.avatar ? <img src={userProfile.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-stone-300"><span className="material-symbols-outlined text-[18px]">person</span></div>}
                         </div>
                     </div>
                 )}
@@ -642,20 +644,17 @@ function Main() {
                                 </button>
                             </div>
                 <div className="flex-1 overflow-y-auto py-2 flex flex-col custom-scrollbar">
-                    <button onClick={() => handleTabClick('newspaper')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'newspaper' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}>📰 JJay日報</button>
-                    <button onClick={() => handleTabClick('dashboard')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'dashboard' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}>📚 我的題庫</button>
-                    <button onClick={() => handleTabClick('taskwall')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'taskwall' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}>🎯 任務牆</button>
-                    <button onClick={() => handleTabClick('wrongbook')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'wrongbook' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}>📓 錯題整理</button>
-                    <button onClick={() => handleTabClick('social')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'social' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}>💬 社群交流</button>
-                    <button onClick={() => handleTabClick('minecraft')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'minecraft' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}>⛏️ 史蒂夫養成</button>
+                    <button onClick={() => handleTabClick('newspaper')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'newspaper' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">newspaper</span> JJay日報</button>
+                    <button onClick={() => handleTabClick('dashboard')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'dashboard' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">library_books</span> 我的題庫</button>
+                    <button onClick={() => handleTabClick('taskwall')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'taskwall' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">task_alt</span> 任務牆</button>
+                    <button onClick={() => handleTabClick('wrongbook')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'wrongbook' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">menu_book</span> 錯題整理</button>
+                    <button onClick={() => handleTabClick('social')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'social' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">forum</span> 社群交流</button>
+                    <button onClick={() => handleTabClick('minecraft')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'minecraft' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">sports_esports</span> 史蒂夫養成</button>
                     
                     {/* ✨ 新增的國考進度追蹤 */}
-                    <button onClick={() => handleTabClick('examProgress')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'examProgress' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}>📈 國考戰況追蹤</button>
+                    <button onClick={() => handleTabClick('examProgress')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'examProgress' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">trending_up</span> 國考戰況追蹤</button>
                     
-                    <button onClick={() => handleTabClick('profile')} className={`text-left px-6 py-4 font-bold transition-colors ${activeTab === 'profile' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}>👤 個人檔案</button>
-                </div>
-                <div className="p-4 border-t dark:border-stone-700">
-                    <button onClick={() => window.auth.signOut()} className="w-full py-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-bold rounded hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors">登出</button>
+                    <button onClick={() => handleTabClick('profile')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'profile' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">person</span> 個人檔案</button>
                 </div>
             </div>
         </>
@@ -783,8 +782,8 @@ function Main() {
             <style dangerouslySetInnerHTML={{__html: `
                 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Quicksand:wght@400;500;600;700&display=swap');
 
-                /* 強制套用到所有元素 */
-                *, body, button, input, textarea, select {
+                /* 強制套用到所有元素，但排除圖示類別以免失效 */
+                *:not(.material-symbols-outlined), body, button, input, textarea, select {
                     font-family: 'Quicksand', 'Noto Sans TC', sans-serif !important;
                     -webkit-font-smoothing: antialiased;
                     -moz-osx-font-smoothing: grayscale;

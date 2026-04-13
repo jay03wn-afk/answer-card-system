@@ -5,7 +5,7 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
     const [folder, setFolder] = useState(initialData?.folder || '未分類');
     const [newFolder, setNewFolder] = useState('');
     const [qText, setQText] = useState(initialData?.qText || '');
-    const [qHtml] = useState(initialData?.qHtml || ''); // ✨ 新增：富文本唯讀狀態
+    const [qHtml] = useState(initialData?.qHtml || ''); 
     const [qImage, setQImage] = useState(initialData?.qImage || null);
     const [nText, setNText] = useState(initialData?.nText || '');
     const [nImage, setNImage] = useState(initialData?.nImage || null);
@@ -14,7 +14,6 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
     const handleSave = async () => {
         const finalFolder = (folder === '新增資料夾' ? newFolder.trim() : folder) || '未分類';
         setIsSaving(true);
-        // ✨ 修改：儲存時一併帶上 qHtml
         await onSave({ folder: finalFolder, qText: qText.trim(), qHtml, qImage, nText: nText.trim(), nImage });
         setIsSaving(false);
     };
@@ -24,11 +23,11 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
             <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-lg rounded-2xl shadow-2xl transform transition-all max-h-[90dvh] overflow-y-auto custom-scrollbar border-t-4 border-black dark:border-gray-500">
                 <h3 className="font-black text-xl mb-4 flex justify-between items-center dark:text-white border-b border-stone-200 dark:border-stone-700 pb-2">
                     <span>{title}</span>
-                    <button onClick={onClose} className="text-gray-400 hover:text-red-500 font-bold transition-colors">✖</button>
+                    <button onClick={onClose} className="text-gray-400 hover:text-red-500 font-bold transition-colors flex items-center"><span className="material-symbols-outlined">close</span></button>
                 </h3>
                 
                 <div className="mb-4">
-                    <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">📁 選擇資料夾</label>
+                    <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">folder</span> 選擇資料夾</label>
                     <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none text-sm mb-2">
                         {initialData?.userFolders && initialData.userFolders.map(f => <option key={f} value={f}>{f}</option>)}
                         {!initialData?.userFolders?.includes('未分類') && <option value="未分類">未分類</option>}
@@ -39,15 +38,13 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
                     )}
                 </div>
 
-               {/* ✨ 智慧判斷：如果有富文本，就顯示唯讀排版；如果沒有，就維持舊版的純文字編輯器 */}
                 {qHtml ? (
                     <div className="mb-4">
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">📝 題目內容 (系統自動擷取，原稿保護中不可編輯)</label>
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">description</span> 題目內容 (系統自動擷取，原稿保護中不可編輯)</label>
                         <div className="border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-stone-900 p-3 max-h-48 overflow-y-auto custom-scrollbar rounded-2xl shadow-inner">
                             <style dangerouslySetInnerHTML={{__html: `
                                 .modal-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.875rem; line-height: 1.6; }
                                 .modal-rich-text * { color: inherit !important; background-color: transparent !important; }
-                                /* ✨ 修復：強制富文本內的圖片與畫布保持正常比例與白底，避免縮小 */
                                 .modal-rich-text img {
                                     display: block !important;
                                     max-width: 100% !important;
@@ -66,15 +63,15 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
                         </div>
                     </div>
                 ) : (
-                    <RichInput label="📝 題目內容" text={qText} setText={setQText} image={qImage} setImage={setQImage} maxLength={300} showAlert={showAlert} />
+                    <RichInput label={<span className="flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">description</span> 題目內容</span>} text={qText} setText={setQText} image={qImage} setImage={setQImage} maxLength={300} showAlert={showAlert} />
                 )}
                 
-                <RichInput label="💡 我的筆記 / 詳解" text={nText} setText={setNText} image={nImage} setImage={setNImage} maxLength={300} showAlert={showAlert} />
+                <RichInput label={<span className="flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">lightbulb</span> 我的筆記 / 詳解</span>} text={nText} setText={setNText} image={nImage} setImage={setNImage} maxLength={300} showAlert={showAlert} />
                 
                 <div className="flex justify-end space-x-3 mt-6 border-t border-gray-100 dark:border-stone-700 pt-4">
                     <button onClick={onClose} className="bg-stone-50 dark:bg-gray-700 text-gray-600 dark:text-gray-200 px-6 py-2 rounded-2xl font-bold text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors">取消</button>
-                    <button onClick={handleSave} disabled={isSaving} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-8 py-2 rounded-2xl font-black text-sm hover:bg-stone-800 dark:hover:bg-gray-300 transition-colors shadow-md">
-                        {isSaving ? '儲存中...' : '💾 儲存'}
+                    <button onClick={handleSave} disabled={isSaving} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-8 py-2 rounded-2xl font-black text-sm hover:bg-stone-800 dark:hover:bg-gray-300 transition-colors shadow-md flex items-center gap-1">
+                        {isSaving ? '儲存中...' : <><span className="material-symbols-outlined text-[18px]">save</span> 儲存</>}
                     </button>
                 </div>
             </div>
@@ -131,13 +128,11 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
 
     const displayedItems = filteredItems.slice(0, visibleLimit);
 
-    // ✨ 新增：自動過濾 [Q.1] 與 [End] 標籤的工具函數，讓畫面保持乾淨
     const formatDisplayText = (text) => {
         if (!text) return '';
         return text.replace(/\[Q\.\d+\]/gi, '').replace(/\[A\.\d+\]/gi, '').replace(/\[End\]/gi, '').trim();
     };
 
-    // 極速背景同步機制
     useEffect(() => {
         if (displayedItems.length === 0) return;
         
@@ -193,7 +188,6 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
         });
     };
 
-    // ✨ 新增：刪除錯題資料夾功能
     const handleDeleteWrongBookFolder = () => {
         if (currentFolder === '全部' || currentFolder === '未分類') return;
         showConfirm(`確定要刪除「${currentFolder}」資料夾嗎？\n裡面的錯題將會自動移至「未分類」。`, async () => {
@@ -208,7 +202,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     snapshot.docs.forEach(doc => {
                         currentBatch.update(doc.ref, { folder: '未分類' });
                         count++;
-                        if (count === 490) { // Firebase batch 上限 500
+                        if (count === 490) { 
                             batches.push(currentBatch.commit());
                             currentBatch = window.db.batch();
                             count = 0;
@@ -223,14 +217,13 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 }, { merge: true });
                 
                 setCurrentFolder('全部');
-                showAlert(`✅ 已刪除「${currentFolder}」資料夾！`);
+                showAlert(`[成功] 已刪除「${currentFolder}」資料夾！`);
             } catch (err) {
-                showAlert('刪除失敗：' + err.message);
+                showAlert('[錯誤] 刪除失敗：' + err.message);
             }
         });
     };
 
-    // ✨ 新增：一鍵清空錯題功能
     const handleClearWrongBookFolder = () => {
         showConfirm(`確定要清空「${currentFolder}」內的所有錯題嗎？\n此動作無法復原！`, async () => {
             try {
@@ -240,7 +233,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 }
                 
                 const snapshot = await query.get();
-                if (snapshot.empty) return showAlert(`「${currentFolder}」內已經沒有錯題了！`);
+                if (snapshot.empty) return showAlert(`[提示] 「${currentFolder}」內已經沒有錯題了！`);
 
                 const batches = [];
                 let currentBatch = window.db.batch();
@@ -258,9 +251,9 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 if (count > 0) batches.push(currentBatch.commit());
                 await Promise.all(batches);
                 
-                showAlert(`✅ 已成功清空「${currentFolder}」的所有錯題！`);
+                showAlert(`[成功] 已成功清空「${currentFolder}」的所有錯題！`);
             } catch (err) {
-                showAlert('清空失敗：' + err.message);
+                showAlert('[錯誤] 清空失敗：' + err.message);
             }
         });
     };
@@ -278,11 +271,11 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     onContinueQuiz({ id: doc.id, ...data, forceStep: 'results' });
                 }, 50);
             } else {
-                showAlert('❌ 找不到原始試卷，可能已被刪除！');
+                showAlert('[錯誤] 找不到原始試卷，可能已被刪除！');
                 setIsJumping(false);
             }
         } catch(e) {
-            showAlert('❌ 載入失敗：' + e.message);
+            showAlert('[錯誤] 載入失敗：' + e.message);
             setIsJumping(false);
         }
     };
@@ -299,7 +292,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
             
             if (snapshot.empty) {
                 setIsJumping(false);
-                return showAlert("此分類目前沒有錯題可供測驗喔！");
+                return showAlert("[提示] 此分類目前沒有錯題可供測驗喔！");
             }
 
             let allWrongItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -322,7 +315,6 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                         const qNum = index + 1;
                         let qContent = item.qHtml ? item.qHtml : (item.qText || '無題目文字');
                         
-                        // ✨ 修正：生成試卷前，先剝除可能殘留的舊 [Q.1] [End] 標籤，防止重複包裝導致解析錯誤
                         let cleanQContent = qContent.replace(/\[Q\.\d+\]/gi, '').replace(/\[End\]/gi, '').trim();
                         if (item.qImage) {
                             cleanQContent += `<br/><br/><img src="${item.qImage}" style="max-width:100%; border-radius:8px;" />`;
@@ -367,12 +359,12 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     onContinueQuiz({ id: docSnap.id, ...docSnap.data(), forceStep: 'answering' });
 
                 } catch (e) {
-                    showAlert('生成錯題重測失敗：' + e.message);
+                    showAlert('[錯誤] 生成錯題重測失敗：' + e.message);
                     setIsJumping(false);
                 }
             });
         } catch (e) {
-            showAlert('讀取題庫失敗：' + e.message);
+            showAlert('[錯誤] 讀取題庫失敗：' + e.message);
             setIsJumping(false);
         }
     };
@@ -380,36 +372,34 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     return (
         <div className="max-w-[1600px] w-full mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 shrink-0">
-                <h1 className="text-2xl font-black dark:text-white flex items-center">
-                    📓 錯題整理
+                <h1 className="text-2xl font-black dark:text-white flex items-center gap-2">
+                    <span className="material-symbols-outlined text-3xl">menu_book</span>
+                    錯題整理
                 </h1>
                 <p className="text-sm font-bold text-gray-500 dark:text-gray-400">專屬你的弱點突破筆記本</p>
             </div>
 
-            {/* ✨ 修正：將原本的 overflow-x-auto 改成 flex-wrap，解決手機版按鈕超出畫面的問題 */}
             <div className="flex flex-col mb-6 gap-3 shrink-0 w-full">
-                {/* 第一排：資料夾選擇 */}
                 <div className="flex flex-wrap items-center gap-2 pb-1">
                     {folders.map(f => (
-                        <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm rounded-2xl transition-colors ${currentFolder === f ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md' : 'bg-[#FCFBF7] dark:bg-stone-800 text-gray-600 dark:text-gray-300 hover:bg-stone-50 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600'}`}>
-                            {f === '全部' ? '🔍 ' : '📁 '} {f}
+                        <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm rounded-2xl transition-colors flex items-center gap-1 ${currentFolder === f ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md' : 'bg-[#FCFBF7] dark:bg-stone-800 text-gray-600 dark:text-gray-300 hover:bg-stone-50 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600'}`}>
+                            <span className="material-symbols-outlined text-[16px]">{f === '全部' ? 'search' : 'folder'}</span> {f}
                         </button>
                     ))}
                 </div>
                 
-                {/* 第二排：功能操作按鈕 */}
                 <div className="flex flex-wrap items-center gap-2 pb-1 border-t border-stone-200 dark:border-stone-700 pt-3 mt-1">
                    <button 
                         onClick={handleRetakeWrong}
-                        className="px-3 py-1.5 text-sm font-bold bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/50 rounded-2xl transition-colors"
+                        className="px-3 py-1.5 text-sm font-bold bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/50 rounded-2xl transition-colors flex items-center gap-1"
                     >
-                        📝 錯題重測 (全部)
+                        <span className="material-symbols-outlined text-[18px]">quiz</span> 錯題重測 (全部)
                     </button>
                     <button 
                        onClick={handleRetakeWrong}
-                        className="px-3 py-1.5 text-sm font-bold bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/50 rounded-2xl transition-colors"
+                        className="px-3 py-1.5 text-sm font-bold bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/50 rounded-2xl transition-colors flex items-center gap-1"
                     >
-                        📝 錯題重測 ({filteredItems.length}題)
+                        <span className="material-symbols-outlined text-[18px]">quiz</span> 錯題重測 ({filteredItems.length}題)
                     </button>
                     <button 
                         onClick={() => {
@@ -420,33 +410,33 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                         wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(cleanName)
                                     }, { merge: true }).then(() => {
                                         setCurrentFolder(cleanName);
-                                        showAlert(`✅ 已成功建立錯題資料夾「${cleanName}」！`);
+                                        showAlert(`[成功] 已成功建立錯題資料夾「${cleanName}」！`);
                                     });
                                 } else if (folders.includes(cleanName)) {
-                                    showAlert('❌ 資料夾已存在！');
+                                    showAlert('[錯誤] 資料夾已存在！');
                                 }
                             });
                         }} 
-                        className="px-3 py-1.5 text-sm font-bold bg-[#FCFBF7] dark:bg-stone-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-2xl transition-colors"
+                        className="px-3 py-1.5 text-sm font-bold bg-[#FCFBF7] dark:bg-stone-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-2xl transition-colors flex items-center gap-1"
                     >
-                        + 新增錯題資料夾
+                        <span className="material-symbols-outlined text-[18px]">create_new_folder</span> 新增錯題資料夾
                     </button>
 
                     {currentFolder !== '全部' && (
                         <button 
                             onClick={handleClearWrongBookFolder} 
-                            className="px-3 py-1.5 text-sm font-bold bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800/50 rounded-2xl transition-colors"
+                            className="px-3 py-1.5 text-sm font-bold bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800/50 rounded-2xl transition-colors flex items-center gap-1"
                         >
-                            🧹 清空分類
+                            <span className="material-symbols-outlined text-[18px]">mop</span> 清空分類
                         </button>
                     )}
                     
                     {currentFolder !== '全部' && currentFolder !== '未分類' && (
                         <button 
                             onClick={handleDeleteWrongBookFolder} 
-                            className="px-3 py-1.5 text-sm font-bold bg-stone-50 dark:bg-stone-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-700 rounded-2xl transition-colors"
+                            className="px-3 py-1.5 text-sm font-bold bg-stone-50 dark:bg-stone-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-700 rounded-2xl transition-colors flex items-center gap-1"
                         >
-                            🗑️ 刪除資料夾
+                            <span className="material-symbols-outlined text-[18px]">delete</span> 刪除資料夾
                         </button>
                     )}
                 </div>
@@ -455,22 +445,23 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
            {loading && wrongItems.length === 0 ? <LoadingSpinner text="載入錯題中..." /> : 
              filteredItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 px-4 bg-[#FCFBF7] dark:bg-stone-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl text-center shadow-sm">
-                    <div className="text-6xl mb-4">📓</div>
+                    <div className="text-gray-400 mb-4"><span className="material-symbols-outlined" style={{ fontSize: '64px' }}>menu_book</span></div>
                     <h3 className="text-2xl font-black text-gray-800 dark:text-white mb-2">目前沒有錯題紀錄</h3>
                     <p className="text-gray-500 dark:text-gray-400 font-bold max-w-md leading-relaxed mt-2">
                         這是一件好事，代表你目前百發百中！<br/><br/>
-                        下次如果在測驗中遇到錯題，只要在「交卷後的解答檢視頁面」，點擊題目右下角的 <span className="bg-stone-50 dark:bg-gray-700 text-red-500 px-2 py-1 border border-stone-200 dark:border-gray-600 rounded-sm">📓 收錄錯題</span>，就可以把題目收藏到這裡隨時複習喔！
+                        下次如果在測驗中遇到錯題，只要在「交卷後的解答檢視頁面」，點擊題目右下角的 <span className="bg-stone-50 dark:bg-gray-700 text-red-500 px-2 py-1 border border-stone-200 dark:border-gray-600 rounded-sm inline-flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">bookmark_add</span> 收錄錯題</span>，就可以把題目收藏到這裡隨時複習喔！
                     </p>
                 </div>
              ) :
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-10">
                  {displayedItems.map(item => (
-<div key={item.id} className="bg-[#FCFBF7] dark:bg-stone-800 p-6 border border-stone-100 dark:border-stone-700 shadow-sm relative rounded-3xl hover:shadow-2xl hover:-tranamber-y-1 transition-all">                         <button onClick={() => handleDelete(item.id)} className="absolute top-4 right-4 text-stone-400 hover:text-red-500 font-bold z-10 transition-colors">✖</button>
+                    <div key={item.id} className="bg-[#FCFBF7] dark:bg-stone-800 p-6 border border-stone-100 dark:border-stone-700 shadow-sm relative rounded-3xl hover:shadow-2xl hover:-tranamber-y-1 transition-all">                         
+                        <button onClick={() => handleDelete(item.id)} className="absolute top-4 right-4 text-stone-400 hover:text-red-500 font-bold z-10 transition-colors flex items-center"><span className="material-symbols-outlined">close</span></button>
                          <div className="text-xs text-amber-600 dark:text-amber-400 font-bold mb-2 pr-6 flex items-center justify-between">
                             <span className="truncate">出自: {cleanQuizName(item.quizName)} - 第 {item.questionNum} 題</span>
                             {item.quizId && (
-                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleGoToQuiz(item.quizId); }} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline shrink-0 ml-2">
-                                    🔗 檢視試題
+                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleGoToQuiz(item.quizId); }} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline shrink-0 ml-2 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[16px]">link</span> 檢視試題
                                 </button>
                             )}
                          </div>
@@ -481,7 +472,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                          
                          {(item.qHtml || item.qText || item.qImage) && (
                              <div className="mb-3">
-                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">📝 題目</p>
+                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">description</span> 題目</p>
                                  <div className="bg-[#FCFBF7] dark:bg-stone-900 p-3 text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap border-l-4 border-amber-500 font-bold shadow-sm">
                                      {item.qHtml ? (
                                          <>
@@ -502,11 +493,9 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                                      background-color: #FCFBF7 !important;
                                                  }
                                              `}} />
-                                             {/* ✨ 修正：顯示富文本時自動過濾掉多餘的 [Q.1] 標籤 */}
                                              <div className="wb-rich-text" dangerouslySetInnerHTML={{ __html: formatDisplayText(parseSmilesToHtml(item.qHtml)) }} />
                                          </>
                                      ) : (
-                                         /* ✨ 修正：顯示純文字時自動過濾掉多餘的 [Q.1] 標籤 */
                                          item.qText && <p>{formatDisplayText(item.qText)}</p>
                                      )}
                                      {item.qImage && <img src={item.qImage} onClick={() => setPreviewImage(item.qImage)} className="mt-2 max-h-[300px] w-full object-contain border border-stone-200 dark:border-stone-700 cursor-pointer hover:opacity-80 transition-opacity bg-[#FCFBF7]" alt="題目附圖" title="點擊放大" />}
@@ -516,9 +505,8 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
 
                          {(item.nText || item.note || item.nImage) && (
                              <div className="mb-3">
-                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">💡 筆記</p>
+                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">lightbulb</span> 筆記</p>
                                  <div className="bg-amber-50 dark:bg-stone-900 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap border-l-4 border-amber-400 font-bold">
-                                     {/* ✨ 修正：顯示筆記純文字時自動過濾掉多餘的 [A.1] 標籤 */}
                                      {(item.nText || item.note) && <p>{formatDisplayText(item.nText || item.note)}</p>}
                                     {item.nImage && <img src={item.nImage} onClick={() => setPreviewImage(item.nImage)} className="mt-2 max-h-[300px] w-full object-contain border border-stone-200 dark:border-stone-700 cursor-pointer hover:opacity-80 transition-opacity bg-[#FCFBF7]" alt="筆記附圖" title="點擊放大" />}
                                  </div>
@@ -527,13 +515,13 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
 
                          <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-100 dark:border-stone-700">
                              <div className="flex items-center gap-1">
-                                 <span className="text-[10px] text-gray-400 font-bold">📁</span>
+                                 <span className="material-symbols-outlined text-[16px] text-gray-400">folder</span>
                                  <select 
                                      value={item.folder || '未分類'} 
                                      onChange={(e) => {
                                          window.db.collection('users').doc(user.uid).collection('wrongBook').doc(item.id).update({
                                              folder: e.target.value
-                                         }).then(() => showAlert('✅ 分類已更新！'));
+                                         }).then(() => showAlert('[成功] 分類已更新！'));
                                      }}
                                      className="text-[10px] text-gray-600 dark:text-gray-300 font-bold px-1 py-0.5 bg-stone-50 dark:bg-gray-700 border border-stone-200 dark:border-gray-600 outline-none cursor-pointer"
                                  >
@@ -542,7 +530,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                      ))}
                                  </select>
                              </div>
-                             <button onClick={() => setEditingItem(item)} className="text-xs font-bold text-gray-500 hover:text-stone-800 dark:hover:text-white transition-colors">✏️ 編輯內容</button>
+                             <button onClick={() => setEditingItem(item)} className="text-xs font-bold text-gray-500 hover:text-stone-800 dark:hover:text-white transition-colors flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">edit</span> 編輯內容</button>
                          </div>
                      </div>
                  ))}
@@ -555,7 +543,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                         onClick={() => setVisibleLimit(prev => prev + 20)} 
                         className="bg-[#FCFBF7] dark:bg-stone-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 px-6 py-2 font-bold shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
                     >
-                        {isSyncingWb ? <><div className="w-4 h-4 border-2 border-gray-400 border-t-black dark:border-t-white rounded-full animate-spin"></div>同步最新解答中...</> : '⬇️ 載入更多錯題...'}
+                        {isSyncingWb ? <><div className="w-4 h-4 border-2 border-gray-400 border-t-black dark:border-t-white rounded-full animate-spin"></div>同步最新解答中...</> : <><span className="material-symbols-outlined text-[18px]">arrow_downward</span> 載入更多錯題...</>}
                     </button>
                 </div>
             )}
@@ -563,7 +551,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
             {previewImage && (
                 <div className="fixed inset-0 bg-stone-800/80 flex items-center justify-center z-[110] p-4 cursor-zoom-out" onClick={() => setPreviewImage(null)}>
                     <img src={previewImage} className="max-w-full max-h-[90vh] object-contain shadow-2xl" alt="放大預覽" />
-                    <button className="absolute top-4 right-4 text-white text-3xl font-bold bg-stone-800/50 w-12 h-12 rounded-full flex items-center justify-center hover:bg-stone-800/80">✖</button>
+                    <button className="absolute top-4 right-4 text-white text-3xl font-bold bg-stone-800/50 w-12 h-12 rounded-full flex items-center justify-center hover:bg-stone-800/80 flex items-center"><span className="material-symbols-outlined">close</span></button>
                 </div>
             )}
 
@@ -571,7 +559,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                 <div className="fixed inset-0 bg-stone-800 bg-opacity-80 flex items-center justify-center z-[200] p-4">
                     <div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-sm rounded-2xl shadow-2xl text-center border-t-8 border-indigo-500 animate-fade-in">
                         <div className="w-16 h-16 border-4 border-stone-200 dark:border-stone-700 border-t-indigo-500 rounded-full animate-spin mx-auto mb-6"></div>
-                        <h3 className="text-xl font-black mb-2 dark:text-white">🚀 正在載入試卷...</h3>
+                        <h3 className="text-xl font-black mb-2 dark:text-white flex justify-center items-center gap-2"><span className="material-symbols-outlined text-[28px]">rocket_launch</span> 正在載入試卷...</h3>
                         <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">正在為您從雲端抓取資料並解壓縮，請稍候</p>
                     </div>
                 </div>
@@ -605,7 +593,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                                  wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
                              }, { merge: true });
                         }
-                        showAlert('✅ 修改成功！');
+                        showAlert('[成功] 修改成功！');
                         setEditingItem(null);
                     }}
                     showAlert={showAlert}
