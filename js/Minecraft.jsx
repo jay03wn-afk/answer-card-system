@@ -8,6 +8,9 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
     const [score, setScore] = useState({ player: 0, opponent: 0 });
     const [pointMessage, _setPointMessage] = useState('');
     const pointMsgRef = useRef('');
+    const [gameMode, setGameMode] = useState('casual'); // ✨ 排位模式狀態
+    const [rankedStats, setRankedStats] = useState({ sets: [], startTime: 0, totalScore: 0 }); 
+    const [rankedLeaderboard, setRankedLeaderboard] = useState([]);
 
     // ✨ 修復：攔截並同步文字，讓 Host 隨時能拿到最新文字廣播出去
     const setPointMessage = (msg) => {
@@ -70,6 +73,21 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
         images.current.villager.src = "https://minotar.net/helm/Villager/64.png";
         images.current.slime.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/slime_ball.png";
+        images.current.magma_slime = new Image(); images.current.magma_slime.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/magma_cream.png"; // ✨ 熔岩史萊姆球
+        images.current.netherrack = new Image(); images.current.netherrack.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/netherrack.png"; // ✨ 地獄地板
+        images.current.magma = new Image(); images.current.magma.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/magma.png"; // ✨ 地獄岩漿底
+        
+        // ✨ 讀取排位排行榜
+        if (user) {
+            window.db.collection('system').doc('volleyball_ranked').get().then(doc => {
+                if (doc.exists) {
+                    const ranks = Object.entries(doc.data().scores || {})
+                        .map(([uid, info]) => ({ uid, ...info }))
+                        .sort((a, b) => b.score - a.score).slice(0, 5);
+                    setRankedLeaderboard(ranks);
+                }
+            });
+        }
 
         preloadFastSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/slime/attack1.ogg');
         preloadFastSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/levelup.ogg');
@@ -238,16 +256,28 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         setPointMessage('');
     };
 
-    const startGame = (mode = netModeRef.current) => {
+    const startGame = (mode = netModeRef.current, isRanked = false) => {
         if (mcData.hunger < 1) {
             showAlert("🍖 史蒂夫太餓了！請先去商店吃點東西再來打排球！");
             return;
         }
         updateMcData({ hunger: mcData.hunger - 1 }, true); // 無論連線或單機皆扣飽食度
         
+        setGameMode(isRanked ? 'ranked' : 'casual');
+        gameRef.current.mode = isRanked ? 'ranked' : 'casual';
+        // ✨ 修復：玩家高度固定不變 (維持 320)，僅地獄模式的「球落地判定點」降低
+        gameRef.current.groundY = 320; 
+        gameRef.current.ballGroundY = isRanked ? 320 + 15 : 320;
+        if (isRanked) {
+            gameRef.current.currentSet = 1;
+            gameRef.current.setWins = { p: 0, o: 0 };
+            gameRef.current.setsRecord = [];
+            gameRef.current.rankedStartTime = Date.now();
+        }
+
         setGameState('playing');
         setScore({ player: 0, opponent: 0 });
-        setPointMessage('');
+        setPointMessage(isRanked ? '🔥 排位模式：連打三局！' : '');
         gameRef.current.score = { p: 0, o: 0 };
         gameRef.current.serving = 'player';
         gameRef.current.player.stamina = 100;
@@ -517,6 +547,41 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 }
             }
 
+           // ✨ 通用得分與判定邏輯 (加入 Deuce 與排位局數制)
+            const handleScoreCheck = () => {
+                const p = state.score.p;
+                const o = state.score.o;
+                const isRanked = state.mode === 'ranked';
+                
+                // ✨ Deuce 判斷：必須先到 10 分，且贏 2 分以上
+                if ((p >= 10 && p - o >= 2) || (o >= 10 && o - p >= 2)) {
+                    if (isRanked) {
+                        state.setsRecord.push({ p, o });
+                        if (p > o) state.setWins.p += 1; else state.setWins.o += 1;
+                        
+                        if (state.currentSet < 3) { // 連打 3 局
+                            state.currentSet += 1;
+                            setPointMessage(`🏁 局數結束！目前史蒂夫 ${state.setWins.p} : 村民 ${state.setWins.o}`);
+                            setTimeout(() => {
+                                state.score = { p: 0, o: 0 };
+                                setScore({ player: 0, opponent: 0 });
+                                resetPositions();
+                                setPointMessage(`🔥 第 ${state.currentSet} 局 開始！`);
+                                // ✨ 2秒後自動清空訊息，不殘留在畫面上
+                                setTimeout(() => setPointMessage(''), 2000);
+                            }, 2000);
+                        } else {
+                            setTimeout(() => endGame(false, true), 500); 
+                        }
+                    } else {
+                        setTimeout(() => endGame(), 500);
+                    }
+                } else {
+                    if (p >= 9 && o >= 9 && p === o) setTimeout(() => setPointMessage('🔥 DEUCE！必須贏兩分！'), 1000);
+                    setTimeout(() => resetPositions(), 800);
+                }
+            };
+
            const checkHit = (p, isPlayer) => {
                 let now = performance.now();
                 let lastHit = isPlayer ? state.lastHitTime.p : state.lastHitTime.o;
@@ -591,8 +656,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                             triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/no1.ogg');
                             setScore({ player: state.score.p, opponent: state.score.o });
                             setPointMessage(`❌ 左側連擊 4 次犯規！右側得分！`);
-                            if (state.score.o >= 10) setTimeout(() => endGame(), 500);
-                            else setTimeout(() => resetPositions(), 800);
+                            handleScoreCheck();
                             return;
                         }
                     } else {
@@ -604,8 +668,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                             triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/levelup.ogg');
                             setScore({ player: state.score.p, opponent: state.score.o });
                             setPointMessage(`❌ 右側連擊 4 次犯規！左側得分！`);
-                            if (state.score.p >= 10) setTimeout(() => endGame(), 500);
-                            else setTimeout(() => resetPositions(), 800);
+                            handleScoreCheck();
                             return;
                         }
                     }
@@ -648,7 +711,9 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             if (!state.isPointOver) checkHit(state.player, true);
             if (!state.isPointOver) checkHit(state.opponent, false);
 
-            if (!state.isPointOver && state.ball.y + state.ball.r > state.groundY) {
+            // ✨ 球落地判定改用獨立的 ballGroundY，完全不影響玩家高度
+            const currentBallGroundY = state.ballGroundY || state.groundY;
+            if (!state.isPointOver && state.ball.y + state.ball.r > currentBallGroundY) {
                 state.isPointOver = true;
                 if (state.ball.x < state.w / 2) {
                     state.score.o += 1; state.serving = 'opponent';
@@ -660,9 +725,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     setPointMessage(`👇 球落地了！${netModeRef.current === 'offline' ? '史蒂夫' : '左方'}得分！`);
                 }
                 setScore({ player: state.score.p, opponent: state.score.o });
-                
-                if (state.score.p >= 10 || state.score.o >= 10) setTimeout(() => endGame(), 500);
-                else setTimeout(() => resetPositions(), 800); 
+                handleScoreCheck();
             }
 
             // ✨ 每幀結束時，Host 把最新狀態廣播給 Guest
@@ -682,16 +745,31 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
         // ======================= 繪圖區域 (所有模式共用) =======================
         ctx.clearRect(0, 0, state.w, state.h);
-        ctx.fillStyle = '#87CEEB'; ctx.fillRect(0, 0, state.w, state.h);
-        ctx.fillStyle = '#4CAF50'; ctx.fillRect(0, state.groundY, state.w, state.h - state.groundY);
-        ctx.fillStyle = '#388E3C'; ctx.fillRect(0, state.groundY, state.w, 10);
-
-        ctx.fillStyle = '#D3D3D3'; ctx.fillRect(state.net.x, state.net.y, state.net.w, state.net.h);
-        ctx.strokeStyle = '#A9A9A9'; ctx.strokeRect(state.net.x, state.net.y, state.net.w, state.net.h);
-
+        
         const drawImageSafe = (img, x, y, w, h) => {
-            if(img.complete && img.naturalWidth > 0) ctx.drawImage(img, x, y, w, h);
+            if(img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, x, y, w, h);
         };
+
+       // ✨ 地獄場景：畫面視覺往下移，但玩家一樣站在原本的高度
+        const isRankedVisual = state.mode === 'ranked';
+        const visualGroundY = isRankedVisual ? state.groundY + 15 : state.groundY;
+
+        if (isRankedVisual) {
+            ctx.fillStyle = '#3a0000'; ctx.fillRect(0, 0, state.w, state.h);
+            for (let x = 0; x < state.w; x += 40) {
+                drawImageSafe(images.current.netherrack, x, visualGroundY, 40, 40);
+                drawImageSafe(images.current.magma, x, visualGroundY + 40, 40, state.h - visualGroundY - 40);
+            }
+        } else {
+            ctx.fillStyle = '#87CEEB'; ctx.fillRect(0, 0, state.w, state.h);
+            ctx.fillStyle = '#4CAF50'; ctx.fillRect(0, visualGroundY, state.w, state.h - visualGroundY);
+            ctx.fillStyle = '#388E3C'; ctx.fillRect(0, visualGroundY, state.w, 10);
+        }
+
+        ctx.fillStyle = isRankedVisual ? '#8B0000' : '#D3D3D3'; 
+        ctx.fillRect(state.net.x, isRankedVisual ? state.net.y + 15 : state.net.y, state.net.w, state.net.h);
+        ctx.strokeStyle = isRankedVisual ? '#FF4500' : '#A9A9A9'; 
+        ctx.strokeRect(state.net.x, isRankedVisual ? state.net.y + 15 : state.net.y, state.net.w, state.net.h);
 
         // ===== 畫對手 (村民/真人) 與技能特效 =====
         ctx.save();
@@ -813,7 +891,9 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         ctx.save();
         ctx.translate(state.ball.x, state.ball.y);
         ctx.rotate(state.ball.x * 0.05);
-        drawImageSafe(images.current.slime, -state.ball.r, -state.ball.r, state.ball.r*2, state.ball.r*2);
+        // ✨ 排位賽使用熔岩史萊姆球
+        const ballImg = state.mode === 'ranked' ? images.current.magma_slime : images.current.slime;
+        drawImageSafe(ballImg, -state.ball.r, -state.ball.r, state.ball.r*2, state.ball.r*2);
         ctx.restore();
 
         if (state.ball.y + state.ball.r < 0) {
@@ -838,7 +918,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         state.reqId = requestAnimationFrame(loop);
     };
 
-    const endGame = (fromNet = false) => {
+    const endGame = (fromNet = false, isRankedFinal = false) => {
         setGameState('gameover');
         if (bgmRef.current) bgmRef.current.pause();
         
@@ -846,22 +926,66 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             connRef.current.send({ type: 'gameover' });
         }
         
+        const state = gameRef.current;
         let iWon = false;
-        if (netModeRef.current === 'guest') {
-            iWon = gameRef.current.score.o > gameRef.current.score.p; // Guest controls the right side
-        } else {
-            iWon = gameRef.current.score.p > gameRef.current.score.o; // Host/Offline controls the left side
-        }
+        
+        if (isRankedFinal) {
+            // ✨ 排位賽綜合計分
+            iWon = state.setWins.p > state.setWins.o;
+            const timeTaken = (Date.now() - state.rankedStartTime) / 1000; // 秒數
+            
+            // ✨ 新排位計分公式：(勝局數 * 800) + (三局總得分 * 50) + (淨勝分差 * 100) + 基礎分 500
+            let totalDiff = 0;
+            let totalPlayerPoints = 0;
+            state.setsRecord.forEach(s => {
+                totalDiff += (s.p - s.o);
+                totalPlayerPoints += s.p;
+            });
+            let calcScore = Math.floor(500 + (state.setWins.p * 800) + (totalPlayerPoints * 50) + (totalDiff * 100));
+            if (calcScore < 1) calcScore = 1; // 確保最低有分數
+            
+            setRankedStats({ sets: state.setsRecord, startTime: state.rankedStartTime, totalScore: calcScore, wins: state.setWins });
+            
+            if (iWon) {
+                updateMcData({ diamonds: mcData.diamonds + 100 }, true);
+                playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/ui/toast/challenge_complete.ogg');
+                showAlert(`🏆 排位賽獲勝！\n總分：${calcScore} 分\n獲得 100 💎！`);
+            } else {
+                showAlert(`💀 排位賽落敗... 總分：${calcScore} 分`);
+            }
 
-        if (iWon) {
-            const reward = netModeRef.current === 'offline' ? 30 : 50; 
-            updateMcData({ diamonds: mcData.diamonds + reward }, true);
-            playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/ui/toast/challenge_complete.ogg');
-            showAlert(`🎉 恭喜你戰勝了${netModeRef.current === 'offline' ? '村民' : '對手'}！\n獲得 ${reward} 💎`);
+            // 儲存排行榜
+            if (user) {
+                const sysRef = window.db.collection('system').doc('volleyball_ranked');
+                sysRef.get().then(doc => {
+                    const data = doc.exists ? doc.data() : { scores: {} };
+                    const prevBest = data.scores[user.uid]?.score || 0;
+                    if (calcScore > prevBest) {
+                        data.scores[user.uid] = { name: userProfile.displayName, score: calcScore, sets: `${state.setWins.p}-${state.setWins.o}` };
+                        sysRef.set(data);
+                    }
+                });
+            }
+
         } else {
-            showAlert(`💀 你輸給了${netModeRef.current === 'offline' ? '村民' : '對手'}... 再接再厲！`);
+            // 傳統結算
+            if (netModeRef.current === 'guest') {
+                iWon = state.score.o > state.score.p; 
+            } else {
+                iWon = state.score.p > state.score.o; 
+            }
+
+            if (iWon) {
+                const reward = netModeRef.current === 'offline' ? 30 : 50; 
+                updateMcData({ diamonds: mcData.diamonds + reward }, true);
+                playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/ui/toast/challenge_complete.ogg');
+                showAlert(`🎉 恭喜你戰勝了${netModeRef.current === 'offline' ? '村民' : '對手'}！\n獲得 ${reward} 💎`);
+            } else {
+                showAlert(`💀 你輸給了${netModeRef.current === 'offline' ? '村民' : '對手'}... 再接再厲！`);
+            }
         }
-        if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
+        
+        if (state.reqId) cancelAnimationFrame(state.reqId);
     };
 
     return (
@@ -944,9 +1068,11 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             )}
 
             <div className="bg-stone-800 p-2 border-4 border-gray-600 w-full max-w-6xl relative shadow-2xl flex flex-col items-center pointer-events-auto">
-                <div className="w-full flex justify-between items-center text-white font-bold mb-2 font-mono px-2 text-xl">
+               <div className="w-full flex justify-between items-center text-white font-bold mb-2 font-mono px-2 text-xl">
                     <span className="text-amber-400">{netModeUI === 'guest' ? '對手' : '史蒂夫'}: {score.player}</span>
-                    <span className="text-amber-400 text-sm hidden sm:inline">先得 10 分者獲勝</span>
+                    <span className="text-amber-400 text-sm hidden sm:inline">
+                        {gameMode === 'ranked' ? `🔥 第 ${gameRef.current?.currentSet || 1}/3 局 (贏2分Deuce)` : '先得 10 分者獲勝'}
+                    </span>
                     <div className="flex gap-4 items-center">
                         <span className="text-red-400">{netModeUI === 'offline' ? '村民' : netModeUI === 'host' ? '對手' : '我'}: {score.opponent}</span>
                         <button onClick={() => setShowSettings(true)} className="text-gray-400 hover:text-white transition-colors text-lg">⚙️</button>
@@ -970,8 +1096,10 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                             
                             {netModeUI === 'offline' && !connStatus ? (
                                 <div className="flex flex-col gap-3 w-full max-w-sm">
-                                    <button onClick={() => { setNetMode('offline'); startGame('offline'); }} className="bg-stone-600600 hover:bg-rose-500 border-4 border-stone-600800 text-white font-bold py-3 text-xl shadow-lg active:tranamber-y-1 pixelated-border">單人模式 (打村民 - 耗1飽食)</button>
-                                    <button onClick={createRoom} className="bg-amber-600 hover:bg-amber-500 border-4 border-amber-800 text-white font-bold py-3 text-xl shadow-lg active:tranamber-y-1 pixelated-border">📡 建立線上房間 (房主)</button>
+                                    {/* ✨ 新增排位模式按鈕 */}
+                                    <button onClick={() => { setNetMode('offline'); startGame('offline', true); }} className="bg-red-700 hover:bg-red-600 border-4 border-red-900 text-white font-bold py-3 text-xl shadow-lg active:-translate-y-1 pixelated-border animate-pulse">🔥 排位模式 (地獄連打三局)</button>
+                                    <button onClick={() => { setNetMode('offline'); startGame('offline'); }} className="bg-stone-600 hover:bg-rose-500 border-4 border-stone-800 text-white font-bold py-3 text-xl shadow-lg active:-translate-y-1 pixelated-border">單人休閒 (打村民 - 耗1飽食)</button>
+                                    <button onClick={createRoom} className="bg-amber-600 hover:bg-amber-500 border-4 border-amber-800 text-white font-bold py-3 text-xl shadow-lg active:-translate-y-1 pixelated-border">📡 建立線上房間 (房主)</button>
                                     <button onClick={() => {
                                         if (!window.Peer) return showAlert("套件載入中...");
                                         setNetMode('guest');
@@ -1001,14 +1129,42 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     )}
 
                     {gameState === 'gameover' && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-800 bg-opacity-80 text-white z-20">
-                            <h2 className="text-5xl font-black mb-4 drop-shadow-md">
-                                {netModeUI === 'guest' ? (score.opponent > score.player ? '🏆 挑戰成功！' : '💀 挑戰失敗...') : (score.player > score.opponent ? '🏆 挑戰成功！' : '💀 挑戰失敗...')}
-                            </h2>
-                            <p className="text-2xl mb-8 font-bold">最終比分 - {score.player} : {score.opponent}</p>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-800 bg-opacity-90 text-white z-20 px-4">
+                            {gameMode === 'ranked' ? (
+                                <>
+                                    <h2 className="text-5xl font-black mb-2 text-red-500 drop-shadow-md">
+                                        {rankedStats.wins?.p > rankedStats.wins?.o ? '🏆 排位戰勝！' : '💀 排位落敗...'}
+                                    </h2>
+                                    <p className="text-xl mb-2 font-bold text-amber-400">🔥 綜合積分：{rankedStats.totalScore} 分</p>
+                                    <div className="flex gap-4 mb-6">
+                                        {rankedStats.sets.map((s, i) => (
+                                            <div key={i} className="bg-stone-900 p-2 border-2 border-red-800 rounded text-center shadow-inner">
+                                                <p className="text-xs text-gray-400">第 {i+1} 局</p>
+                                                <p className={`font-bold ${s.p > s.o ? 'text-emerald-400' : 'text-red-400'}`}>{s.p} : {s.o}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="w-full max-w-sm mb-6 bg-stone-900 border-2 border-gray-600 p-2 rounded shadow-lg">
+                                        <h3 className="text-center font-bold text-amber-300 border-b border-gray-600 pb-1 mb-2">🏆 排位強者榜</h3>
+                                        {rankedLeaderboard.map((lb, i) => (
+                                            <div key={i} className="flex justify-between text-sm px-2 py-1 border-b border-stone-800">
+                                                <span>{i+1}. {lb.name}</span>
+                                                <span className="text-emerald-400 font-bold">{lb.score} 分</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <h2 className="text-5xl font-black mb-4 drop-shadow-md">
+                                        {netModeUI === 'guest' ? (score.opponent > score.player ? '🏆 挑戰成功！' : '💀 挑戰失敗...') : (score.player > score.opponent ? '🏆 挑戰成功！' : '💀 挑戰失敗...')}
+                                    </h2>
+                                    <p className="text-2xl mb-8 font-bold">最終比分 - {score.player} : {score.opponent}</p>
+                                </>
+                            )}
                             <div className="flex gap-4">
-                                {netModeUI === 'offline' && <button onClick={() => startGame('offline')} className="bg-emerald-600 hover:bg-emerald-500 border-4 border-emerald-800 text-white font-bold py-2 px-6 text-lg active:tranamber-y-1 pixelated-border">🔄 再來一局</button>}
-                                <button onClick={() => { setNetMode('offline'); setConnStatus(''); if(peerRef.current) peerRef.current.destroy(); onQuit(); }} className="bg-gray-600 hover:bg-gray-500 border-4 border-gray-800 text-white font-bold py-2 px-6 text-lg active:tranamber-y-1 pixelated-border">🔙 離開對戰</button>
+                                {netModeUI === 'offline' && <button onClick={() => startGame('offline', gameMode === 'ranked')} className="bg-emerald-600 hover:bg-emerald-500 border-4 border-emerald-800 text-white font-bold py-2 px-6 text-lg active:-translate-y-1 pixelated-border">🔄 再來一局</button>}
+                                <button onClick={() => { setNetMode('offline'); setConnStatus(''); if(peerRef.current) peerRef.current.destroy(); onQuit(); }} className="bg-gray-600 hover:bg-gray-500 border-4 border-gray-800 text-white font-bold py-2 px-6 text-lg active:-translate-y-1 pixelated-border">🔙 離開</button>
                             </div>
                         </div>
                     )}
