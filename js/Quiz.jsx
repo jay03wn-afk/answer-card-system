@@ -468,30 +468,28 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
             setIsUploading(true);
             const tempId = 'paste-' + Date.now();
             
-            document.execCommand('insertHTML', false, `<div id="${tempId}" style="color:blue; font-weight:bold; padding:10px; border:2px dashed blue; margin:10px 0;">🔄 正在處理 Word 排版與圖片，請稍候...</div>`);
+            document.execCommand('insertHTML', false, `<div id="${tempId}" style="color:blue; font-weight:bold; padding:10px; border:2px dashed blue; margin:10px 0;">🔄 正在處理排版與圖片，請稍候...</div>`);
             
             const processAndUploadImages = async () => {
                 try {
-                    // ✨ 終極淨化：只保留排版與純文字，徹底消滅字體、顏色、無意義空行與 Word 專屬標籤
+                    // ✨ 終極淨化：只保留排版與純文字，徹底消滅字體、顏色、無意義空行與 Word 專屬標籤，完美保留換行
                     let cleanedHtml = htmlData
-                        // 🚀 終極修復：修正 Word 標籤正則匹配，防止無限迴圈與崩潰當機！
-                        .replace(/<(xml|style|meta|link|title|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "") 
+                        .replace(/<(xml|style|meta|link|title|script|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "") 
                         .replace(/<\!--[\s\S]*?-->/g, "") 
                         .replace(/<!\[[^\]]+\]>/g, "") 
-                        .replace(/<\/?(html|head|body)[^>]*>/gi, "") 
-                        .replace(/<([a-zA-Z0-9]+)([^>]*?)>/gi, (match, tag, attrs) => {
+                        .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, "[[NEWLINE]]") 
+                        .replace(/<br\s*\/?>/gi, "[[NEWLINE]]")
+                        .replace(/[\r\n]+/g, " ") // 消除源碼換行，避免與真實換行衝突
+                        .replace(/\[\[NEWLINE\]\]/g, "\n") // 恢復結構換行
+                        .replace(/<([a-zA-Z0-9]+)[^>]*>/gi, (match, tag) => {
                             if (tag.toLowerCase() === 'img') return match;
-                            return `<${tag}>`;
+                            return ""; // 移除其他開頭標籤
                         })
-                        .replace(/<o:p>[\s\S]*?<\/o:p>/gi, "")
-                        .replace(/<\/(p|div|h[1-6])>/gi, "<br>") 
-                        .replace(/<(p|div|h[1-6])[^>]*>/gi, "") 
-                        .replace(/<\/?(span|font|a|strong|b|i|u|em)[^>]*>/gi, "") 
+                        .replace(/<\/([a-zA-Z0-9]+)>/gi, "") // 移除所有結束標籤
                         .replace(/&nbsp;/gi, " ") 
-                        .replace(/[\r\n]+/g, "<br>") // ✨ 修改：將原始的換行符號轉為 <br>，保留使用者排版
-                        .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") 
-                        .replace(/(<br>){3,}/gi, "<br><br>") 
-                        .replace(/^(<br>)+|(<br>)+$/gi, "");
+                        .replace(/\n/g, "<br>")
+                        .replace(/(<br>\s*){3,}/gi, "<br><br>") 
+                        .replace(/^(<br>\s*)+|(<br>\s*)+$/gi, "");
 
                     let finalHtml = cleanedHtml;
                     
@@ -523,7 +521,7 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                             img.src = URL.createObjectURL(blob);
                         });
 
-                        const uid = window.auth.currentUser ? window.auth.currentUser.uid : 'guest';
+                        const uid = window.auth?.currentUser ? window.auth.currentUser.uid : 'guest';
                         const filePath = `uploads/${uid}/pasted_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.jpg`;
                         const storageRef = window.storage.ref(filePath);
                         await storageRef.put(compressedBlob);
@@ -540,7 +538,6 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                     // 2. 處理 Word 夾帶的本地圖片 (file://) 
                     const brokenImgRegex = /<img[^>]*src="([^"]*(?:file:\/|blob:|webkit-fake-url:|C:\\|D:\\)[^"]*)"[^>]*>/gi;
                     
-                    // 萬一瀏覽器佛心來著有提供實體圖片，我們就幫他上傳
                     if (imageFiles.length > 0) {
                         const localImagePromises = imageFiles.map(async (file) => {
                             const compressedBlob = await new Promise((resolve) => {
@@ -559,7 +556,7 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                                 img.src = URL.createObjectURL(file);
                             });
 
-                            const uid = window.auth.currentUser ? window.auth.currentUser.uid : 'guest';
+                            const uid = window.auth?.currentUser ? window.auth.currentUser.uid : 'guest';
                             const filePath = `uploads/${uid}/pasted_word_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.jpg`;
                             const storageRef = window.storage.ref(filePath);
                             await storageRef.put(compressedBlob);
@@ -576,7 +573,6 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                             return match; 
                         });
                     } else {
-                        // ✨ 終極防呆：瀏覽器沒收了圖片檔案，我們把破圖替換成顯眼的警告框，引導使用者補圖
                         finalHtml = finalHtml.replace(brokenImgRegex, () => {
                             return `<div style="display:inline-block; padding:8px 12px; background-color:#fee2e2; color:#dc2626; border:2px dashed #f87171; border-radius:6px; font-weight:bold; font-size:13px; margin:8px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">⚠️【瀏覽器安全限制】此處圖片遭阻擋。<br/>👉 請回到 Word「單獨點選該圖片」按 Ctrl+C 複製，然後回到此處貼上即可顯示！</div>`;
                         });
@@ -586,7 +582,6 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                         const tempEl = editorRef.current.querySelector(`#${tempId}`);
                         const fragment = document.createRange().createContextualFragment(finalHtml);
                         
-                        // ✨ 終極修復：防止全選貼上時 Selection API 報錯崩潰！
                         if (tempEl && tempEl.parentNode) {
                             tempEl.parentNode.replaceChild(fragment, tempEl);
                         } else {
@@ -594,7 +589,6 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                                 const range = window.getSelection().getRangeAt(0);
                                 range.insertNode(fragment);
                             } catch (selectionErr) {
-                                // 萬一使用者全選導致游標遺失，安全地將內容附加到結尾，絕不當機！
                                 editorRef.current.appendChild(fragment);
                             }
                         }
@@ -641,27 +635,28 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                 }
             };
 
-            if (pasteHtml) {
+            if (pasteHtml && /<(br|p|div|li|tr|h[1-6])[>\s]/i.test(pasteHtml)) {
                 let cleanedHtml = pasteHtml
-                    .replace(/<(xml|style|meta|link|title|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "") 
+                    .replace(/<(xml|style|meta|link|title|script|o:[a-zA-Z0-9_-]+|st1:[a-zA-Z0-9_-]+)[^>]*>[\s\S]*?<\/\1>/gi, "") 
                     .replace(/<\!--[\s\S]*?-->/g, "") 
                     .replace(/<!\[[^\]]+\]>/g, "") 
-                    .replace(/<\/?(html|head|body)[^>]*>/gi, "") 
-                    .replace(/<([a-zA-Z0-9]+)([^>]*?)>/gi, (match, tag, attrs) => {
+                    .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, "[[NEWLINE]]") 
+                    .replace(/<br\s*\/?>/gi, "[[NEWLINE]]")
+                    .replace(/[\r\n]+/g, " ") // 消除源碼換行
+                    .replace(/\[\[NEWLINE\]\]/g, "\n") // 恢復結構換行
+                    .replace(/<([a-zA-Z0-9]+)[^>]*>/gi, (match, tag) => {
                         if (tag.toLowerCase() === 'img') return match;
-                        return `<${tag}>`;
+                        return ""; 
                     })
-                    .replace(/<o:p>[\s\S]*?<\/o:p>/gi, "")
-                    .replace(/<\/(p|div|h[1-6])>/gi, "<br>") 
-                    .replace(/<(p|div|h[1-6])[^>]*>/gi, "") 
-                    .replace(/<\/?(span|font|a|strong|b|i|u|em)[^>]*>/gi, "") 
+                    .replace(/<\/([a-zA-Z0-9]+)>/gi, "") 
                     .replace(/&nbsp;/gi, " ") 
-                    .replace(/[\r\n]+/g, "<br>") // ✨ 修改：將原始的換行符號轉為 <br>，保留使用者排版
-                    .replace(/\s*(<br\s*\/?>)\s*/gi, "<br>") 
-                    .replace(/^(<br>)+|(<br>)+$/gi, ""); // ✨ 移除強制壓縮連續 <br> 的邏輯，完全保留使用者排版
+                    .replace(/\n/g, "<br>")
+                    .replace(/(<br>\s*){3,}/gi, "<br><br>") 
+                    .replace(/^(<br>\s*)+|(<br>\s*)+$/gi, "");
 
                 insertHTMLSafe(cleanedHtml);
             } else {
+                // 若沒有結構標籤（例如從記事本複製的純文字），直接採用最原始乾淨的純文字並保留換行
                 const textHtml = pasteText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r?\n/g, '<br>');
                 insertHTMLSafe(textHtml);
             }
@@ -669,15 +664,59 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
             setTimeout(() => {
                 if (editorRef.current) {
                     processSmilesInDOM(editorRef.current);
-                    handleInput(); // 無論如何都觸發更新，確保淨化內容存檔
+                    handleInput(); 
                 }
             }, 50);
             return; 
         }
 
-        // 情況 3：純截圖
+        // 情況 3：純截圖 (徹底封殺預設的 Base64 轉換行為，強制上傳到 Storage)
         if (hasImageItem && !hasTextFormat) {
-            // 原本的單圖邏輯由上層處理，此處不需更動
+            e.preventDefault();
+            setIsUploading(true);
+            
+            const uploadPromises = imageFiles.map(async (file) => {
+                const compressedBlob = await new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        const MAX_DIM = 800; 
+                        if (w > h && w > MAX_DIM) { h *= MAX_DIM / w; w = MAX_DIM; }
+                        else if (h > MAX_DIM) { w *= MAX_DIM / h; h = MAX_DIM; }
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, w, h);
+                        canvas.toBlob(resolve, 'image/jpeg', 0.7);
+                    };
+                    img.src = URL.createObjectURL(file);
+                });
+
+                const uid = window.auth?.currentUser ? window.auth.currentUser.uid : 'guest';
+                const filePath = `uploads/${uid}/pasted_image_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.jpg`;
+                const storageRef = window.storage.ref(filePath);
+                await storageRef.put(compressedBlob);
+                return await storageRef.getDownloadURL();
+            });
+
+            try {
+                const urls = await Promise.all(uploadPromises);
+                urls.forEach(url => {
+                    document.execCommand('insertHTML', false, `<img src="${url}" style="max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0;" />`);
+                });
+                setTimeout(() => {
+                    if (editorRef.current) {
+                        processSmilesInDOM(editorRef.current);
+                        handleInput();
+                    }
+                }, 50);
+            } catch (err) {
+                console.error("圖片上傳失敗:", err);
+                if (showAlert) showAlert("圖片上傳失敗：" + err.message);
+            } finally {
+                setIsUploading(false);
+            }
+            return;
         }
     };
 
@@ -7183,31 +7222,39 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         });
     };
 
-   const handleAutoParse = () => {
-        const tempText = question.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n</p>').replace(/<[^>]+>/g, '');
+  const handleAutoParse = () => {
+        // ✨ 保留換行格式：將 <br> 等轉為 \n 以利判斷，並將 div/p 結尾視為換行，避免字體黏在一起
+        const tempText = question
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/\u00A0/g, ' ')
+            .replace(/<[^>]+>/g, '');
         
-        const optA = tempText.match(/(?:A|Ａ)[.、\s]+([\s\S]*?)(?=(?:B|Ｂ)[.、\s]+|$)/i);
-        const optB = tempText.match(/(?:B|Ｂ)[.、\s]+([\s\S]*?)(?=(?:C|Ｃ)[.、\s]+|$)/i);
-        const optC = tempText.match(/(?:C|Ｃ)[.、\s]+([\s\S]*?)(?=(?:D|Ｄ)[.、\s]+|$)/i);
-        const optD = tempText.match(/(?:D|Ｄ)[.、\s]+([\s\S]*?)$/i);
-        
+        // ✨ 支援讀取 [A]、[B]、[C]、[D] 以及 A. B. C. D. 等格式
+        const optA = tempText.match(/(?:\[A\]|(?:A|Ａ)[.、\s]+)([\s\S]*?)(?=(?:\[B\]|(?:B|Ｂ)[.、\s]+)|$)/i);
+        const optB = tempText.match(/(?:\[B\]|(?:B|Ｂ)[.、\s]+)([\s\S]*?)(?=(?:\[C\]|(?:C|Ｃ)[.、\s]+)|$)/i);
+        const optC = tempText.match(/(?:\[C\]|(?:C|Ｃ)[.、\s]+)([\s\S]*?)(?=(?:\[D\]|(?:D|Ｄ)[.、\s]+)|$)/i);
+        const optD = tempText.match(/(?:\[D\]|(?:D|Ｄ)[.、\s]+)([\s\S]*?)$/i);
+
         if (optA || optB || optC || optD) {
             const newOptions = [...options];
-            if (optA) newOptions[0] = optA[1].trim();
-            if (optB) newOptions[1] = optB[1].trim();
-            if (optC) newOptions[2] = optC[1].trim();
-            if (optD) newOptions[3] = optD[1].trim();
+            if (optA) newOptions[0] = optA[1].replace(/\n/g, '<br>').trim();
+            if (optB) newOptions[1] = optB[1].replace(/\n/g, '<br>').trim();
+            if (optC) newOptions[2] = optC[1].replace(/\n/g, '<br>').trim();
+            if (optD) newOptions[3] = optD[1].replace(/\n/g, '<br>').trim();
             setOptions(newOptions);
-            
+
             let newQHtml = question;
-            const firstMatch = question.match(/(?:<[^>]+>)*\s*(?:A|Ａ)[.、\s]+/i);
+            const firstMatch = question.match(/(?:<[^>]+>)*\s*(?:\[A\]|(?:A|Ａ)[.、\s]+)/i);
             if (firstMatch) {
-                newQHtml = question.substring(0, firstMatch.index).trim();
+                // ✨ 擷取題目的同時，把結尾可能殘留的 &nbsp; 或多餘換行一起清掉
+                newQHtml = question.substring(0, firstMatch.index).replace(/(?:&nbsp;|\s|<br\s*\/?>)+$/gi, '').trim();
             }
             setQuestion(newQHtml);
-            showAlert("✅ 自動解析成功！已將選項分發至對應欄位，並將選項從題目中移除。");
+            showAlert("✅ 自動解析成功！已將選項分發，並將選項從題目中移除。");
         } else {
-            showAlert("⚠️ 找不到 A, B, C, D 選項開頭，請確認題目格式。");
+            showAlert("⚠️ 找不到 A, B, C, D 或 [A] 選項開頭，請確認題目格式。");
         }
     };
 
@@ -7379,7 +7426,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                             </button>
                                         )}
                                     </div>
-                                    <ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入或貼上包含 A, B, C, D 的完整題目，再點擊右上方「自動解析」..." showAlert={showAlert} />
+                                    <ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入或貼上包含 A, B, C, D 的完整題目，再點擊上方「自動解析」..." showAlert={showAlert} />
                                 </div>
                                 
                                 {qaType === 'mcq' ? options.map((opt, idx) => (
@@ -7394,7 +7441,10 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                         <label className="font-bold flex items-center gap-2 cursor-pointer"><input type="radio" checked={correctAns===1} onChange={()=>setCorrectAns(1)} className="w-5 h-5 accent-stone-600600" /> 正確答案是「❌ 否」</label>
                                     </div>
                                 )}
-                                <div className="md:col-span-2"><label className="block text-sm font-bold mb-1">詳解</label><textarea value={explanation} onChange={e=>setExplanation(e.target.value)} className="w-full border p-2 h-24 dark:bg-stone-800" placeholder="請輸入詳解..."></textarea></div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-bold mb-1">詳解 (支援貼上圖片與富文本)</label>
+                                    <ContentEditableEditor value={explanation} onChange={setExplanation} placeholder="請輸入或貼上詳解..." showAlert={showAlert} />
+                                </div>
                             </div>
                             <button onClick={handleAddQA} disabled={isPublishing} className="bg-stone-600600 hover:bg-stone-600700 text-white font-bold py-2 px-6 w-full disabled:bg-gray-400">🚀 發布快問快答</button>
                         </div>

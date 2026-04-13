@@ -518,6 +518,42 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         });
     };
 
+    const handleAutoParse = () => {
+        // ✨ 保留換行格式：將 <br> 等轉為 \n 以利判斷，並徹底轉換 &nbsp; 與隱藏空白為一般空白
+        const tempText = question
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/p>/gi, '\n</p>')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/\u00A0/g, ' ')
+            .replace(/<[^>]+>/g, '');
+        
+        // ✨ 支援讀取 [A]、[B]、[C]、[D] 以及 A. B. C. D. 等格式
+        const optA = tempText.match(/(?:\[A\]|(?:A|Ａ)[.、\s]+)([\s\S]*?)(?=(?:\[B\]|(?:B|Ｂ)[.、\s]+)|$)/i);
+        const optB = tempText.match(/(?:\[B\]|(?:B|Ｂ)[.、\s]+)([\s\S]*?)(?=(?:\[C\]|(?:C|Ｃ)[.、\s]+)|$)/i);
+        const optC = tempText.match(/(?:\[C\]|(?:C|Ｃ)[.、\s]+)([\s\S]*?)(?=(?:\[D\]|(?:D|Ｄ)[.、\s]+)|$)/i);
+        const optD = tempText.match(/(?:\[D\]|(?:D|Ｄ)[.、\s]+)([\s\S]*?)$/i);
+
+        if (optA || optB || optC || optD) {
+            const newOptions = [...options];
+            if (optA) newOptions[0] = optA[1].replace(/\n/g, '<br>').trim();
+            if (optB) newOptions[1] = optB[1].replace(/\n/g, '<br>').trim();
+            if (optC) newOptions[2] = optC[1].replace(/\n/g, '<br>').trim();
+            if (optD) newOptions[3] = optD[1].replace(/\n/g, '<br>').trim();
+            setOptions(newOptions);
+
+            let newQHtml = question;
+            const firstMatch = question.match(/(?:<[^>]+>)*\s*(?:\[A\]|(?:A|Ａ)[.、\s]+)/i);
+            if (firstMatch) {
+                // ✨ 擷取題目的同時，把結尾可能殘留的 &nbsp; 或多餘換行一起清掉
+                newQHtml = question.substring(0, firstMatch.index).replace(/(?:&nbsp;|\s|<br\s*\/?>)+$/gi, '').trim();
+            }
+            setQuestion(newQHtml);
+            showAlert("✅ 自動解析成功！已將選項分發，並將選項從題目中移除。");
+        } else {
+            showAlert("⚠️ 找不到 A, B, C, D 或 [A] 選項開頭，請確認題目格式。");
+        }
+    };
+
     const handleShare = () => {
         const shareUrl = `${window.location.origin}/?qaId=${activeQA.id}`;
         const plainQ = activeQA.question.replace(/<img[^>]*>/gi, '(圖片)').replace(/<[^>]+>/g, '').trim();
@@ -677,7 +713,17 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                         <input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-stone-800" />
                                     )}
                                 </div>
-                                <div className="md:col-span-2"><label className="block text-sm font-bold mb-1">題目內容 (支援貼上圖片)</label><ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入..." showAlert={showAlert} /></div>
+                               <div className="md:col-span-2">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="block text-sm font-bold">題目內容 (支援貼上圖片)</label>
+                                        {qaType === 'mcq' && (
+                                            <button onClick={handleAutoParse} className="text-xs bg-amber-100 text-amber-700 hover:bg-amber-200 px-2 py-1 font-bold rounded shadow-sm border border-amber-300">
+                                                🤖 自動解析貼上選項
+                                            </button>
+                                        )}
+                                    </div>
+                                    <ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入或貼上包含 A, B, C, D 的完整題目，再點擊上方「自動解析」..." showAlert={showAlert} />
+                                </div>
                                 
                                 {qaType === 'mcq' ? options.map((opt, idx) => (
                                     <div key={idx} className="md:col-span-2 flex items-center gap-2">
@@ -691,7 +737,10 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                         <label className="font-bold flex items-center gap-2 cursor-pointer"><input type="radio" checked={correctAns===1} onChange={()=>setCorrectAns(1)} className="w-5 h-5 accent-stone-600600" /> 正確答案是「❌ 否」</label>
                                     </div>
                                 )}
-                                <div className="md:col-span-2"><label className="block text-sm font-bold mb-1">詳解</label><textarea value={explanation} onChange={e=>setExplanation(e.target.value)} className="w-full border p-2 h-24 dark:bg-stone-800" placeholder="請輸入詳解..."></textarea></div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-bold mb-1">詳解 (支援貼上圖片與富文本)</label>
+                                    <ContentEditableEditor value={explanation} onChange={setExplanation} placeholder="請輸入或貼上詳解..." showAlert={showAlert} />
+                                </div>
                             </div>
                             <button onClick={handleAddQA} disabled={isPublishing} className="bg-stone-600600 hover:bg-stone-600700 text-white font-bold py-2 px-6 w-full disabled:bg-gray-400">🚀 發布快問快答</button>
                         </div>
