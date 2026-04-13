@@ -404,14 +404,14 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                         // ✨ 判斷殺球時機 (全場皆可殺，放寬 X/Y 軸的擊球判定寬容度)
                         if (state.opponent.y < state.groundY - 10 && 
                             state.ball.y < safeSpikeY && 
-                            state.ball.x < state.opponent.x + 30 &&   // 放寬前方判定
-                            state.ball.x > state.opponent.x - 50 &&   // 放寬後方判定
-                            state.ball.y < state.opponent.y + 30 &&   // 放寬下方判定
-                            state.ball.y > state.opponent.y - 80 &&   // 放寬上方判定
+                            state.ball.x < state.opponent.x + 50 &&   // ✨ 再放寬前方判定：讓 AI 更好抓到球
+                            state.ball.x > state.opponent.x - 70 &&   // ✨ 再放寬後方判定：讓 AI 更好抓到球
+                            state.ball.y < state.opponent.y + 50 &&   // ✨ 再放寬下方判定
+                            state.ball.y > state.opponent.y - 120 &&  // ✨ 再放寬上方判定
                             state.opponent.stamina >= 30) {           // 確保有足夠體力 (30)
                             
-                            // ✨ 能殺就殺：大幅提升觸發率 (從 12% 提升到 85%)，保留一點點隨機性讓動作看起來自然
-                            if (Math.random() < 0.85) {
+                            // ✨ 能殺就殺：機率調至 100% (最高機率)，只要在範圍內絕對殺球不手軟！
+                            if (Math.random() < 1.00) {
                                 aiTrySpike = true;
                             }
                         }
@@ -419,11 +419,12 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                         // 🛡️【防守狀態】球在玩家半場
                         if (state.ball.vx > 0) {
                             // ⚾ 球正飛向 AI：判斷落點
-                            if (state.ball.vx > 7 && state.ball.y < 250) {
-                                // 玩家殺球！快速後退準備接球
+                            // ✨ AI 預判防禦升級：只要球夠快，或者「球靠近網子且有一定高度（預判玩家即將殺球）」，就啟動防禦機制！
+                            if ((state.ball.vx > 7 && state.ball.y < 250) || (state.ball.x > state.net.x - 100 && state.ball.y < 250 && state.ball.vx > 2)) {
+                                // 預設快速後退準備接球
                                 aiTargetX = 720; 
-                                // 只有球極低且快過網時，才緊急攔網
-                                if (state.ball.x > state.net.x - 60 && state.ball.y < 180 && state.opponent.stamina >= 40) {
+                                // ✨ 預判攔網升級：只要判斷有殺球威脅，且有體力，就主動衝到網前起跳攔網！(高度放寬到250，距離放寬到網前100，體力要求降低)
+                                if (state.ball.x > state.net.x - 100 && state.ball.y < 250 && state.opponent.stamina >= 25) {
                                     aiTargetX = state.net.x + 35;
                                     aiShouldJump = true;
                                     aiTryBlock = true;
