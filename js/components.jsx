@@ -53,59 +53,84 @@ function DialogOverlay({ dialog, onClose }) {
     );
 }
 
-function TutorialOverlay({ onComplete }) {
+function TutorialOverlay({ onComplete, onNavigate }) {
     const [step, setStep] = React.useState(0);
 
+    // ✨ 重新設計的互動步驟：加入 action 提示使用者實際去操作
     const steps = [
         {
             title: "歡迎來到 JJay 線上測驗",
             icon: "rocket_launch",
-            content: "這是一個結合「測驗」、「社群」與「遊戲化」的國考練功房！\n接下來我們將花 1 分鐘，帶你快速認識所有的超酷功能！",
-            color: "border-black dark:border-white"
+            content: "接下來的導覽不會擋住你的畫面！\n你可以一邊看我的提示，一邊實際點擊網頁玩玩看。",
+            action: "準備好就點擊「出發」！",
+            color: "from-stone-300 to-stone-400",
+            targetTab: null
         },
         {
-            title: "JJay 日報",
+            title: "第一站：JJay 日報",
             icon: "newspaper",
-            content: "每天發布最新的考試重點或資訊。重點是：看完文章後，通常滑到最下方可以【領取免費鑽石】喔！",
-            color: "border-amber-500"
+            content: "每天最新的考試重點都在這。",
+            action: "試試看：點進最新電子報將頁面往下滑到最底，點擊「領取每日鑽石」按鈕！",
+            color: "from-amber-500 to-orange-600",
+            targetTab: 'newspaper'
         },
         {
-            title: "我的題庫",
+            title: "第二站：我的題庫",
             icon: "library_books",
-            content: "首創雙螢幕排版！可自訂資料夾分類，支援【輸入代碼】直接下載別人的測驗卷。左邊看題目，右邊畫卡，超級方便！",
-            color: "border-emerald-500"
+            content: "這是你的個人專屬書架。",
+            action: "試試看：點擊上方「＋新測驗」按鈕，隨便輸入幾個字看看系統反應！",
+            color: "from-emerald-400 to-teal-600",
+            targetTab: 'dashboard'
         },
         {
-            title: "任務牆 & 錯題整理",
+            title: "第三站：任務牆",
             icon: "task_alt",
-            content: "每天完成【每日任務】可賺取大量鑽石！而你在測驗中答錯的題目，都會自動收錄到【錯題整理】，考前複習最有效率！",
-            color: "border-red-500"
+            content: "每天完成每日任務可賺取大量鑽石。",
+            action: "試試看：點擊左側任一個任務的「挑戰」按鈕，或者切換上方的標籤！",
+            color: "from-rose-400 to-red-600",
+            targetTab: 'taskwall'
         },
         {
-            title: "社群交流",
+            title: "第四站：錯題整理",
+            icon: "menu_book",
+            content: "你所有寫錯的題目都會自動收錄到這。",
+            action: "試試看：點擊「新增錯題資料夾」按鈕，試著建立一個自己的專屬分類！",
+            color: "from-red-500 to-red-800",
+            targetTab: 'wrongbook'
+        },
+        {
+            title: "第五站：社群交流",
             icon: "forum",
-            content: "不再是一個人讀書！你可以加好友、即時對話，還能一鍵打包自己的測驗卷分享給好友作答。支援圖片閱後即焚！",
-            color: "border-stone-600500"
+            content: "不再是一個人讀書！",
+            action: "試試看：透過電子信箱加入好友！",
+            color: "from-indigo-400 to-blue-600",
+            targetTab: 'social'
         },
         {
-            title: "史蒂夫養成",
+            title: "第六站：史蒂夫養成",
             icon: "sports_esports",
-            content: "讀書也要有儀式感。用賺來的【鑽石】購買傢俱佈置你的專屬家園，還能玩滑板小遊戲與好友競爭等級排名！",
-            color: "border-amber-500"
+            content: "用賺來的鑽石佈置你的專屬家園。",
+            action: "試試看：點擊畫面上方的「史萊姆排球」按鈕，體驗超刺激的排球遊戲！",
+            color: "from-amber-400 to-yellow-600",
+            targetTab: 'minecraft'
         },
         {
-            title: "國考戰況追蹤",
+            title: "最後一站：戰況追蹤",
             icon: "trending_up",
-            content: "掌控你的全科複習進度！支援【打卡連動】與超強的【AI 口訣小幫手】，只要輸入重點，AI 馬上幫你生出好背的口訣！",
-            color: "border-cyan-500"
-        },
-        {
-            title: "隨時重新觀看",
-            icon: "settings",
-            content: "如果忘記這些功能怎麼用，隨時可以到左側選單的【個人檔案】中，點擊下方按鈕【重新觀看新手教學】喔！",
-            color: "border-amber-700500"
+            content: "這裡有超強的打卡系統與 AI 口訣生成器。",
+            action: "試試看：點擊任一科目展開選單，試著點擊「速讀/細讀」按鈕完成一次打卡吧！",
+            color: "from-cyan-400 to-blue-600",
+            targetTab: 'examProgress'
         }
     ];
+
+    // 監聽步驟切換頁面
+    React.useEffect(() => {
+        const currentStep = steps[step];
+        if (currentStep && currentStep.targetTab && onNavigate) {
+            onNavigate(currentStep.targetTab);
+        }
+    }, [step]);
 
     const nextStep = () => {
         if (step < steps.length - 1) {
@@ -118,30 +143,59 @@ function TutorialOverlay({ onComplete }) {
     const current = steps[step];
 
     return (
-        <div className="fixed inset-0 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 transition-opacity duration-300">
-         <div key={step} className={`bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-lg rounded-3xl shadow-2xl relative border-t-4 ${current.color} animate-fade-in-up flex flex-col`}>
-                <div className="text-center mb-4 animate-bounce drop-shadow-md text-stone-800 dark:text-stone-100">
-                    <span className="material-symbols-outlined" style={{ fontSize: '64px' }}>{current.icon}</span>
-                </div>
-                <h2 className="text-2xl font-black mb-4 text-center tracking-wider dark:text-stone-100">{current.title}</h2>
-                <div className="text-stone-700 dark:text-stone-300 mb-8 min-h-[110px] flex items-center justify-center bg-stone-50 dark:bg-stone-900 p-5 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-inner">
-                    <p className="text-base leading-relaxed font-bold text-center whitespace-pre-wrap">{current.content}</p>
-                </div>
+        /* ✨ 關鍵修改：pointer-events-none 讓這個滿版容器不會擋住滑鼠點擊，
+           但保留子元素 (卡片本身) 的 pointer-events-auto 讓按鈕可以按 */
+        <div className="fixed inset-0 z-[9999] pointer-events-none flex flex-col justify-end items-end p-4 md:p-8">
+            
+            {/* 懸浮導覽卡片 */}
+            <div key={step} className="pointer-events-auto bg-[#FCFBF7] dark:bg-stone-900 p-6 w-full sm:w-[400px] rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border-2 border-stone-200 dark:border-stone-700 animate-fade-in-up relative overflow-hidden flex flex-col">
                 
-                <div className="flex justify-center gap-2 mb-6">
-                    {steps.map((_, idx) => (
-                        <div key={idx} className={`h-2.5 w-2.5 rounded-full transition-all duration-300 ${idx === step ? 'bg-stone-800 dark:bg-[#FCFBF7] scale-125' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
-                    ))}
+                {/* 頂部進度條 */}
+                <div className="absolute top-0 left-0 w-full h-1.5 bg-gray-200 dark:bg-stone-800">
+                    <div 
+                        className={`h-full bg-gradient-to-r ${current.color} transition-all duration-500`}
+                        style={{ width: `${((step + 1) / steps.length) * 100}%` }}
+                    ></div>
                 </div>
 
-                <div className="flex gap-3">
+                <div className="flex items-start gap-4 mt-2 mb-4">
+                    <div className={`w-14 h-14 shrink-0 rounded-2xl bg-gradient-to-br ${current.color} flex items-center justify-center text-white shadow-lg`}>
+                        <span className="material-symbols-outlined text-[28px]">{current.icon}</span>
+                    </div>
+                    <div>
+                        <span className="text-[10px] font-black tracking-widest text-gray-400 dark:text-gray-500 block mb-1">
+                            導覽進度 {step + 1} / {steps.length}
+                        </span>
+                        <h2 className="text-lg font-black text-stone-800 dark:text-stone-100 leading-tight">
+                            {current.title}
+                        </h2>
+                    </div>
+                </div>
+
+                <p className="text-sm font-bold text-stone-600 dark:text-stone-300 mb-4 whitespace-pre-wrap">
+                    {current.content}
+                </p>
+
+                {/* 互動指示區塊：用搶眼的顏色吸引使用者去點擊背景的 UI */}
+                <div className={`mb-6 p-3 rounded-xl bg-gradient-to-r ${current.color} bg-opacity-10 border border-current text-sm font-bold text-stone-800 dark:text-white`}>
+                    <div className="animate-pulse">{current.action}</div>
+                </div>
+
+                <div className="flex gap-3 mt-auto">
                     {step > 0 && (
-                        <button onClick={() => setStep(step - 1)} className="w-1/3 bg-stone-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 p-3 font-bold rounded-2xl hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors">
+                        <button onClick={() => setStep(step - 1)} className="w-1/3 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 py-3 font-black rounded-xl hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors text-sm">
                             上一步
                         </button>
                     )}
-                    <button onClick={nextStep} className="flex-1 flex justify-center items-center gap-2 bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 p-3 font-bold rounded-2xl hover:bg-stone-800 dark:hover:bg-gray-300 text-lg transition-transform active:scale-95 shadow-md">
-                        {step < steps.length - 1 ? <>下一步 <span className="material-symbols-outlined text-[20px]">arrow_forward</span></> : <><span className="material-symbols-outlined text-[20px]">rocket_launch</span> 開始體驗</>}
+                    <button 
+                        onClick={nextStep} 
+                        className={`flex-1 flex justify-center items-center gap-2 bg-gradient-to-r ${current.color} text-white py-3 font-black rounded-xl hover:opacity-90 transition-transform active:scale-95 shadow-md text-sm`}
+                    >
+                        {step < steps.length - 1 ? (
+                            <>測試完畢，下一站 <span className="material-symbols-outlined text-[18px]">arrow_forward</span></>
+                        ) : (
+                            <><span className="material-symbols-outlined text-[18px]">check_circle</span> 結束導覽</>
+                        )}
                     </button>
                 </div>
             </div>

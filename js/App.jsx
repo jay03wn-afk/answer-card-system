@@ -811,9 +811,13 @@ function Main() {
             )}
             
             {/* ✨ 新增：判斷如果尚未看過新手教學，就渲染已經寫好的教學視窗 (加入 !currentQaId 確保完成快問快答才顯示) */}
-            {userProfile && userProfile.hasSeenTutorial === false && !currentQaId && (
-                <TutorialOverlay onComplete={completeTutorial} />
-            )}
+            {/* ✨ 修改：傳入 setActiveTab，讓教學組件可以控制頁面跳轉 */}
+{userProfile && userProfile.hasSeenTutorial === false && !currentQaId && (
+    <TutorialOverlay 
+        onComplete={completeTutorial} 
+        onNavigate={setActiveTab} 
+    />
+)}
 
             {/* ✅ 4. 主畫面這裡原本一大串的 modal 程式碼，現在只需要呼叫 SharedModal 就好了 */}
             {SharedModal}
