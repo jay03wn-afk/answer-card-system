@@ -6086,7 +6086,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                                 <div className="mt-4 flex justify-end">
                                                     <button onClick={() => handlePeek(actualIdx)} className="text-sm font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 px-5 py-2 hover:bg-amber-200 transition-colors border border-amber-200 flex items-center gap-1.5 rounded-full shadow-sm">
                                                         <span className="material-symbols-outlined text-[18px]">key</span>
-                                                        偷看答案 (將鎖定此題)</button>
+                                                        偷看答案</button>
                                                 </div>
                                             )}
 
