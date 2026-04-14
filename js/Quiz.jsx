@@ -166,7 +166,7 @@ const parseSmilesToHtml = (content) => {
         const encodedCanvas = encodeURIComponent(fallbackCanvasHtml);
         const pubChemUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(cleanText)}/PNG`;
 
-        return `<img src="${pubChemUrl}" alt="${cleanText}" title="${cleanText}" style="height: 40px; width: auto; max-width: 100%; display: inline-block; vertical-align: middle; background-color: #FCFBF7 !important; border-radius: 4px; border: 1px solid #ddd; margin: 0 2px; cursor: zoom-in;" class="zoomable-img" onerror="this.outerHTML=decodeURIComponent('${encodedCanvas}')" />`;
+        return `<img src="${pubChemUrl}" alt="化學結構" style="height: 40px; width: auto; max-width: 100%; display: inline-block; vertical-align: middle; background-color: #FCFBF7 !important; border-radius: 4px; border: 1px solid #ddd; margin: 0 2px; cursor: zoom-in;" class="zoomable-img" onerror="this.outerHTML=decodeURIComponent('${encodedCanvas}')" />`;
     });
 };
 
@@ -398,13 +398,13 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                     const encodedSpan = encodeURIComponent(fallbackTextSpan);
                     
                     // 第二備案：利用舊版 Cactus API 繪製 SMILES (發生在藥物名稱找不到時)
-                    const cactusUrl = `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(fallbackSmiles)}/image`;
-                    const cactusImgHtml = `<img src="${cactusUrl}" alt="${fallbackSmiles}" title="SMILES: ${fallbackSmiles}" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #FCFBF7 !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-[#FCFBF7]" onerror="this.outerHTML=decodeURIComponent('${encodedSpan}')" />`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                    const cactusUrl = `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(fallbackSmiles)}/image`;
+                    const cactusImgHtml = `<img src="${cactusUrl}" alt="化學結構" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #FCFBF7 !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-[#FCFBF7]" onerror="this.outerHTML=decodeURIComponent('${encodedSpan}')" />`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
-                    // 首選方案：呼叫 PubChem API 找藥物圖片，如果失敗就觸發 onerror 換成第二備案 Cactus
-                    const pubChemUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(cleanText)}/PNG`;
+                    // 首選方案：呼叫 PubChem API 找藥物圖片，如果失敗就觸發 onerror 換成第二備案 Cactus
+                    const pubChemUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(cleanText)}/PNG`;
 
-                    return `<img src="${pubChemUrl}" alt="${cleanText}" title="藥物: ${cleanText}" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #FCFBF7 !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-[#FCFBF7]" onerror="this.outerHTML='${cactusImgHtml}'" />&nbsp;`;
+                    return `<img src="${pubChemUrl}" alt="化學結構" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #FCFBF7 !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-[#FCFBF7]" onerror="this.outerHTML='${cactusImgHtml}'" />&nbsp;`;
                 });
                 n.parentNode.replaceChild(span, n);
             }
@@ -1112,8 +1112,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     <h3 className="text-2xl font-black text-gray-800 dark:text-white mb-2">目前沒有錯題紀錄</h3>
                     <p className="text-gray-500 dark:text-gray-400 font-bold max-w-md leading-relaxed mt-2">
                         這是一件好事，代表你目前百發百中！<br/><br/>
-                        下次如果在測驗中遇到錯題，只要在「交卷後的解答檢視頁面」，點擊題目右下角的 <span className="bg-stone-50 dark:bg-gray-700 text-red-500 px-2 py-1 border border-stone-200 dark:border-gray-600 rounded-sm">📓 收錄錯題</span>，就可以把題目收藏到這裡隨時複習喔！
-                    </p>
+下次如果在測驗中遇到錯題，只要在「交卷後的解答檢視頁面」，點擊題目右下角的 <span className="bg-stone-50 dark:bg-gray-700 text-red-500 px-2 py-1 border border-stone-200 dark:border-gray-600 rounded-sm inline-flex items-center gap-1 align-middle"><span className="material-symbols-outlined text-[14px]">bookmark_add</span> 收錄錯題</span>，就可以把題目收藏到這裡隨時複習喔！                    </p>
                 </div>
              ) :
            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-10">
@@ -2573,7 +2572,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                 <div className="fixed inset-0 bg-stone-800 bg-opacity-80 flex items-center justify-center z-[200] p-4">
                     <div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-sm rounded-2xl shadow-2xl text-center border-t-8 border-indigo-500 animate-fade-in">
                         <div className="w-16 h-16 border-4 border-stone-200 dark:border-stone-700 border-t-indigo-500 rounded-full animate-spin mx-auto mb-6"></div>
-                        <h3 className="text-xl font-black mb-2 dark:text-white">🚀 正在進入試卷...</h3>
+                        <h3 className="text-xl font-black mb-2 dark:text-white">正在進入試卷...</h3>
                         <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">正在為您準備作答環境，請稍候</p>
                     </div>
                 </div>
@@ -4219,7 +4218,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         // 情況 A：沒有任何更動
         if (changedDetails.length === 0) {
             setIsRegrading(false);
-            if (isAuto !== true) showAlert("ℹ️ 目前雲端沒有偵測到標準答案有任何更動喔！");
+            if (isAuto !== true) showAlert("目前雲端沒有偵測到標準答案有任何更動喔！");
             return;
         }
 
@@ -4728,7 +4727,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         <div className="flex flex-col min-h-[100dvh] items-center p-4 relative py-10 overflow-y-auto bg-stone-50 dark:bg-stone-900 transition-colors custom-scrollbar">
             {UpdateNotification}
             <button onClick={handleBackFromEdit} className="absolute top-6 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-10 transition-colors">← 返回</button>
-<div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 shadow-2xl rounded-3xl w-full max-w-6xl 2xl:max-w-[1400px] border border-stone-200 dark:border-stone-700 mt-6 transition-colors">                <h2 className="font-black mb-6 text-2xl text-stone-800 dark:text-stone-100 border-b border-stone-200 dark:border-stone-700 pb-4">📝 編輯試題</h2>
+<div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 shadow-2xl rounded-3xl w-full max-w-6xl 2xl:max-w-[1400px] border border-stone-200 dark:border-stone-700 mt-6 transition-colors">                <h2 className="font-black mb-6 text-2xl text-stone-800 dark:text-stone-100 border-b border-stone-200 dark:border-stone-700 pb-4 flex items-center gap-2"><span className="material-symbols-outlined text-[28px]">settings</span> 編輯試題設定</h2>
                 
                {/* 新增：測驗名稱編輯區塊 */}
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗名稱</label>
@@ -5025,12 +5024,12 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                 </div>
                             </div>
 
-                            <h3 className="font-bold text-xs text-amber-600 dark:text-amber-400 mb-2 mt-4">🔵 選擇題標準答案</h3>
+                            <h3 className="font-bold text-xs text-amber-600 dark:text-amber-400 mb-2 mt-4 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">radio_button_checked</span> 選擇題標準答案</h3>
                             <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} parsedTypes={parsedQuestionTypes} maxQuestions={numQuestions} showConfirm={showConfirm} />
                             
                             {!!qParts.sq && (
                                 <div className="mt-6 mb-2 animate-fade-in">
-                                    <h3 className="font-bold text-xs text-cyan-600 dark:text-cyan-400 mb-2">🟢 簡答題標準答案 (支援一鍵貼上多格)</h3>
+                                    <h3 className="font-bold text-xs text-cyan-600 dark:text-cyan-400 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">short_text</span> 簡答題標準答案 (支援一鍵貼上多格)</h3>
                                     <SpecificAnswerGridInput value={shortAnswersInput} onChange={setShortAnswersInput} parsedTypes={parsedQuestionTypes} targetType="SQ" title="簡答題" colorTheme="teal" showConfirm={showConfirm} />
                                 </div>
                             )}
@@ -5059,20 +5058,20 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                 <div className="flex flex-col gap-3 mt-4 mb-8 bg-gray-50 dark:bg-stone-900 p-4 border border-stone-200 dark:border-stone-700">
                     <label className="flex items-center space-x-2 cursor-pointer dark:text-white font-bold text-sm">
                         <input type="checkbox" checked={publishAnswersToggle} onChange={e => setPublishAnswersToggle(e.target.checked)} className="w-4 h-4 accent-black" />
-                        <span>👁️ 允許玩家在交卷後查看「標準答案」與「錯題」</span>
+                        <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">visibility</span> 允許玩家在交卷後查看「標準答案」與「錯題」</span>
                     </label>
                     <label className="flex items-center space-x-2 cursor-pointer dark:text-white font-bold text-sm">
                         <input type="checkbox" checked={allowPeek} onChange={e => setAllowPeek(e.target.checked)} className="w-4 h-4 accent-black" />
-                        <span>👀 允許玩家在沉浸式作答時使用「偷看答案」(限一般試題，偷看後該題將鎖定)</span>
+                        <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">key</span> 允許玩家在沉浸式作答時使用「偷看答案」(限一般試題，偷看後該題將鎖定)</span>
                     </label>
                 </div>
 
-                <button onClick={handleSaveEdit} className="w-full bg-amber-600 dark:bg-amber-700 text-white p-3 font-bold rounded-2xl hover:bg-amber-800 transition-colors shadow-md">
-                    💾 儲存並同步至所有玩家
-                </button>
+               <button onClick={handleSaveEdit} className="w-full bg-amber-600 dark:bg-amber-700 text-white p-3 font-bold rounded-2xl hover:bg-amber-800 transition-colors shadow-md flex justify-center items-center gap-2">
+                    <span className="material-symbols-outlined text-[20px]">save</span> 儲存並套用變更
+                </button>
 
                 <div className="mt-10 border-t border-stone-200 dark:border-stone-700 pt-6">
-                    <h3 className="font-bold text-lg mb-4 text-amber-600 dark:text-amber-400">💡 來自玩家的修正建議</h3>
+                    <h3 className="font-bold text-lg mb-4 text-amber-600 dark:text-amber-400 flex items-center gap-2"><span className="material-symbols-outlined text-[20px]">rate_review</span> 來自玩家的修正建議</h3>
                     {creatorSuggestions.length === 0 ? (
                         <p className="text-gray-500 text-sm font-bold">目前沒有收到建議。</p>
                     ) : (
@@ -5408,7 +5407,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
 
                             {!!qParts.sq && (
                                 <div className="mb-6 animate-fade-in">
-                                    <label className="block text-cyan-700 dark:text-cyan-400 font-bold mb-2">🟢 簡答題文本 [SQ.xxx]</label>
+                                    <label className="block text-cyan-700 dark:text-cyan-400 font-bold mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">short_text</span> 簡答題文本 [SQ.xxx]</label>
                                     {inputType === 'richtext' ? (
                                         <div className="border-2 border-cyan-300 dark:border-cyan-700 focus-within:border-cyan-500 transition-colors bg-cyan-50/30 dark:bg-cyan-900/20">
                                             <ContentEditableEditor value={qParts.sq} onChange={handleSqChange} placeholder="請輸入 [SQ.xxx] 開頭的簡答題..." />
@@ -5421,7 +5420,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
 
                             {!!qParts.asq && (
                                 <div className="mb-6 animate-fade-in">
-                                    <label className="block text-amber-700700 dark:text-amber-700400 font-bold mb-2">🟣 問答題文本 [ASQ.xxx]</label>
+                                   <label className="block text-amber-700700 dark:text-amber-700400 font-bold mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">subject</span> 問答題文本 [ASQ.xxx]</label>
                                     {inputType === 'richtext' ? (
                                         <div className="border-2 border-amber-700300 dark:border-amber-700700 focus-within:border-amber-700500 transition-colors bg-amber-70050/30 dark:bg-amber-700900/20">
                                             <ContentEditableEditor value={qParts.asq} onChange={handleAsqChange} placeholder="請輸入 [ASQ.xxx] 開頭的問答題..." />
@@ -5455,7 +5454,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                 </div>
                             )}
 
-                            <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4">測驗詳解區 (亦可作為問答題的 AI 評分標準區)</h3>
+                            <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">lightbulb</span> 測驗詳解區 (亦可作為問答題的 AI 評分標準區)</h3>
                             <div className="mb-6">
                                 {inputType === 'richtext' ? (
                                     <div className="border-2 border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-stone-800">
@@ -5721,7 +5720,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                     <div className="fixed inset-0 bg-stone-800 bg-opacity-80 flex items-center justify-center z-[200] p-4">
                         <div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-sm rounded-2xl shadow-2xl text-center border-t-8 border-black dark:border-white">
                             <div className="w-16 h-16 border-4 border-stone-200 border-t-black dark:border-stone-700 dark:border-t-white rounded-full animate-spin mx-auto mb-6"></div>
-                            <h3 className="text-xl font-black mb-2 dark:text-white">🚀 正在建立試卷...</h3>
+                            <h3 className="text-xl font-black mb-2 dark:text-white">正在建立試卷...</h3>
                             <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">即將為您準備作答環境，請稍候</p>
                         </div>
                     </div>
@@ -6085,18 +6084,17 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                             
                                             {canPeek && !isPeeked && !results && (
                                                 <div className="mt-4 flex justify-end">
-                                                    <button onClick={() => handlePeek(actualIdx)} className="text-sm font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 px-5 py-2 hover:bg-amber-200 transition-colors border border-amber-200 flex items-center gap-2 rounded-full shadow-sm">
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                                                        偷看答案 (將鎖定此題)
-                                                    </button>
+                                                    <button onClick={() => handlePeek(actualIdx)} className="text-sm font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 px-5 py-2 hover:bg-amber-200 transition-colors border border-amber-200 flex items-center gap-1.5 rounded-full shadow-sm">
+                                                        <span className="material-symbols-outlined text-[18px]">key</span>
+                                                        偷看答案 (將鎖定此題)
+                                                    </button>
                                                 </div>
                                             )}
 
                                             {(isPeeked || results) && (
                                                 <div className="mt-4 p-4 bg-amber-50 dark:bg-stone-900 border border-amber-200 dark:border-amber-800 text-sm">
                                                     <div className="font-bold text-amber-700 dark:text-amber-400 mb-2 pb-2 border-b border-amber-200 flex items-center gap-2">
-                                                        <span>{results ? '💡 試題詳解' : '🔒 此題已看過答案並鎖定'}</span>
-                                                        <span className="bg-[#FCFBF7] dark:bg-stone-800 px-2 py-0.5 rounded border border-amber-200 ml-auto text-stone-800 dark:text-white">標準答案: {currentCorrectAns || '未設定'}</span>
+<span className="flex items-center gap-1">{results ? <><span className="material-symbols-outlined text-[18px]">lightbulb</span> 試題詳解</> : <><span className="material-symbols-outlined text-[18px]">lock</span> 此題已看過答案並鎖定</>}</span>                                                        <span className="bg-[#FCFBF7] dark:bg-stone-800 px-2 py-0.5 rounded border border-amber-200 ml-auto text-stone-800 dark:text-white">標準答案: {currentCorrectAns || '未設定'}</span>
                                                     </div>
                                                     {currentExp ? (
                                                         <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(currentExp) }} />
@@ -6116,8 +6114,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                                             }} 
                                                             className={`text-xs bg-[#FCFBF7] dark:bg-stone-800 text-red-600 px-3 py-1.5 font-bold rounded-2xl border border-red-200 hover:bg-red-50 transition-colors shadow-sm ${loadingWrongBookNum === q.number ? 'opacity-50 cursor-wait' : ''}`}
                                                         >
-                                                            {loadingWrongBookNum === q.number ? '⏳ 處理中...' : '📓 收錄錯題'}
-                                                        </button>
+{loadingWrongBookNum === q.number ? <><span className="material-symbols-outlined text-[16px] mr-1 animate-spin">autorenew</span>處理中...</> : <><span className="material-symbols-outlined text-[16px] mr-1">bookmark_add</span>收錄錯題</>}                                                        </button>
                                                     </div>
                                                 </div>
                                             )}
@@ -6252,8 +6249,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                                     {isBonus && <span className="text-[10px] bg-amber-400 text-stone-800 px-1.5 py-0.5 rounded-sm font-bold animate-pulse shadow-sm">🎁 送分</span>}
                                                 </div>
                                                 <div className="flex space-x-1 shrink-0 items-center flex-1">
-                                                    {peekedAnswers && peekedAnswers[i] && <span className="text-xs mr-2 text-amber-500 font-bold" title="已偷看答案">🔒</span>}
-                                                    {['A','B','C','D'].map(o => (
+{peekedAnswers && peekedAnswers[i] && <span className="text-xs mr-2 text-amber-500 font-bold flex items-center" title="已偷看答案"><span className="material-symbols-outlined text-[16px]">lock</span></span>}                                                    {['A','B','C','D'].map(o => (
                                                         <button 
                                                             key={o} 
                                                             disabled={isTimeUp || (peekedAnswers && peekedAnswers[i])}
@@ -6295,7 +6291,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                                                             className={`text-sm focus:outline-none ${starred[i] ? 'text-amber-500' : 'text-gray-300 dark:text-gray-600'}`}
                                                         >★</button>
                                                     </div>
-                                                    {peekedAnswers && peekedAnswers[i] && <span className="text-xs text-amber-500 font-bold">🔒 已鎖定</span>}
+                                                    {peekedAnswers && peekedAnswers[i] && <span className="text-xs text-amber-500 font-bold flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">lock</span> 已鎖定</span>}
                                                 </div>
                                                 
                                                 {type === 'SQ' ? (
@@ -7032,10 +7028,10 @@ if (step === 'grading') return (
                                                                     className={`text-xs bg-white dark:bg-stone-700 text-rose-600 dark:text-rose-400 px-3 py-1.5 font-bold rounded-full border border-stone-200 dark:border-stone-600 hover:bg-rose-50 dark:hover:bg-stone-600 transition-colors shadow-sm flex items-center ${loadingWrongBookNum === item.number ? 'opacity-50 cursor-wait' : ''}`}
                                                                 >
                                                                     {loadingWrongBookNum === item.number ? (
-                                                                        <><svg className="w-3.5 h-3.5 mr-1 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>處理中...</>
-                                                                    ) : (
-                                                                        <><svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>收錄錯題</>
-                                                                    )}
+                                                                    <><span className="material-symbols-outlined text-[16px] mr-1 animate-spin">autorenew</span>處理中...</>
+                                                                ) : (
+                                                                    <><span className="material-symbols-outlined text-[16px] mr-1">bookmark_add</span>收錄錯題</>
+                                                                )}
                                                                 </button>
                                                             </div>
                                                         </div>

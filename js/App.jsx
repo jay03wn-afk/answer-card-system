@@ -21,34 +21,46 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
         other: [{ label: '自訂科目', val: 100 }]
     }), []);
 
-    // 防呆比例調整：確保加總為 100%
+   // 防呆比例調整：開放輸入，且採用「瀑布式」往後影響，不往前影響
     const handleWeightChange = (promptId, idx, newVal) => {
         setPromptSettings(prev => {
             const current = prev[promptId] || { num: 10, range: '', weights: JSON.parse(JSON.stringify(DEFAULT_WEIGHTS[examFeatures.myPrompts.find(p=>p.id===promptId)?.subjectId || 's1'])) };
             const newWeights = [...current.weights];
-            const oldVal = newWeights[idx].val;
-            newWeights[idx].val = newVal;
+            const len = newWeights.length;
 
-            // 如果只有一個科目，強制 100
-            if (newWeights.length === 1) {
-                newWeights[idx].val = 100;
+            if (len === 1) {
+                newWeights[0].val = 100;
             } else {
-                // 自動調整其他科目
-                const diff = newVal - oldVal;
-                const otherIndices = newWeights.map((_, i) => i).filter(i => i !== idx);
+                // 1. 計算在目前操作的項目「之前」的所有權重總和 (這些是被鎖定的，不可往前影響)
+                let lockedSum = 0;
+                for (let i = 0; i < idx; i++) {
+                    lockedSum += newWeights[i].val;
+                }
+
+                // 2. 限制目前輸入的值 (不能超過剩下的扣打，也不能小於 0)
+                let maxAllowed = 100 - lockedSum;
+                let safeVal = Math.max(0, Math.min(newVal, maxAllowed));
                 
-                // 優先扣除/分配給其他還有數值的科目
-                let remainingDiff = diff;
-                otherIndices.forEach(i => {
-                    if (remainingDiff === 0) return;
-                    const change = Math.min(newWeights[i].val, remainingDiff);
-                    newWeights[i].val -= change;
-                    remainingDiff -= change;
-                });
-                
-                // 如果還扣不夠，強行分攤（防呆）
-                if (remainingDiff !== 0) {
-                    newWeights[otherIndices[0]].val = Math.max(0, newWeights[otherIndices[0]].val - remainingDiff);
+                // 3. 把剩下的額度分配給「後方」的科目 (瀑布流分配)
+                let remainder = maxAllowed - safeVal;
+                newWeights[idx].val = safeVal;
+
+                for (let i = idx + 1; i < len; i++) {
+                    if (i === len - 1) {
+                        // 最後一項直接拿走所有剩下的，確保總和絕對是 100
+                        newWeights[i].val = remainder;
+                    } else {
+                        // 中間項盡量保持原本的數值，但不超過 remainder
+                        let currentVal = newWeights[i].val;
+                        let assigned = Math.min(currentVal, remainder);
+                        newWeights[i].val = assigned;
+                        remainder -= assigned;
+                    }
+                }
+
+                // 特例：如果使用者硬拉「最後一項」，因為它不能往前影響，強制拉回剩下該有的值
+                if (idx === len - 1) {
+                    newWeights[idx].val = maxAllowed;
                 }
             }
             return { ...prev, [promptId]: { ...current, weights: newWeights } };
@@ -79,7 +91,10 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
         setNewPrompt({ ...prompt });
         setEditingPrompt(prompt.id);
         setIsAddingPrompt(true);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // 給 React 一點點時間把編輯區塊畫出來，然後滾動過去
+        setTimeout(() => {
+            document.getElementById('edit-prompt-area')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
     };
 
     const handleDeletePrompt = (id) => {
@@ -306,7 +321,7 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                 </div>
 
                 {isAddingPrompt && (
-                    <div className="bg-cyan-50 dark:bg-stone-900 p-4 rounded-xl border border-cyan-200 dark:border-stone-700 mb-4 space-y-3">
+                    <div id="edit-prompt-area" className="bg-cyan-50 dark:bg-stone-900 p-4 rounded-xl border border-cyan-200 dark:border-stone-700 mb-4 space-y-3">
                         <div className="flex items-center gap-2 mb-2">
                             <span className="material-symbols-outlined text-cyan-600">{editingPrompt ? 'edit' : 'add_circle'}</span>
                             <span className="font-bold dark:text-white">{editingPrompt ? '編輯 Prompt' : '建立新 Prompt'}</span>
@@ -393,9 +408,19 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                                                                     <div className="space-y-2 pt-2 border-t border-amber-50">
                                                                         {settings.weights.map((w, idx) => (
                                                                             <div key={idx} className="flex flex-col gap-1">
-                                                                                <div className="flex justify-between text-[10px] font-bold text-amber-700 dark:text-amber-500">
+                                                                                <div className="flex justify-between items-center text-[10px] font-bold text-amber-700 dark:text-amber-500">
                                                                                     <span>{w.label}</span>
-                                                                                    <span>{w.val}%</span>
+                                                                                    <div className="flex items-center gap-1">
+                                                                                        <input
+                                                                                            type="number" min="0" max="100" value={w.val}
+                                                                                            onChange={e => {
+                                                                                                let val = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                                                                                if (!isNaN(val)) handleWeightChange(prompt.id, idx, val);
+                                                                                            }}
+                                                                                            className="w-12 px-1 py-0.5 text-right rounded border border-amber-300 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none focus:border-amber-500 transition-colors"
+                                                                                        />
+                                                                                        <span>%</span>
+                                                                                    </div>
                                                                                 </div>
                                                                                 <input 
                                                                                     type="range" min="0" max="100" value={w.val}
