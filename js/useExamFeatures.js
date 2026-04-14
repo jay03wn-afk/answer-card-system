@@ -99,6 +99,19 @@ const EXAM_DATA = [
         ]
       }
     ]
+  },
+  {
+    id: "other",
+    title: "其他科目",
+    categories: [
+      {
+        id: "other_c1",
+        title: "自訂科目",
+        parts: ["其他"],
+        chapterWeights: [100],
+        chapters: ["自訂範圍"]
+      }
+    ]
   }
 ];
 
@@ -127,6 +140,7 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
   const [myTasks, setMyTasks] = useState([]);
   const [allUsersData, setAllUsersData] = useState([]);
   const [studyLogs, setStudyLogs] = useState([]);
+  const [myPrompts, setMyPrompts] = useState([]);
 
   useEffect(() => {
     if (!user || !db) return;
@@ -139,6 +153,7 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
         const data = docSnap.data();
         if (docSnap.id === user.uid) {
           setMyTasks(data.tasks || []);
+          setMyPrompts(data.prompts || []);
           foundMyData = true;
         }
         users.push({ nickname: data.nickname || "匿名戰友", totalPoints: data.totalPoints || 0 });
@@ -148,6 +163,7 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
         progressRef.doc(user.uid).set({
           nickname: user.displayName || user.email.split('@')[0],
           tasks: [],
+          prompts: [],
           totalPoints: 0,
           updatedAt: Date.now()
         }, { merge: true });
@@ -191,6 +207,86 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
 
   const myTotalPoints = useMemo(() => calculatePoints(myTasks), [myTasks, calculatePoints]);
   const overallProgress = useMemo(() => ((myTotalPoints / GLOBAL_TOTAL_POINTS) * 100).toFixed(1), [myTotalPoints]);
+
+  const markTasksDone = useCallback((taskIds) => {
+    if (!user || !db || !taskIds.length) return;
+    setMyTasks(prev => {
+        const newSet = new Set(prev);
+        taskIds.forEach(id => newSet.add(id));
+        const newTasks = Array.from(newSet);
+        const points = calculatePoints(newTasks);
+        db.collection('artifacts').doc(appId).collection('userProgress').doc(user.uid).set({
+            tasks: newTasks,
+            totalPoints: points,
+            updatedAt: Date.now()
+        }, { merge: true }).catch(err => console.error("批量更新進度失敗:", err));
+        return newTasks;
+    });
+  }, [user, db, appId, calculatePoints]);
+
+  const savePrompts = useCallback((newPrompts) => {
+    if (!user || !db) return;
+    setMyPrompts(newPrompts);
+    db.collection('artifacts').doc(appId).collection('userProgress').doc(user.uid).set({
+        prompts: newPrompts,
+        updatedAt: Date.now()
+    }, { merge: true }).catch(err => console.error("儲存 Prompt 失敗:", err));
+  }, [user, db, appId]);
+
+  const sharePrompt = useCallback(async (promptData) => {
+    if (!user || !db) return null;
+
+    // 檢查這張卡片是否已經有專屬的分享代碼
+    let code = promptData.shareCode;
+
+    try {
+        // 如果這個 Prompt 還沒分享過，產生全新唯一代碼
+        if (!code) {
+            let isUnique = false;
+            while (!isUnique) {
+                code = Array.from({length: 6}, () => String.fromCharCode(97 + Math.floor(Math.random() * 26))).join('');
+                const doc = await db.collection('artifacts').doc(appId).collection('sharedPrompts').doc(code).get();
+                if (!doc.exists) isUnique = true;
+            }
+            
+            // 更新自己的 Prompt 陣列，讓這張卡片「記住」自己的分享代碼
+            const updatedPrompts = myPrompts.map(p => p.id === promptData.id ? { ...p, shareCode: code } : p);
+            setMyPrompts(updatedPrompts);
+            await db.collection('artifacts').doc(appId).collection('userProgress').doc(user.uid).set({
+                prompts: updatedPrompts,
+                updatedAt: Date.now()
+            }, { merge: true });
+        }
+
+        const cleanData = { ...promptData, shareCode: code };
+        delete cleanData.id; // 清除原本的 ID，避免匯入衝突
+
+        // 更新共用資料庫 (若已分享過，此舉會更新最新修改的內容)
+        await db.collection('artifacts').doc(appId).collection('sharedPrompts').doc(code).set({
+            ...cleanData,
+            author: user.uid,
+            updatedAt: Date.now()
+        });
+        return code;
+    } catch (err) {
+        console.error("分享失敗:", err);
+        return null;
+    }
+  }, [user, db, appId, myPrompts]);
+
+  const fetchSharedPrompt = useCallback(async (code) => {
+    if (!db || !code) return null;
+    try {
+        const doc = await db.collection('artifacts').doc(appId).collection('sharedPrompts').doc(code).get();
+        if (doc.exists) {
+            return doc.data();
+        }
+        return null;
+    } catch (err) {
+        console.error("讀取分享失敗:", err);
+        return null;
+    }
+  }, [db, appId]);
 
   const toggleTask = useCallback((taskId) => {
     if (!user || !db) return;
@@ -252,7 +348,8 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
   return {
     EXAM_DATA, GLOBAL_TOTAL_POINTS,generateAIMnemonic,
     myTasks, allUsersData, studyLogs, myTotalPoints, overallProgress,
-    calculatePoints, toggleTask, addStudyLog, deleteStudyLog, generateAIMnemonic
+    myPrompts,
+    calculatePoints, toggleTask, markTasksDone, savePrompts, sharePrompt, fetchSharedPrompt, addStudyLog, deleteStudyLog, generateAIMnemonic
   
   };
 }

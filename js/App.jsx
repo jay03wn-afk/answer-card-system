@@ -2,10 +2,146 @@
 // ✨ 國考戰況與 AI 口訣專屬 UI 介面
 // ==========================================
 
-function ExamProgressDashboard({ examFeatures, user }) {
-    const { useState, useMemo } = React;
+function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) {
+    const { useState, useMemo, useEffect } = React;
     const [noteText, setNoteText] = useState('');
     
+    // === 常用 Prompt 區狀態 ===
+    const [isAddingPrompt, setIsAddingPrompt] = useState(false);
+    const [editingPrompt, setEditingPrompt] = useState(null); // 用於編輯模式
+    const [newPrompt, setNewPrompt] = useState({ title: '', subjectId: 's1', isQuiz: false, content: '', note: '' });
+    const [expandedPromptSubj, setExpandedPromptSubj] = useState({});
+    const [promptSettings, setPromptSettings] = useState({});
+    const [expandedSettings, setExpandedSettings] = useState({}); // 控制各卡片設定收合
+
+    const DEFAULT_WEIGHTS = useMemo(() => ({
+        s1: [{ label: '藥理學', val: 50 }, { label: '藥物化學', val: 50 }],
+        s2: [{ label: '藥物分析', val: 50 }, { label: '生藥', val: 31 }, { label: '中藥', val: 19 }],
+        s3: [{ label: '藥劑學', val: 56 }, { label: '生物藥劑學', val: 44 }],
+        other: [{ label: '自訂科目', val: 100 }]
+    }), []);
+
+    // 防呆比例調整：確保加總為 100%
+    const handleWeightChange = (promptId, idx, newVal) => {
+        setPromptSettings(prev => {
+            const current = prev[promptId] || { num: 10, range: '', weights: JSON.parse(JSON.stringify(DEFAULT_WEIGHTS[examFeatures.myPrompts.find(p=>p.id===promptId)?.subjectId || 's1'])) };
+            const newWeights = [...current.weights];
+            const oldVal = newWeights[idx].val;
+            newWeights[idx].val = newVal;
+
+            // 如果只有一個科目，強制 100
+            if (newWeights.length === 1) {
+                newWeights[idx].val = 100;
+            } else {
+                // 自動調整其他科目
+                const diff = newVal - oldVal;
+                const otherIndices = newWeights.map((_, i) => i).filter(i => i !== idx);
+                
+                // 優先扣除/分配給其他還有數值的科目
+                let remainingDiff = diff;
+                otherIndices.forEach(i => {
+                    if (remainingDiff === 0) return;
+                    const change = Math.min(newWeights[i].val, remainingDiff);
+                    newWeights[i].val -= change;
+                    remainingDiff -= change;
+                });
+                
+                // 如果還扣不夠，強行分攤（防呆）
+                if (remainingDiff !== 0) {
+                    newWeights[otherIndices[0]].val = Math.max(0, newWeights[otherIndices[0]].val - remainingDiff);
+                }
+            }
+            return { ...prev, [promptId]: { ...current, weights: newWeights } };
+        });
+    };
+
+    const handleSavePrompt = () => {
+        if (!newPrompt.title.trim() || !newPrompt.content.trim()) {
+            if (window.setGlobalToast) window.setGlobalToast({ status: 'error', message: '標題與內容不能為空！' });
+            return;
+        }
+        
+        let updated;
+        if (editingPrompt) {
+            updated = examFeatures.myPrompts.map(p => p.id === editingPrompt ? { ...newPrompt, id: p.id } : p);
+        } else {
+            updated = [...(examFeatures.myPrompts || []), { ...newPrompt, id: Date.now().toString() }];
+        }
+        
+        examFeatures.savePrompts(updated);
+        setIsAddingPrompt(false);
+        setEditingPrompt(null);
+        setNewPrompt({ title: '', subjectId: 's1', isQuiz: false, content: '', note: '' });
+        if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: editingPrompt ? '編輯成功！' : '新增成功！' });
+    };
+
+    const handleEditStart = (prompt) => {
+        setNewPrompt({ ...prompt });
+        setEditingPrompt(prompt.id);
+        setIsAddingPrompt(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleDeletePrompt = (id) => {
+        showConfirm("確定要刪除此 Prompt 嗎？刪除後無法恢復。", () => {
+            const updated = (examFeatures.myPrompts || []).filter(p => p.id !== id);
+            examFeatures.savePrompts(updated);
+            setIsAddingPrompt(false);
+            setEditingPrompt(null);
+            if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: '已刪除 Prompt！' });
+        });
+    };
+
+    const handleSharePrompt = async (prompt) => {
+        if (window.setGlobalToast) window.setGlobalToast({ status: 'loading', message: '產生分享代碼中...' });
+        const code = await examFeatures.sharePrompt(prompt);
+        if (code) {
+            navigator.clipboard.writeText(code);
+            if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: `分享代碼「${code}」已複製！朋友點擊匯入並貼上即可。` });
+        } else {
+            if (window.setGlobalToast) window.setGlobalToast({ status: 'error', message: '分享失敗，請稍後再試。' });
+        }
+    };
+
+    const handleImportPrompt = () => {
+        showPrompt("請貼上 6 位小寫英文字母的分享代碼：", "", async (code) => {
+            if (!code || code.trim().length === 0) return;
+            const cleanCode = code.trim().toLowerCase();
+            
+            // 檢查是否已經擁有該代碼的 Prompt
+            if (examFeatures.myPrompts && examFeatures.myPrompts.some(p => p.shareCode === cleanCode)) {
+                if (window.setGlobalToast) window.setGlobalToast({ status: 'error', message: '您已經匯入或擁有過此 Prompt，無法重複匯入！' });
+                return;
+            }
+
+            if (window.setGlobalToast) window.setGlobalToast({ status: 'loading', message: '尋找代碼中...' });
+            
+            const imported = await examFeatures.fetchSharedPrompt(cleanCode);
+            if (imported) {
+                // 確保匯入的物件帶有 shareCode，作為日後重複檢查的依據
+                const updated = [...(examFeatures.myPrompts || []), { ...imported, id: Date.now().toString(), shareCode: cleanCode }];
+                examFeatures.savePrompts(updated);
+                if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: `成功匯入：${imported.title}` });
+            } else {
+                if (window.setGlobalToast) window.setGlobalToast({ status: 'error', message: "找不到該代碼，請確認是否輸入正確。" });
+            }
+        });
+    };
+
+    const handleCopyPrompt = (prompt) => {
+        let text = prompt.content;
+        if (prompt.isQuiz) {
+            const settings = promptSettings[prompt.id] || { num: 10, range: '', weights: DEFAULT_WEIGHTS[prompt.subjectId] };
+            let header = `# 題數與佔比\n請根據 [${settings.range || '指定'}] 範圍中的文字、圖表與藥物結構描述，\n出「${settings.num}題」單選題（四選一，A/B/C/D）。\n`;
+            settings.weights.forEach(w => {
+                header += `- ${w.val}%為「（${w.label}）」試題。\n`;
+            });
+            text = header + text;
+        }
+        navigator.clipboard.writeText(text);
+        if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: '已複製 Prompt！' });
+    };
+
     // === AI 口訣區狀態 ===
     const [aiTopic, setAiTopic] = useState('');
     const [aiResult, setAiResult] = useState('');
@@ -38,12 +174,10 @@ function ExamProgressDashboard({ examFeatures, user }) {
         e.preventDefault();
         if (selectedItems.length === 0 && !noteText.trim()) return;
 
-        // 1. 連動更新打卡區：將選中的項目自動標記為已完成
-        selectedItems.forEach(taskId => {
-            if (!examFeatures.myTasks.includes(taskId)) {
-                examFeatures.toggleTask(taskId);
-            }
-        });
+        // 1. 連動更新打卡區：將選中的項目自動標記為已完成 (修復多選無效問題)
+        if (selectedItems.length > 0) {
+            examFeatures.markTasksDone(selectedItems);
+        }
 
         // 2. 轉換標籤名稱用於顯示
         const subjectLabels = selectedItems.map(id => {
@@ -55,12 +189,15 @@ function ExamProgressDashboard({ examFeatures, user }) {
             return `${subj.title} > ${chap} (${typeLabel})`;
         });
 
-        examFeatures.addStudyLog(subjectLabels.length > 0 ? subjectLabels : ['📝 一般筆記'], noteText, 'note');
+       examFeatures.addStudyLog(subjectLabels.length > 0 ? subjectLabels : ['📝 一般筆記'], noteText, 'note');
         
-        // 3. 清空狀態
+        // 3. 清空狀態與提供反饋
         setNoteText('');
         setSelectedItems([]);
         setIsSelectorOpen(false);
+        if (window.setGlobalToast) {
+            window.setGlobalToast({ status: 'success', message: '打卡成功！已同步更新進度與軌跡。' });
+        }
     };
 
     // === 搜尋過濾邏輯：打卡區 ===
@@ -138,24 +275,166 @@ function ExamProgressDashboard({ examFeatures, user }) {
                     </div>
                 </div>
               <p className="text-sm text-cyan-700 dark:text-cyan-300 mt-4 font-medium">
-                    📈 進度分配：速讀(15%) → 細讀(25%) → 熟讀(30%) → 刷題(30%)
+                    <span className="material-symbols-outlined text-[16px] align-middle mr-1">trending_up</span> 
+                    進度分配：速讀(15%) → 細讀(25%) → 熟讀(30%) → 刷題(30%)
                 </p>
             </div>
 
-           
+           {/* === 1.5 常用 Prompt 區 === */}
+            <div className="bg-[#FCFBF7] dark:bg-stone-800 rounded-2xl shadow-sm border border-cyan-200 dark:border-stone-700 p-4">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-2xl text-cyan-600">terminal</span>
+                        <h2 className="text-xl md:text-2xl font-bold text-cyan-800 dark:text-white">常用 Prompt 區</h2>
+                    </div>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={handleImportPrompt} 
+                            className="bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-gray-300 px-3 py-2 rounded-lg text-sm font-bold flex items-center hover:bg-stone-200"
+                        >
+                            <span className="material-symbols-outlined text-[18px] mr-1">download</span>
+                            匯入
+                        </button>
+                        <button 
+                            onClick={() => { setIsAddingPrompt(!isAddingPrompt); setEditingPrompt(null); setNewPrompt({ title: '', subjectId: 's1', isQuiz: false, content: '', note: '' }); }} 
+                            className="bg-cyan-500 hover:bg-cyan-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center"
+                        >
+                            <span className="material-symbols-outlined text-[18px] mr-1">{isAddingPrompt ? 'close' : 'add'}</span>
+                            {isAddingPrompt ? '取消' : '新增'}
+                        </button>
+                    </div>
+                </div>
 
+                {isAddingPrompt && (
+                    <div className="bg-cyan-50 dark:bg-stone-900 p-4 rounded-xl border border-cyan-200 dark:border-stone-700 mb-4 space-y-3">
+                        <div className="flex items-center gap-2 mb-2">
+                            <span className="material-symbols-outlined text-cyan-600">{editingPrompt ? 'edit' : 'add_circle'}</span>
+                            <span className="font-bold dark:text-white">{editingPrompt ? '編輯 Prompt' : '建立新 Prompt'}</span>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                            <input type="text" placeholder="Prompt 標題" className="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-cyan-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none focus:border-cyan-500" value={newPrompt.title} onChange={e => setNewPrompt({...newPrompt, title: e.target.value})} />
+                            <select className="px-3 py-2 rounded-lg border border-cyan-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={newPrompt.subjectId} onChange={e => setNewPrompt({...newPrompt, subjectId: e.target.value})}>
+                                {examFeatures.EXAM_DATA.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                            </select>
+                        </div>
+                        <label className="flex items-center gap-2 text-sm font-bold text-cyan-800 dark:text-cyan-300 cursor-pointer">
+                            <input type="checkbox" checked={newPrompt.isQuiz} onChange={e => setNewPrompt({...newPrompt, isQuiz: e.target.checked})} className="w-4 h-4 accent-cyan-500" />
+                            這是「出題」類型的 Prompt (複製時可調佔比與題數)
+                        </label>
+                        <input type="text" placeholder="備註 (選填)" className="w-full px-3 py-2 rounded-lg border border-cyan-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none text-sm" value={newPrompt.note} onChange={e => setNewPrompt({...newPrompt, note: e.target.value})} />
+                        <textarea placeholder="請輸入 Prompt 內容..." className="w-full h-32 px-3 py-2 rounded-lg border border-cyan-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none resize-none" value={newPrompt.content} onChange={e => setNewPrompt({...newPrompt, content: e.target.value})}></textarea>
+                        <div className="flex justify-between items-center">
+                            {editingPrompt && (
+                                <button onClick={() => handleDeletePrompt(editingPrompt)} className="text-red-500 font-bold flex items-center gap-1 hover:underline">
+                                    <span className="material-symbols-outlined text-[18px]">delete</span> 刪除此 Prompt
+                                </button>
+                            )}
+                            <div className="flex gap-2 ml-auto">
+                                <button onClick={handleSavePrompt} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-stone-700 dark:hover:bg-white transition-all">
+                                    {editingPrompt ? '更新儲存' : '儲存 Prompt'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="space-y-3">
+                    {examFeatures.EXAM_DATA.map(subj => {
+                        const subjPrompts = (examFeatures.myPrompts || []).filter(p => p.subjectId === subj.id);
+                        if (subjPrompts.length === 0) return null;
+                        const isExpanded = expandedPromptSubj[subj.id] !== false;
+                        return (
+                            <div key={`prompt-${subj.id}`} className="border border-cyan-100 dark:border-stone-700 rounded-xl overflow-hidden">
+                                <button 
+                                    onClick={() => setExpandedPromptSubj(prev => ({...prev, [subj.id]: !isExpanded}))}
+                                    className="w-full text-left px-4 py-3 bg-cyan-50 dark:bg-stone-800 hover:bg-cyan-100 dark:hover:bg-gray-700 font-bold text-cyan-800 dark:text-gray-200 flex justify-between items-center transition-colors"
+                                >
+                                    <span>{subj.title} ({subjPrompts.length})</span>
+                                    <span className="material-symbols-outlined">{isExpanded ? 'expand_less' : 'expand_more'}</span>
+                                </button>
+                                {isExpanded && (
+                                    <div className="p-3 bg-white dark:bg-stone-900 border-t border-cyan-100 dark:border-stone-700 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {subjPrompts.map(prompt => {
+                                            const settings = promptSettings[prompt.id] || { num: 10, range: '', weights: JSON.parse(JSON.stringify(DEFAULT_WEIGHTS[prompt.subjectId])) };
+                                            const isSetExpanded = expandedSettings[prompt.id];
+                                            return (
+                                                <div key={prompt.id} className="border border-gray-200 dark:border-stone-700 rounded-xl p-4 bg-[#FCFBF7] dark:bg-stone-800 flex flex-col shadow-sm relative group">
+                                                    <div className="flex justify-between items-start mb-1 pr-1">
+                                                        <h3 className="font-bold text-stone-800 dark:text-white text-lg">{prompt.title}</h3>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={() => handleSharePrompt(prompt)} className="text-stone-400 hover:text-cyan-500" title="分享"><span className="material-symbols-outlined text-[20px]">share</span></button>
+                                                            <button onClick={() => handleEditStart(prompt)} className="text-stone-400 hover:text-cyan-500" title="編輯與刪除"><span className="material-symbols-outlined text-[20px]">edit</span></button>
+                                                        </div>
+                                                    </div>
+                                                    {prompt.note && <p className="text-xs text-stone-500 dark:text-gray-400 mb-2">{prompt.note}</p>}
+                                                    
+                                                    {prompt.isQuiz && (
+                                                        <div className="mt-2 mb-3 border border-amber-100 dark:border-stone-700 rounded-lg overflow-hidden">
+                                                            <button 
+                                                                onClick={() => setExpandedSettings(prev => ({...prev, [prompt.id]: !isSetExpanded}))}
+                                                                className="w-full px-3 py-2 bg-amber-50 dark:bg-stone-900 text-amber-800 dark:text-amber-400 text-xs font-bold flex justify-between items-center"
+                                                            >
+                                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">tune</span> 出題設定 (題數/佔比)</span>
+                                                                <span className="material-symbols-outlined text-[16px]">{isSetExpanded ? 'expand_less' : 'expand_more'}</span>
+                                                            </button>
+                                                            
+                                                            {isSetExpanded && (
+                                                                <div className="p-3 space-y-3 bg-white dark:bg-stone-800">
+                                                                    <div className="flex gap-2">
+                                                                        <div className="flex-1">
+                                                                            <label className="text-[10px] text-stone-400 block mb-1">題數</label>
+                                                                            <input type="number" min="1" className="w-full px-2 py-1 text-sm rounded border border-amber-300 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={settings.num} onChange={e => setPromptSettings(prev => ({...prev, [prompt.id]: {...settings, num: e.target.value}}))} />
+                                                                        </div>
+                                                                        <div className="flex-[2]">
+                                                                            <label className="text-[10px] text-stone-400 block mb-1">範圍 (例如 Ch1-5)</label>
+                                                                            <input type="text" className="w-full px-2 py-1 text-sm rounded border border-amber-300 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={settings.range} onChange={e => setPromptSettings(prev => ({...prev, [prompt.id]: {...settings, range: e.target.value}}))} />
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="space-y-2 pt-2 border-t border-amber-50">
+                                                                        {settings.weights.map((w, idx) => (
+                                                                            <div key={idx} className="flex flex-col gap-1">
+                                                                                <div className="flex justify-between text-[10px] font-bold text-amber-700 dark:text-amber-500">
+                                                                                    <span>{w.label}</span>
+                                                                                    <span>{w.val}%</span>
+                                                                                </div>
+                                                                                <input 
+                                                                                    type="range" min="0" max="100" value={w.val}
+                                                                                    className="w-full h-1.5 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                                                                    onChange={e => handleWeightChange(prompt.id, idx, parseInt(e.target.value))}
+                                                                                />
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    <button onClick={() => handleCopyPrompt(prompt)} className="mt-auto w-full py-2 bg-cyan-100 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:hover:bg-cyan-900/60 text-cyan-800 dark:text-cyan-300 font-bold rounded-lg transition-colors flex items-center justify-center gap-2 text-sm">
+                                                        <span className="material-symbols-outlined text-[18px]">content_copy</span> 複製 Prompt
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
             {/* === 2. 任務打卡區 (含搜尋與雙層選單) === */}
             <div className="bg-[#FCFBF7] dark:bg-stone-800 rounded-2xl shadow-sm border border-amber-200 dark:border-stone-700 p-4">
                 <div className="flex items-center gap-2 mb-4">
-                    <span className="text-2xl">📖</span>
+                    <span className="material-symbols-outlined text-3xl text-amber-600">book</span>
                     <h2 className="text-xl md:text-2xl font-bold text-amber-800 dark:text-white">各科進度打卡區</h2>
                 </div>
                 
-                {/* 🔍 打卡區搜尋框 */}
+                {/* 打卡區搜尋框 */}
                 <div className="mb-4 relative">
+                    <span className="material-symbols-outlined absolute left-3 top-2.5 text-gray-400">search</span>
                     <input
                         type="text"
-                        placeholder="🔍 搜尋科目、類別或章節名稱..."
+                        placeholder="搜尋科目、類別或章節名稱..."
                         value={punchSearch}
                         onChange={(e) => setPunchSearch(e.target.value)}
                         className="w-full px-4 py-2.5 border border-amber-200 dark:border-stone-700 bg-amber-50 dark:bg-stone-900 rounded-xl outline-none text-sm focus:border-cyan-500 dark:text-white transition-colors"
@@ -165,7 +444,9 @@ function ExamProgressDashboard({ examFeatures, user }) {
                 
                 <div className="space-y-2">
                     {filteredPunchData.length === 0 ? (
-                        <div className="text-center py-6 text-amber-400 font-bold text-sm bg-amber-50 dark:bg-stone-900 rounded-xl border border-dashed border-amber-200 dark:border-stone-700">找不到符合的章節範圍 😢</div>
+                        <div className="text-center py-6 text-amber-400 font-bold text-sm bg-amber-50 dark:bg-stone-900 rounded-xl border border-dashed border-amber-200 dark:border-stone-700">
+                            <span className="material-symbols-outlined text-[20px] align-middle mr-1">sentiment_dissatisfied</span>找不到符合的章節範圍
+                        </div>
                     ) : filteredPunchData.map(subj => {
                         const isSubjExpanded = punchSearch.trim() || expandedSubj === subj.id;
                         return (
@@ -230,7 +511,7 @@ function ExamProgressDashboard({ examFeatures, user }) {
             {/* === 3. 學習軌跡 (多層選單與搜尋優化) === */}
             <div className="bg-[#FCFBF7] dark:bg-stone-800 rounded-2xl shadow-sm border border-amber-200 dark:border-stone-700 p-4 md:p-6">
                 <div className="flex items-center gap-2 mb-4">
-                    <span className="text-2xl">⏳</span>
+                    <span className="material-symbols-outlined text-3xl text-amber-600">history</span>
                     <h2 className="text-xl md:text-2xl font-bold text-amber-800 dark:text-white">每日學習打卡</h2>
                 </div>
                 
@@ -240,7 +521,7 @@ function ExamProgressDashboard({ examFeatures, user }) {
                             onClick={() => setIsSelectorOpen(!isSelectorOpen)}
                             className="w-full py-2.5 px-4 bg-[#FCFBF7] dark:bg-stone-800 border-2 border-dashed border-cyan-300 dark:border-cyan-900 rounded-xl text-cyan-600 dark:text-cyan-400 font-bold text-sm flex justify-between items-center transition-colors hover:bg-cyan-50 dark:hover:bg-cyan-900/10"
                         >
-                            {selectedItems.length > 0 ? `已選取 ${selectedItems.length} 個範圍與進度` : '🎯 點此選取今日學習範圍 (可連動打卡)'}
+                            {selectedItems.length > 0 ? `已選取 ${selectedItems.length} 個範圍與進度` : <span className="flex items-center"><span className="material-symbols-outlined text-[18px] mr-1">ads_click</span> 點此選取今日學習範圍 (可連動打卡)</span>}
                             <span>{isSelectorOpen ? '▲ 收起' : '▼ 展開選單'}</span>
                         </button>
 
@@ -865,10 +1146,10 @@ function Main() {
                         </div>
                     )}
                     
-                    {/* ✨ 正式接上華麗的國考進度與口訣 UI */}
+                   {/* ✨ 正式接上華麗的國考進度與口訣 UI */}
                     {activeTab === 'examProgress' && (
                         <div className="h-full w-full flex flex-col overflow-y-auto custom-scrollbar bg-cyan-50/30 dark:bg-stone-900 transition-colors">
-                            <ExamProgressDashboard examFeatures={examFeatures} user={user} />
+                            <ExamProgressDashboard examFeatures={examFeatures} user={user} showConfirm={showConfirm} showPrompt={showPrompt} />
                         </div>
                     )}
 
