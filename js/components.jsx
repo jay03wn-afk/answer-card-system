@@ -1271,6 +1271,15 @@ function ProfilePage({ user, userProfile, showAlert }) {
         }
     };
 
+    // ✨ 新增的登出功能
+    const handleLogout = async () => {
+        try {
+            await window.auth.signOut();
+        } catch (err) {
+            showAlert("[錯誤] 登出失敗：" + err.message);
+        }
+    };
+
     return (
         <div className="max-w-3xl mx-auto p-8 mt-10 bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-xl rounded-3xl">
             <h2 className="text-2xl font-black mb-6 text-stone-800 dark:text-stone-100 border-b border-stone-200 dark:border-stone-700 pb-4">個人檔案設定</h2>
@@ -1321,6 +1330,14 @@ function ProfilePage({ user, userProfile, showAlert }) {
                             className="bg-stone-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 px-6 py-2 font-bold rounded-2xl hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-1"
                         >
                             <span className="material-symbols-outlined text-[18px]">menu_book</span> 重新觀看新手教學
+                        </button>
+
+                        {/* ✨ 新增的登出按鈕放在最後面 */}
+                        <button 
+                            onClick={handleLogout} 
+                            className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 font-bold rounded-2xl transition-colors flex items-center justify-center gap-1 shadow-sm"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">logout</span> 登出帳號
                         </button>
                     </div>
                 </div>
