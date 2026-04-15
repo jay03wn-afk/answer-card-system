@@ -284,7 +284,16 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         gameRef.current.opponent.stamina = 100; 
         resetPositions();
         
-        if (bgmRef.current) { bgmRef.current.currentTime = 0; bgmRef.current.play().catch(()=>{}); }
+        if (bgmRef.current) { 
+            // ✨ 依據是否為排位賽動態切換 BGM 來源
+            if (isRanked) {
+                bgmRef.current.src = "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/clutterfunkVOL.mp3";
+            } else {
+                bgmRef.current.src = "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/S4.mp3";
+            }
+            bgmRef.current.currentTime = 0; 
+            bgmRef.current.play().catch(()=>{}); 
+        }
         if (gameRef.current.reqId) cancelAnimationFrame(gameRef.current.reqId);
         gameRef.current.reqId = requestAnimationFrame(loop);
     };
