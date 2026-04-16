@@ -716,13 +716,58 @@ function Main() {
     const [tutorialStep, setTutorialStep] = useState(0);
 
     const nextTutorialStep = () => setTutorialStep(prev => prev + 1);
+    
+    // 1. 普通的關閉教學 (中途退出，不給鑽石)
     const skipTutorial = () => {
-        setTutorialStep(0);
         if (user) {
-            window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: true });
+            // ✨ 確保先更新狀態再關閉步驟，防止觸發死迴圈
             setUserProfile(prev => ({ ...prev, hasSeenTutorial: true }));
+            window.db.collection('users').doc(user.uid).set({ hasSeenTutorial: true }, { merge: true }).catch(e=>console.warn(e));
+        }
+        setTutorialStep(0);
+    };
+
+    // 2. ✨ 新增：乖乖看完教學的專屬領獎函式 (含防重複領取與提示)
+    const completeTutorialWithReward = () => {
+        if (user) {
+            // 🚀 關鍵判斷：是否「真的從沒領過」
+            if (!userProfile?.hasClaimedReward) {
+                const currentDiamonds = userProfile?.mcData?.diamonds || 0;
+                
+                // 1. 立即同步更新前端狀態，確保 hasSeenTutorial 變 true 打破自動導航死迴圈
+                setUserProfile(prev => ({ 
+                    ...prev, 
+                    hasSeenTutorial: true,
+                    hasClaimedReward: true,
+                    mcData: { ...(prev.mcData || {}), diamonds: currentDiamonds + 200 }
+                }));
+                setTutorialStep(0);
+                
+                // 2. 寫入資料庫永久存檔
+                window.db.collection('users').doc(user.uid).set({ 
+                    hasSeenTutorial: true,
+                    hasClaimedReward: true, 
+                    mcData: { diamonds: currentDiamonds + 200 }
+                }, { merge: true })
+                .then(() => {
+                    showAlert('🎉 恭喜完成新手教學！\n\n系統已發放 200 顆鑽石 💎 作為獎勵。\n現在您可以自由查看這份試卷的詳解，或試著將重點收錄至錯題本！', '領獎成功');
+                })
+                .catch(e => console.error("獎勵發放失敗:", e));
+            } else {
+                // 🚀 玩家以前領過了，關閉教學並跳出專屬提示視窗
+                setTutorialStep(0); 
+                setUserProfile(prev => ({ ...prev, hasSeenTutorial: true }));
+                window.db.collection('users').doc(user.uid).set({ hasSeenTutorial: true }, { merge: true });
+                
+                setTimeout(() => {
+                    showAlert('ℹ️ 您以前已經領取過獎勵囉！\n\n偵測到此帳號過去已領取過新手禮包，因此本次完成教學將不會重複發放鑽石。祝您刷題愉快！', '系統提醒');
+                }, 300);
+            }
+        } else {
+            setTutorialStep(0);
         }
     };
+
     const restartTutorial = () => {
         if (user) {
             window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: false });
@@ -846,8 +891,8 @@ function Main() {
                 title = "🎉 教學大功告成！";
                 content = "成績結算出來囉！交卷後，你可以隨時查閱每一題的詳解，或將重點題目「收錄」至專屬錯題本。\n\n恭喜你學會了所有核心功能，趕快開始你的刷題之旅吧！";
                 icon = "celebration";
-                nextText = "完成教學";
-                onNext = skipTutorial;
+                nextText = "完成領獎 💎"; // ✨ 加上鑽石圖示吸引點擊
+                onNext = completeTutorialWithReward; // ✨ 綁定專屬領獎函式
                 break;
             default: return null;
         }
