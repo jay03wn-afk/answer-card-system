@@ -1419,6 +1419,14 @@ function QuizApp(props) {
                                                 {itemData && <span className="ml-2 text-sm font-bold opacity-70">({(itemData.earnedPoints || 0).toFixed(1).replace(/\.0$/, '')} / {(itemData.maxPoints || 0).toFixed(1).replace(/\.0$/, '')})</span>}
                                             </span>
                                                     <button onClick={() => toggleStar(actualIdx)} className={`text-xl focus:outline-none transition-colors ${isStarred ? 'text-amber-500' : 'text-gray-300 dark:text-gray-600'} hover:scale-110`} title="標記星號">★</button>
+                                                    <button onClick={() => {
+                                                        const tempDiv = document.createElement('div');
+                                                        tempDiv.innerHTML = q.mainText;
+                                                        navigator.clipboard.writeText(tempDiv.innerText);
+                                                        showAlert('✅ 題目已複製！');
+                                                    }} className="text-xl focus:outline-none transition-colors text-gray-300 dark:text-gray-600 hover:text-amber-500 hover:scale-110 ml-2" title="複製題目">
+                                                        <span className="material-symbols-outlined text-[20px]">content_copy</span>
+                                                    </button>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     {itemData && <span className={`text-xs px-2 py-1 font-bold border ${itemData.isCorrect ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{itemData.isCorrect ? '✅ 答對' : '❌ 錯誤'}</span>}
@@ -2280,6 +2288,75 @@ if (step === 'grading') return (
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> 批改非選擇題
                                 </button>
                             )}
+                            <button 
+                                onClick={async () => {
+                                    if (window.isAnalyzingWeakness) {
+                                        showAlert("⚠️ 分析正在進行中，請稍候！");
+                                        return;
+                                    }
+                                    const wrongItems = results.data?.filter(d => !d.isCorrect) || [];
+                                    if (wrongItems.length === 0) {
+                                        showAlert("🎉 太強了！您全對，不需要弱點分析！");
+                                        return;
+                                    }
+                                    if ((userProfile?.mcData?.diamonds || 0) < 100) {
+                                        showAlert("💎 鑽石不足！需要 100 鑽石進行分析。");
+                                        return;
+                                    }
+                                    
+                                    showConfirm("即將花費 100 💎 進行 AI 弱點分析（背景執行），成功後才會扣款並儲存於試卷中，是否繼續？", async () => {
+                                        window.isAnalyzingWeakness = true;
+                                        showAlert("🚀 AI 弱點分析已在背景啟動！大約需要 10~15 秒，您可以繼續瀏覽試卷。");
+                                        
+                                        try {
+                                            const quizRef = window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId);
+                                            
+                                            // 組裝要送給 AI 的 Prompt
+                                            let prompt = `請以繁體中文分析以下考生的錯題，找出他的觀念盲點，並提供一份重點複習清單與好記的口訣：\n\n`;
+                                            wrongItems.forEach(w => {
+                                                prompt += `題號：${w.number} | 考生回答：${w.userAns} | 正確答案：${w.correctAns}\n`;
+                                            });
+
+                                            // 呼叫你的 gemini.js API
+                                            const response = await fetch('/api/gemini', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ prompt: prompt })
+                                            });
+                                            
+                                            const data = await response.json();
+                                            
+                                            // 攔截你的 API 回傳的錯誤 (你的 API 錯誤開頭都會帶 ❌)
+                                            if (!data || !data.result || data.result.includes("❌")) {
+                                                throw new Error(data?.result || "API 無法取得回應");
+                                            }
+
+                                            const aiResultText = data.result;
+
+                                            // 生成成功！執行扣款
+                                            await window.db.collection('users').doc(currentUser.uid).update({
+                                                'mcData.diamonds': window.firebase.firestore.FieldValue.increment(-100)
+                                            });
+                                            
+                                            // 儲存結果到試卷
+                                            await quizRef.update({
+                                                aiWeaknessAnalysis: aiResultText
+                                            });
+                                            
+                                            setResults(prev => ({ ...prev, aiWeaknessAnalysis: aiResultText }));
+                                            showAlert("✅ AI 弱點分析已完成並儲存，已扣除 100 💎！");
+                                        } catch (err) {
+                                            console.error(err);
+                                            showAlert("❌ AI 分析失敗，未扣除鑽石：" + err.message);
+                                        } finally {
+                                            window.isAnalyzingWeakness = false;
+                                        }
+                                    });
+                                }} 
+                                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800 px-3 py-1.5 text-xs font-bold rounded-full shadow-sm transition-colors active:scale-95 flex items-center gap-1 ml-2"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">psychology</span> AI 弱點分析 (100💎)
+                            </button>
                         </div>
                         
                         {canSeeAnswers && (
@@ -2313,6 +2390,18 @@ if (step === 'grading') return (
                                 {taskScores.length > 0 ? taskScores.map((s, i) => (
                                     <span key={i} className={`px-1.5 py-0.5 text-xs font-bold border rounded ${s >= 60 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'}`}>{s} 分</span>
                                 )) : <span className="text-xs text-gray-500">尚無其他挑戰者成績</span>}
+                            </div>
+                        </div>
+                    )}
+
+                    {results.aiWeaknessAnalysis && (
+                        <div className="px-4 sm:px-6 py-4 border-b border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/20 shrink-0">
+                            <h3 className="font-black text-sm text-indigo-700 dark:text-indigo-400 mb-2 flex items-center">
+                                <span className="material-symbols-outlined text-[18px] mr-1.5">psychology</span>
+                                AI 專屬弱點分析與複習建議
+                            </h3>
+                            <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed font-bold whitespace-pre-wrap bg-white dark:bg-stone-800 p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/50 shadow-sm">
+                                {results.aiWeaknessAnalysis}
                             </div>
                         </div>
                     )}
