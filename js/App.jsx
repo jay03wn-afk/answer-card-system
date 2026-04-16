@@ -1100,10 +1100,10 @@ function Main() {
     };
 
    const topNavContent = (
-    <>
-        {/* 頂部標題列 (包含漢堡按鈕與工具) */}
-        <div className="bg-stone-800 dark:bg-stone-950 text-stone-100 px-4 flex justify-between items-center shadow-lg pt-[env(safe-area-inset-top)] min-h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 relative z-20 transition-colors border-b border-stone-700">
-            <div className="flex items-center">
+        <>
+            {/* 頂部標題列 (包含漢堡按鈕與工具) */}
+            <div className="bg-stone-800 dark:bg-stone-950 text-stone-100 px-4 flex justify-between items-center shadow-lg h-14 shrink-0 relative z-20 transition-colors border-b border-stone-700">
+                <div className="flex items-center">
                     {/* 漢堡選單按鈕 */}
                     <button onClick={() => setIsSidebarOpen(true)} className="mr-4 text-2xl hover:text-gray-300 transition-colors focus:outline-none">
                         ☰
