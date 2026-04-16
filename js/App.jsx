@@ -712,13 +712,168 @@ function Main() {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [activeQuizRecord, setActiveQuizRecord] = useState(null);
 
+    // ✨ 全域教學狀態管理
+    const [tutorialStep, setTutorialStep] = useState(0);
+
+    const nextTutorialStep = () => setTutorialStep(prev => prev + 1);
+    const skipTutorial = () => {
+        setTutorialStep(0);
+        if (user) {
+            window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: true });
+            setUserProfile(prev => ({ ...prev, hasSeenTutorial: true }));
+        }
+    };
+    const restartTutorial = () => {
+        if (user) {
+            window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: false });
+            setUserProfile(prev => ({ ...prev, hasSeenTutorial: false }));
+        }
+        setTutorialStep(1);
+        setActiveTab('dashboard'); // 不刷新網頁，直接切回首頁
+    };
+
     // ✨ 新增：全域背景通知狀態 (確保跨網頁切換時皆可顯示)
     const [globalToast, setGlobalToast] = useState(null);
 
     useEffect(() => {
-        // 將設定全域通知的方法綁定到 window，讓其他組件可以呼叫
         window.setGlobalToast = setGlobalToast;
     }, []);
+
+    // ✨ 沉浸式新手教學核心：偵測未完成教學，自動啟動教學步驟 1 (留在首頁)
+    useEffect(() => {
+        if (userProfile && userProfile.hasSeenTutorial === false && !currentQaId && !currentNewsId && tutorialStep === 0) {
+            setTutorialStep(1);
+            setActiveTab('dashboard');
+        }
+    }, [userProfile?.hasSeenTutorial, currentQaId, currentNewsId, tutorialStep]);
+
+    // ✨ 自動滾動機制：確保教學時能滑動到發光按鈕
+    // ✨ 沉浸式教學：自動偵測「亮圈」元素並滑動到該位置
+    React.useEffect(() => {
+        if (tutorialStep > 0) {
+            const timer = setTimeout(() => {
+                const activeEl = document.querySelector('.tutorial-highlight');
+                if (activeEl) {
+                    activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [tutorialStep, activeTab, activeQuizRecord]);
+
+    // ✨ 沉浸式教學：自動偵測「亮圈」元素並滑動到該位置
+    React.useEffect(() => {
+        if (tutorialStep > 0) {
+            const timer = setTimeout(() => {
+                const activeEl = document.querySelector('.tutorial-highlight');
+                if (activeEl) {
+                    activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [tutorialStep, activeTab, activeQuizRecord]);
+
+    const renderTutorialOverlay = () => {
+        if (!tutorialStep || tutorialStep === 0) return null;
+        
+        let title = ""; let content = ""; let icon = "school";
+        let showNext = true; let nextText = "知道了"; let onNext = nextTutorialStep;
+        let pos = "items-center justify-center"; 
+
+        switch (tutorialStep) {
+            case 1:
+                title = "歡迎來到 JJay 線上測驗！";
+                content = "這是專為你打造的沉浸式刷題系統。接下來我們將花 1 分鐘帶你走過完整流程。";
+                icon = "rocket_launch";
+                break;
+            case 2:
+                title = "第一步：開始新測驗";
+                content = "點擊這個閃爍的按鈕來建立你的第一份考卷吧！";
+                icon = "add_circle";
+                showNext = false;
+                break;
+            case 3:
+                title = "建置考卷：名稱與分類";
+                content = "系統已準備好試卷內容！";
+                icon = "drive_file_rename_outline";
+                pos = "items-end justify-end pb-10 pr-6 md:pb-24 md:pr-10"; // 移至右下角
+                break;
+            case 4:
+                title = "核心功能：富文本試題";
+                content = "這就是最強大的「富文本模式」！\n系統已自動填入試題，你可以看到它完美保留了圖片、表格與排版。";
+                icon = "description";
+                pos = "items-end justify-end pb-10 pr-6 md:pb-24 md:pr-10"; // 移至右下角
+                break;
+            case 5:
+                title = "最後設定：準備開始！";
+                content = "欄位介紹完畢！我們也幫你預設了「偷看答案」功能，這對練習非常實用！\n\n👉 請點擊閃爍的「開始作答」！";
+                icon = "settings_suggest";
+                pos = "items-start justify-center pt-24"; 
+                showNext = false;
+                break;
+            case 6:
+                title = "作答技巧：選項與刪去";
+                content = "這是沉浸式介面。你可以用鍵盤 A/B/C/D 作答，或點擊選項旁的「✕」標記刪去法。\n\n👉 請試著「點擊任意一個選項」！";
+                icon = "ads_click";
+                pos = "items-start justify-end pt-24 pr-10";
+                showNext = false;
+                break;
+            case 7:
+                title = "作答技巧：偷看答案";
+                content = "遇到不會的題目？點擊「偷看答案」會立即顯示詳解並鎖定該題。\n\n👉 點擊這題閃爍的「偷看答案」按鈕！";
+                icon = "key";
+                pos = "items-end justify-start pb-24 pl-10"; 
+                showNext = false;
+                break;
+            case 8:
+                title = "自由作答時間！";
+                content = "偷看答案後，下方會立刻展開該題詳解，且選項將被鎖定。\n\n接下來是你的【自由作答時間】！請自由作答剩下的所有題目。(全部填滿後，才會解鎖「交卷」按鈕喔！)";
+                icon = "lock_open";
+                pos = "items-center justify-center";
+                showNext = true;
+                nextText = "開始挑戰";
+                onNext = () => setTutorialStep(99);
+                break;
+            case 9:
+                title = "完成測驗：交卷結算";
+                content = "太棒了！你已經完成了所有題目。\n\n👉 現在，點擊右上角閃爍的「交卷對答案」按鈕，看看你拿了幾分！";
+                icon = "task_alt";
+                pos = "items-start justify-end pt-24 pr-10";
+                showNext = false;
+                break;
+            case 10:
+                title = "🎉 教學大功告成！";
+                content = "成績結算出來囉！交卷後，你可以隨時查閱每一題的詳解，或將重點題目「收錄」至專屬錯題本。\n\n恭喜你學會了所有核心功能，趕快開始你的刷題之旅吧！";
+                icon = "celebration";
+                nextText = "完成教學";
+                onNext = skipTutorial;
+                break;
+            default: return null;
+        }
+
+        return (
+            <div className={`fixed inset-0 z-[150] flex ${pos} pointer-events-none p-4`}>
+                {/* ✨ 關鍵優化：增加半透明度且在 showNext 時不鎖死點擊，避免黑屏感 */}
+                <div className={`absolute inset-0 bg-stone-900 transition-opacity duration-500 ${showNext ? 'opacity-50 pointer-events-none' : 'opacity-85 pointer-events-auto'}`} onClick={(e) => { if(!showNext) e.stopPropagation(); }}></div>
+                <div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-md rounded-3xl shadow-2xl border-2 border-amber-500 relative z-[160] pointer-events-auto transform transition-all duration-500">
+                    <div className="flex items-center gap-3 mb-4">
+                        <span className="material-symbols-outlined text-[32px] text-amber-500">{icon}</span>
+                        <h2 className="text-xl font-black text-stone-800 dark:text-white leading-tight">{title}</h2>
+                    </div>
+                    <p className="text-gray-600 dark:text-gray-300 font-bold mb-6 whitespace-pre-wrap leading-relaxed">{content}</p>
+                    <div className="flex justify-between items-center">
+                        <button onClick={skipTutorial} className="text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors">跳過</button>
+                        {showNext && (
+                            <button onClick={onNext} className="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2.5 rounded-full font-black shadow-md transition-all flex items-center gap-1 active:scale-95">
+                                {nextText} <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    };
     
     // ✨ 修改：加入載入進度條相關狀態
     const [loading, setLoading] = useState(true);
@@ -791,14 +946,6 @@ function Main() {
         }
     };
 
-    // ✨ 新增：完成新手教學的狀態更新
-    // ✨ 新增：完成新手教學的狀態更新
-    const completeTutorial = () => {
-        if (!user) return;
-        window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: true })
-            .then(() => setUserProfile(prev => ({ ...prev, hasSeenTutorial: true })))
-            .catch(e => console.error("更新新手教學狀態失敗:", e));
-    };
 
     useEffect(() => {
         // 🚀 終極防卡死：稍微放寬時間到 3000 (3秒)，讓 Firebase 有足夠時間去要通行證
@@ -1119,17 +1266,10 @@ function Main() {
                 </div>
             )}
             
-            {/* ✨ 新增：判斷如果尚未看過新手教學，就渲染已經寫好的教學視窗 (加入 !currentQaId 確保完成快問快答才顯示) */}
-            {/* ✨ 修改：傳入 setActiveTab，讓教學組件可以控制頁面跳轉 */}
-{userProfile && userProfile.hasSeenTutorial === false && !currentQaId && (
-    <TutorialOverlay 
-        onComplete={completeTutorial} 
-        onNavigate={setActiveTab} 
-    />
-)}
 
             {/* ✅ 4. 主畫面這裡原本一大串的 modal 程式碼，現在只需要呼叫 SharedModal 就好了 */}
             {SharedModal}
+            {renderTutorialOverlay()}
 
             {/* ✨ 新增：已經登入的玩家，如果網址有 qaId 或 newsId，直接蓋一個滿版視窗在最上層 */}
             {user && currentQaId && (
@@ -1160,7 +1300,7 @@ function Main() {
             
             {activeTab !== 'activeQuiz' ? (
                 <div className="flex-grow pt-4 md:pt-6 overflow-hidden flex flex-col bg-gray-50 dark:bg-stone-900 transition-colors">
-                    {activeTab === 'newspaper' && <NewspaperDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}                    {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={(folderName) => { setActiveQuizRecord({ folder: folderName }); setActiveTab('activeQuiz'); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
+                    {activeTab === 'newspaper' && <NewspaperDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}                    {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={(folderName) => { setActiveQuizRecord({ folder: folderName }); setActiveTab('activeQuiz'); if(tutorialStep===2) setTutorialStep(3); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} tutorialStep={tutorialStep} setTutorialStep={setTutorialStep} />}
                     {activeTab === 'taskwall' && <TaskWallDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     
                     {/* 更新：傳入 onContinueQuiz，實現跳轉功能 */}
@@ -1181,10 +1321,10 @@ function Main() {
                         </div>
                     )}
 
-                    {activeTab === 'profile' && <ProfilePage user={user} userProfile={userProfile} showAlert={showAlert} />}
+                    {activeTab === 'profile' && <ProfilePage user={user} userProfile={userProfile} showAlert={showAlert} restartTutorial={restartTutorial} />}
                 </div>
             ) : (
-                <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} userProfile={userProfile} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />
+                <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} userProfile={userProfile} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} tutorialStep={tutorialStep} setTutorialStep={setTutorialStep} />
             )}
         </div>
     );

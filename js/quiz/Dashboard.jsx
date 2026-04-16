@@ -7,7 +7,8 @@ const {
     safeDecompress, processQuestionContent, extractSpecificContent, extractSpecificExplanation 
 } = window;
 
-function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm, showPrompt }) {
+function Dashboard(props) {
+    const { user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm, showPrompt, tutorialStep } = props;
     const [showHelp, setShowHelp] = useState(false); // ✨ 新增：教學模式開關
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -527,7 +528,12 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                     </div>
                 </div>
                 <div className="relative">
-                    <button onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-6 py-2 rounded-2xl font-bold hover:bg-stone-800 dark:hover:bg-gray-300 shadow-sm transition-colors whitespace-nowrap shrink-0 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">add</span> 新測驗</button>
+                    <button 
+                        onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} 
+                        className={`px-6 py-2 rounded-2xl font-bold shadow-sm transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 ${tutorialStep === 2 ? 'relative z-[160] bg-amber-500 text-white ring-4 ring-amber-300 animate-pulse' : 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 hover:bg-stone-800 dark:hover:bg-gray-300'}`}
+                    >
+                        <span className="material-symbols-outlined text-[18px]">add</span> 新測驗
+                    </button>
                     <HelpTooltip show={showHelp} text="點擊這裡開始「建立」你自己的專屬測驗題本！" position="bottom" className="right-0 transform-none left-auto" />
                 </div>
             </div>
@@ -620,7 +626,7 @@ function Dashboard({ user, userProfile, onStartNew, onContinueQuiz, showAlert, s
                         <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto justify-center">
                             <button 
                                 onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} 
-                                className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-8 py-3 font-black shadow-xl hover:-tranamber-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all border-2 border-black dark:border-transparent active:shadow-none active:tranamber-x-1 active:tranamber-y-1 rounded-2xl"
+                                className={`px-8 py-3 font-black shadow-xl hover:-tranamber-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all border-2 active:shadow-none active:tranamber-x-1 active:tranamber-y-1 rounded-2xl ${tutorialStep === 2 ? 'relative z-[160] bg-amber-500 text-white border-transparent ring-4 ring-amber-300 animate-pulse' : 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 border-black dark:border-transparent'}`}
                             >
                                 ＋ 建立新測驗
                             </button>

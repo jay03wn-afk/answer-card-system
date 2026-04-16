@@ -9,8 +9,9 @@ const {
 
 function QuizApp(props) {
     // 呼叫我們剛剛建立的大腦，把所有的狀態跟功能「借」過來用
-    const { currentUser, userProfile, showAlert, showConfirm, showPrompt } = props;
+    const { currentUser, userProfile, showAlert, showConfirm, showPrompt, tutorialStep, setTutorialStep } = props;
     const {
+        lastExtractValRef,
         showHelp, setShowHelp, isAdmin, isQuizLoading, backgroundUpdateReady, latestContent,
         quizId, setQuizId, step, setStep, testName, setTestName, numQuestions, setNumQuestions,
         maxScore, setMaxScore, roundScore, setRoundScore, taskType, setTaskType, examYear, setExamYear,
@@ -47,6 +48,26 @@ function QuizApp(props) {
         shareScoreToFriend, scrollToQuestion, handleRichTextClick, toggleSection, handleProcessAiFile, handleGenerateAI
     } = window.useQuizState(props);
 
+    // ✨ 新增：自動捲動避開遮罩重疊，並加入「自由作答」放行機制
+    useEffect(() => {
+        // 1. 處理畫面滾動：將發光的按鈕自動捲動到畫面正中央，避免被教學對話框擋住
+        if (tutorialStep > 0 && tutorialStep !== 99) {
+            const timer = setTimeout(() => {
+                const el = document.querySelector('.tutorial-highlight');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+        
+        // 2. 處理自由作答放行 (99 -> 9)：當所有題目都作答完畢或已偷看，才顯示交卷按鈕
+        if (tutorialStep === 99 && parsedInteractiveQuestions && parsedInteractiveQuestions.length > 0) {
+            const answeredCount = parsedInteractiveQuestions.filter(q => userAnswers[q.globalIndex] || (peekedAnswers && peekedAnswers[q.globalIndex])).length;
+            if (answeredCount === parsedInteractiveQuestions.length) {
+                setTutorialStep(9);
+            }
+        }
+    }, [tutorialStep, userAnswers, peekedAnswers, parsedInteractiveQuestions, setTutorialStep]);
+
    // ✨ 新增：試卷尚未載入完成前，顯示載入動畫
     if (isQuizLoading) return (
         <div className="flex flex-col h-[100dvh] items-center justify-center bg-stone-50 dark:bg-stone-900 transition-colors">
@@ -80,7 +101,7 @@ function QuizApp(props) {
         <div className="flex flex-col min-h-[100dvh] items-center p-4 relative py-10 overflow-y-auto bg-stone-50 dark:bg-stone-900 transition-colors custom-scrollbar">
             {UpdateNotification}
             <button onClick={handleBackFromEdit} className="absolute top-6 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-10 transition-colors">← 返回</button>
-<div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 shadow-2xl rounded-3xl w-full max-w-6xl 2xl:max-w-[1400px] border border-stone-200 dark:border-stone-700 mt-6 transition-colors">                <h2 className="font-black mb-6 text-2xl text-stone-800 dark:text-stone-100 border-b border-stone-200 dark:border-stone-700 pb-4 flex items-center gap-2"><span className="material-symbols-outlined text-[28px]">settings</span> 編輯試題設定</h2>
+<div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 shadow-2xl rounded-3xl w-full max-w-6xl 2xl:max-w-[1400px] border border-stone-200 dark:border-stone-700 mt-6 transition-colors">                <h2 className="font-black mb-6 text-2xl text-stone-800 dark:text-stone-100 border-b border-stone-200 dark:border-stone-700 pb-4 flex items-center gap-2"><span className="material-symbols-outlined text-[28px]">settings</span> 編輯試題設定</h2>
                 
                {/* 新增：測驗名稱編輯區塊 */}
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗名稱</label>
@@ -333,7 +354,12 @@ function QuizApp(props) {
                             ) : inputType === 'text' ? (
                                 <textarea placeholder="請貼上選擇題純文字... (貼上包含 [SQ] 的內容會自動轉移下方)" className="w-full h-32 mb-6 p-3 border border-amber-300 dark:border-amber-700 bg-amber-50/20 dark:bg-stone-800 text-stone-800 dark:text-white rounded-2xl outline-none focus:border-amber-500 text-sm custom-scrollbar" value={qParts.mcq} onChange={e => handleMainChange(e.target.value)} />
                             ) : (
-                               <div className="border-2 border-amber-300 dark:border-amber-700 focus-within:border-amber-500 transition-colors bg-[#FCFBF7] dark:bg-stone-800 mb-6">
+                               <div className={`border-2 border-amber-300 dark:border-amber-700 focus-within:border-amber-500 transition-all bg-[#FCFBF7] dark:bg-stone-800 mb-6 relative ${tutorialStep === 4 ? "tutorial-highlight ring-[6px] ring-amber-500 ring-offset-4 ring-offset-stone-900 rounded-xl z-[160] shadow-[0_0_50px_rgba(245,158,11,0.8)] animate-pulse" : ""}`}>
+                                   {tutorialStep === 4 && (
+                                       <div className="absolute -top-10 left-0 bg-amber-500 text-white text-xs font-black px-3 py-1 rounded-t-lg flex items-center gap-1 animate-bounce">
+                                           <span className="material-symbols-outlined text-[14px]">visibility</span> 富文本試題區已自動填入
+                                       </div>
+                                   )}
                                    <ContentEditableEditor value={qParts.mcq} onChange={handleMainChange} placeholder="貼上選擇題... (若混雜 [SQ] / [ASQ] 內容，系統會自動轉移到專屬格子)" showAlert={showAlert} />
                                </div>
                             )}
@@ -377,8 +403,10 @@ function QuizApp(props) {
                                 </div>
                             </div>
 
-                            <h3 className="font-bold text-xs text-amber-600 dark:text-amber-400 mb-2 mt-4 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">radio_button_checked</span> 選擇題標準答案</h3>
-                            <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} parsedTypes={parsedQuestionTypes} maxQuestions={numQuestions} showConfirm={showConfirm} />
+                            <div className={tutorialStep === 5 ? "tutorial-highlight ring-4 ring-amber-400 p-4 rounded-3xl bg-amber-50 dark:bg-amber-900/20 relative z-[160] shadow-[0_0_25px_rgba(245,158,11,0.4)] animate-pulse" : ""}>
+                                <h3 className="font-bold text-xs text-amber-600 dark:text-amber-400 mb-2 mt-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">radio_button_checked</span> 選擇題標準答案</h3>
+                                <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} parsedTypes={parsedQuestionTypes} maxQuestions={numQuestions} showConfirm={showConfirm} />
+                            </div>
                             
                             {!!qParts.sq && (
                                 <div className="mt-6 mb-2 animate-fade-in">
@@ -420,8 +448,8 @@ function QuizApp(props) {
                 </div>
 
                <button onClick={handleSaveEdit} className="w-full bg-amber-600 dark:bg-amber-700 text-white p-3 font-bold rounded-2xl hover:bg-amber-800 transition-colors shadow-md flex justify-center items-center gap-2">
-                    <span className="material-symbols-outlined text-[20px]">save</span> 儲存並套用變更
-                </button>
+                    <span className="material-symbols-outlined text-[20px]">save</span> 儲存並套用變更
+                </button>
 
                 <div className="mt-10 border-t border-stone-200 dark:border-stone-700 pt-6">
                     <h3 className="font-bold text-lg mb-4 text-amber-600 dark:text-amber-400 flex items-center gap-2"><span className="material-symbols-outlined text-[20px]">rate_review</span> 來自玩家的修正建議</h3>
@@ -458,7 +486,7 @@ function QuizApp(props) {
 
  if (step === 'setup') return (
         <div className="flex flex-col items-center p-4 h-[100dvh] overflow-y-auto relative custom-scrollbar bg-[#F0EFEB] dark:bg-stone-950">
-            <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-10 transition-colors">← 返回列表</button>
+            {tutorialStep === 0 && <button onClick={onBackToDashboard} className="absolute top-6 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-10 transition-colors">← 返回列表</button>}
 <div className="bg-[#FCFBF7] dark:bg-stone-900 p-8 shadow-2xl rounded-3xl w-full max-w-6xl 2xl:max-w-[1400px] border border-stone-200 dark:border-stone-800 mt-10 mb-10 transition-colors">                <div className="flex justify-between items-center mb-6 border-b border-stone-100 dark:border-stone-800 pb-4">
                     <div className="flex items-center gap-3">
                         <h1 className="text-2xl font-black tracking-tight text-stone-800 dark:text-stone-100">新增測驗</h1>
@@ -479,16 +507,23 @@ function QuizApp(props) {
                         <HelpTooltip show={showHelp} text="太懶得自己出題？點擊這裡讓 AI 閱讀講義後，直接幫你生出一份精準的考卷！" position="bottom" className="right-0 transform-none left-auto" />
                     </div>
                 </div>                
-                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">存放資料夾</label>
-                <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none focus:border-black dark:focus:border-white text-sm cursor-pointer">
-                    {userFolders.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-
-                <div className="relative">
-                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗名稱</label>
-                    <HelpTooltip show={showHelp} text="幫你的測驗取個好辨認的名字，例如：藥理學期中考範圍" position="top" className="left-1/4" />
+                <div className={`space-y-4 p-4 rounded-3xl transition-all ${tutorialStep === 3 ? "tutorial-highlight ring-4 ring-amber-400 bg-amber-50 dark:bg-amber-900/20 relative z-[160] shadow-[0_0_25px_rgba(245,158,11,0.4)] animate-pulse" : ""}`}>
+                    {tutorialStep === 3 && (
+                        <div className="absolute -top-10 left-0 bg-amber-500 text-white text-xs font-black px-3 py-1 rounded-t-lg flex items-center gap-1 animate-bounce">
+                            <span className="material-symbols-outlined text-[14px]">visibility</span> 系統已自動填入標題與分類
+                        </div>
+                    )}
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">存放資料夾</label>
+                        <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none focus:border-black dark:focus:border-white text-sm cursor-pointer">
+                            {userFolders.map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗名稱</label>
+                        <input type="text" placeholder="例如: 藥理學期中考" className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none focus:border-black dark:focus:border-white text-sm" value={testName} onChange={e => setTestName(e.target.value)} />
+                    </div>
                 </div>
-                <input type="text" placeholder="例如: 藥理學期中考" className="w-full mb-4 p-2 border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none focus:border-black dark:focus:border-white text-sm" value={testName} onChange={e => setTestName(e.target.value)} onFocus={handleFocusScroll} />
                 
                 {/* ✨ 任務牆屬性與標籤設定 */}
                 <div className="mb-6 p-4 bg-gray-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700">
@@ -753,7 +788,10 @@ function QuizApp(props) {
                             ) : inputType === 'text' ? (
                                 <textarea placeholder="請貼上選擇題純文字... (貼上包含 [SQ] 的內容會自動轉移下方)" className="w-full h-32 mb-6 p-3 border border-amber-300 dark:border-amber-700 bg-amber-50/20 dark:bg-stone-800 text-stone-800 dark:text-white rounded-2xl outline-none focus:border-amber-500 text-sm custom-scrollbar" value={qParts.mcq} onChange={e => handleMainChange(e.target.value)} onFocus={handleFocusScroll} />
                             ) : (
-                               <div className="border-2 border-amber-300 dark:border-amber-700 focus-within:border-amber-500 transition-colors bg-[#FCFBF7] dark:bg-stone-800 mb-6">
+                               <div className={`border-2 border-amber-300 dark:border-amber-700 focus-within:border-amber-500 transition-all bg-[#FCFBF7] dark:bg-stone-800 mb-6 relative ${tutorialStep === 4 ? "tutorial-highlight ring-[6px] ring-amber-500 ring-offset-4 ring-offset-stone-900 rounded-xl z-[160] shadow-[0_0_50px_rgba(245,158,11,0.8)] animate-pulse" : ""}`}>
+                                   <div className="absolute -top-10 left-0 bg-amber-500 text-white text-xs font-black px-3 py-1 rounded-t-lg flex items-center gap-1">
+                                       <span className="material-symbols-outlined text-[14px]">visibility</span> 這是富文本試題區
+                                   </div>
                                    <ContentEditableEditor value={qParts.mcq} onChange={handleMainChange} placeholder="貼上選擇題... (若混雜 [SQ] / [ASQ] 內容，系統會自動轉移到專屬格子)" showAlert={showAlert} />
                                </div>
                             )}
@@ -808,7 +846,12 @@ function QuizApp(props) {
                             )}
 
                             <h3 className="font-bold text-xs text-gray-500 dark:text-gray-400 mb-2 mt-4 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">lightbulb</span> 測驗詳解區 (亦可作為問答題的 AI 評分標準區)</h3>
-                            <div className="mb-6">
+                            <div className={`mb-6 relative ${tutorialStep === 4 ? "tutorial-highlight ring-[6px] ring-cyan-500 ring-offset-4 ring-offset-stone-900 rounded-xl z-[160] shadow-[0_0_50px_rgba(6,182,212,0.6)] animate-pulse" : ""}`}>
+                                {tutorialStep === 4 && (
+                                    <div className="absolute -top-10 right-0 bg-cyan-500 text-white text-xs font-black px-3 py-1 rounded-t-lg flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-[14px]">auto_awesome</span> 詳解與非選擇題，也完全支援富文本！
+                                    </div>
+                                )}
                                 {inputType === 'richtext' ? (
                                     <div className="border-2 border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-stone-800">
                                         <ContentEditableEditor value={explanationHtml} onChange={setExplanationHtml} placeholder="請輸入所有題目的詳解或問答題評分標準 [AS.xxx][s:20]..." />
@@ -847,7 +890,15 @@ function QuizApp(props) {
                     )}
                 </div>
 
-                <button onClick={handleStartTest} className="w-full bg-amber-500 dark:bg-amber-600 text-white p-3.5 rounded-xl font-bold hover:bg-amber-600 dark:hover:bg-amber-500 transition-all shadow-md active:scale-95">開始作答</button>
+                <button 
+                    onClick={() => {
+                        if (tutorialStep === 5) setTutorialStep(6);
+                        handleStartTest();
+                    }} 
+                    className={`w-full p-3.5 rounded-xl font-bold transition-all shadow-md active:scale-95 flex justify-center items-center gap-2 ${tutorialStep === 5 ? 'tutorial-highlight relative z-[160] bg-amber-500 text-white ring-4 ring-amber-300 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.5)]' : 'bg-amber-500 dark:bg-amber-600 text-white hover:bg-amber-600 dark:hover:bg-amber-500'}`}
+                >
+                    <span className="material-symbols-outlined text-[20px]">play_arrow</span> 開始作答
+                </button>
 
            {showAiModal && (
                 <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-md flex items-center justify-center z-[150] p-4 animate-fade-in">
@@ -1098,10 +1149,10 @@ function QuizApp(props) {
                 }
             `}} />
 
-           {/* ✨ 修正：加入 flex-wrap 與 w-full，並調整為 lg 斷點，避免平板尺寸時按鈕被擠壓到畫面外 */}
-            <div className="bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 z-10 transition-colors w-full mb-2">
+           {/* ✨ 修正：解除 z-index 封印，讓教學模式的高亮特效可以突破黑暗遮罩 */}
+            <div className={`bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 transition-colors w-full mb-2 ${tutorialStep > 0 ? '' : 'z-10'}`}>
                 <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
-                    <button onClick={onBackToDashboard} className="mr-3 text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold text-sm whitespace-nowrap px-4 py-2 bg-stone-50 dark:bg-stone-700/50 border border-stone-200 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-600 rounded-xl transition-colors shrink-0">← 返回</button>
+                    {tutorialStep === 0 && <button onClick={onBackToDashboard} className="mr-3 text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold text-sm whitespace-nowrap px-4 py-2 bg-stone-50 dark:bg-stone-700/50 border border-stone-200 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-600 rounded-xl transition-colors shrink-0">← 返回</button>}
                     <div className="overflow-hidden flex-grow flex flex-col justify-center min-w-0">
                         <div className="flex items-center space-x-2">
     <h2 className="font-bold truncate text-base dark:text-white">{renderTestName(testName, false)}</h2>
@@ -1150,12 +1201,14 @@ function QuizApp(props) {
                         設定選單
                     </button>
                     
-                    <button onClick={handleResetProgress} className="bg-gray-50 dark:bg-gray-700 text-red-400 dark:text-red-400 px-4 py-2 rounded-full font-bold hover:bg-red-50 dark:hover:bg-gray-600 hover:text-red-600 dark:hover:text-red-300 border border-transparent hover:border-red-100 dark:hover:border-gray-500 text-sm hidden md:flex items-center transition-colors shadow-sm">
-                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                        刪除
-                    </button>
+                    {tutorialStep === 0 && (
+                        <button onClick={handleResetProgress} className="bg-gray-50 dark:bg-gray-700 text-red-400 dark:text-red-400 px-4 py-2 rounded-full font-bold hover:bg-red-50 dark:hover:bg-gray-600 hover:text-red-600 dark:hover:text-red-300 border border-transparent hover:border-red-100 dark:hover:border-gray-500 text-sm hidden md:flex items-center transition-colors shadow-sm">
+                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            刪除
+                        </button>
+                    )}
                     
-                   {!isShared && !isTask && (
+                   {!isShared && !isTask && tutorialStep === 0 && (
                         <button 
                             onClick={(e) => {
                                 e.preventDefault();
@@ -1189,8 +1242,14 @@ function QuizApp(props) {
                         手動存檔
                     </button>
 
-                    <button onClick={handleSubmitClick} className="bg-amber-500 dark:bg-amber-600 text-white px-6 py-2 rounded-full font-bold hover:bg-amber-600 dark:hover:bg-amber-500 text-sm shadow-md transition-all active:scale-95 flex items-center">
-                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                    <button 
+                        onClick={() => {
+                            if (tutorialStep === 9) setTutorialStep(10);
+                            handleSubmitClick();
+                        }} 
+                        className={`px-6 py-2 rounded-full font-bold text-sm shadow-md transition-all active:scale-95 flex items-center ${tutorialStep === 9 ? 'tutorial-highlight relative z-[160] bg-amber-500 text-white ring-4 ring-amber-300 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.5)]' : 'bg-amber-500 dark:bg-amber-600 text-white hover:bg-amber-600 dark:hover:bg-amber-500'} ${tutorialStep === 99 ? 'hidden' : ''}`}
+                    >
+                        <span className="material-symbols-outlined text-[18px] mr-1.5">publish</span>
                         {isShared || isTask || testName.includes('[#op]') ? '直接交卷' : '交卷對答案'}
                     </button>
                 </div>
@@ -1330,7 +1389,7 @@ function QuizApp(props) {
                             )}
 
                             {/* 題目主體內容區 (可滾動) */}
-                            <div className="flex-grow overflow-y-auto p-4 sm:p-6 custom-scrollbar relative z-10">
+                            <div className={`flex-grow overflow-y-auto p-4 sm:p-6 custom-scrollbar relative ${tutorialStep > 0 ? '' : 'z-10'}`}>
                                 {(() => {
                                     const q = parsedInteractiveQuestions[currentInteractiveIndex];
                                     if (!q) return null;
@@ -1369,7 +1428,10 @@ function QuizApp(props) {
                                                 </div>
                                             </div>
                                             
-                                           <div className="mb-4 text-gray-800 dark:text-gray-200 leading-relaxed preview-rich-text !border-none !p-0 !bg-transparent" dangerouslySetInnerHTML={{ __html: q.mainText }} />
+                                            {/* ✨ 修復：將發光白底移到外層容器，避免被富文本的強制透明吃掉 */}
+                                            <div className={`transition-all ${tutorialStep === 6 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] bg-white dark:bg-stone-800 p-5 -mx-4 rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.15)] ring-2 ring-amber-400 mb-4' : 'mb-4'}`}>
+                                                <div className="text-gray-800 dark:text-gray-200 leading-relaxed preview-rich-text !border-none !p-0 !bg-transparent" dangerouslySetInnerHTML={{ __html: q.mainText }} />
+                                            </div>
 
                                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
                                                 {q.type === 'Q' ? ['A', 'B', 'C', 'D'].map(opt => {
@@ -1392,7 +1454,7 @@ function QuizApp(props) {
                                                     }
 
                                                     return (
-                                                        <div key={opt} className="flex items-stretch gap-2 w-full">
+                                                        <div key={opt} className={`flex items-stretch gap-2 w-full transition-all ${tutorialStep === 6 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] ring-4 ring-amber-400 bg-white dark:bg-stone-800 p-1.5 -m-1.5 rounded-3xl shadow-[0_10px_40px_rgba(245,158,11,0.3)]' : ''}`}>
                                                             {quizSettings.showEliminationBtn && !results && (
                                                                 <button
                                                                     disabled={isTimeUp || isPeeked}
@@ -1408,7 +1470,12 @@ function QuizApp(props) {
                                                             )}
                                                             <button 
                                                                 disabled={isTimeUp || isPeeked || !!results}
-                                                                onClick={() => !isEliminated && handleAnswerSelect(actualIdx, opt)}
+                                                                onClick={() => {
+                                                                    if (!isEliminated) {
+                                                                        if (tutorialStep === 6 && actualIdx === 0) setTutorialStep(7);
+                                                                        handleAnswerSelect(actualIdx, opt);
+                                                                    }
+                                                                }}
                                                                 className={btnClasses}
                                                             >
                                                                 <span className={`font-black mt-0.5 w-6 shrink-0 text-center ${isSelected ? 'text-amber-600' : 'text-gray-400'}`}>{opt}.</span>
@@ -1437,9 +1504,16 @@ function QuizApp(props) {
                                             
                                             {canPeek && !isPeeked && !results && (
                                                 <div className="mt-4 flex justify-end">
-                                                    <button onClick={() => handlePeek(actualIdx)} className="text-sm font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 px-5 py-2 hover:bg-amber-200 transition-colors border border-amber-200 flex items-center gap-1.5 rounded-full shadow-sm">
+                                                    <button 
+                                                        onClick={() => {
+                                                            if (tutorialStep === 7 && actualIdx === 0 && !quizSettings.askBeforePeek) setTutorialStep(8);
+                                                            handlePeek(actualIdx);
+                                                        }} 
+                                                        className={`text-sm font-bold px-5 py-2 transition-colors border flex items-center gap-1.5 rounded-full shadow-sm ${tutorialStep === 7 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.5)]' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 hover:bg-amber-200 border-amber-200'}`}
+                                                    >
                                                         <span className="material-symbols-outlined text-[18px]">key</span>
-                                                        偷看答案</button>
+                                                        偷看答案
+                                                    </button>
                                                 </div>
                                             )}
 
@@ -1839,6 +1913,7 @@ function QuizApp(props) {
                             <button onClick={() => setPeekConfirmIdx(null)} className="flex-1 bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-200 py-2.5 rounded-full font-bold hover:bg-stone-200 dark:hover:bg-stone-600 transition-colors">取消</button>
                             <button 
                                 onClick={() => {
+                                    if (tutorialStep === 7 && peekConfirmIdx === 0) setTutorialStep(8);
                                     executePeek(peekConfirmIdx);
                                     setPeekConfirmIdx(null);
                                 }} 
@@ -2077,7 +2152,7 @@ if (step === 'grading') return (
                         </button>
                     )}
                     
-                    {!isShared && !isTask && (
+                    {!isShared && !isTask && tutorialStep === 0 && (
                         <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setStep('edit'); }} className="text-sm font-bold bg-stone-50 dark:bg-stone-700 text-stone-700 dark:text-stone-300 px-4 py-2 rounded-full border border-stone-200 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-600 whitespace-nowrap transition-colors active:scale-95 flex items-center shadow-sm">
                             <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg> 編輯試題
                         </button>
@@ -2109,7 +2184,7 @@ if (step === 'grading') return (
                         <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
                         炫耀分享
                     </button>
-                    <button onClick={onBackToDashboard} className="text-sm font-bold bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-4 py-2 rounded-full hover:bg-stone-700 dark:hover:bg-white whitespace-nowrap transition-colors shadow-sm">返回列表</button>
+                    {tutorialStep === 0 && <button onClick={onBackToDashboard} className="text-sm font-bold bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-4 py-2 rounded-full hover:bg-stone-700 dark:hover:bg-white whitespace-nowrap transition-colors shadow-sm">返回列表</button>}
                 </div>
             </div>
             
@@ -2211,15 +2286,15 @@ if (step === 'grading') return (
                             <div className="flex items-center space-x-4 text-xs shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
                                 <label className="flex items-center space-x-1.5 cursor-pointer hover:text-stone-800 dark:hover:text-white dark:text-gray-300">
                                     <input type="checkbox" checked={showOnlyWrong} onChange={e => setShowOnlyWrong(e.target.checked)} className="w-4 h-4 accent-amber-500" />
-                                    <span className="font-bold">只看錯題</span>
+                                    <span className="font-bold">錯題</span>
                                 </label>
                                 <label className="flex items-center space-x-1.5 cursor-pointer hover:text-stone-800 dark:hover:text-white dark:text-gray-300">
                                     <input type="checkbox" checked={showOnlyStarred} onChange={e => setShowOnlyStarred(e.target.checked)} className="w-4 h-4 accent-amber-500" />
-                                    <span className="font-bold text-amber-600 dark:text-amber-400">只看星號</span>
+                                    <span className="font-bold text-amber-600 dark:text-amber-400">星號</span>
                                 </label>
                                 <label className="flex items-center space-x-1.5 cursor-pointer hover:text-stone-800 dark:hover:text-white dark:text-gray-300">
                                     <input type="checkbox" checked={showOnlyNotes} onChange={e => setShowOnlyNotes(e.target.checked)} className="w-4 h-4 accent-amber-500" />
-                                    <span className="font-bold text-amber-600 dark:text-amber-400">只看筆記</span>
+                                    <span className="font-bold text-amber-600 dark:text-amber-400">筆記</span>
                                 </label>
                                 {isTask && initialRecord.taskId && (
                                     <label className="flex items-center space-x-1.5 cursor-pointer hover:text-stone-800 dark:hover:text-white dark:text-gray-300 ml-2 sm:ml-4 pl-2 sm:pl-4 border-l border-gray-300 dark:border-gray-600">
@@ -2362,28 +2437,36 @@ if (step === 'grading') return (
                                                                     const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, qLocalNum, expTags) : extractSpecificExplanation(explanationHtml, qLocalNum);
                                                                     
                                                                     if (currentExp || (notes && notes[item.number - 1])) {
-                                                                        return (
-                                                                            <button 
-                                                                                onClick={(e) => { e.stopPropagation(); setExplanationModalItem({ number: item.number, content: currentExp, note: notes ? notes[item.number - 1] : '' }); }} 
-                                                                                className="text-xs bg-white dark:bg-stone-700 text-stone-600 dark:text-stone-300 px-3 py-1.5 font-bold rounded-full border border-stone-200 dark:border-stone-600 hover:bg-stone-50 dark:hover:bg-stone-600 transition-colors shadow-sm flex items-center"
-                                                                            >
-                                                                                <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                                                                詳解筆記
-                                                                            </button>
-                                                                        );
+                                                                       return (
+                                                                    <button 
+                                                                        onClick={(e) => { 
+                                                                            e.stopPropagation(); 
+                                                                            if (tutorialStep === 8 && actualIdx === 0) setTutorialStep(99); // ✨ 進入自由作答模式
+                                                                            setExplanationModalItem({ number: item.number, content: currentExp, note: notes ? notes[item.number - 1] : '' }); 
+                                                                        }} 
+                                                                        className={`text-xs px-3 py-1.5 font-bold rounded-full border transition-colors shadow-sm flex items-center ${tutorialStep === 8 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.5)]' : 'bg-white dark:bg-stone-700 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-600 hover:bg-stone-50 dark:hover:bg-stone-600'}`}
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-[16px] mr-1">menu_book</span>
+                                                                        詳解筆記
+                                                                    </button>
+                                                                );
                                                                     }
                                                                     return null;
                                                                 })()}
                                                                <button 
                                                                     disabled={loadingWrongBookNum === item.number}
-                                                                    onClick={(e) => { e.stopPropagation(); handleAddToWrongBook(item); }} 
-                                                                    className={`text-xs bg-white dark:bg-stone-700 text-rose-600 dark:text-rose-400 px-3 py-1.5 font-bold rounded-full border border-stone-200 dark:border-stone-600 hover:bg-rose-50 dark:hover:bg-stone-600 transition-colors shadow-sm flex items-center ${loadingWrongBookNum === item.number ? 'opacity-50 cursor-wait' : ''}`}
+                                                                    onClick={(e) => { 
+                                                                        e.stopPropagation(); 
+                                                                        if (tutorialStep === 8) setTutorialStep(9);
+                                                                        handleAddToWrongBook(item); 
+                                                                    }} 
+                                                                    className={`text-xs px-3 py-1.5 font-bold rounded-full border transition-colors shadow-sm flex items-center ${tutorialStep === 8 ? 'relative z-[160] bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 animate-pulse' : 'bg-white dark:bg-stone-700 text-rose-600 dark:text-rose-400 border-stone-200 dark:border-stone-600 hover:bg-rose-50 dark:hover:bg-stone-600'} ${loadingWrongBookNum === item.number ? 'opacity-50 cursor-wait' : ''}`}
                                                                 >
                                                                     {loadingWrongBookNum === item.number ? (
-                                                                    <><span className="material-symbols-outlined text-[16px] mr-1 animate-spin">autorenew</span>處理中...</>
-                                                                ) : (
-                                                                    <><span className="material-symbols-outlined text-[16px] mr-1">bookmark_add</span>收錄錯題</>
-                                                                )}
+                                                                    <><span className="material-symbols-outlined text-[16px] mr-1 animate-spin">autorenew</span>處理中...</>
+                                                                ) : (
+                                                                    <><span className="material-symbols-outlined text-[16px] mr-1">bookmark_add</span>收錄錯題</>
+                                                                )}
                                                                 </button>
                                                             </div>
                                                         </div>
@@ -2579,6 +2662,7 @@ if (step === 'grading') return (
                             <button onClick={() => setPeekConfirmIdx(null)} className="flex-1 bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-200 py-2.5 rounded-full font-bold hover:bg-stone-200 dark:hover:bg-stone-600 transition-colors">取消</button>
                             <button 
                                 onClick={() => {
+                                    if (tutorialStep === 7 && peekConfirmIdx === 0) setTutorialStep(8);
                                     executePeek(peekConfirmIdx);
                                     setPeekConfirmIdx(null);
                                 }} 

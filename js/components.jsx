@@ -301,13 +301,13 @@ editorClassName = "w-full h-64 p-3 border border-gray-300 dark:border-gray-600 b
                     const encodedSpan = encodeURIComponent(fallbackTextSpan);
                     
                     // 第二備案：利用舊版 Cactus API 繪製 SMILES (發生在藥物名稱找不到時)
-                    const cactusUrl = `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(fallbackSmiles)}/image`;
-                    const cactusImgHtml = `<img src="${cactusUrl}" alt="化學結構" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #FCFBF7 !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-[#FCFBF7]" onerror="this.outerHTML=decodeURIComponent('${encodedSpan}')" />`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                    const cactusUrl = `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(fallbackSmiles)}/image`;
+                    const cactusImgHtml = `<img src="${cactusUrl}" alt="化學結構" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #FCFBF7 !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-[#FCFBF7]" onerror="this.outerHTML=decodeURIComponent('${encodedSpan}')" />`.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
-                    // 首選方案：呼叫 PubChem API 找藥物圖片，如果失敗就觸發 onerror 換成第二備案 Cactus
-                    const pubChemUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(cleanText)}/PNG`;
+                    // 首選方案：呼叫 PubChem API 找藥物圖片，如果失敗就觸發 onerror 換成第二備案 Cactus
+                    const pubChemUrl = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(cleanText)}/PNG`;
 
-                    return `<img src="${pubChemUrl}" alt="化學結構" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #FCFBF7 !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-[#FCFBF7]" onerror="this.outerHTML='${cactusImgHtml}'" />&nbsp;`;
+                    return `<img src="${pubChemUrl}" alt="化學結構" style="height: 30px; max-width: 100%; object-fit: contain; display: inline-block; vertical-align: middle; margin: 0 2px; background-color: #FCFBF7 !important; padding: 2px; border: 1px solid #ddd; border-radius: 4px;" class="smiles-img bg-[#FCFBF7]" onerror="this.outerHTML='${cactusImgHtml}'" />&nbsp;`;
                 });
                 n.parentNode.replaceChild(span, n);
             }
@@ -884,150 +884,29 @@ function DialogOverlay({ dialog, onClose }) {
 }
 
 function TutorialOverlay({ onComplete, onNavigate }) {
+    // 沉浸式教學核心狀態（第一階段：框架佈建）
     const [step, setStep] = React.useState(0);
 
-    // ✨ 重新設計的互動步驟：加入 action 提示使用者實際去操作
     const steps = [
-        {
-            title: "歡迎來到 JJay 線上測驗",
-            icon: "rocket_launch",
-            content: "接下來的導覽不會擋住你的畫面！\n你可以一邊看我的提示，一邊實際點擊網頁玩玩看。",
-            action: "準備好就點擊「出發」！",
-            color: "from-stone-300 to-stone-400",
-            targetTab: null
-        },
-        {
-            title: "第一站：JJay 日報",
-            icon: "newspaper",
-            content: "每天最新的考試重點都在這。",
-            action: "試試看：點進最新電子報將頁面往下滑到最底，點擊「領取每日鑽石」按鈕！",
-            color: "from-amber-500 to-orange-600",
-            targetTab: 'newspaper'
-        },
-        {
-            title: "第二站：我的題庫",
-            icon: "library_books",
-            content: "這是你的個人專屬書架。",
-            action: "試試看：點擊上方「＋新測驗」按鈕，隨便輸入幾個字看看系統反應！",
-            color: "from-emerald-400 to-teal-600",
-            targetTab: 'dashboard'
-        },
-        {
-            title: "第三站：任務牆",
-            icon: "task_alt",
-            content: "每天完成每日任務可賺取大量鑽石。",
-            action: "試試看：點擊左側任一個任務的「挑戰」按鈕，或者切換上方的標籤！",
-            color: "from-rose-400 to-red-600",
-            targetTab: 'taskwall'
-        },
-        {
-            title: "第四站：錯題整理",
-            icon: "menu_book",
-            content: "你所有寫錯的題目都會自動收錄到這。",
-            action: "試試看：點擊「新增錯題資料夾」按鈕，試著建立一個自己的專屬分類！",
-            color: "from-red-500 to-red-800",
-            targetTab: 'wrongbook'
-        },
-        {
-            title: "第五站：社群交流",
-            icon: "forum",
-            content: "不再是一個人讀書！",
-            action: "試試看：透過電子信箱加入好友！",
-            color: "from-indigo-400 to-blue-600",
-            targetTab: 'social'
-        },
-        {
-            title: "第六站：史蒂夫養成",
-            icon: "sports_esports",
-            content: "用賺來的鑽石佈置你的專屬家園。",
-            action: "試試看：點擊畫面上方的「史萊姆排球」按鈕，體驗超刺激的排球遊戲！",
-            color: "from-amber-400 to-yellow-600",
-            targetTab: 'minecraft'
-        },
-        {
-            title: "最後一站：戰況追蹤",
-            icon: "trending_up",
-            content: "這裡有超強的打卡系統與 AI 口訣生成器。",
-            action: "試試看：點擊任一科目展開選單，試著點擊「速讀/細讀」按鈕完成一次打卡吧！",
-            color: "from-cyan-400 to-blue-600",
-            targetTab: 'examProgress'
-        }
+        { title: "歡迎來到 JJay 線上測驗", icon: "rocket_launch", content: "全新的沉浸式系統正在建置中，敬請期待！" }
     ];
 
-    // 監聽步驟切換頁面
-    React.useEffect(() => {
-        const currentStep = steps[step];
-        if (currentStep && currentStep.targetTab && onNavigate) {
-            onNavigate(currentStep.targetTab);
-        }
-    }, [step]);
-
-    const nextStep = () => {
-        if (step < steps.length - 1) {
-            setStep(step + 1);
-        } else {
-            onComplete();
-        }
-    };
-
-    const current = steps[step];
-
     return (
-        /* ✨ 關鍵修改：pointer-events-none 讓這個滿版容器不會擋住滑鼠點擊，
-           但保留子元素 (卡片本身) 的 pointer-events-auto 讓按鈕可以按 */
-        <div className="fixed inset-0 z-[9999] pointer-events-none flex flex-col justify-end items-end p-4 md:p-8">
-            
-            {/* 懸浮導覽卡片 */}
-            <div key={step} className="pointer-events-auto bg-[#FCFBF7] dark:bg-stone-900 p-6 w-full sm:w-[400px] rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border-2 border-stone-200 dark:border-stone-700 animate-fade-in-up relative overflow-hidden flex flex-col">
-                
-                {/* 頂部進度條 */}
-                <div className="absolute top-0 left-0 w-full h-1.5 bg-gray-200 dark:bg-stone-800">
-                    <div 
-                        className={`h-full bg-gradient-to-r ${current.color} transition-all duration-500`}
-                        style={{ width: `${((step + 1) / steps.length) * 100}%` }}
-                    ></div>
-                </div>
-
-                <div className="flex items-start gap-4 mt-2 mb-4">
-                    <div className={`w-14 h-14 shrink-0 rounded-2xl bg-gradient-to-br ${current.color} flex items-center justify-center text-white shadow-lg`}>
-                        <span className="material-symbols-outlined text-[28px]">{current.icon}</span>
-                    </div>
-                    <div>
-                        <span className="text-[10px] font-black tracking-widest text-gray-400 dark:text-gray-500 block mb-1">
-                            導覽進度 {step + 1} / {steps.length}
-                        </span>
-                        <h2 className="text-lg font-black text-stone-800 dark:text-stone-100 leading-tight">
-                            {current.title}
-                        </h2>
-                    </div>
-                </div>
-
-                <p className="text-sm font-bold text-stone-600 dark:text-stone-300 mb-4 whitespace-pre-wrap">
-                    {current.content}
+        <div className="fixed inset-0 z-[9999] bg-stone-900/80 flex items-center justify-center p-4">
+            <div className="bg-[#FCFBF7] dark:bg-stone-900 p-8 w-full max-w-md rounded-3xl shadow-2xl border border-stone-200 dark:border-stone-700 text-center">
+                <span className="material-symbols-outlined text-[48px] text-amber-500 mb-4">school</span>
+                <h2 className="text-2xl font-black text-stone-800 dark:text-stone-100 mb-2">
+                    沉浸式教學準備中
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400 font-bold mb-6">
+                    系統已成功移除舊版教學。管理員已可至「個人檔案」設定新手專用題庫。
                 </p>
-
-                {/* 互動指示區塊：用搶眼的顏色吸引使用者去點擊背景的 UI */}
-                <div className={`mb-6 p-3 rounded-xl bg-gradient-to-r ${current.color} bg-opacity-10 border border-current text-sm font-bold text-stone-800 dark:text-white`}>
-                    <div className="animate-pulse">{current.action}</div>
-                </div>
-
-                <div className="flex gap-3 mt-auto">
-                    {step > 0 && (
-                        <button onClick={() => setStep(step - 1)} className="w-1/3 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 py-3 font-black rounded-xl hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors text-sm">
-                            上一步
-                        </button>
-                    )}
-                    <button 
-                        onClick={nextStep} 
-                        className={`flex-1 flex justify-center items-center gap-2 bg-gradient-to-r ${current.color} text-white py-3 font-black rounded-xl hover:opacity-90 transition-transform active:scale-95 shadow-md text-sm`}
-                    >
-                        {step < steps.length - 1 ? (
-                            <>測試完畢，下一站 <span className="material-symbols-outlined text-[18px]">arrow_forward</span></>
-                        ) : (
-                            <><span className="material-symbols-outlined text-[18px]">check_circle</span> 結束導覽</>
-                        )}
-                    </button>
-                </div>
+                <button 
+                    onClick={onComplete} 
+                    className="w-full bg-stone-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-stone-700 transition-colors"
+                >
+                    <span className="material-symbols-outlined">check_circle</span> 了解並進入系統
+                </button>
             </div>
         </div>
     );
@@ -1194,7 +1073,7 @@ function ProfileSetup({ user, onComplete, showAlert }) {
 }
 
 // 新增功能：個人檔案頁面與大頭照壓縮 (加入暱稱修改功能)
-function ProfilePage({ user, userProfile, showAlert }) {
+function ProfilePage({ user, userProfile, showAlert, restartTutorial }) {
     const [bio, setBio] = useState(userProfile.bio || "");
     const [displayName, setDisplayName] = useState(userProfile.displayName || ""); 
     const [isSaving, setIsSaving] = useState(false);
@@ -1325,17 +1204,26 @@ function ProfilePage({ user, userProfile, showAlert }) {
                             
                             <button 
                                 onClick={() => {
-                                    window.db.collection('users').doc(user.uid).update({ hasSeenTutorial: false })
+                                    if (restartTutorial) restartTutorial();
                                 }} 
                                 className="bg-stone-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 px-6 py-2 font-bold rounded-2xl hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-1"
                             >
-                                <span className="material-symbols-outlined text-[18px]">menu_book</span> 重新觀看新手教學
+                                <span className="material-symbols-outlined text-[18px]">school</span> 重新啟動新手教學
                             </button>
 
-                            {/* ✨ 新增的登出按鈕放在最後面 */}
+                            {user.email === 'jay03wn@gmail.com' && (
+                                <button 
+                                    onClick={() => showAlert("【管理員專屬設定】\n請前往「我的題庫」新增一份試卷，並將測驗名稱命名為「[#NEWBIE] 新手預設卷」。\n\n系統建置完成後，新手教學將自動載入該試卷的內容供玩家體驗！", "系統建置提示")}
+                                    className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-2 font-bold rounded-2xl transition-colors flex items-center justify-center gap-1 shadow-sm"
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span> 編輯新手預設考卷
+                                </button>
+                            )}
+
+                            {/* 登出按鈕放在最後面 */}
                             <button 
                                 onClick={handleLogout} 
-                                className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 font-bold rounded-2xl transition-colors flex items-center justify-center gap-1 shadow-sm"
+                                className="bg-stone-800 hover:bg-stone-700 text-white px-6 py-2 font-bold rounded-2xl transition-colors flex items-center justify-center gap-1 shadow-sm"
                             >
                                 <span className="material-symbols-outlined text-[18px]">logout</span> 登出帳號
                             </button>
