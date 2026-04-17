@@ -739,7 +739,7 @@ function Main() {
                     ...prev, 
                     hasSeenTutorial: true,
                     hasClaimedReward: true,
-                    mcData: { ...(prev.mcData || {}), diamonds: currentDiamonds + 200 }
+                    "mcData.diamonds": currentDiamonds + 200
                 }));
                 setTutorialStep(0);
                 
