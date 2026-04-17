@@ -7,10 +7,10 @@ export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
 
   try {
-    const API_KEY = process.env.GEMINI_API_KEY;
+    const API_KEY = process.env.GROQ_API_KEY; // 確保環境變數已更新
 
     if (!API_KEY) {
-      return res.status(500).json({ result: "❌ 錯誤：伺服器環境變數 GEMINI_API_KEY 未設定。" });
+      return res.status(500).json({ result: "❌ 錯誤：伺服器環境變數 GROQ_API_KEY 未設定。" });
     }
 
     const { prompt } = req.body || {};
@@ -18,39 +18,49 @@ export default async function handler(req, res) {
       return res.status(400).json({ result: "❌ 錯誤：請提供題目內容。" });
     }
 
-    // 建議確認模型名稱，例如：gemini-1.5-flash 或 gemini-2.0-flash
-    const MODEL_NAME = "gemini-3.1-flash-lite-preview"; 
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
+    // --- Groq 配置 ---
+    // 推薦模型：llama-3.3-70b-versatile (最強) 或 llama-3.1-8b-instant (最快)
+    const MODEL_NAME = "llama-3.3-70b-versatile"; 
+    const API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
     const response = await fetch(API_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_KEY}` // Groq 使用 Bearer 驗證
+      },
       body: JSON.stringify({ 
-        contents: [{ parts: [{ text: prompt }] }] 
+        model: MODEL_NAME,
+        messages: [
+          { 
+            role: "system", 
+            content: "你是一個專業的藥學導師，請根據用戶提供的題目給出詳盡且易懂的解析。" 
+          },
+          { 
+            role: "user", 
+            content: prompt 
+          }
+        ],
+        temperature: 0.7, // 控制隨機性，0.7 適合解釋類任務
+        max_tokens: 2048  // 限制回傳長度防止額度消耗過快
       })
     });
 
     const data = await response.json();
 
-    // 1. 處理 Google API 的錯誤回應
+    // 1. 處理 API 的錯誤回應
     if (data.error) {
       return res.status(response.status).json({ 
-        result: `❌ Google API 報錯 (${data.error.code})：${data.error.message}` 
+        result: `❌ Groq API 報錯：${data.error.message}` 
       });
     }
 
-    // 2. 檢查回應內容是否存在 (處理安全過濾或空回應)
-    const candidate = data.candidates?.[0];
-    
-    if (candidate?.finishReason === "SAFETY") {
-      return res.status(200).json({ result: "⚠️ AI 回應內容因違反安全政策而被阻擋。" });
-    }
-
-    if (candidate?.content?.parts?.[0]?.text) {
-      const text = candidate.content.parts[0].text;
+    // 2. 解析回應內容 (OpenAI 格式)
+    if (data.choices && data.choices[0]?.message?.content) {
+      const text = data.choices[0].message.content;
       return res.status(200).json({ result: text });
     } else {
-      return res.status(200).json({ result: "❌ AI 暫時無法回答（可能受限或格式不符），請換個問法再試。" });
+      return res.status(200).json({ result: "❌ AI 暫時無法回答，請換個問法再試。" });
     }
 
   } catch (err) {
