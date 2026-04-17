@@ -38,6 +38,34 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
 
     const getChatId = (uid1, uid2) => [uid1, uid2].sort().join('_');
 
+    // ✨ 新增：限時動態狀態
+    const [friendsQAs, setFriendsQAs] = useState([]);
+
+    useEffect(() => {
+        if (!friends || friends.length === 0) return;
+        const friendUids = friends.map(f => f.uid);
+        const unsub = window.db.collection('fastQA')
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .onSnapshot(snap => {
+                const now = Date.now();
+                const qas = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    .filter(q => q.endTime > now && friendUids.includes(q.creatorUid));
+                
+                // 過濾重複出題者，只顯示最新的一題當作頭像代表
+                const uniqueQAs = [];
+                const seenUids = new Set();
+                qas.forEach(q => {
+                    if (!seenUids.has(q.creatorUid)) {
+                        seenUids.add(q.creatorUid);
+                        uniqueQAs.push(q);
+                    }
+                });
+                setFriendsQAs(uniqueQAs);
+            });
+        return () => unsub();
+    }, [friends]);
+
     useEffect(() => {
         if (activeChat && userProfile && userProfile.unreadChats && userProfile.unreadChats[activeChat.uid]) {
             db.collection('users').doc(user.uid).update({
@@ -349,6 +377,32 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                         <button onClick={handleAddFriend} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-3 py-2 rounded-2xl text-sm font-bold hover:bg-stone-800 dark:hover:bg-gray-300 transition-colors">加入</button>
                     </div>
                 </div>
+
+                {/* ✨ 新增：好友快問快答 IG 限時動態 */}
+                {friendsQAs.length > 0 && (
+                    <div className="p-3 border-b border-gray-100 dark:border-stone-700 flex gap-3 overflow-x-auto custom-scrollbar bg-white dark:bg-stone-800 shrink-0 shadow-inner">
+                        {friendsQAs.map(qa => (
+                            <div 
+                                key={qa.id} 
+                                onClick={() => {
+                                    // ✨ 優化：改用自訂事件通知 App.jsx 直接打開視窗，達成「無縫秒開」不重新整理
+                                    const event = new CustomEvent('openFastQA', { detail: qa.id });
+                                    window.dispatchEvent(event);
+                                }} 
+                                className="flex flex-col items-center gap-1 cursor-pointer shrink-0 w-14 group" 
+                                title="點擊挑戰好友的快問快答！"
+                            >
+                                <div className="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-amber-400 to-rose-500 shrink-0">
+                                    <div className="w-full h-full bg-white dark:bg-stone-800 rounded-full p-[2px] overflow-hidden flex items-center justify-center">
+                                        <UserAvatar uid={qa.creatorUid} name={qa.creatorName} className="w-full h-full rounded-full object-cover group-hover:scale-110 transition-transform" />
+                                    </div>
+                                </div>
+                                <span className="text-[10px] font-bold text-stone-600 dark:text-stone-300 truncate w-full text-center">{qa.creatorName}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
                 <div className="flex-grow overflow-y-auto p-2 custom-scrollbar bg-[#FCFBF7] dark:bg-stone-900">
                     {friends.length === 0 ? <p className="text-center text-gray-400 text-sm mt-10">尚無好友，趕快新增吧！</p> : null}
                     {(friends || []).map(f => (
@@ -402,7 +456,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                                                 } else if (msg.type === 'game_rps') {
                                                     return (
                                                         <div className="text-center py-2 px-4">
-                                                            <span className="text-5xl leading-none">{msg.rpsFace}</span>
+                                                            <span className="material-symbols-outlined text-5xl">{msg.rpsIcon}</span>
                                                             <p className="mt-2 font-bold">{msg.text}</p>
                                                         </div>
                                                     );

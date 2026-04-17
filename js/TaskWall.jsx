@@ -461,7 +461,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     }, [user, isAdmin, targetQaId, qaLimit, refreshTrigger]);
 
     const handleAddQA = async () => {
-        if (!question || !explanation || customReward < 1) return showAlert('[提示] 請填寫完整題目、詳解，並確保鑽石大於0！');
+        if (!question || !explanation || (isAdmin && customReward < 1)) return showAlert('[提示] 請填寫完整題目與詳解！');
         
         let finalOptions = options;
         if (qaType === 'tf') finalOptions = ['(是) True', '(否) False'];
@@ -469,12 +469,22 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
 
         setIsPublishing(true);
         try {
-            const endTimestamp = endTimeStr ? new Date(endTimeStr).getTime() : null;
+            if (!isAdmin) {
+                const myActiveQAs = qaList.filter(q => q.creatorUid === user.uid);
+                if (myActiveQAs.length >= 10) {
+                    setIsPublishing(false);
+                    return showAlert('[提示] 非管理員最多只能同時擁有 10 個有效的快問快答喔！');
+                }
+            }
+
+            const now = new Date();
+            const endTimestamp = isAdmin ? (endTimeStr ? new Date(endTimeStr).getTime() : null) : (now.getTime() + 72 * 60 * 60 * 1000);
+            
             await window.db.collection('fastQA').add({
                 qaType,
-                subject,
-                difficulty: customDifficulty,
-                reward: Number(customReward),
+                subject: isAdmin ? subject : '玩家出題',
+                difficulty: isAdmin ? customDifficulty : '玩家',
+                reward: isAdmin ? Number(customReward) : 20,
                 endTime: endTimestamp,
                 question,
                 options: finalOptions,
@@ -482,10 +492,12 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                 explanation,
                 totalAnswers: 0,
                 answersCount: qaType === 'tf' ? { '0': 0, '1': 0 } : { '0': 0, '1': 0, '2': 0, '3': 0 },
+                creatorUid: user.uid,
+                creatorName: user?.displayName || user?.email?.split('@')[0] || '匿名玩家',
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
             
-            showAlert('[成功] 快問快答新增成功！');
+            showAlert('[成功] 快問快答發布成功！(期限為三天)');
             setIsEditExpanded(false);
             setQuestion(''); setOptions(['', '', '', '']); setExplanation('');
         } catch (e) {
@@ -551,7 +563,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
 
         setSubmitting(true);
         const isCorrect = selectedAns === activeQA.correctAns;
-        const rewardAmount = Number(activeQA.reward) || 10;
+        const isOwnQA = activeQA.creatorUid === user.uid;
         
         try {
             setShowResult(true);
@@ -571,16 +583,67 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                 })
             ];
 
+            let rewardToMe = 0;
+            
             if (isCorrect) {
-                tasks.push(window.db.collection('users').doc(user.uid).set({
-                    mcData: { diamonds: window.firebase.firestore.FieldValue.increment(rewardAmount) }
-                }, { merge: true }));
+                if (isOwnQA) {
+                    rewardToMe = 0; 
+                } else {
+                    rewardToMe = Number(activeQA.reward) || 20;
+                }
+
+                if (rewardToMe > 0) {
+                    tasks.push(window.db.runTransaction(async (t) => {
+                        const userRef = window.db.collection('users').doc(user.uid);
+                        const userDoc = await t.get(userRef);
+                        if (!userDoc.exists) return;
+                        
+                        const today = new Date().toISOString().split('T')[0];
+                        const mcData = userDoc.data().mcData || {};
+                        let qaRewardData = mcData.qaRewardData || { date: today, amount: 0 };
+                        
+                        if (qaRewardData.date !== today) qaRewardData = { date: today, amount: 0 };
+                        
+                        let actualReward = rewardToMe;
+                        if (!isAdmin && qaRewardData.amount + rewardToMe > 100) {
+                            actualReward = Math.max(0, 100 - qaRewardData.amount);
+                        }
+                        
+                        if (actualReward > 0) {
+                            qaRewardData.amount += actualReward;
+                            t.set(userRef, { mcData: { ...mcData, diamonds: (mcData.diamonds || 0) + actualReward, qaRewardData } }, { merge: true });
+                            rewardToMe = actualReward; 
+                        } else {
+                            rewardToMe = 0;
+                        }
+                    }));
+                }
+
+                if (!isOwnQA && activeQA.creatorUid) {
+                    tasks.push(window.db.collection('users').doc(activeQA.creatorUid).set({
+                        mcData: { diamonds: window.firebase.firestore.FieldValue.increment(5) }
+                    }, { merge: true }));
+                    
+                    const mailboxRef = window.db.collection('users').doc(activeQA.creatorUid).collection('mailbox').doc();
+                    tasks.push(mailboxRef.set({
+                        title: '💰 快問快答收益！',
+                        content: `有玩家答對了您的快問快答，您獲得了 5 顆鑽石！`,
+                        isRead: false,
+                        createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                    }));
+                }
             }
 
-            Promise.all(tasks).catch(e => console.error("背景存檔同步中...", e));
+            await Promise.all(tasks).catch(e => console.error("背景存檔同步中...", e));
 
             if (isCorrect) {
-                showAlert(`[恭喜] 答對了！恭喜獲得 ${rewardAmount} 鑽石！`);
+                if (isOwnQA) {
+                    showAlert(`[提示] 答對了！但這是您自己出的題目，沒有額外獎勵喔！`);
+                } else if (rewardToMe > 0) {
+                    showAlert(`[恭喜] 答對了！獲得 ${rewardToMe} 鑽石！`);
+                } else {
+                    showAlert(`[恭喜] 答對了！(您今日的快問快答獎勵已達 100 鑽石上限)`);
+                }
             } else {
                 showAlert('[提示] 答錯了，請看詳解！');
             }
@@ -595,7 +658,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     return (
         <div className={`border border-rose-200 bg-[#FCFBF7] dark:bg-stone-900 p-6 shadow-xl relative rounded-3xl w-full ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
            <div className="flex justify-between items-center mb-5 border-b border-rose-100 dark:border-stone-800 pb-4">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-xl font-black text-rose-700 dark:text-rose-400 flex items-center gap-1"><span className="material-symbols-outlined text-2xl">bolt</span> 快問快答挑戰</h2>
                     {!targetQaId && (
                         <button 
@@ -607,21 +670,21 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                     .finally(() => setIsRefreshing(false));
                             }}
                             disabled={isRefreshing}
-                            className="text-xs bg-[#FCFBF7] dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 px-3 py-1.5 font-bold transition-all shadow-sm flex items-center gap-1 rounded-xl disabled:opacity-50"
+                            className="text-xs bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border border-cyan-200 dark:bg-cyan-900/30 dark:hover:bg-cyan-900/50 dark:text-cyan-300 dark:border-cyan-800 px-3 py-1.5 font-bold transition-all shadow-sm flex items-center gap-1 rounded-xl disabled:opacity-50"
                             title="同步最新題目"
                         >
-                            {isRefreshing ? <div className="w-3 h-3 border-2 border-stone-400 border-t-stone-600 rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[16px]">sync</span>} 重新整理
+                            {isRefreshing ? <div className="w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[16px]">sync</span>} 重新整理
                         </button>
                     )}
                 </div>
-                {isAdmin && !targetQaId && (
-                    <button onClick={() => setShowAdminMode(!showAdminMode)} className="bg-stone-800 dark:bg-stone-100 text-stone-50 dark:text-stone-900 text-xs px-4 py-2 font-bold rounded-xl hover:bg-stone-700 dark:hover:bg-stone-200 transition-all shadow-sm active:scale-95">
-                        {showAdminMode ? '關閉管理' : '管理試題'}
+                {user && !targetQaId && (
+                    <button onClick={() => setShowAdminMode(!showAdminMode)} className={`${isAdmin ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-900 hover:bg-stone-700' : 'bg-rose-500 text-white hover:bg-rose-600'} text-xs px-4 py-2 font-bold rounded-xl transition-all shadow-sm active:scale-95 flex items-center gap-1`}>
+                        {showAdminMode ? '關閉發布面板' : (isAdmin ? '⚙️ 管理/發布試題' : '➕ 發布我的快問快答')}
                     </button>
                 )}
             </div>
 
-           {isAdmin && showAdminMode && !targetQaId && (
+           {user && showAdminMode && !targetQaId && (
                 <div className="mb-6 border border-rose-200 rounded-2xl bg-[#FCFBF7] dark:bg-stone-800 overflow-hidden shadow-lg">
                     <button onClick={() => setIsEditExpanded(!isEditExpanded)} className="w-full flex justify-between p-5 bg-rose-50 dark:bg-stone-700 hover:bg-rose-100 dark:hover:bg-stone-600 font-bold text-rose-800 dark:text-rose-200 transition-colors">
                         <span className="flex items-center gap-2"><span className="material-symbols-outlined text-[20px]">edit_square</span> 新增快問快答系統面板</span>
@@ -638,51 +701,55 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                         <input type="radio" checked={qaType==='tf'} onChange={()=>setQaType('tf')} className="w-4 h-4" /> 是非題
                                     </label>
                                 </div>
-                               <div>
-                                    <label className="block text-sm font-bold mb-1">科目</label>
-                                    <select value={subjectMode} onChange={e => { setSubjectMode(e.target.value); if(e.target.value !== 'custom') setSubject(e.target.value); else setSubject(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800">
-                                        {['藥物分析', '生藥', '中藥', '藥理', '藥化', '藥劑', '生物藥劑'].map(s => <option key={s} value={s}>{s}</option>)}
-                                        <option value="custom">[自訂]</option>
-                                    </select>
-                                    {subjectMode === 'custom' && <input type="text" value={subject} onChange={e=>setSubject(e.target.value)} className="w-full border p-2 dark:bg-stone-800" placeholder="請輸入自訂科目" />}
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold mb-1">難度標籤</label>
-                                    <select value={difficultyMode} onChange={e => { setDifficultyMode(e.target.value); if(e.target.value !== 'custom') setCustomDifficulty(e.target.value); else setCustomDifficulty(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800">
-                                        {Array.from({length: 10}, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}★</option>)}
-                                        <option value="custom">[自訂]</option>
-                                    </select>
-                                    {difficultyMode === 'custom' && <input type="text" value={customDifficulty} onChange={e=>setCustomDifficulty(e.target.value)} className="w-full border p-2 dark:bg-stone-800" placeholder="請輸入自訂難度" />}
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold mb-1">獎勵鑽石數量</label>
-                                    <select value={rewardMode} onChange={e => { setRewardMode(e.target.value); if(e.target.value !== 'custom') setCustomReward(Number(e.target.value)); else setCustomReward(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800">
-                                        {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(n => <option key={n} value={n}>{n} 鑽石</option>)}
-                                        <option value="custom">[自訂]</option>
-                                    </select>
-                                    {rewardMode === 'custom' && <input type="number" min="1" value={customReward} onChange={e=>setCustomReward(e.target.value)} className="w-full border p-2 dark:bg-stone-800" placeholder="請輸入鑽石數量" />}
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold mb-1">結束時間</label>
-                                    <select value={timePreset} onChange={e => {
-                                        setTimePreset(e.target.value);
-                                        if (e.target.value === 'custom' && !endTimeStr) {
-                                            const now = new Date();
-                                            const pad = (n) => n.toString().padStart(2, '0');
-                                            setEndTimeStr(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
-                                        }
-                                    }} className="w-full border p-2 mb-2 dark:bg-stone-800 font-bold">
-                                        <option value="permanent">永久公開</option>
-                                        <option value="today">到今天結束 (23:59)</option>
-                                        <option value="24h">24 小時後</option>
-                                        <option value="48h">48 小時後</option>
-                                        <option value="1w">一週後 (168小時)</option>
-                                        <option value="custom">自訂時間</option>
-                                    </select>
-                                    {timePreset === 'custom' && (
-                                        <input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-stone-800" />
-                                    )}
-                                </div>
+                               {isAdmin && (
+                                    <>
+                                        <div>
+                                            <label className="block text-sm font-bold mb-1">科目</label>
+                                            <select value={subjectMode} onChange={e => { setSubjectMode(e.target.value); if(e.target.value !== 'custom') setSubject(e.target.value); else setSubject(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800">
+                                                {['藥物分析', '生藥', '中藥', '藥理', '藥化', '藥劑', '生物藥劑'].map(s => <option key={s} value={s}>{s}</option>)}
+                                                <option value="custom">[自訂]</option>
+                                            </select>
+                                            {subjectMode === 'custom' && <input type="text" value={subject} onChange={e=>setSubject(e.target.value)} className="w-full border p-2 dark:bg-stone-800" placeholder="請輸入自訂科目" />}
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold mb-1">難度標籤</label>
+                                            <select value={difficultyMode} onChange={e => { setDifficultyMode(e.target.value); if(e.target.value !== 'custom') setCustomDifficulty(e.target.value); else setCustomDifficulty(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800">
+                                                {Array.from({length: 10}, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}★</option>)}
+                                                <option value="custom">[自訂]</option>
+                                            </select>
+                                            {difficultyMode === 'custom' && <input type="text" value={customDifficulty} onChange={e=>setCustomDifficulty(e.target.value)} className="w-full border p-2 dark:bg-stone-800" placeholder="請輸入自訂難度" />}
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold mb-1">獎勵鑽石數量</label>
+                                            <select value={rewardMode} onChange={e => { setRewardMode(e.target.value); if(e.target.value !== 'custom') setCustomReward(Number(e.target.value)); else setCustomReward(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800">
+                                                {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(n => <option key={n} value={n}>{n} 鑽石</option>)}
+                                                <option value="custom">[自訂]</option>
+                                            </select>
+                                            {rewardMode === 'custom' && <input type="number" min="1" value={customReward} onChange={e=>setCustomReward(e.target.value)} className="w-full border p-2 dark:bg-stone-800" placeholder="請輸入鑽石數量" />}
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold mb-1">結束時間</label>
+                                            <select value={timePreset} onChange={e => {
+                                                setTimePreset(e.target.value);
+                                                if (e.target.value === 'custom' && !endTimeStr) {
+                                                    const now = new Date();
+                                                    const pad = (n) => n.toString().padStart(2, '0');
+                                                    setEndTimeStr(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
+                                                }
+                                            }} className="w-full border p-2 mb-2 dark:bg-stone-800 font-bold">
+                                                <option value="permanent">永久公開</option>
+                                                <option value="today">到今天結束 (23:59)</option>
+                                                <option value="24h">24 小時後</option>
+                                                <option value="48h">48 小時後</option>
+                                                <option value="1w">一週後 (168小時)</option>
+                                                <option value="custom">自訂時間</option>
+                                            </select>
+                                            {timePreset === 'custom' && (
+                                                <input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-stone-800" />
+                                            )}
+                                        </div>
+                                    </>
+                                )}
                                <div className="md:col-span-2">
                                     <div className="flex justify-between items-center mb-1">
                                         <label className="block text-sm font-bold">題目內容 (支援貼上圖片)</label>
@@ -734,8 +801,16 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                                 return (
                                     <div key={qa.id} className="bg-[#FCFBF7] dark:bg-stone-800 p-4 border border-stone-600200 flex flex-col rounded-2xl shadow-sm hover:shadow-md">
                                         <div className="flex justify-between items-start mb-3">
-                                            <span className="bg-stone-600100 text-stone-600800 text-xs px-2 py-1 font-bold rounded-2xl">{qa.subject}</span>
-                                            <span className="text-stone-600600 font-bold text-sm flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-cyan-400">diamond</span> {qa.reward} 鑽</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="bg-stone-100 dark:bg-stone-700 text-stone-800 dark:text-stone-200 text-xs px-2 py-1 font-bold rounded-full">{qa.subject}</span>
+                                                {qa.creatorUid && (
+                                                    <span className="flex items-center gap-1 bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-600 px-1.5 py-0.5 rounded-full shadow-sm" title={`出題者：${qa.creatorName}`}>
+                                                        <UserAvatar uid={qa.creatorUid} name={qa.creatorName} className="w-4 h-4 rounded-full object-cover" />
+                                                        <span className="text-[10px] font-bold text-gray-600 dark:text-gray-300 max-w-[60px] truncate">{qa.creatorName}</span>
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <span className="text-amber-600 dark:text-amber-400 font-bold text-sm flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">diamond</span> {qa.reward}</span>
                                         </div>
                                         <p className="text-sm dark:text-white mb-4 flex-1 line-clamp-3 font-medium">{qa.question.replace(/<img[^>]*>/gi, '(圖片)').replace(/<[^>]+>/g, '').trim()}</p>
                                         <div className="flex items-center justify-between pt-3 border-t">
@@ -800,9 +875,15 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                     </div>
                     
                     <div className="flex flex-wrap gap-2 mb-6 border-b pb-4 dark:border-stone-700 items-center">
-                        <span className="bg-stone-600100 text-stone-600800 text-sm px-2 py-1 font-bold">{activeQA.subject}</span>
-                        <span className="bg-stone-50 text-gray-800 text-sm px-2 py-1 font-bold">{activeQA.difficulty}</span>
-                        <span className="text-stone-600600 font-bold text-lg ml-auto flex items-center gap-1"><span className="material-symbols-outlined text-[24px] text-cyan-400">diamond</span> {activeQA.reward} 鑽石獎勵</span>
+                        <span className="bg-stone-100 dark:bg-stone-700 text-stone-800 dark:text-stone-200 text-sm px-3 py-1 font-bold rounded-full">{activeQA.subject}</span>
+                        <span className="bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-gray-800 dark:text-gray-300 text-sm px-3 py-1 font-bold rounded-full">{activeQA.difficulty}</span>
+                        {activeQA.creatorUid && (
+                            <span className="flex items-center gap-1.5 ml-2 bg-white dark:bg-stone-700 border border-stone-200 dark:border-stone-600 px-2 py-1 rounded-full shadow-sm">
+                                <UserAvatar uid={activeQA.creatorUid} name={activeQA.creatorName} className="w-5 h-5 rounded-full object-cover" />
+                                <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{activeQA.creatorName}</span>
+                            </span>
+                        )}
+                        <span className="text-amber-600 dark:text-amber-400 font-black text-lg ml-auto flex items-center gap-1"><span className="material-symbols-outlined text-[24px]">diamond</span> {activeQA.reward} 鑽石</span>
                     </div>
                     
 <div className="text-lg font-bold mb-6 bg-[#FCFBF7] dark:bg-stone-800 text-stone-800 dark:text-white p-5 border border-gray-300 dark:border-gray-600 shadow-sm preview-rich-text" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(activeQA.question) }}></div>
@@ -821,11 +902,12 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                             let barColor = "bg-gray-300";
                             
                             if (showResult && user) {
-                                if (isCorrectOpt) { btnClass += "bg-emerald-100 border-emerald-500 text-emerald-800 "; barColor = "bg-emerald-300"; }
-                                else if (isSelected) { btnClass += "bg-red-100 border-red-500 text-red-800 "; barColor = "bg-red-300"; }
-                                else { btnClass += "bg-gray-50 border-stone-200 text-gray-500 opacity-80 "; }
+                                if (isCorrectOpt) { btnClass += "bg-emerald-100 border-emerald-500 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100 border-[3px] scale-[1.01] shadow-sm "; barColor = "bg-emerald-400"; }
+                                else if (isSelected) { btnClass += "bg-red-100 border-red-500 text-red-900 dark:bg-red-900/40 dark:text-red-100 border-[3px] scale-[1.01] shadow-sm "; barColor = "bg-red-400"; }
+                                else { btnClass += "bg-gray-50 border-stone-200 text-gray-500 opacity-60 dark:bg-stone-800 dark:border-stone-700 "; }
                             } else {
-                                btnClass += isSelected ? "border-stone-600500 bg-stone-60050 text-stone-600700 " : "border-gray-300 bg-[#FCFBF7] hover:bg-gray-50 dark:bg-stone-800 dark:text-white ";
+                                // ✨ 超級明顯化：未作答時選中的選項要有超粗邊框與質感的桃紅色底色
+                                btnClass += isSelected ? "border-pink-500 bg-pink-50 text-pink-900 shadow-md scale-[1.02] border-[3px] dark:bg-pink-900/40 dark:text-pink-100 dark:border-pink-400 " : "border-gray-300 bg-white hover:bg-gray-50 dark:bg-stone-800 dark:border-stone-600 dark:text-white hover:border-gray-400 dark:hover:border-gray-400 ";
                             }
 
                             return (
@@ -850,13 +932,30 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         <div className="mt-6 animate-fade-in">
                             {user ? (
                                 <>
-                                    <div className="p-4 bg-[#FCFBF7] dark:bg-stone-800 border-2 border-amber-100 dark:border-amber-900 shadow-inner">
+                                    <div className="p-4 bg-[#FCFBF7] dark:bg-stone-800 border-2 border-amber-100 dark:border-amber-900 shadow-inner rounded-2xl">
                                         <h4 className="font-black mb-2 flex justify-between items-center">
-                                            <span className="text-amber-900 dark:text-amber-300 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">lightbulb</span> 解答與討論</span>
-                                            {activeQA.reward > 0 && <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">celebration</span> 獲得 {activeQA.reward} 鑽！</span>}
+                                            <span className="text-amber-900 dark:text-amber-300 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">lightbulb</span> 解答與詳解</span>
+                                            {activeQA.reward > 0 && <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">celebration</span> 快問快答結算</span>}
                                         </h4>
                                         <div className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap preview-rich-text" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(activeQA.explanation) }}></div>
                                     </div>
+                                    {/* ✨ 新增：試題反饋給出題者 */}
+                                    {activeQA.creatorUid && activeQA.creatorUid !== user?.uid && (
+                                        <button onClick={() => {
+                                            window.showPrompt("請輸入要給作者的回饋或揪錯：", "", (msg) => {
+                                                if(!msg) return;
+                                                window.db.collection('users').doc(activeQA.creatorUid).collection('mailbox').add({
+                                                    title: '📬 試題回饋通知',
+                                                    content: `玩家 ${user?.displayName || '匿名'} 對您的快問快答「${activeQA.question.replace(/<[^>]+>/g, '').substring(0,10)}...」發送了回饋：\n\n${msg}`,
+                                                    isRead: false,
+                                                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                                                });
+                                                showAlert("[成功] 回饋已發送給作者！");
+                                            });
+                                        }} className="mt-4 w-full bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 font-bold py-3 rounded-xl text-sm flex justify-center items-center gap-2 hover:bg-stone-200 dark:hover:bg-stone-600 transition-colors shadow-sm">
+                                            <span className="material-symbols-outlined text-[18px]">feedback</span> 傳送試題回饋給作者
+                                        </button>
+                                    )}
                                 </>
                             ) : (
                                 <div className="p-6 bg-stone-50 border-2 border-dashed border-gray-400 text-center">

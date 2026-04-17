@@ -699,6 +699,13 @@ function Main() {
         return params.get('newsId');
     });
 
+    // ✨ 監聽從 Chat.jsx (限時動態) 傳來的無縫開啟請求
+    useEffect(() => {
+        const handleOpenFastQA = (e) => setCurrentQaId(e.detail);
+        window.addEventListener('openFastQA', handleOpenFastQA);
+        return () => window.removeEventListener('openFastQA', handleOpenFastQA);
+    }, []);
+
     // ✨ 新增：用來關閉快問快答與電子報視窗的方法
     const closeFastQA = () => {
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -779,10 +786,154 @@ function Main() {
 
     // ✨ 新增：全域背景通知狀態 (確保跨網頁切換時皆可顯示)
     const [globalToast, setGlobalToast] = useState(null);
+    const [showInbox, setShowInbox] = useState(false);
+    const [inboxMessages, setInboxMessages] = useState([]);
+    // ✨ 新增：防重領鎖定與管理員狀態
+    const [claimingIds, setClaimingIds] = useState(new Set());
+    const [showAdminMail, setShowAdminMail] = useState(false);
+    const [isConfirmingSend, setIsConfirmingSend] = useState(false);
+    const [adminMailForm, setAdminMailForm] = useState({ title: '系統全服公告', content: '', reward: 0 });
+    
+    // ✨ 修復：補上缺失的管理員相關狀態
+    const [adminMailTab, setAdminMailTab] = useState('manage'); 
+    const [isProcessingMail, setIsProcessingMail] = useState(false);
+    const [systemMails, setSystemMails] = useState([]);
 
-    useEffect(() => {
+    useEffect(() => {
         window.setGlobalToast = setGlobalToast;
     }, []);
+
+    // ✨ 升級：監聽使用者的專屬信箱 (僅保留最新50封，其餘自動清理)
+    useEffect(() => {
+        if (!user) return;
+        const unsub = window.db.collection('users').doc(user.uid).collection('mailbox')
+            .orderBy('createdAt', 'desc')
+            .limit(100)
+            .onSnapshot(snap => {
+                const docs = snap.docs;
+                setInboxMessages(docs.slice(0, 50).map(doc => ({ id: doc.id, ...doc.data() })));
+                
+                // 自動清理超過 50 封的舊信件，讓資料庫保持乾淨輕量
+                if (docs.length > 50) {
+                    const batch = window.db.batch();
+                    docs.slice(50).forEach(doc => batch.delete(doc.ref));
+                    batch.commit().catch(e => console.error("清理信件失敗", e));
+                }
+            });
+
+        // 專屬管理員的系統公告監聽 (僅保留最新50封，其餘自動清理)
+        let unsubSystem = () => {};
+        if (user.email === 'jay03wn@gmail.com') {
+            unsubSystem = window.db.collection('systemMails')
+                .orderBy('createdAt', 'desc')
+                .limit(100)
+                .onSnapshot(snap => {
+                    const docs = snap.docs;
+                    setSystemMails(docs.slice(0, 50).map(d => ({ id: d.id, ...d.data() })));
+                    
+                    if (docs.length > 50) {
+                        const batch = window.db.batch();
+                        docs.slice(50).forEach(doc => batch.delete(doc.ref));
+                        batch.commit().catch(e => console.error("清理系統公告失敗", e));
+                    }
+                });
+        }
+
+        return () => { unsub(); unsubSystem(); };
+    }, [user]);
+
+    const handleReadMessage = (msgId) => {
+        window.db.collection('users').doc(user.uid).collection('mailbox').doc(msgId).update({ isRead: true });
+    };
+
+    const handleClaimReward = async (e, msg) => {
+        e.stopPropagation();
+        // ✨ 終極防禦：Ref 同步鎖定，完全無視 React 渲染延遲
+        if (msg.isClaimed || claimLockRef.current.has(msg.id) || !msg.rewardDiamonds) return;
+        
+        claimLockRef.current.add(msg.id); 
+        setClaimingIds(prev => new Set(prev).add(msg.id));
+        
+        try {
+            await window.db.runTransaction(async (t) => {
+                const userRef = window.db.collection('users').doc(user.uid);
+                const msgRef = window.db.collection('users').doc(user.uid).collection('mailbox').doc(msg.id);
+                
+                const [userDoc, mailDoc] = await Promise.all([t.get(userRef), t.get(msgRef)]);
+                if (!userDoc.exists) return;
+                
+                // ✨ 雙重保險：如果在資料庫層級發現已經領過，強制阻斷交易
+                if (mailDoc.data()?.isClaimed) throw new Error('ALREADY_CLAIMED');
+
+                const mcData = userDoc.data().mcData || {};
+                t.set(userRef, { mcData: { ...mcData, diamonds: (mcData.diamonds || 0) + msg.rewardDiamonds } }, { merge: true });
+                t.update(msgRef, { isClaimed: true, isRead: true });
+            });
+            if (window.showAlert) window.showAlert(`成功領取 ${msg.rewardDiamonds} 顆鑽石`);
+        } catch (err) {
+            if (err.message !== 'ALREADY_CLAIMED') console.error(err);
+            // 只有交易失敗才解鎖，成功的話就永久鎖住這個 ID
+            claimLockRef.current.delete(msg.id); 
+            setClaimingIds(prev => { const next = new Set(prev); next.delete(msg.id); return next; });
+        }
+    };
+
+    const submitAdminMail = () => {
+        if (!adminMailForm.title || !adminMailForm.content) {
+            return window.showAlert ? window.showAlert("請填寫完整標題與內容！") : alert("請填寫完整標題與內容！");
+        }
+        
+        // ✨ 改用系統內建的 showConfirm 彈窗，完全移除原生延遲的 confirm()
+        showConfirm(`確定要${adminMailForm.id ? '更新這則系統公告' : '發送這封信件給全服玩家'}嗎？\n\n標題：${adminMailForm.title}\n鑽石：${adminMailForm.reward}`, async () => {
+            setIsProcessingMail(true);
+            try {
+                const isEdit = !!adminMailForm.id;
+                const mailId = isEdit ? adminMailForm.id : window.db.collection('systemMails').doc().id;
+                const mailData = { 
+                    title: adminMailForm.title, 
+                    content: adminMailForm.content, 
+                    rewardDiamonds: adminMailForm.reward,
+                    isSystem: true,
+                    updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                };
+                if (!isEdit) mailData.createdAt = window.firebase.firestore.FieldValue.serverTimestamp();
+
+                const usersSnap = await window.db.collection('users').get();
+                const batches = [];
+                let currentBatch = window.db.batch();
+                let count = 0;
+
+                // 儲存至系統公告庫供「公告管理」使用
+                currentBatch.set(window.db.collection('systemMails').doc(mailId), mailData, { merge: true });
+                count++;
+
+                usersSnap.docs.forEach(doc => {
+                    if (count >= 490) {
+                        batches.push(currentBatch);
+                        currentBatch = window.db.batch();
+                        count = 0;
+                    }
+                    const ref = window.db.collection('users').doc(doc.id).collection('mailbox').doc(mailId);
+                    if (isEdit) {
+                        currentBatch.set(ref, { title: mailData.title, content: mailData.content, rewardDiamonds: mailData.rewardDiamonds }, { merge: true });
+                    } else {
+                        currentBatch.set(ref, { ...mailData, isClaimed: false, isRead: false });
+                    }
+                    count++;
+                });
+                batches.push(currentBatch);
+                await Promise.all(batches.map(b => b.commit()));
+                
+                if (window.showAlert) window.showAlert(isEdit ? "公告更新成功！" : "全服信件發送成功！");
+                setAdminMailForm({ id: null, title: '系統公告', content: '', reward: 0 });
+                if (isEdit) setAdminMailTab('manage');
+            } catch (e) {
+                console.error(e);
+                if (window.showAlert) window.showAlert("操作失敗");
+            }
+            setIsProcessingMail(false);
+        });
+    };
 
     // ✨ 沉浸式新手教學核心：偵測未完成教學，自動啟動教學步驟 1 (留在首頁)
     useEffect(() => {
@@ -1114,6 +1265,11 @@ function Main() {
                 {user && (
                     <div className="flex items-center space-x-3 md:space-x-4">
                         <ExamCountdown />
+                        {/* ✨ 新增：信箱按鈕與未讀紅點動畫 */}
+                        <button onClick={() => setShowInbox(true)} className="text-xl hover:scale-110 transition-transform text-stone-300 hover:text-white flex items-center relative" title="信箱與通知">
+                            <span className="material-symbols-outlined text-[22px]">mail</span>
+                            {inboxMessages.some(m => !m.isRead) && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>}
+                        </button>
                         <button onClick={handleShareSite} className="text-xl hover:scale-110 transition-transform text-stone-300 hover:text-white flex items-center" title="分享網站給好友">
                             <span className="material-symbols-outlined text-[22px]">link</span>
                         </button>
@@ -1340,6 +1496,104 @@ function Main() {
             
             {/* ✨ 新增：行事曆考試彈出提醒 */}
             {user && userProfile && <ExamAlertPopup user={user} userProfile={userProfile} />}
+
+            {/* ✨ 新增：收件匣 (信箱) UI Modal */}
+            {showInbox && (
+                <div className="fixed inset-0 z-[110] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-lg rounded-3xl shadow-2xl border border-stone-200 dark:border-stone-700 flex flex-col max-h-[80vh] overflow-hidden">
+                        <div className="px-6 py-4 border-b border-stone-200 dark:border-stone-700 flex justify-between items-center bg-stone-100 dark:bg-stone-900 shrink-0">
+                            <h3 className="text-xl font-black text-stone-800 dark:text-white flex items-center gap-2"><span className="material-symbols-outlined">inbox</span> 系統信箱</h3>
+                            <button onClick={() => setShowInbox(false)} className="text-gray-400 hover:text-stone-800 dark:hover:text-white transition-colors"><span className="material-symbols-outlined">close</span></button>
+                        </div>
+                        <div className="p-4 flex-grow overflow-y-auto custom-scrollbar space-y-3">
+                            {inboxMessages.length === 0 ? (
+                                <div className="text-center py-10 text-gray-500 font-bold">目前信箱空空如也！</div>
+                            ) : (
+                                inboxMessages.map(msg => (
+                                    <div key={msg.id} onClick={() => handleReadMessage(msg.id)} className={`p-4 rounded-2xl border cursor-pointer transition-all ${msg.isRead ? 'bg-gray-50 dark:bg-stone-900 border-gray-200 dark:border-stone-700 opacity-80' : 'bg-white dark:bg-stone-800 border-rose-300 dark:border-rose-700 shadow-md scale-[1.01]'}`}>
+                                        <div className="flex justify-between items-start mb-2 border-b border-gray-100 dark:border-stone-700 pb-2">
+                                            <div className="font-black text-sm flex items-center gap-2 dark:text-white">
+                                                {!msg.isRead && <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shrink-0 animate-pulse"></span>}
+                                                <span className="material-symbols-outlined text-[18px] text-stone-500">mail</span>
+                                                {msg.title}
+                                            </div>
+                                            <span className="text-[10px] text-gray-400 font-bold shrink-0 ml-2 bg-gray-100 dark:bg-stone-700 px-2 py-0.5 rounded-full">{msg.createdAt?.toDate().toLocaleDateString('zh-TW')}</span>
+                                        </div>
+                                        <p className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-bold leading-relaxed">{msg.content}</p>
+                                        
+                                        {msg.rewardDiamonds > 0 && (
+                                            <div className="mt-3 flex justify-end">
+                                                <button 
+                                                    onClick={(e) => handleClaimReward(e, msg)} 
+                                                    disabled={msg.isClaimed || claimingIds.has(msg.id)}
+                                                    className={`text-xs font-black px-4 py-1.5 rounded-xl flex items-center gap-1 transition-all ${msg.isClaimed || claimingIds.has(msg.id) ? 'bg-gray-200 text-gray-500 dark:bg-stone-700 dark:text-stone-400' : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-800 shadow-sm active:scale-95'}`}
+                                                >
+                                                    {claimingIds.has(msg.id) ? <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[16px]">{msg.isClaimed ? 'check' : 'diamond'}</span>}
+                                                    {msg.isClaimed ? '已領取獎勵' : (claimingIds.has(msg.id) ? '處理中...' : `領取 ${msg.rewardDiamonds} 鑽石`)}
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        {user.email === 'jay03wn@gmail.com' && (
+                            <div className="p-4 border-t border-stone-200 dark:border-stone-700 bg-amber-50 dark:bg-stone-900 shrink-0">
+                                {!showAdminMail ? (
+                                    <button onClick={() => setShowAdminMail(true)} className="w-full bg-amber-600 text-white font-bold py-2 rounded-xl text-sm flex items-center justify-center gap-1 hover:bg-amber-700 transition-colors shadow-sm">
+                                        <span className="material-symbols-outlined text-[18px]">campaign</span> 管理員：公告與信件管理
+                                    </button>
+                                ) : (
+                                    <div className="bg-white dark:bg-stone-800 border border-amber-300 dark:border-amber-700 rounded-xl p-4 shadow-md animate-fade-in flex flex-col max-h-[50vh]">
+                                        <div className="flex justify-between items-center mb-3 border-b border-amber-200 dark:border-stone-700 pb-2 shrink-0">
+                                            <div className="flex gap-2">
+                                                <button onClick={() => { setAdminMailTab('write'); setAdminMailForm({ id: null, title: '系統公告', content: '', reward: 0 }); }} className={`px-3 py-1 text-sm font-bold rounded-lg transition-colors flex items-center gap-1 ${adminMailTab === 'write' ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-stone-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}><span className="material-symbols-outlined text-[16px]">edit_document</span> 撰寫</button>
+                                                <button onClick={() => setAdminMailTab('manage')} className={`px-3 py-1 text-sm font-bold rounded-lg transition-colors flex items-center gap-1 ${adminMailTab === 'manage' ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-stone-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}><span className="material-symbols-outlined text-[16px]">format_list_bulleted</span> 公告管理</button>
+                                            </div>
+                                            <button onClick={() => setShowAdminMail(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><span className="material-symbols-outlined text-[20px]">close</span></button>
+                                        </div>
+
+                                        {adminMailTab === 'write' && (
+                                            <div className="flex-grow overflow-y-auto custom-scrollbar flex flex-col">
+                                                <input type="text" placeholder="信件標題" className="w-full p-2 mb-2 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white outline-none font-bold" value={adminMailForm.title} onChange={e => setAdminMailForm({...adminMailForm, title: e.target.value})} />
+                                                <textarea placeholder="信件內容..." className="w-full p-2 mb-2 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white outline-none min-h-[80px] flex-grow resize-none font-bold" value={adminMailForm.content} onChange={e => setAdminMailForm({...adminMailForm, content: e.target.value})} />
+                                                <div className="flex items-center gap-2 mb-3 shrink-0">
+                                                    <span className="text-sm font-bold text-stone-600 dark:text-stone-300 flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-cyan-500">diamond</span> 附贈鑽石：</span>
+                                                    <input type="number" min="0" className="w-20 p-1.5 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white outline-none font-bold text-center" value={adminMailForm.reward} onChange={e => setAdminMailForm({...adminMailForm, reward: parseInt(e.target.value) || 0})} />
+                                                </div>
+                                                <div className="flex justify-end gap-2 shrink-0">
+                                                    <button onClick={submitAdminMail} disabled={isProcessingMail} className="px-4 py-1.5 bg-amber-600 text-white font-bold rounded-lg text-xs hover:bg-amber-700 transition-colors shadow-sm flex items-center gap-1 disabled:opacity-50">
+                                                        {isProcessingMail ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[14px]">send</span>} 
+                                                        {adminMailForm.id ? '儲存修改' : '確認無誤，直接寄出'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {adminMailTab === 'manage' && (
+                                            <div className="flex-grow overflow-y-auto custom-scrollbar space-y-2">
+                                                {systemMails.length === 0 ? <div className="text-center text-gray-400 text-sm py-4 font-bold">尚無系統公告</div> : null}
+                                                {systemMails.map(mail => (
+                                                    <div key={mail.id} className="p-3 bg-gray-50 dark:bg-stone-700 border border-gray-200 dark:border-stone-600 rounded-lg flex justify-between items-center gap-2">
+                                                        <div className="min-w-0">
+                                                            <div className="font-bold text-sm text-stone-800 dark:text-white truncate flex items-center gap-1"><span className="material-symbols-outlined text-[14px] text-amber-500">campaign</span> {mail.title}</div>
+                                                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{mail.content}</div>
+                                                        </div>
+                                                        <button onClick={() => {
+                                                            setAdminMailForm({ id: mail.id, title: mail.title, content: mail.content, reward: mail.rewardDiamonds || 0 });
+                                                            setAdminMailTab('write');
+                                                        }} className="bg-white dark:bg-stone-800 border border-gray-300 dark:border-stone-500 text-stone-700 dark:text-stone-300 px-3 py-1 rounded shadow-sm text-xs font-bold hover:bg-gray-100 dark:hover:bg-stone-600 transition-colors shrink-0 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">edit</span>編輯</button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {activeTab !== 'activeQuiz' && topNavContent}
             
