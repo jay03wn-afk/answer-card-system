@@ -974,7 +974,8 @@ function AuthScreen({ showAlert }) {
                         displayName: user.displayName || "", // 直接使用 Google 暱稱
                         bio: "",
                         subscriptions: ['藥學電子報'] 
-                    });
+                         }, { merge: true });
+                
                 }
             } catch (dbErr) {
                 // 🛑 核心修復：忽略「client is offline」等資料庫瞬斷錯誤
