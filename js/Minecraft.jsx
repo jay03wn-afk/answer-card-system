@@ -1,56 +1,51 @@
 const { useState, useEffect, useRef } = React;
 
-// --- 史萊姆排球小遊戲組件 (WebRTC 雙人連線版) ---
-// --- 史萊姆排球小遊戲組件 (WebRTC 雙人連線版) ---
-function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
+// --- 史萊姆排球小遊戲組件 (單機 AI 版) ---
+function VolleyballGame({ user, userProfile, mcData, updateMcData, onQuit, showAlert }) {
     const canvasRef = useRef(null);
     const [gameState, setGameState] = useState('start');
     const [score, setScore] = useState({ player: 0, opponent: 0 });
     const [pointMessage, _setPointMessage] = useState('');
     const pointMsgRef = useRef('');
-    const [gameMode, setGameMode] = useState('casual'); // ✨ 排位模式狀態
+    const pointMsgTimerRef = useRef(null); // ✨ 新增計時器控制
+    const [gameMode, setGameMode] = useState('casual');
     const [rankedStats, setRankedStats] = useState({ sets: [], startTime: 0, totalScore: 0 }); 
     const [rankedLeaderboard, setRankedLeaderboard] = useState([]);
+    const [isPaused, setIsPaused] = useState(false); 
 
-    // ✨ 修復：攔截並同步文字，讓 Host 隨時能拿到最新文字廣播出去
-    const setPointMessage = (msg) => {
-        pointMsgRef.current = typeof msg === 'function' ? msg(pointMsgRef.current) : msg;
-        _setPointMessage(msg);
+    const togglePause = () => {
+        if (gameState !== 'playing') return;
+        const newPaused = !isPaused;
+        setIsPaused(newPaused);
+        if (gameRef.current) gameRef.current.isPaused = newPaused;
+        if (newPaused) {
+            setPointMessage('⏸️ 遊戲暫停', 0); // 暫停時不自動消失
+        } else {
+            setPointMessage('');
+        }
     };
 
-    // ✨ 1. 觸控按鈕自定義設定狀態 (從資料庫讀取)
+    // ✨ 智慧文字控制：預設 2.5 秒自動消失，傳入 0 則持續顯示
+    const setPointMessage = (msg, autoClearMs = 2500) => {
+        pointMsgRef.current = typeof msg === 'function' ? msg(pointMsgRef.current) : msg;
+        _setPointMessage(msg);
+        
+        if (pointMsgTimerRef.current) clearTimeout(pointMsgTimerRef.current);
+        
+        if (msg && autoClearMs > 0) {
+            pointMsgTimerRef.current = setTimeout(() => {
+                if (pointMsgRef.current === msg) {
+                    _setPointMessage('');
+                    pointMsgRef.current = '';
+                }
+            }, autoClearMs);
+        }
+    };
+
     const [touchSettings, setTouchSettings] = useState(
         mcData.volleyball_touch || { layout: 'overlay', scale: 1, dpadX: 0, dpadY: 0, actionX: 0, actionY: 0 }
     );
 
-    // ✨ 2. 網路連線狀態 (WebRTC)
-    const netModeRef = useRef('offline'); // 'offline', 'host', 'guest'
-    const [netModeUI, setNetModeUI] = useState('offline');
-    const [peerId, setPeerId] = useState('');
-    const [joinId, setJoinId] = useState('');
-    const [connStatus, setConnStatus] = useState('');
-    const peerRef = useRef(null);
-    const connRef = useRef(null);
-
-    const setNetMode = (mode) => {
-        netModeRef.current = mode;
-        setNetModeUI(mode);
-    };
-
-    // 動態載入免費的 PeerJS 連線套件
-    useEffect(() => {
-        if (!document.getElementById('peerjs-script')) {
-            const script = document.createElement('script');
-            script.id = 'peerjs-script';
-            script.src = "https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js";
-            document.body.appendChild(script);
-        }
-        return () => {
-            if (peerRef.current) peerRef.current.destroy();
-        };
-    }, []);
-
-    // 自定義按鍵狀態
     const [showSettings, setShowSettings] = useState(false);
     const [bindingKey, setBindingKey] = useState(null);
     const [keyBindings, setKeyBindings] = useState(
@@ -73,11 +68,10 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
         images.current.villager.src = "https://minotar.net/helm/Villager/64.png";
         images.current.slime.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/slime_ball.png";
-        images.current.magma_slime = new Image(); images.current.magma_slime.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/magma_cream.png"; // ✨ 熔岩史萊姆球
-        images.current.netherrack = new Image(); images.current.netherrack.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/netherrack.png"; // ✨ 地獄地板
-        images.current.magma = new Image(); images.current.magma.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/magma.png"; // ✨ 地獄岩漿底
+        images.current.magma_slime = new Image(); images.current.magma_slime.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/magma_cream.png";
+        images.current.netherrack = new Image(); images.current.netherrack.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/netherrack.png";
+        images.current.magma = new Image(); images.current.magma.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/magma.png";
         
-        // ✨ 讀取排位排行榜
         if (user) {
             window.db.collection('system').doc('volleyball_ranked').get().then(doc => {
                 if (doc.exists) {
@@ -106,73 +100,6 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         };
     }, []);
 
-    // ✨ 連線功能邏輯
-    const createRoom = () => {
-        if (!window.Peer) return showAlert("連線套件載入中，請稍後...");
-        setNetMode('host');
-        setConnStatus('建立房間中...');
-        // ✨ 修改：生成 5 位數字的簡單房號
-        const simpleId = Math.floor(10000 + Math.random() * 90000).toString();
-        const peer = new window.Peer(simpleId);
-        peerRef.current = peer;
-        peer.on('open', (id) => { setPeerId(id); setConnStatus('等待對手加入...'); });
-        peer.on('connection', (conn) => {
-            connRef.current = conn;
-            setConnStatus('對手已加入！準備開始...');
-            conn.on('data', (data) => {
-                if (data.type === 'keys') gameRef.current.opponentKeys = data.keys;
-            });
-            setTimeout(() => startGame('host'), 1000);
-        });
-    };
-
-    const joinRoom = () => {
-        if (!joinId) return showAlert("請先輸入房主 ID");
-        if (!window.Peer) return showAlert("連線套件載入中，請稍後...");
-        setConnStatus('連線中...');
-        const peer = new window.Peer();
-        peerRef.current = peer;
-        peer.on('open', () => {
-                // ✨ 核心修復 2：開啟 UDP 模式 (reliable: false)，丟失封包不等待，徹底消除累積延遲
-                const conn = peer.connect(joinId, { reliable: false });
-                connRef.current = conn;
-                conn.on('open', () => {
-                    setConnStatus('連線成功！等待房主開球...');
-                    startGame('guest');
-                });
-                conn.on('data', (data) => {
-                    if (data.type === 'state' && gameRef.current) {
-                        // ✨ 核心修復 3：檢查幀數，丟棄遲到的舊封包，確保畫面永遠是最新的
-                        if (data.frame < (gameRef.current.lastFrame || 0)) return;
-                        gameRef.current.lastFrame = data.frame;
-
-                        gameRef.current.ball = data.state.ball;
-                        gameRef.current.player = data.state.player;
-                        gameRef.current.opponent = data.state.opponent;
-                        gameRef.current.serveTimer = data.state.serveTimer;
-                        
-                        // ✨ 關鍵修復 1：只有分數改變時才更新 React UI，避免每秒 60 次無意義重新渲染導致畫面卡死
-                        if (gameRef.current.score.p !== data.state.score.p || gameRef.current.score.o !== data.state.score.o) {
-                            gameRef.current.score = data.state.score;
-                            setScore({ player: data.state.score.p, opponent: data.state.score.o });
-                        }
-                        
-                        // ✨ 關鍵修復 2：避免過時的變數範圍 (Stale Closure) 導致無窮渲染
-                        setPointMessage(prevMsg => {
-                            if (prevMsg !== data.state.msg) return data.state.msg;
-                            return prevMsg;
-                        });
-                        
-                    } else if (data.type === 'sound') {
-                } else if (data.type === 'sound') {
-                    playCachedSound(data.url);
-                } else if (data.type === 'gameover') {
-                    endGame(true);
-                }
-            });
-        });
-    };
-
     const gameRef = useRef({
         reqId: null,
         w: 800,
@@ -198,12 +125,12 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         serveTimer: 0,         
         serveSkillLockP: false,
         serveSkillLockO: false,
-        opponentKeys: { left: false, right: false, up: false, block: false, spike: false } // ✨ 連線對手按鍵
+        difficulty: 'hard'
     });
 
     useEffect(() => {
         const handleKeyDown = (e) => {
-            if (e.repeat) return; // ✨ 核心修復 1：拒絕鍵盤長按造成的無效連發 (這是癱瘓網路的主因)
+            if (e.repeat) return; 
             if (bindingKey) {
                 e.preventDefault();
                 setKeyBindings(prev => ({ ...prev, [bindingKey]: e.code }));
@@ -217,8 +144,6 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             if (e.code === binds.jump || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); keys.up = true; }
             if (e.code === binds.block) keys.block = true;
             if (e.code === binds.spike) keys.spike = true;
-            
-            if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys });
         };
         const handleKeyUp = (e) => {
             if (bindingKey) return;
@@ -229,8 +154,6 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             if (e.code === binds.jump || e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = false;
             if (e.code === binds.block) keys.block = false;
             if (e.code === binds.spike) keys.spike = false;
-
-            if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys });
         };
         window.addEventListener('keydown', handleKeyDown, { passive: false });
         window.addEventListener('keyup', handleKeyUp);
@@ -256,16 +179,18 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         setPointMessage('');
     };
 
-    const startGame = (mode = netModeRef.current, isRanked = false) => {
+    const startGame = (isRanked = false, diff = 'hard') => {
         if (mcData.hunger < 1) {
             showAlert("🍖 史蒂夫太餓了！請先去商店吃點東西再來打排球！");
             return;
         }
-        updateMcData({ hunger: mcData.hunger - 1 }, true); // 無論連線或單機皆扣飽食度
+        updateMcData({ hunger: mcData.hunger - 1 }, true);
         
         setGameMode(isRanked ? 'ranked' : 'casual');
         gameRef.current.mode = isRanked ? 'ranked' : 'casual';
-        // ✨ 修復：玩家高度固定不變 (維持 320)，僅地獄模式的「球落地判定點」降低
+        gameRef.current.difficulty = isRanked ? 'hard' : diff;
+        gameRef.current.opponent.speed = diff === 'easy' ? 4.5 : (diff === 'medium' ? 5.2 : 6.0); 
+        
         gameRef.current.groundY = 320; 
         gameRef.current.ballGroundY = isRanked ? 320 + 15 : 320;
         if (isRanked) {
@@ -277,7 +202,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
         setGameState('playing');
         setScore({ player: 0, opponent: 0 });
-        setPointMessage(isRanked ? '🔥 排位模式：連打三局！' : '');
+        setPointMessage(isRanked ? '🔥 排位模式：連打三局！' : '比賽開始！');
         gameRef.current.score = { p: 0, o: 0 };
         gameRef.current.serving = 'player';
         gameRef.current.player.stamina = 100;
@@ -285,7 +210,6 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         resetPositions();
         
         if (bgmRef.current) { 
-            // ✨ 依據是否為排位賽動態切換 BGM 來源
             if (isRanked) {
                 bgmRef.current.src = "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/clutterfunkVOL.mp3";
             } else {
@@ -304,192 +228,144 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         if (!cvs) return;
         const ctx = cvs.getContext('2d');
 
-        // ✨ 核心修復：獨立物理邏輯，根據螢幕刷新率動態決定執行次數 (解決 30fps 慢動作與 240fps 加速)
         if (!timestamp) timestamp = performance.now();
         if (!state.lastTime) state.lastTime = timestamp;
         let elapsed = timestamp - state.lastTime;
-        if (elapsed > 100) elapsed = 100; // 避免分頁切換回來後爆發性加速
+        if (elapsed > 100) elapsed = 100; 
         state.lastTime = timestamp;
         state.accumulator = (state.accumulator || 0) + elapsed;
-        const timeStep = 1000 / 60; // 遊戲內部物理時間固定為 60Hz
+        const timeStep = 1000 / 60; 
 
-        // ✨ 網路音效同步包裝
         const triggerNetSound = (url) => {
             playCachedSound(url);
-            if (netModeRef.current === 'host' && connRef.current) {
-                connRef.current.send({ type: 'sound', url });
-            }
         };
 
-        // ✨ 進入時間步長循環 (幀數落後會連續執行補上，幀數過快會跳過)
         while (state.accumulator >= timeStep) {
             state.accumulator -= timeStep;
 
-            // ✨ 若是 Guest，跳過所有物理運算，只負責往下跑去畫圖
-            if (netModeRef.current !== 'guest' && !state.isPointOver) {
+            if (!state.isPointOver && !state.isPaused) {
             
-            if (state.serveTimer > 0) {
-                state.serveTimer--;
-                if (state.serveTimer === 15) triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/block/bell/use.ogg');
-                state.ball.vx = 0; state.ball.vy = 0;
-            } else {
-                if (!state.isServing) state.ball.vy += 0.35;
-            }
-
-            // ✨ 移除根據球過網來解鎖技能的舊邏輯，改為「對手擊球後解鎖」
-
-            state.player.vy += 0.6;
-            state.opponent.vy += 0.6;
-
-            state.player.stamina = Math.min(100, state.player.stamina + 0.25);
-            if (state.player.blockCd > 0) state.player.blockCd--;
-            if (state.player.spikeCd > 0) state.player.spikeCd--;
-            if (state.player.blockActive > 0) state.player.blockActive--;
-            if (state.player.spikeActive > 0) state.player.spikeActive--;
-
-            state.opponent.stamina = Math.min(100, state.opponent.stamina + 0.25);
-            if (state.opponent.blockCd > 0) state.opponent.blockCd--;
-            if (state.opponent.spikeCd > 0) state.opponent.spikeCd--;
-            if (state.opponent.blockActive > 0) state.opponent.blockActive--;
-            if (state.opponent.spikeActive > 0) state.opponent.spikeActive--;
-
-            if (!state.isServing && !state.serveSkillLockP) {
-                if (state.keys.block && state.player.blockCd === 0 && state.player.stamina >= 25) {
-                    state.player.stamina -= 25; state.player.blockActive = 20; state.player.blockCd = 90;
-                    triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
+                if (state.serveTimer > 0) {
+                    state.serveTimer--;
+                    if (state.serveTimer === 15) triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/block/bell/use.ogg');
+                    state.ball.vx = 0; state.ball.vy = 0;
+                } else {
+                    if (!state.isServing) state.ball.vy += 0.35;
                 }
-                if (state.keys.spike && state.player.spikeCd === 0 && state.player.stamina >= 30) {
-                    state.player.stamina -= 30; state.player.spikeActive = 15; state.player.spikeCd = 120;
-                    triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/attack/sweep1.ogg');
-                }
-            }
 
-            if (state.keys.left) state.player.vx = -state.player.speed;
-            else if (state.keys.right) state.player.vx = state.player.speed;
-            else state.player.vx = 0;
+                state.player.vy += 0.6;
+                state.opponent.vy += 0.6;
 
-            if (state.keys.up && state.player.y >= state.groundY) {
-                state.player.vy = state.player.jump;
-            }
+                state.player.stamina = Math.min(100, state.player.stamina + 0.25);
+                if (state.player.blockCd > 0) state.player.blockCd--;
+                if (state.player.spikeCd > 0) state.player.spikeCd--;
+                if (state.player.blockActive > 0) state.player.blockActive--;
+                if (state.player.spikeActive > 0) state.player.spikeActive--;
 
-            if (state.ball.x < state.net.x) state.touches.o = 0;
-            if (state.ball.x > state.net.x + state.net.w) state.touches.p = 0;
+                state.opponent.stamina = Math.min(100, state.opponent.stamina + 0.25);
+                if (state.opponent.blockCd > 0) state.opponent.blockCd--;
+                if (state.opponent.spikeCd > 0) state.opponent.spikeCd--;
+                if (state.opponent.blockActive > 0) state.opponent.blockActive--;
+                if (state.opponent.spikeActive > 0) state.opponent.spikeActive--;
 
-            // --- 🤖 對手控制邏輯 (Host 模式為真人，Offline 模式為 AI) ---
-            if (netModeRef.current === 'host') {
-                const oKeys = state.opponentKeys;
-                if (oKeys.left) state.opponent.vx = -state.opponent.speed;
-                else if (oKeys.right) state.opponent.vx = state.opponent.speed;
-                else state.opponent.vx = 0;
-
-                if (oKeys.up && state.opponent.y >= state.groundY) state.opponent.vy = state.opponent.jump;
-
-                if (!state.isServing && !state.serveSkillLockO) {
-                    if (oKeys.spike && state.opponent.spikeCd === 0 && state.opponent.stamina >= 30) {
-                        state.opponent.stamina -= 30; state.opponent.spikeActive = 15; state.opponent.spikeCd = 100;
-                        triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/attack/sweep1.ogg');
-                    }
-                    if (oKeys.block && state.opponent.blockCd === 0 && state.opponent.stamina >= 25 && state.opponent.y < state.groundY) {
-                        state.opponent.stamina -= 25; state.opponent.blockActive = 20; state.opponent.blockCd = 90;
+                if (!state.isServing && !state.serveSkillLockP) {
+                    if (state.keys.block && state.player.blockCd === 0 && state.player.stamina >= 25) {
+                        state.player.stamina -= 25; state.player.blockActive = 20; state.player.blockCd = 90;
                         triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
                     }
+                    if (state.keys.spike && state.player.spikeCd === 0 && state.player.stamina >= 30) {
+                        state.player.stamina -= 30; state.player.spikeActive = 15; state.player.spikeCd = 120;
+                        triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/attack/sweep1.ogg');
+                    }
                 }
-            } else {
+
+                if (state.keys.left) state.player.vx = -state.player.speed;
+                else if (state.keys.right) state.player.vx = state.player.speed;
+                else state.player.vx = 0;
+
+                if (state.keys.up && state.player.y >= state.groundY) {
+                    state.player.vy = state.player.jump;
+                }
+
+                if (state.ball.x < state.net.x) state.touches.o = 0;
+                if (state.ball.x > state.net.x + state.net.w) state.touches.p = 0;
+
+                // --- 🤖 AI 對手邏輯 ---
                 let aiTargetX = 600; 
                 let aiShouldJump = false;
                 let aiTryBlock = false;
                 let aiTrySpike = false;
+                const diff = state.difficulty || 'hard';
 
-               if (!state.isServing) {
+                if (!state.isServing) {
                     if (state.ball.x > state.net.x) {
-                        // 🏐【進攻/接球狀態】球在 AI 半場
                         let offset = 15; 
                         if (state.touches.o >= 1) offset = 30; 
                         
-                        // ✨ 極限救球機制：如果球已經很低了且 AI 距離較遠，取消防守站位，全速往球的落點衝過去！
-                        if (state.ball.y > 200 && state.opponent.x - state.ball.x > 30) {
+                        if (diff === 'hard' && state.ball.y > 200 && state.opponent.x - state.ball.x > 30) {
                             offset = -10; 
                         }
 
                         aiTargetX = state.ball.x + (state.ball.vx * 10) + offset; 
                         
-                        // 確保不會跑出場外或撞網
                         if (aiTargetX < state.net.x + 35) aiTargetX = state.net.x + 35;
                         if (aiTargetX > state.w - 30) aiTargetX = state.w - 30;
-// 判斷跳躍時機
+
                         let xDist = state.opponent.x - state.ball.x; 
                         
-                        // 1. 防守跳躍：擴大跳躍範圍，讓 AI 積極往前撲接小球
                         if (xDist > -25 && xDist < 90 && state.ball.y > 100 && state.ball.y < 300 && state.ball.vy > -1) {
                             aiShouldJump = true;
                         }
                         
-                        // 2. ✨ 強化版攻擊預判跳躍：只要球正飛過來且有一定高度，AI 走到定點附近就提早起跳！
-                        if (state.ball.vx > 0 && state.ball.x > state.net.x - 30 && state.ball.y < 280) {
-                            // 如果 AI 距離自己預判的落點 (aiTargetX) 已經很近了，就直接起跳準備空中擊球
+                        if (diff !== 'easy' && state.ball.vx > 0 && state.ball.x > state.net.x - 30 && state.ball.y < 280) {
                             if (Math.abs(state.opponent.x - aiTargetX) < 40) {
                                 aiShouldJump = true;
                             }
                         }
                         
-                        // 3. 原本的攻擊跳躍保留作為極限補救
                         if (state.ball.x < state.net.x + 200 && xDist > -20 && xDist < 80 && state.ball.y < 200 && state.ball.vy < 3) {
                             aiShouldJump = true;
                         }
 
-                       // ✨ 動態計算安全殺球高度：稍微放寬限制，讓 AI 更有侵略性
                         let safeSpikeY = state.net.y - 5 - ((state.opponent.x - state.net.x) * 0.15);
 
-                        // ✨ 判斷殺球時機 (全場皆可殺，放寬 X/Y 軸的擊球判定寬容度)
                         if (state.opponent.y < state.groundY - 10 && 
                             state.ball.y < safeSpikeY && 
-                            state.ball.x < state.opponent.x + 50 &&   // ✨ 再放寬前方判定：讓 AI 更好抓到球
-                            state.ball.x > state.opponent.x - 70 &&   // ✨ 再放寬後方判定：讓 AI 更好抓到球
-                            state.ball.y < state.opponent.y + 50 &&   // ✨ 再放寬下方判定
-                            state.ball.y > state.opponent.y - 120 &&  // ✨ 再放寬上方判定
-                            state.opponent.stamina >= 30) {           // 確保有足夠體力 (30)
+                            state.ball.x < state.opponent.x + 50 &&
+                            state.ball.x > state.opponent.x - 70 &&
+                            state.ball.y < state.opponent.y + 50 &&
+                            state.ball.y > state.opponent.y - 120 &&
+                            state.opponent.stamina >= 30) {
                             
-                            // ✨ 能殺就殺：機率調至 100% (最高機率)，只要在範圍內絕對殺球不手軟！
-                            if (Math.random() < 1.00) {
+                            let spikeProb = diff === 'easy' ? 0.1 : (diff === 'medium' ? 0.4 : 1.0);
+                            if (Math.random() < spikeProb) {
                                 aiTrySpike = true;
                             }
                         }
                     } else {
-                        // 🛡️【防守狀態】球在玩家半場
                         if (state.ball.vx > 0) {
-                            // ⚾ 球正飛向 AI：判斷落點
-                            // ✨ AI 預判防禦升級：只要球夠快，或者「球靠近網子且有一定高度（預判玩家即將殺球）」，就啟動防禦機制！
-                            if ((state.ball.vx > 7 && state.ball.y < 250) || (state.ball.x > state.net.x - 100 && state.ball.y < 250 && state.ball.vx > 2)) {
-                                // 預設快速後退準備接球
+                            if (diff === 'hard' && ((state.ball.vx > 7 && state.ball.y < 250) || (state.ball.x > state.net.x - 100 && state.ball.y < 250 && state.ball.vx > 2))) {
                                 aiTargetX = 720; 
-                                // ✨ 預判攔網升級：只要判斷有殺球威脅，且有體力，就主動衝到網前起跳攔網！(高度放寬到250，距離放寬到網前100，體力要求降低)
                                 if (state.ball.x > state.net.x - 100 && state.ball.y < 250 && state.opponent.stamina >= 25) {
                                     aiTargetX = state.net.x + 35;
                                     aiShouldJump = true;
                                     aiTryBlock = true;
                                 }
                             } else {
-                                // 一般球或高吊球，根據球的位置與速度動態預判落點
-                                aiTargetX = state.ball.x + (state.ball.vx * 30);
-                                
-                                // ✨ 針對網前小球(球速慢)特化：強制把預判點拉到網前，避免傻傻站後場
-                                if (state.ball.vx < 4.5) {
+                                aiTargetX = state.ball.x + (state.ball.vx * (diff === 'easy' ? 20 : 30));
+                                if (diff !== 'easy' && state.ball.vx < 4.5) {
                                     aiTargetX = state.net.x + 50;
                                 }
-
                                 if (aiTargetX < state.net.x + 40) aiTargetX = state.net.x + 40;
                                 if (aiTargetX > 760) aiTargetX = 760;
                             }
                         } else {
-                            // 🕵️ 球還沒飛過來 (可能是剛發球或往後飛)
-                            // ✨ 取代固定站位，改為「鏡像隨動」，球靠近網子 AI 就跟著靠近
                             aiTargetX = 600 - ((state.net.x - state.ball.x) * 0.4);
                             if (aiTargetX < state.net.x + 60) aiTargetX = state.net.x + 60;
                             if (aiTargetX > 700) aiTargetX = 700;
                         }
                     }
                 } else {
-                     // 🎾【發球狀態】
                      if (state.serving === 'opponent') {
                          aiTargetX = state.ball.x + 20; 
                          if (Math.abs(state.opponent.x - aiTargetX) < 15) {
@@ -501,15 +377,12 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                      }
                 }
 
-                // AI 移動執行
                 if (state.opponent.x < aiTargetX - 10) state.opponent.vx = state.opponent.speed;
                 else if (state.opponent.x > aiTargetX + 10) state.opponent.vx = -state.opponent.speed;
                 else state.opponent.vx = 0;
 
-                // AI 跳躍執行
                 if (aiShouldJump && state.opponent.y >= state.groundY) state.opponent.vy = state.opponent.jump;
 
-                // AI 技能執行
                 if (!state.isServing && !state.serveSkillLockO) {
                     if (aiTrySpike && state.opponent.spikeCd === 0 && state.opponent.stamina >= 30) {
                         state.opponent.stamina -= 30; state.opponent.spikeActive = 15; state.opponent.spikeCd = 100;
@@ -520,246 +393,220 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                         triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
                     }
                 }
-            }
-            // --- 🤖 AI 邏輯結束 ---
 
-            if (state.serveTimer > 0) {
-                state.player.vx = 0;
-                state.opponent.vx = 0;
-                if (state.player.y >= state.groundY) state.player.vy = 0;
-                if (state.opponent.y >= state.groundY) state.opponent.vy = 0;
-            }
-
-            state.player.x += state.player.vx; state.player.y += state.player.vy;
-            state.opponent.x += state.opponent.vx; state.opponent.y += state.opponent.vy;
-            state.ball.x += state.ball.vx; state.ball.y += state.ball.vy;
-
-            if (state.player.y > state.groundY) { state.player.y = state.groundY; state.player.vy = 0; }
-            if (state.opponent.y > state.groundY) { state.opponent.y = state.groundY; state.opponent.vy = 0; }
-
-            if (state.player.x - state.player.r < 0) state.player.x = state.player.r;
-            if (state.player.x + state.player.r > state.net.x) state.player.x = state.net.x - state.player.r;
-            if (state.opponent.x - state.opponent.r < state.net.x + state.net.w) state.opponent.x = state.net.x + state.net.w + state.opponent.r;
-            if (state.opponent.x + state.opponent.r > state.w) state.opponent.x = state.w - state.opponent.r;
-
-            if (state.ball.x - state.ball.r < 0) { state.ball.x = state.ball.r; state.ball.vx *= -0.8; }
-            if (state.ball.x + state.ball.r > state.w) { state.ball.x = state.w - state.ball.r; state.ball.vx *= -0.8; }
-
-            const bx = state.ball.x, by = state.ball.y, br = state.ball.r;
-            const nx = state.net.x, ny = state.net.y, nw = state.net.w, nh = state.net.h;
-            if (bx + br > nx && bx - br < nx + nw && by + br > ny && by - br < ny + nh) {
-                if (by < ny + 5 && state.ball.vy > 0) {
-                    state.ball.y = ny - br; state.ball.vy *= -0.8;
-                } else {
-                    if (bx < nx + nw/2) { state.ball.x = nx - br; state.ball.vx *= -0.8; }
-                    else { state.ball.x = nx + nw + br; state.ball.vx *= -0.8; }
+                if (state.serveTimer > 0) {
+                    state.player.vx = 0;
+                    state.opponent.vx = 0;
+                    if (state.player.y >= state.groundY) state.player.vy = 0;
+                    if (state.opponent.y >= state.groundY) state.opponent.vy = 0;
                 }
-            }
 
-           // ✨ 通用得分與判定邏輯 (加入 Deuce 與排位局數制)
-            const handleScoreCheck = () => {
-                const p = state.score.p;
-                const o = state.score.o;
-                const isRanked = state.mode === 'ranked';
-                
-                // ✨ Deuce 判斷：必須先到 10 分，且贏 2 分以上
-                if ((p >= 10 && p - o >= 2) || (o >= 10 && o - p >= 2)) {
-                    if (isRanked) {
-                        state.setsRecord.push({ p, o });
-                        if (p > o) state.setWins.p += 1; else state.setWins.o += 1;
-                        
-                        if (state.currentSet < 3) { // 連打 3 局
-                            state.currentSet += 1;
-                            setPointMessage(`🏁 局數結束！目前史蒂夫 ${state.setWins.p} : 村民 ${state.setWins.o}`);
-                            setTimeout(() => {
-                                state.score = { p: 0, o: 0 };
-                                setScore({ player: 0, opponent: 0 });
-                                resetPositions();
-                                setPointMessage(`🔥 第 ${state.currentSet} 局 開始！`);
-                                // ✨ 2秒後自動清空訊息，不殘留在畫面上
-                                setTimeout(() => setPointMessage(''), 2000);
-                            }, 2000);
+                state.player.x += state.player.vx; state.player.y += state.player.vy;
+                state.opponent.x += state.opponent.vx; state.opponent.y += state.opponent.vy;
+                state.ball.x += state.ball.vx; state.ball.y += state.ball.vy;
+
+                if (state.player.y > state.groundY) { state.player.y = state.groundY; state.player.vy = 0; }
+                if (state.opponent.y > state.groundY) { state.opponent.y = state.groundY; state.opponent.vy = 0; }
+
+                if (state.player.x - state.player.r < 0) state.player.x = state.player.r;
+                if (state.player.x + state.player.r > state.net.x) state.player.x = state.net.x - state.player.r;
+                if (state.opponent.x - state.opponent.r < state.net.x + state.net.w) state.opponent.x = state.net.x + state.net.w + state.opponent.r;
+                if (state.opponent.x + state.opponent.r > state.w) state.opponent.x = state.w - state.opponent.r;
+
+                if (state.ball.x - state.ball.r < 0) { state.ball.x = state.ball.r; state.ball.vx *= -0.8; }
+                if (state.ball.x + state.ball.r > state.w) { state.ball.x = state.w - state.ball.r; state.ball.vx *= -0.8; }
+
+                const bx = state.ball.x, by = state.ball.y, br = state.ball.r;
+                const nx = state.net.x, ny = state.net.y, nw = state.net.w, nh = state.net.h;
+                if (bx + br > nx && bx - br < nx + nw && by + br > ny && by - br < ny + nh) {
+                    if (by < ny + 5 && state.ball.vy > 0) {
+                        state.ball.y = ny - br; state.ball.vy *= -0.8;
+                    } else {
+                        if (bx < nx + nw/2) { state.ball.x = nx - br; state.ball.vx *= -0.8; }
+                        else { state.ball.x = nx + nw + br; state.ball.vx *= -0.8; }
+                    }
+                }
+
+                const handleScoreCheck = () => {
+                    const p = state.score.p;
+                    const o = state.score.o;
+                    const isRanked = state.mode === 'ranked';
+                    
+                    if ((p >= 10 && p - o >= 2) || (o >= 10 && o - p >= 2)) {
+                        if (isRanked) {
+                            state.setsRecord.push({ p, o });
+                            if (p > o) state.setWins.p += 1; else state.setWins.o += 1;
+                            
+                            if (state.currentSet < 3) {
+                                state.currentSet += 1;
+                                setPointMessage(`🏁 局數結束！目前史蒂夫 ${state.setWins.p} : 村民 ${state.setWins.o}`, 2000);
+                                setTimeout(() => {
+                                    state.score = { p: 0, o: 0 };
+                                    setScore({ player: 0, opponent: 0 });
+                                    resetPositions();
+                                    setPointMessage(`🔥 第 ${state.currentSet} 局 開始！`);
+                                }, 2000);
+                            } else {
+                                setTimeout(() => endGame(true), 500); 
+                            }
                         } else {
-                            setTimeout(() => endGame(false, true), 500); 
+                            setTimeout(() => endGame(), 500);
                         }
                     } else {
-                        setTimeout(() => endGame(), 500);
+                        if (p >= 9 && o >= 9 && p === o) setPointMessage('🔥 DEUCE！必須贏兩分！', 1500);
+                        setTimeout(() => resetPositions(), 800);
                     }
-                } else {
-                    if (p >= 9 && o >= 9 && p === o) setTimeout(() => setPointMessage('🔥 DEUCE！必須贏兩分！'), 1000);
-                    setTimeout(() => resetPositions(), 800);
-                }
-            };
+                };
 
-           const checkHit = (p, isPlayer) => {
-                let now = performance.now();
-                let lastHit = isPlayer ? state.lastHitTime.p : state.lastHitTime.o;
-                if (now - lastHit < 100) return; 
+               const checkHit = (p, isPlayer) => {
+                    let now = performance.now();
+                    let lastHit = isPlayer ? state.lastHitTime.p : state.lastHitTime.o;
+                    if (now - lastHit < 100) return; 
 
-                // ✨ 修復：讓村民也能物理觸發技能判定 (原本只有動畫)
-                let isBlockingHit = p.blockActive > 0;
-                let isSpikingHit = p.spikeActive > 0;
+                    let isBlockingHit = p.blockActive > 0;
+                    let isSpikingHit = p.spikeActive > 0;
+                    
+                    let hitOccurred = false;
+                    let actualHitType = 'body'; 
+                    let hitVectorX = state.ball.x - p.x;
+                    let hitVectorY = state.ball.y - p.y;
+
+                    if (isSpikingHit) {
+                        let progress = 1 - (p.spikeActive / 15);
+                        let angle = progress * Math.PI * 2;
+                        let dirMultiplier = isPlayer ? 1 : -1;
+                        let handX = p.x + (15 * dirMultiplier) + Math.sin(angle * dirMultiplier) * 20; 
+                        let handY = p.y - Math.cos(angle * dirMultiplier) * 20;
+                        
+                        let hdx = state.ball.x - handX;
+                        let hdy = state.ball.y - handY;
+                        let handDist = Math.sqrt(hdx*hdx + hdy*hdy);
+                        
+                        if (handDist < state.ball.r + 35) {
+                            hitOccurred = true; actualHitType = 'spike'; hitVectorX = hdx; hitVectorY = hdy;
+                        }
+                    }
+
+                    if (isBlockingHit && !hitOccurred) {
+                        let blockLeft = p.x - 25, blockRight = p.x + 25, blockTop = p.y - p.r - 25, blockBottom = p.y - p.r + 10;
+                        let testX = state.ball.x, testY = state.ball.y;
+                        
+                        if (state.ball.x < blockLeft) testX = blockLeft; else if (state.ball.x > blockRight) testX = blockRight;
+                        if (state.ball.y < blockTop) testY = blockTop; else if (state.ball.y > blockBottom) testY = blockBottom;
+                        
+                        let bdx = state.ball.x - testX, bdy = state.ball.y - testY;
+                        let blockDist = Math.sqrt(bdx*bdx + bdy*bdy);
+                        
+                        if (blockDist < state.ball.r) {
+                            hitOccurred = true; actualHitType = 'block'; hitVectorX = state.ball.x - p.x; hitVectorY = state.ball.y - (p.y - 15);
+                        }
+                    }
+
+                    if (!hitOccurred) {
+                        let bdx = state.ball.x - p.x, bdy = state.ball.y - p.y;
+                        let bodyDist = Math.sqrt(bdx*bdx + bdy*bdy);
+                        if (bodyDist < state.ball.r + p.r) {
+                            hitOccurred = true; actualHitType = 'body'; hitVectorX = bdx; hitVectorY = bdy;
+                        }
+                    }
+
+                    if (hitOccurred) {
+                        if (isPlayer) state.lastHitTime.p = now; else state.lastHitTime.o = now;
+
+                        triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/slime/attack1.ogg');
+                        let wasServing = state.isServing;
+                        
+                        if (state.isServing) {
+                            state.isServing = false;
+                            state.serveSkillLockP = true;
+                            state.serveSkillLockO = true;
+                        }
+
+                        if (isPlayer) {
+                            state.touches.p += 1;
+                            state.serveSkillLockO = false; 
+                            
+                            if (state.touches.p >= 4) {
+                                state.isPointOver = true; state.score.o += 1; state.serving = 'opponent';
+                                triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/no1.ogg');
+                                setScore({ player: state.score.p, opponent: state.score.o });
+                                setPointMessage(`❌ 左側連擊 4 次犯規！村民得分！`);
+                                handleScoreCheck();
+                                return;
+                            }
+                        } else {
+                            state.touches.o += 1;
+                            state.serveSkillLockP = false; 
+                            
+                            if (state.touches.o >= 4) {
+                                state.isPointOver = true; state.score.p += 1; state.serving = 'player';
+                                triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/levelup.ogg');
+                                setScore({ player: state.score.p, opponent: state.score.o });
+                                setPointMessage(`❌ 右側連擊 4 次犯規！史蒂夫得分！`);
+                                handleScoreCheck();
+                                return;
+                            }
+                        }
+
+                        let dist = Math.sqrt(hitVectorX*hitVectorX + hitVectorY*hitVectorY) || 1;
+                        let nxVec = hitVectorX / dist; 
+                        let nyVec = hitVectorY / dist;
+                        let speed = Math.sqrt(state.ball.vx*state.ball.vx + state.ball.vy*state.ball.vy);
+                        let pSpeed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+                        let bounceSpeed = Math.max(7, speed * 0.7 + pSpeed * 0.5);
+
+                        if (actualHitType === 'spike') {
+                            bounceSpeed = 22; nyVec = 0.3; nxVec = (isPlayer ? 1 : -1) * 2.0; 
+                            triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/generic/explode1.ogg');
+                        } else if (actualHitType === 'block') {
+                            bounceSpeed = 12; nyVec = -1.2; nxVec = (hitVectorX > 0 ? 1 : -1) * 0.5;
+                            triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
+                        } else {
+                            bounceSpeed = wasServing ? bounceSpeed : Math.min(bounceSpeed, 13);
+                            if (nyVec > 0) nyVec = -nyVec; 
+                        }
+
+                        let nMag = Math.sqrt(nxVec*nxVec + nyVec*nyVec);
+                        state.ball.vx = (nxVec / nMag) * bounceSpeed + (p.vx * 0.4);
+                        state.ball.vy = (nyVec / nMag) * bounceSpeed - 2; 
+                        
+                        if (actualHitType === 'spike') {
+                             state.ball.x += state.ball.vx * 0.5; state.ball.y += state.ball.vy * 0.5;
+                        } else if (actualHitType === 'block') {
+                             state.ball.x = p.x + (nxVec / nMag) * (state.ball.r + p.r + 10); state.ball.y = p.y - p.r - 20 - state.ball.r;
+                        } else {
+                             state.ball.x = p.x + (nxVec / nMag) * (state.ball.r + p.r); state.ball.y = p.y + (nyVec / nMag) * (state.ball.r + p.r);
+                        }
+                    }
+                };
                 
-                let hitOccurred = false;
-                let actualHitType = 'body'; 
-                let hitVectorX = state.ball.x - p.x;
-                let hitVectorY = state.ball.y - p.y;
+                if (!state.isPointOver) checkHit(state.player, true);
+                if (!state.isPointOver) checkHit(state.opponent, false);
 
-                if (isSpikingHit) {
-                    let progress = 1 - (p.spikeActive / 15);
-                    let angle = progress * Math.PI * 2;
-                    let dirMultiplier = isPlayer ? 1 : -1;
-                    let handX = p.x + (15 * dirMultiplier) + Math.sin(angle * dirMultiplier) * 20; 
-                    let handY = p.y - Math.cos(angle * dirMultiplier) * 20;
-                    
-                    let hdx = state.ball.x - handX;
-                    let hdy = state.ball.y - handY;
-                    let handDist = Math.sqrt(hdx*hdx + hdy*hdy);
-                    
-                    if (handDist < state.ball.r + 35) {
-                        hitOccurred = true; actualHitType = 'spike'; hitVectorX = hdx; hitVectorY = hdy;
-                    }
-                }
-
-                if (isBlockingHit && !hitOccurred) {
-                    let blockLeft = p.x - 25, blockRight = p.x + 25, blockTop = p.y - p.r - 25, blockBottom = p.y - p.r + 10;
-                    let testX = state.ball.x, testY = state.ball.y;
-                    
-                    if (state.ball.x < blockLeft) testX = blockLeft; else if (state.ball.x > blockRight) testX = blockRight;
-                    if (state.ball.y < blockTop) testY = blockTop; else if (state.ball.y > blockBottom) testY = blockBottom;
-                    
-                    let bdx = state.ball.x - testX, bdy = state.ball.y - testY;
-                    let blockDist = Math.sqrt(bdx*bdx + bdy*bdy);
-                    
-                    if (blockDist < state.ball.r) {
-                        hitOccurred = true; actualHitType = 'block'; hitVectorX = state.ball.x - p.x; hitVectorY = state.ball.y - (p.y - 15);
-                    }
-                }
-
-                if (!hitOccurred) {
-                    let bdx = state.ball.x - p.x, bdy = state.ball.y - p.y;
-                    let bodyDist = Math.sqrt(bdx*bdx + bdy*bdy);
-                    if (bodyDist < state.ball.r + p.r) {
-                        hitOccurred = true; actualHitType = 'body'; hitVectorX = bdx; hitVectorY = bdy;
-                    }
-                }
-
-                if (hitOccurred) {
-                    if (isPlayer) state.lastHitTime.p = now; else state.lastHitTime.o = now;
-
-                    triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/mob/slime/attack1.ogg');
-                    let wasServing = state.isServing;
-                    
-                    if (state.isServing) {
-                        state.isServing = false;
-                        state.serveSkillLockP = true;
-                        state.serveSkillLockO = true;
-                    }
-
-                    if (isPlayer) {
-                        state.touches.p += 1;
-                        state.serveSkillLockO = false; // ✨ 玩家擊球後，解除對手的技能封印
-                        
-                        if (state.touches.p >= 4) {
-                            state.isPointOver = true; state.score.o += 1; state.serving = 'opponent';
-                            triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/no1.ogg');
-                            setScore({ player: state.score.p, opponent: state.score.o });
-                            setPointMessage(`❌ 左側連擊 4 次犯規！右側得分！`);
-                            handleScoreCheck();
-                            return;
-                        }
+                const currentBallGroundY = state.ballGroundY || state.groundY;
+                if (!state.isPointOver && state.ball.y + state.ball.r > currentBallGroundY) {
+                    state.isPointOver = true;
+                    if (state.ball.x < state.w / 2) {
+                        state.score.o += 1; state.serving = 'opponent';
+                        triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/no1.ogg');
+                        setPointMessage(`👇 球落地了！村民得分！`);
                     } else {
-                        state.touches.o += 1;
-                        state.serveSkillLockP = false; // ✨ 對手擊球後，解除玩家的技能封印
-                        
-                        if (state.touches.o >= 4) {
-                            state.isPointOver = true; state.score.p += 1; state.serving = 'player';
-                            triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/levelup.ogg');
-                            setScore({ player: state.score.p, opponent: state.score.o });
-                            setPointMessage(`❌ 右側連擊 4 次犯規！左側得分！`);
-                            handleScoreCheck();
-                            return;
-                        }
+                        state.score.p += 1; state.serving = 'player';
+                        triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/levelup.ogg');
+                        setPointMessage(`👇 球落地了！史蒂夫得分！`);
                     }
-
-                    let dist = Math.sqrt(hitVectorX*hitVectorX + hitVectorY*hitVectorY) || 1;
-                    let nxVec = hitVectorX / dist; 
-                    let nyVec = hitVectorY / dist;
-                    let speed = Math.sqrt(state.ball.vx*state.ball.vx + state.ball.vy*state.ball.vy);
-                    let pSpeed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
-                    let bounceSpeed = Math.max(7, speed * 0.7 + pSpeed * 0.5);
-
-                    
-
-                    if (actualHitType === 'spike') {
-                        bounceSpeed = 22; nyVec = 0.3; nxVec = (isPlayer ? 1 : -1) * 2.0; 
-                        triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/generic/explode1.ogg');
-                    } else if (actualHitType === 'block') {
-                        bounceSpeed = 12; nyVec = -1.2; nxVec = (hitVectorX > 0 ? 1 : -1) * 0.5;
-                        triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/item/shield/block1.ogg');
-                    } else {
-                        // ✨ 修改：如果是發球，保留拋物線初速，不要被一般擊球邏輯降速
-                        bounceSpeed = wasServing ? bounceSpeed : Math.min(bounceSpeed, 13);
-                        if (nyVec > 0) nyVec = -nyVec; 
-                    }
-
-                    let nMag = Math.sqrt(nxVec*nxVec + nyVec*nyVec);
-                    state.ball.vx = (nxVec / nMag) * bounceSpeed + (p.vx * 0.4);
-                    state.ball.vy = (nyVec / nMag) * bounceSpeed - 2; 
-                    
-                    if (actualHitType === 'spike') {
-                         state.ball.x += state.ball.vx * 0.5; state.ball.y += state.ball.vy * 0.5;
-                    } else if (actualHitType === 'block') {
-                         state.ball.x = p.x + (nxVec / nMag) * (state.ball.r + p.r + 10); state.ball.y = p.y - p.r - 20 - state.ball.r;
-                    } else {
-                         state.ball.x = p.x + (nxVec / nMag) * (state.ball.r + p.r); state.ball.y = p.y + (nyVec / nMag) * (state.ball.r + p.r);
-                    }
-                }
-            };
-            
-            if (!state.isPointOver) checkHit(state.player, true);
-            if (!state.isPointOver) checkHit(state.opponent, false);
-
-            // ✨ 球落地判定改用獨立的 ballGroundY，完全不影響玩家高度
-            const currentBallGroundY = state.ballGroundY || state.groundY;
-            if (!state.isPointOver && state.ball.y + state.ball.r > currentBallGroundY) {
-                state.isPointOver = true;
-                if (state.ball.x < state.w / 2) {
-                    state.score.o += 1; state.serving = 'opponent';
-                    triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/no1.ogg');
-                    setPointMessage(`👇 球落地了！${netModeRef.current === 'offline' ? '村民' : '右方'}得分！`);
-                } else {
-                    state.score.p += 1; state.serving = 'player';
-                    triggerNetSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/entity/player/levelup.ogg');
-                    setPointMessage(`👇 球落地了！${netModeRef.current === 'offline' ? '史蒂夫' : '左方'}得分！`);
-                }
-                setScore({ player: state.score.p, opponent: state.score.o });
-                handleScoreCheck();
-            }
-
-            // ✨ 每幀結束時，Host 把最新狀態廣播給 Guest
-            if (netModeRef.current === 'host' && connRef.current) {
-                state.frameCount = (state.frameCount || 0) + 1;
-                if (state.frameCount % 2 === 0) {
-                    connRef.current.send({
-                        type: 'state',
-                        frame: state.frameCount, // ✨ 加上幀數 ID 標籤，讓訪客可以辨識新舊
-                        state: { ball: state.ball, player: state.player, opponent: state.opponent, score: state.score, serveTimer: state.serveTimer, msg: pointMsgRef.current }
-                    });
+                    setScore({ player: state.score.p, opponent: state.score.o });
+                    handleScoreCheck();
                 }
             }
-        } // End of Host & Offline Physics Bypass
-        
-        } // End of while loop for physics
+        }
 
-        // ======================= 繪圖區域 (所有模式共用) =======================
         ctx.clearRect(0, 0, state.w, state.h);
         
         const drawImageSafe = (img, x, y, w, h) => {
             if(img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, x, y, w, h);
         };
 
-       // ✨ 地獄場景：畫面視覺往下移，但玩家一樣站在原本的高度
         const isRankedVisual = state.mode === 'ranked';
         const visualGroundY = isRankedVisual ? state.groundY + 15 : state.groundY;
 
@@ -780,7 +627,6 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         ctx.strokeStyle = isRankedVisual ? '#FF4500' : '#A9A9A9'; 
         ctx.strokeRect(state.net.x, isRankedVisual ? state.net.y + 15 : state.net.y, state.net.w, state.net.h);
 
-        // ===== 畫對手 (村民/真人) 與技能特效 =====
         ctx.save();
         ctx.translate(state.opponent.x, state.opponent.y);
         drawImageSafe(images.current.villager, -state.opponent.r, -state.opponent.r, state.opponent.r*2, state.opponent.r*2);
@@ -824,7 +670,6 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         ctx.fillStyle = state.opponent.spikeCd === 0 ? '#FF8C00' : '#555';
         ctx.fillRect(state.opponent.x + 1, state.opponent.y + state.opponent.r + 13, 19 * (1 - state.opponent.spikeCd / 100), 4);
 
-        // ===== 畫玩家 (史蒂夫) 與技能特效 =====
         ctx.save();
         ctx.translate(state.player.x, state.player.y);
         drawImageSafe(images.current.steve, -state.player.r, -state.player.r, state.player.r*2, state.player.r*2);
@@ -858,7 +703,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         }
         ctx.restore();
 
-        if (tipsRef.current && netModeRef.current !== 'guest') {
+        if (tipsRef.current) {
             let dx = state.ball.x - state.player.x;
             let dy = state.ball.y - state.player.y;
             let dist = Math.sqrt(dx*dx + dy*dy);
@@ -895,12 +740,11 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         ctx.fillRect(state.player.x - 20, state.player.y + state.player.r + 13, 19 * (1 - state.player.blockCd / 90), 4);
         ctx.fillStyle = '#222'; ctx.fillRect(state.player.x + 1, state.player.y + state.player.r + 13, 19, 4);
         ctx.fillStyle = state.player.spikeCd === 0 ? '#FF8C00' : '#555';
-        ctx.fillRect(state.player.x + 1, state.player.y + state.player.r + 13, 19 * (1 - state.player.spikeCd / 120), 4);
+        ctx.fillRect(state.player.x + 1, state.player.y + state.player.r + 13, 19 * (1 - state.player.spikeCd / 100), 4);
 
         ctx.save();
         ctx.translate(state.ball.x, state.ball.y);
         ctx.rotate(state.ball.x * 0.05);
-        // ✨ 排位賽使用熔岩史萊姆球
         const ballImg = state.mode === 'ranked' ? images.current.magma_slime : images.current.slime;
         drawImageSafe(ballImg, -state.ball.r, -state.ball.r, state.ball.r*2, state.ball.r*2);
         ctx.restore();
@@ -927,23 +771,16 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         state.reqId = requestAnimationFrame(loop);
     };
 
-    const endGame = (fromNet = false, isRankedFinal = false) => {
+    const endGame = (isRankedFinal = false) => {
         setGameState('gameover');
         if (bgmRef.current) bgmRef.current.pause();
-        
-        if (netModeRef.current === 'host' && connRef.current && !fromNet) {
-            connRef.current.send({ type: 'gameover' });
-        }
         
         const state = gameRef.current;
         let iWon = false;
         
         if (isRankedFinal) {
-            // ✨ 排位賽綜合計分
             iWon = state.setWins.p > state.setWins.o;
-            const timeTaken = (Date.now() - state.rankedStartTime) / 1000; // 秒數
             
-            // ✨ 新排位計分公式：(勝局數 * 800) + (三局總得分 * 50) + (淨勝分差 * 100) + 基礎分 500
             let totalDiff = 0;
             let totalPlayerPoints = 0;
             state.setsRecord.forEach(s => {
@@ -951,7 +788,7 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 totalPlayerPoints += s.p;
             });
             let calcScore = Math.floor(500 + (state.setWins.p * 800) + (totalPlayerPoints * 50) + (totalDiff * 100));
-            if (calcScore < 1) calcScore = 1; // 確保最低有分數
+            if (calcScore < 1) calcScore = 1; 
             
             setRankedStats({ sets: state.setsRecord, startTime: state.rankedStartTime, totalScore: calcScore, wins: state.setWins });
             
@@ -963,34 +800,28 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 showAlert(`💀 排位賽落敗... 總分：${calcScore} 分`);
             }
 
-            // 儲存排行榜
-            if (user) {
+            if (user && userProfile) {
                 const sysRef = window.db.collection('system').doc('volleyball_ranked');
                 sysRef.get().then(doc => {
                     const data = doc.exists ? doc.data() : { scores: {} };
                     const prevBest = data.scores[user.uid]?.score || 0;
                     if (calcScore > prevBest) {
-                        data.scores[user.uid] = { name: userProfile.displayName, score: calcScore, sets: `${state.setWins.p}-${state.setWins.o}` };
+                        data.scores[user.uid] = { name: userProfile.displayName || '無名英雄', score: calcScore, sets: `${state.setWins.p}-${state.setWins.o}` };
                         sysRef.set(data);
                     }
                 });
             }
 
         } else {
-            // 傳統結算
-            if (netModeRef.current === 'guest') {
-                iWon = state.score.o > state.score.p; 
-            } else {
-                iWon = state.score.p > state.score.o; 
-            }
+            iWon = state.score.p > state.score.o; 
 
             if (iWon) {
-                const reward = netModeRef.current === 'offline' ? 30 : 50; 
+                const reward = 30; 
                 updateMcData({ diamonds: mcData.diamonds + reward }, true);
                 playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/ui/toast/challenge_complete.ogg');
-                showAlert(`🎉 恭喜你戰勝了${netModeRef.current === 'offline' ? '村民' : '對手'}！\n獲得 ${reward} 💎`);
+                showAlert(`🎉 恭喜你戰勝了村民！\n獲得 ${reward} 💎`);
             } else {
-                showAlert(`💀 你輸給了${netModeRef.current === 'offline' ? '村民' : '對手'}... 再接再厲！`);
+                showAlert(`💀 你輸給了村民... 再接再厲！`);
             }
         }
         
@@ -1045,7 +876,6 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                                        <span>整體大小比例</span>
                                        <input type="range" min="0.5" max="2" step="0.1" value={touchSettings.scale} onChange={e => setTouchSettings(p => ({...p, scale: parseFloat(e.target.value)}))} className="w-24" />
                                    </div>
-                                   {/* ✨ 新增：按鈕透明度調整 */}
                                    <div className="flex justify-between text-xs text-gray-300 items-center">
                                        <span>按鈕透明度</span>
                                        <input type="range" min="0.1" max="1" step="0.1" value={touchSettings.opacity ?? 1} onChange={e => setTouchSettings(p => ({...p, opacity: parseFloat(e.target.value)}))} className="w-24" />
@@ -1076,64 +906,72 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                </div>
             )}
 
-            <div className="bg-stone-800 p-2 border-4 border-gray-600 w-full max-w-6xl relative shadow-2xl flex flex-col items-center pointer-events-auto">
-               <div className="w-full flex justify-between items-center text-white font-bold mb-2 font-mono px-2 text-xl">
-                    <span className="text-amber-400">{netModeUI === 'guest' ? '對手' : '史蒂夫'}: {score.player}</span>
-                    <span className="text-amber-400 text-sm hidden sm:inline">
-                        {gameMode === 'ranked' ? `🔥 第 ${gameRef.current?.currentSet || 1}/3 局 (贏2分Deuce)` : '先得 10 分者獲勝'}
+            <div className="bg-[#c6c6c6] p-3 border-4 border-white border-r-[#555] border-b-[#555] w-full max-w-6xl relative shadow-2xl flex flex-col items-center pointer-events-auto">
+               <div className="w-full flex justify-between items-center text-[#373737] font-bold mb-2 font-mono px-2 text-lg sm:text-xl">
+                    <span className="text-emerald-800 bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white px-2 py-1 shadow-inner">史蒂夫: {score.player}</span>
+                    <span className="text-[#373737] text-sm hidden sm:inline bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white px-2 py-1 shadow-inner">
+                        {gameMode === 'ranked' ? `🔥 第 ${gameRef.current?.currentSet || 1}/3 局` : '先得 10 分者獲勝'}
                     </span>
-                    <div className="flex gap-4 items-center">
-                        <span className="text-red-400">{netModeUI === 'offline' ? '村民' : netModeUI === 'host' ? '對手' : '我'}: {score.opponent}</span>
-                        <button onClick={() => setShowSettings(true)} className="text-gray-400 hover:text-white transition-colors text-lg">⚙️</button>
-                        <button onClick={onQuit} className="text-gray-400 hover:text-white transition-colors text-lg">✖</button>
+                    <div className="flex gap-2 sm:gap-4 items-center">
+                        <span className="text-rose-900 bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white px-2 py-1 shadow-inner">村民: {score.opponent}</span>
+                        {gameState === 'playing' && (
+                            <button onClick={togglePause} className="bg-[#8b8b8b] hover:bg-[#a0a0a0] border-2 border-white border-r-[#555] border-b-[#555] px-2 py-1 active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white transition-colors text-sm">
+                                {isPaused ? '▶️' : '⏸️'}
+                            </button>
+                        )}
+                        <button onClick={() => setShowSettings(true)} className="bg-[#8b8b8b] hover:bg-[#a0a0a0] border-2 border-white border-r-[#555] border-b-[#555] px-2 py-1 active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white transition-colors text-sm">⚙️</button>
+                        <button onClick={onQuit} className="bg-[#8b8b8b] hover:bg-[#a0a0a0] border-2 border-white border-r-[#555] border-b-[#555] px-2 py-1 active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white transition-colors text-sm text-red-700 font-black">✖</button>
                     </div>
                 </div>
 
                 <div className="relative w-full overflow-hidden border-4 border-black shrink-0 max-h-[65vh] md:max-h-none" style={{ aspectRatio: '800/400' }}>
                     <canvas ref={canvasRef} width={800} height={400} className="w-full h-full object-contain bg-[#87CEEB] pixelated"></canvas>
                     
+                    {/* ✨ 提示文字 Minecraft 風格化 */}
                     {pointMessage && gameState === 'playing' && (
-                        <div className="absolute top-1/4 left-1/2 transform -tranamber-x-1/2 -tranamber-y-1/2 bg-stone-800 bg-opacity-70 text-white font-bold text-2xl sm:text-3xl px-6 py-3 rounded-lg border-2 border-amber-400 z-10 whitespace-nowrap animate-bounce">
-                            {pointMessage}
+                        <div className="absolute top-[25%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none w-full max-w-[90%] sm:max-w-[70%] flex justify-center">
+                            <div className="bg-[#373737]/95 border-4 border-white border-r-[#555] border-b-[#555] text-white font-bold text-lg sm:text-2xl px-6 py-3 shadow-[4px_4px_0_rgba(0,0,0,0.5)] animate-in fade-in zoom-in duration-200 text-center flex items-center justify-center min-h-[60px] break-words whitespace-pre-wrap">
+                                <span className="drop-shadow-[2px_2px_0_rgba(0,0,0,1)] tracking-widest leading-relaxed">
+                                    {pointMessage}
+                                </span>
+                            </div>
                         </div>
                     )}
 
                     {gameState === 'start' && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-800 bg-opacity-80 text-white z-20 px-4">
-                            <h2 className="text-4xl font-black mb-4 text-rose-500 drop-shadow-md tracking-widest">🏐 史萊姆排球</h2>
-                            <p className="mb-4 font-bold text-center text-sm sm:text-base">把史萊姆球打過網得分！<br/><span className="text-amber-300">支援單機打村民，與 WebRTC 線上真人連線！</span></p>
-                            
-                            {netModeUI === 'offline' && !connStatus ? (
-                                <div className="flex flex-col gap-3 w-full max-w-sm">
-                                    {/* ✨ 新增排位模式按鈕 */}
-                                    <button onClick={() => { setNetMode('offline'); startGame('offline', true); }} className="bg-red-700 hover:bg-red-600 border-4 border-red-900 text-white font-bold py-3 text-xl shadow-lg active:-translate-y-1 pixelated-border animate-pulse">🔥 排位模式 (地獄連打三局)</button>
-                                    <button onClick={() => { setNetMode('offline'); startGame('offline'); }} className="bg-stone-600 hover:bg-rose-500 border-4 border-stone-800 text-white font-bold py-3 text-xl shadow-lg active:-translate-y-1 pixelated-border">單人休閒 (打村民 - 耗1飽食)</button>
-                                    <button onClick={createRoom} className="bg-amber-600 hover:bg-amber-500 border-4 border-amber-800 text-white font-bold py-3 text-xl shadow-lg active:-translate-y-1 pixelated-border">📡 建立線上房間 (房主)</button>
-                                    <button onClick={() => {
-                                        if (!window.Peer) return showAlert("套件載入中...");
-                                        setNetMode('guest');
-                                    }} className="bg-emerald-600 hover:bg-emerald-500 border-4 border-emerald-800 text-white font-bold py-3 text-xl shadow-lg active:tranamber-y-1 pixelated-border">🤝 加入線上房間 (訪客)</button>
+                        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70 z-20 px-2 sm:px-4 backdrop-blur-sm">
+                            <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-4 sm:p-6 shadow-2xl flex flex-col md:flex-row gap-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                                
+                                {/* 左側：排行榜 */}
+                                <div className="flex-1 bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white p-3 flex flex-col min-w-[250px] shadow-inner">
+                                    <h3 className="text-center font-bold text-[#373737] border-b-2 border-[#555] pb-2 mb-3 text-lg">🏆 排位賽強者榜</h3>
+                                    <div className="flex-grow overflow-y-auto custom-scrollbar pr-2 space-y-2">
+                                        {rankedLeaderboard.length === 0 ? (
+                                            <p className="text-[#373737] text-center text-sm font-bold mt-4">尚無排名，快來挑戰！</p>
+                                        ) : (
+                                            rankedLeaderboard.map((lb, i) => (
+                                                <div key={i} className="flex justify-between items-center text-sm p-2 bg-[#c6c6c6] border-2 border-[#555] border-r-white border-b-white shadow-inner text-[#373737] font-bold">
+                                                    <span className="truncate w-2/3">{i+1}. {lb.name}</span>
+                                                    <span className="text-emerald-800">{lb.score} 分</span>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
                                 </div>
-                            ) : netModeUI === 'host' ? (
-                                <div className="text-center bg-stone-800 p-6 border-4 border-gray-600 rounded max-w-sm w-full">
-                                    <p className="text-amber-400 font-bold mb-2">你的房間 ID (請複製給朋友)：</p>
-                                    <div className="bg-stone-800 p-3 select-all text-xl tracking-widest mb-4 font-mono break-all">{peerId || '生成中...'}</div>
-                                    <p className="animate-pulse font-bold text-lg mb-4">{connStatus}</p>
-                                    <button onClick={() => { setNetMode('offline'); setConnStatus(''); if(peerRef.current) peerRef.current.destroy(); }} className="w-full bg-gray-600 hover:bg-gray-500 py-2 font-bold border-4 border-gray-800 pixelated-border">返回</button>
+
+                                {/* 右側：開始選單 */}
+                                <div className="flex-[1.5] flex flex-col justify-center">
+                                    <h2 className="text-3xl sm:text-4xl font-black mb-2 text-[#373737] text-center drop-shadow-sm">🏐 史萊姆排球</h2>
+                                    <p className="mb-6 font-bold text-center text-[#555] text-sm sm:text-base">把球打過網！打敗村民獲得鑽石！</p>
+                                    
+                                    <div className="flex flex-col gap-3 w-full">
+                                        <button onClick={() => startGame(true)} className="bg-[#8b0000] hover:bg-[#a00000] border-2 border-white border-r-[#555] border-b-[#555] text-white font-bold py-3 text-lg sm:text-xl active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white animate-pulse shadow-md">🔥 排位模式 (最強AI連打三局)</button>
+                                        <button onClick={() => startGame(false, 'easy')} className="bg-[#006400] hover:bg-[#008000] border-2 border-white border-r-[#555] border-b-[#555] text-white font-black py-3 text-lg sm:text-xl active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white shadow-md">🟢 單人休閒 (簡單)</button>
+                                        <button onClick={() => startGame(false, 'medium')} className="bg-[#b8860b] hover:bg-[#daa520] border-2 border-white border-r-[#555] border-b-[#555] text-white font-black py-3 text-lg sm:text-xl active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white shadow-md">🟡 單人休閒 (中等)</button>
+                                        <button onClick={() => startGame(false, 'hard')} className="bg-[#5c4033] hover:bg-[#6b4c3a] border-2 border-white border-r-[#555] border-b-[#555] text-white font-black py-3 text-lg sm:text-xl active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white shadow-md">🔴 單人休閒 (困難)</button>
+                                    </div>
                                 </div>
-                            ) : netModeUI === 'guest' && !connRef.current ? (
-                                <div className="text-center bg-stone-800 p-6 border-4 border-gray-600 rounded max-w-sm w-full flex flex-col gap-3">
-                                    <p className="text-emerald-400 font-bold mb-2 text-lg">請輸入房主給你的 ID：</p>
-                                    <input type="text" value={joinId} onChange={e => setJoinId(e.target.value)} className="text-stone-800 font-mono font-bold p-3 text-center border-2 border-gray-900" placeholder="貼上房間 ID..."/>
-                                    <button onClick={joinRoom} className="bg-emerald-600 hover:bg-emerald-500 font-bold py-3 border-4 border-emerald-800 pixelated-border text-xl">連線加入</button>
-                                    <p className="font-bold text-amber-300">{connStatus}</p>
-                                    <button onClick={() => { setNetMode('offline'); setConnStatus(''); if(peerRef.current) peerRef.current.destroy(); }} className="w-full bg-gray-600 hover:bg-gray-500 py-2 font-bold border-4 border-gray-800 pixelated-border">返回</button>
-                                </div>
-                            ) : (
-                                <div className="bg-stone-800 bg-opacity-70 p-6 rounded border-2 border-amber-500">
-                                    <p className="animate-pulse text-2xl text-amber-300 font-bold">{connStatus}</p>
-                                </div>
-                            )}
+                            </div>
                         </div>
                     )}
 
@@ -1166,14 +1004,14 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                             ) : (
                                 <>
                                     <h2 className="text-5xl font-black mb-4 drop-shadow-md">
-                                        {netModeUI === 'guest' ? (score.opponent > score.player ? '🏆 挑戰成功！' : '💀 挑戰失敗...') : (score.player > score.opponent ? '🏆 挑戰成功！' : '💀 挑戰失敗...')}
+                                        {score.player > score.opponent ? '🏆 挑戰成功！' : '💀 挑戰失敗...'}
                                     </h2>
                                     <p className="text-2xl mb-8 font-bold">最終比分 - {score.player} : {score.opponent}</p>
                                 </>
                             )}
                             <div className="flex gap-4">
-                                {netModeUI === 'offline' && <button onClick={() => startGame('offline', gameMode === 'ranked')} className="bg-emerald-600 hover:bg-emerald-500 border-4 border-emerald-800 text-white font-bold py-2 px-6 text-lg active:-translate-y-1 pixelated-border">🔄 再來一局</button>}
-                                <button onClick={() => { setNetMode('offline'); setConnStatus(''); if(peerRef.current) peerRef.current.destroy(); onQuit(); }} className="bg-gray-600 hover:bg-gray-500 border-4 border-gray-800 text-white font-bold py-2 px-6 text-lg active:-translate-y-1 pixelated-border">🔙 離開</button>
+                                <button onClick={() => startGame(gameMode === 'ranked', gameRef.current?.difficulty)} className="bg-emerald-600 hover:bg-emerald-500 border-4 border-emerald-800 text-white font-bold py-2 px-6 text-lg active:-translate-y-1 pixelated-border">🔄 再來一局</button>
+                                <button onClick={onQuit} className="bg-gray-600 hover:bg-gray-500 border-4 border-gray-800 text-white font-bold py-2 px-6 text-lg active:-translate-y-1 pixelated-border">🔙 離開</button>
                             </div>
                         </div>
                     )}
@@ -1181,38 +1019,38 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     {/* ✨ 觸控按鈕 (支援自定義位置大小與防反白) */}
                     {gameState === 'playing' && touchSettings.layout === 'overlay' && (
                         <div className="absolute inset-0 z-10 2xl:hidden pointer-events-none" style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'none' }}>
-                            {/* 左側移動控制 (加入透明度 opacity 設定) */}
+                            {/* 左側移動控制 */}
                             <div className="absolute flex gap-2 pointer-events-auto" style={{ bottom: `${12 + touchSettings.dpadY}px`, left: `${12 + touchSettings.dpadX}px`, transform: `scale(${touchSettings.scale})`, transformOrigin: 'bottom left', opacity: touchSettings.opacity ?? 1 }}>
                                 <button 
-                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
-                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
+                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true; }}
+                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false; }}
                                     style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
                                     className="select-none touch-none bg-stone-800/40 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-white/40 active:bg-stone-800/60 flex items-center justify-center backdrop-blur-sm"
                                 >←</button>
                                 <button 
-                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
-                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
+                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true; }}
+                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false; }}
                                     style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
                                     className="select-none touch-none bg-stone-800/40 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-white/40 active:bg-stone-800/60 flex items-center justify-center backdrop-blur-sm"
                                 >→</button>
                             </div>
-                            {/* 右側技能控制 (加入透明度 opacity 設定) */}
+                            {/* 右側技能控制 */}
                             <div className="absolute flex gap-2 pointer-events-auto" style={{ bottom: `${12 + touchSettings.actionY}px`, right: `${12 - touchSettings.actionX}px`, transform: `scale(${touchSettings.scale})`, transformOrigin: 'bottom right', opacity: touchSettings.opacity ?? 1 }}>
                                 <button 
-                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
-                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
+                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true; }}
+                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false; }}
                                     style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
-                                    className="select-none touch-none bg-amber-700600/60 text-white/90 w-12 h-12 font-bold text-xl rounded-full border-2 border-amber-700300/60 active:bg-amber-700600/90 flex flex-col items-center justify-center backdrop-blur-sm shadow-lg"
+                                    className="select-none touch-none bg-[#8b5a2b]/60 text-white/90 w-12 h-12 font-bold text-xl rounded-full border-2 border-[#d4a373]/60 active:bg-[#8b5a2b]/90 flex flex-col items-center justify-center backdrop-blur-sm shadow-lg"
                                 >🛡️</button>
                                 <button 
-                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
-                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
+                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true; }}
+                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false; }}
                                     style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
                                     className="select-none touch-none bg-red-600/60 text-white/90 w-12 h-12 font-bold text-xl rounded-full border-2 border-red-300/60 active:bg-red-600/90 flex flex-col items-center justify-center backdrop-blur-sm shadow-lg"
                                 >⚔️</button>
                                 <button 
-                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
-                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}}
+                                    onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true; }}
+                                    onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false; }}
                                     style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
                                     className="select-none touch-none bg-amber-600/60 text-white/90 w-14 h-14 font-bold text-2xl rounded-full border-2 border-amber-300/60 active:bg-amber-600/90 flex items-center justify-center backdrop-blur-sm shadow-lg"
                                 >↑</button>
@@ -1225,13 +1063,13 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                 {gameState === 'playing' && touchSettings.layout === 'outside' && (
                     <div className="flex justify-between w-full mt-2 px-2 2xl:hidden gap-1 shrink-0" style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'none' }}>
                         <div className="flex gap-2">
-                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:tranamber-y-1 flex items-center justify-center">←</button>
-                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:tranamber-y-1 flex items-center justify-center">→</button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.left = true; }} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.left = false; }} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:-translate-y-1 flex items-center justify-center transition-all">←</button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.right = true; }} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.right = false; }} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-gray-700 text-white w-14 h-14 font-bold text-2xl rounded-lg border-b-4 border-gray-900 active:border-b-0 active:-translate-y-1 flex items-center justify-center transition-all">→</button>
                         </div>
                         <div className="flex gap-2">
-                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-amber-700600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-amber-700800 active:border-b-0 active:tranamber-y-1 flex flex-col items-center justify-center"><span>🛡️</span><span>攔網</span></button>
-                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-red-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-red-800 active:border-b-0 active:tranamber-y-1 flex flex-col items-center justify-center"><span>⚔️</span><span>殺球</span></button>
-                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false; if (netModeRef.current === 'guest' && connRef.current) connRef.current.send({ type: 'keys', keys: gameRef.current.keys });}} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-amber-600 text-white w-14 h-14 font-bold text-xl rounded-lg border-b-4 border-amber-800 active:border-b-0 active:tranamber-y-1 flex items-center justify-center">↑</button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.block = true; }} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.block = false; }} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-[#8b5a2b] text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-[#3e2723] active:border-b-0 active:-translate-y-1 flex flex-col items-center justify-center transition-all"><span>🛡️</span><span>攔網</span></button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.spike = true; }} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.spike = false; }} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-red-600 text-white w-14 h-14 font-bold text-sm rounded-lg border-b-4 border-red-900 active:border-b-0 active:-translate-y-1 flex flex-col items-center justify-center transition-all"><span>⚔️</span><span>殺球</span></button>
+                            <button onTouchStart={(e)=>{e.preventDefault(); gameRef.current.keys.up = true; }} onTouchEnd={(e)=>{e.preventDefault(); gameRef.current.keys.up = false; }} style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} className="select-none touch-none bg-amber-600 text-white w-14 h-14 font-bold text-xl rounded-lg border-b-4 border-amber-900 active:border-b-0 active:-translate-y-1 flex items-center justify-center transition-all">↑</button>
                         </div>
                     </div>
                 )}
@@ -1243,7 +1081,6 @@ function VolleyballGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         </div>
     );
 }
-
 const McImg = ({ src, fallback, className, ...props }) => {
     const [error, setError] = useState(false);
     if (error) return <span className={className} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{fallback}</span>;
@@ -3007,6 +2844,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
             {showVolleyball && (
                 <VolleyballGame 
                     user={user}
+                    userProfile={userProfile}
                     mcData={mcData}
                     updateMcData={updateMcData}
                     showAlert={showAlert}
@@ -3037,29 +2875,31 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                     </button>
                 </div>
 
-                <div className="mc-panel-dark w-full md:w-auto text-white">
-                        <div className="flex space-x-6 text-sm items-center font-bold">
-                            <div className="text-center">
-                                <p className="text-emerald-400 text-lg">Lv. {mcData.level}</p>
-                                <p className="text-xs text-gray-300">EXP: {mcData.exp}/{expToNextLevel}</p>
+                <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-2 w-full md:w-auto text-[#373737] shadow-lg shrink-0">
+                        <div className="flex justify-around md:justify-start md:space-x-8 text-sm items-center font-bold">
+                            <div className="text-center bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white px-3 py-1">
+                                <p className="text-emerald-800 font-black text-lg">Lv. {mcData.level}</p>
+                                <p className="text-[10px] text-[#373737]">EXP: {mcData.exp}/{expToNextLevel}</p>
                             </div>
-                            <div className="space-y-1">
-                                <p className="flex items-center text-amber-300"><McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mr-1 pixelated" /> {mcData.diamonds}</p>
-                                <p className="flex items-center text-amber-300"><span className="text-lg mr-1 leading-none">🍖</span> {mcData.hunger}/10</p>
+                            <div className="space-y-1 bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white px-3 py-1">
+                                <p className="flex items-center text-[#373737]"><McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mr-1 pixelated" /> {mcData.diamonds}</p>
+                                <p className="flex items-center text-[#373737]"><span className="text-lg mr-1 leading-none">🍖</span> {mcData.hunger}/10</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 min-h-0 flex-grow">
                     
-                    <div className="space-y-6 lg:col-span-1">
-                        <div className="mc-panel-dark text-white">
-                            <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300 flex justify-between items-center">
+                    {/* 左側：你的家 & 排行榜 */}
+                    <div className="space-y-4 md:space-y-6 lg:col-span-1 flex flex-col">
+                        {/* 🏡 你的家 */}
+                        <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 shadow-xl shrink-0">
+                            <h2 className="border-b-2 border-[#555] pb-2 mb-3 font-bold text-[#373737] text-lg flex justify-between items-center">
                              <span>🏡 你的家</span>
                             </h2>
-                            <div className="p-4 mc-bg border-4 border-gray-800 mb-4 h-48 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
-                                <McImg src={imgSteve} fallback="🧍‍♂️" className="w-16 h-16 pixelated shadow-lg border border-black mb-2" />
+                            <div className="p-4 bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white mb-3 h-32 sm:h-40 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
+                                <McImg src={imgSteve} fallback="🧍‍♂️" className="w-12 h-12 sm:w-16 sm:h-16 pixelated shadow-lg border-2 border-[#373737] mb-2" />
                                 
                                 <div className="flex flex-wrap justify-center gap-1 max-w-full z-10">
                                     {Array.from({ length: mcData.cats || 0 }).map((_, i) => <span key={`cat-${i}`} title="斑點貓" className="text-xl">🐱</span>)}
@@ -3067,34 +2907,34 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                                 </div>
                                 <div className="absolute bottom-2 flex flex-wrap justify-center gap-2 max-w-full px-2">
                                     {ownedItems.slice(-4).map(item => (
-                                        <McImg key={item.id} src={item.img} fallback={item.icon} className="w-6 h-6 pixelated drop-shadow-md" />
+                                        <McImg key={item.id} src={item.img} fallback={item.icon} className="w-5 h-5 sm:w-6 sm:h-6 pixelated drop-shadow-md" />
                                     ))}
                                 </div>
                             </div>
-                            <button onClick={handleCheckIn} className="mc-btn w-full py-2 flex justify-center items-center mb-2">
+                            <button onClick={handleCheckIn} className="w-full py-2 flex justify-center items-center mb-2 bg-[#8b8b8b] hover:bg-[#a0a0a0] text-[#373737] border-2 border-white border-r-[#555] border-b-[#555] font-black active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white">
                                 📅 每日簽到 (+20 <McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mx-1 pixelated"/>)
                             </button>
-                            {/* ✨ 修正：終界儲物箱專屬開啟音效 */}
                             <button onClick={() => {
                                 playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/block/enderchest/open.ogg');
                                 setShowEnderChest(true);
-                            }} className="w-full py-2 flex justify-center items-center bg-amber-700900 hover:bg-amber-700800 text-white font-bold border-2 border-[#10002b] shadow-md transition-colors">
+                            }} className="w-full py-2 flex justify-center items-center bg-[#5c4033] hover:bg-[#6b4c3a] text-white font-bold border-2 border-[#8b5a2b] border-r-[#3e2723] border-b-[#3e2723] shadow-md transition-colors active:border-t-[#3e2723] active:border-l-[#3e2723] active:border-r-[#8b5a2b] active:border-b-[#8b5a2b]">
                                 🔮 終界儲物箱 ({Object.values(mcData.packs || {}).reduce((a, b) => a + b, 0)})
                             </button>
                         </div>
 
-                        <div className="mc-panel-dark text-white h-full">
-                            <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-amber-300">🏆 好友等級排行榜</h2>
-                            <div className="space-y-2 overflow-y-auto max-h-[16rem] custom-scrollbar pr-2">
+                        {/* 🏆 排行榜 */}
+                        <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 shadow-xl flex flex-col flex-grow min-h-[200px]">
+                            <h2 className="border-b-2 border-[#555] pb-2 mb-3 font-bold text-[#373737] text-lg">🏆 好友等級排行榜</h2>
+                            <div className="space-y-2 overflow-y-auto max-h-[12rem] lg:max-h-[16rem] custom-scrollbar pr-2 flex-grow">
                                 {leaderboard.map((lb, idx) => (
-                                    <div key={idx} className={`flex justify-between items-center p-3 border-b border-stone-700 ${lb.isMe ? 'bg-[#FCFBF7] bg-opacity-10 rounded' : ''}`}>
-                                        <div className="flex items-center space-x-3">
-                                            <span className="font-bold w-6 text-center">{idx === 0 ? '👑' : idx + 1}</span>
-                                            <span className="truncate max-w-[100px] text-sm">{lb.name}</span>
+                                    <div key={idx} className={`flex justify-between items-center p-2 border-2 ${lb.isMe ? 'bg-[#8b8b8b] border-[#555] border-r-white border-b-white text-white shadow-inner' : 'bg-[#a0a0a0] border-transparent text-[#373737]'} transition-colors`}>
+                                        <div className="flex items-center space-x-2 sm:space-x-3">
+                                            <span className="font-bold w-5 sm:w-6 text-center text-sm sm:text-lg">{idx === 0 ? '👑' : idx + 1}</span>
+                                            <span className="truncate max-w-[80px] sm:max-w-[100px] text-xs sm:text-sm font-bold">{lb.name}</span>
                                         </div>
-                                        <div className="text-right flex items-center space-x-3">
-                                            <span className="text-emerald-400 font-bold text-sm">Lv.{lb.level}</span>
-                                            <span className="text-xs text-gray-300 flex items-center w-10 justify-end"><McImg src={imgDiamond} fallback="💎" className="w-3 h-3 mr-1 pixelated" /> {lb.diamonds}</span>
+                                        <div className="text-right flex items-center space-x-2 sm:space-x-3">
+                                            <span className="text-emerald-800 font-black text-xs sm:text-sm">Lv.{lb.level}</span>
+                                            <span className="text-xs font-bold flex items-center w-10 sm:w-12 justify-end"><McImg src={imgDiamond} fallback="💎" className="w-3 h-3 mr-1 pixelated" /> {lb.diamonds}</span>
                                         </div>
                                     </div>
                                 ))}
@@ -3102,60 +2942,48 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                         </div>
                     </div>
 
-                    <div className="mc-panel-dark text-white lg:col-span-2 flex flex-col">
-                        <h2 className="border-b-2 border-gray-600 pb-2 mb-4 font-bold text-gray-300">🛒 村民商賈</h2>
+                    {/* 右側：村民商賈 */}
+                    <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 sm:p-4 lg:col-span-2 flex flex-col shadow-xl min-h-[400px]">
+                        <h2 className="border-b-2 border-[#555] pb-2 mb-3 font-bold text-[#373737] text-lg">🛒 村民商賈</h2>
                         
-                        <div className="flex items-center space-x-4 mb-4 bg-stone-800 p-3 border-4 border-gray-600 shadow-inner">
-                            {/* ✨ 修正：將村民改為 button 增加點擊範圍與回饋，並擴充多種對話 */}
+                        <div className="flex items-center space-x-4 mb-4 bg-[#8b8b8b] p-3 border-2 border-[#555] border-r-white border-b-white shadow-inner shrink-0">
                             <button 
-                                className={`shrink-0 transition-transform duration-200 focus:outline-none active:scale-90 ${villagerAnim === 'yes' ? 'tranamber-y-2' : villagerAnim === 'no' ? '-tranamber-x-2' : villagerAnim === 'idle' ? 'scale-110' : ''}`}
+                                className={`shrink-0 transition-transform duration-200 focus:outline-none active:scale-90 ${villagerAnim === 'yes' ? 'translate-y-2' : villagerAnim === 'no' ? '-translate-x-2' : villagerAnim === 'idle' ? 'scale-110' : ''}`}
                                 onClick={(e) => {
                                     e.preventDefault();
                                     playVillagerSound('idle');
-                                    const speeches = [
-                                        "呼嗯... 看看有沒有需要的？", 
-                                        "哈啊... 這裡只有頂級好貨。", 
-                                        "嗯哼，隨便看隨便挑。", 
-                                        "哈！買點什麼吧朋友！", 
-                                        "嗯嗯... 今天天氣真不錯。"
-                                    ];
+                                    const speeches = ["呼嗯... 看看有沒有需要的？", "哈啊... 這裡只有頂級好貨。", "嗯哼，隨便看隨便挑。", "哈！買點什麼吧朋友！", "嗯嗯... 今天天氣真不錯。"];
                                     setVillagerSpeech(speeches[Math.floor(Math.random() * speeches.length)]);
                                     setVillagerAnim('idle');
                                     setTimeout(() => setVillagerAnim(""), 200); 
                                 }}
                             >
-                                <McImg 
-                                    src="https://minotar.net/helm/Villager/64.png" 
-                                    fallback="🧑‍🌾" 
-                                    className="w-16 h-16 pixelated border-2 border-black drop-shadow-lg cursor-pointer hover:brightness-110" 
-                                />
+                                <McImg src="https://minotar.net/helm/Villager/64.png" fallback="🧑‍🌾" className="w-12 h-12 sm:w-16 sm:h-16 pixelated border-2 border-[#373737] drop-shadow-lg cursor-pointer hover:brightness-110" />
                             </button>
-                            <div className="relative bg-[#FCFBF7] text-stone-800 p-3 flex-1 shadow-md font-bold text-sm border-2 border-black pixelated-border">
-                                <div className="absolute top-1/2 -left-[10px] transform -tranamber-y-1/2 w-0 h-0 border-t-8 border-t-transparent border-r-[10px] border-r-white border-b-8 border-b-transparent"></div>
-                                <div className="absolute top-1/2 -left-[13px] transform -tranamber-y-1/2 w-0 h-0 border-t-[9px] border-t-transparent border-r-[12px] border-r-black border-b-[9px] border-b-transparent -z-10"></div>
+                            <div className="relative bg-[#FCFBF7] text-[#373737] p-3 flex-1 shadow-md font-bold text-xs sm:text-sm border-2 border-[#373737] pixelated-border">
+                                <div className="absolute top-1/2 -left-[10px] transform -translate-y-1/2 w-0 h-0 border-t-8 border-t-transparent border-r-[10px] border-r-[#FCFBF7] border-b-8 border-b-transparent z-10"></div>
+                                <div className="absolute top-1/2 -left-[13px] transform -translate-y-1/2 w-0 h-0 border-t-[9px] border-t-transparent border-r-[12px] border-r-[#373737] border-b-[9px] border-b-transparent"></div>
                                 {villagerSpeech}
                             </div>
                         </div>
 
-                        {/* ✨ 商店分類標籤 */}
-                        <div className="flex flex-wrap gap-2 mb-3">
+                        <div className="flex flex-wrap gap-2 mb-3 shrink-0">
                             {STORE_CATEGORIES.map(cat => (
-                                <button key={cat} onClick={() => setStoreCat(cat)} className={`px-2 py-1 text-xs font-bold border-2 ${storeCat === cat ? 'bg-amber-600 border-amber-400 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'}`}>
+                                <button key={cat} onClick={() => setStoreCat(cat)} className={`px-2 py-1 text-[10px] sm:text-xs font-bold border-2 active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white ${storeCat === cat ? 'bg-[#555] border-[#373737] border-r-[#8b8b8b] border-b-[#8b8b8b] text-white shadow-inner' : 'bg-[#8b8b8b] border-white border-r-[#555] border-b-[#555] text-[#373737] hover:bg-[#a0a0a0]'}`}>
                                     {cat}
                                 </button>
                             ))}
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[20rem] overflow-y-auto custom-scrollbar pr-2">
-                            {/* ✨ 過濾並套用分類 */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 overflow-y-auto custom-scrollbar pr-2 flex-grow pb-2">
                             {storeItems.filter(item => !item.hide && (storeCat === '全部' || item.cat === storeCat)).map((item) => (
-                                <button key={item.id} onClick={() => handleBuy(item)} className="mc-btn py-2 flex justify-between px-3 items-center hover:bg-[#b0b0b0]">
-                                    <span className="flex items-center text-sm truncate pr-2">
-                                        <McImg src={item.img} fallback={item.icon} className="w-5 h-5 mr-2 pixelated shrink-0"/> 
+                                <button key={item.id} onClick={() => handleBuy(item)} className="bg-[#8b8b8b] hover:bg-[#a0a0a0] border-2 border-white border-r-[#555] border-b-[#555] py-2 px-2 sm:px-3 flex justify-between items-center active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white transition-all">
+                                    <span className="flex items-center text-xs sm:text-sm truncate pr-2 text-[#373737] font-bold">
+                                        <McImg src={item.img} fallback={item.icon} className="w-5 h-5 sm:w-6 sm:h-6 mr-2 pixelated shrink-0"/> 
                                         {item.name}
                                     </span>
-                                    <span className="text-amber-800 flex items-center text-sm font-black shrink-0">
-                                        {item.cost} <McImg src={imgDiamond} fallback="💎" className="w-4 h-4 ml-1 pixelated"/>
+                                    <span className="text-emerald-900 flex items-center text-[10px] sm:text-xs font-black shrink-0 bg-[#c6c6c6] px-1.5 py-0.5 border border-[#555]">
+                                        {item.cost} <McImg src={imgDiamond} fallback="💎" className="w-3 h-3 sm:w-4 sm:h-4 ml-1 pixelated"/>
                                     </span>
                                 </button>
                             ))}
