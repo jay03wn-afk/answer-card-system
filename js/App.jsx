@@ -771,7 +771,7 @@ function Main() {
                     mcData: { diamonds: currentDiamonds + 200 }
                 }, { merge: true })
                 .then(() => {
-                    showAlert('🎉 恭喜完成新手教學！\n\n系統已發放 200 顆鑽石 💎 作為獎勵。\n現在您可以自由查看這份試卷的詳解，或試著將重點收錄至錯題本！', '領獎成功');
+                    showAlert('恭喜完成新手教學！\n\n系統已發放 200 顆鑽石作為獎勵。\n現在您可以自由查看這份試卷的詳解，或試著將重點收錄至錯題本！', '領獎成功');
                 })
                 .catch(e => console.error("獎勵發放失敗:", e));
             } else {
@@ -781,7 +781,7 @@ function Main() {
                 window.db.collection('users').doc(user.uid).set({ hasSeenTutorial: true }, { merge: true });
                 
                 setTimeout(() => {
-                    showAlert('ℹ️ 您以前已經領取過獎勵囉！\n\n偵測到此帳號過去已領取過新手禮包，因此本次完成教學將不會重複發放鑽石。祝您刷題愉快！', '系統提醒');
+                    showAlert('您以前已經領取過獎勵囉！\n\n偵測到此帳號過去已領取過新手禮包，因此本次完成教學將不會重複發放鑽石。祝您刷題愉快！', '系統提醒');
                 }, 300);
             }
         } else {
@@ -1287,20 +1287,26 @@ if (docs.length > 50) {
 
    const topNavContent = (
         <>
-            {/* 頂部標題列 (包含漢堡按鈕與工具) */}
-            <div className="bg-stone-800 dark:bg-stone-950 text-stone-100 px-4 flex justify-between items-center shadow-lg h-14 shrink-0 relative z-20 transition-colors border-b border-stone-700">
-                <div className="flex items-center">
+            {/* ✨ 頂部標題列 (修正手機安全區與大頭貼點擊) */}
+            <div className="bg-stone-800 dark:bg-stone-950 text-stone-100 px-4 flex justify-between items-center shadow-lg shrink-0 relative z-20 transition-colors border-b border-stone-700 pt-[env(safe-area-inset-top)] h-[calc(3.5rem+env(safe-area-inset-top))]">
+                <div className="flex items-center gap-2">
                     {/* 漢堡選單按鈕 */}
-                    <button onClick={() => setIsSidebarOpen(true)} className="mr-4 text-2xl hover:text-gray-300 transition-colors focus:outline-none">
-                        ☰
+                    <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 text-2xl hover:text-gray-300 hover:bg-stone-700/50 rounded-lg transition-colors focus:outline-none">
+                        <span className="material-symbols-outlined">menu</span>
                     </button>
-                    <span className="font-black text-lg tracking-widest">JJay</span>
+                    {/* 恢復成純白、無斜體、字體稍微緊湊的原本樣式 */}
+                    <span className="font-black text-xl tracking-tight text-white">JJay Online Test</span>
                 </div>
                 
                 {user && (
-                    <div className="flex items-center space-x-3 md:space-x-4">
+                    <div className="flex items-center gap-3">
                         <ExamCountdown />
-                        {/* ✨ 新增：信箱按鈕與未讀紅點動畫 */}
+                        {/* 鑽石顯示 */}
+                        <div className="hidden sm:flex items-center gap-1.5 bg-stone-900 px-3 py-1.5 rounded-full border border-stone-700 shadow-inner">
+                            <span className="material-symbols-outlined text-[16px] text-amber-400">diamond</span>
+                            <span className="text-xs font-black text-stone-300">{userProfile?.mcData?.diamonds || 0}</span>
+                        </div>
+                        {/* 信箱按鈕與未讀紅點動畫 */}
                         <button onClick={() => setShowInbox(true)} className="text-xl hover:scale-110 transition-transform text-stone-300 hover:text-white flex items-center relative" title="信箱與通知">
                             <span className="material-symbols-outlined text-[22px]">mail</span>
                             {inboxMessages.some(m => !m.isRead) && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>}
@@ -1311,14 +1317,21 @@ if (docs.length > 50) {
                         <button onClick={() => setIsDark(!isDark)} className="text-xl hover:scale-110 transition-transform text-stone-300 hover:text-white flex items-center" title="切換日/夜間模式">
                             <span className="material-symbols-outlined text-[22px]">{isDark ? 'light_mode' : 'dark_mode'}</span>
                         </button>
-                        <div className="w-8 h-8 bg-gray-700 rounded-2xl overflow-hidden border border-gray-600">
-                            {userProfile.avatar ? <img src={userProfile.avatar} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full text-stone-300"><span className="material-symbols-outlined text-[18px]">person</span></div>}
-                        </div>
+                        
+                        {/* ✨ 右上角大頭貼：點擊切換至個人檔案 */}
+                        <button 
+                            onClick={() => handleTabClick('profile')}
+                            className="w-8 h-8 rounded-full bg-stone-700 border-2 border-amber-500 shadow-sm overflow-hidden flex items-center justify-center transition-transform active:scale-90 ml-1"
+                        >
+                            {userProfile?.avatar ? (
+                                <img src={userProfile.avatar} className="w-full h-full object-cover" alt="avatar" />
+                            ) : (
+                                <span className="font-bold text-sm text-amber-500">{user?.displayName ? user.displayName.charAt(0) : 'U'}</span>
+                            )}
+                        </button>
                     </div>
                 )}
             </div>
-
-            {/* 手機版側邊選單遮罩 (加上 onClick 關閉) */}
                 {isSidebarOpen && (
                     <div 
                         className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[90] transition-opacity duration-300"
@@ -1335,21 +1348,22 @@ if (docs.length > 50) {
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                 </button>
                             </div>
-                <div className="flex-1 overflow-y-auto py-2 flex flex-col custom-scrollbar">
-                    <button onClick={() => handleTabClick('newspaper')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'newspaper' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">newspaper</span> JJay日報</button>
-                    <button onClick={() => handleTabClick('dashboard')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'dashboard' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">library_books</span> 我的題庫</button>
-                    <button onClick={() => handleTabClick('taskwall')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'taskwall' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">task_alt</span> 任務牆</button>
-                    <button onClick={() => handleTabClick('wrongbook')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'wrongbook' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">menu_book</span> 錯題整理</button>
-                    <button onClick={() => handleTabClick('social')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'social' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">forum</span> 社群交流</button>
-                    <button onClick={() => handleTabClick('minecraft')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'minecraft' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">sports_esports</span> 史蒂夫養成</button>
+                <div className="flex-1 overflow-y-auto py-4 flex flex-col custom-scrollbar space-y-1">
+                    <button onClick={() => handleTabClick('newspaper')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'newspaper' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">newspaper</span> JJay日報</button>
+                    <button onClick={() => handleTabClick('dashboard')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'dashboard' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">library_books</span> 我的題庫</button>
+                    <button onClick={() => handleTabClick('taskwall')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'taskwall' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">task_alt</span> 任務牆</button>
+                    <button onClick={() => handleTabClick('wrongbook')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'wrongbook' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">menu_book</span> 錯題整理</button>
+                    <button onClick={() => handleTabClick('social')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'social' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">forum</span> 社群交流</button>
+                    <button onClick={() => handleTabClick('minecraft')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'minecraft' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">sports_esports</span> 史蒂夫養成</button>
+                    
+                    <div className="my-2 border-t border-stone-200 dark:border-stone-700 mx-5"></div>
                     
                     {/* ✨ 新增的國考進度追蹤 */}
-                    <button onClick={() => handleTabClick('examProgress')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'examProgress' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">trending_up</span> 國考戰況追蹤</button>
-                    <button onClick={() => handleTabClick('shop')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'shop' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}>
-    <span className="material-symbols-outlined text-[20px]">shopping_bag</span> 
-    商店系統
-</button>
-                    <button onClick={() => handleTabClick('profile')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'profile' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">person</span> 個人檔案</button>
+                    <button onClick={() => handleTabClick('examProgress')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'examProgress' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">trending_up</span> 國考戰況追蹤</button>
+                    <button onClick={() => handleTabClick('shop')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'shop' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}>
+                        <span className="material-symbols-outlined text-[22px]">shopping_bag</span> 商店系統
+                    </button>
+                    <button onClick={() => handleTabClick('profile')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'profile' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">person</span> 個人檔案</button>
                 </div>
             </div>
         </>
@@ -1439,7 +1453,7 @@ if (docs.length > 50) {
     if (!user && (currentQaId || currentNewsId) && !forceLoginScreen) {
         return (
             /* 修改：如果是訪客看分享連結，強行移除 dark mode 的背景影響 */
-<div className={`h-[100dvh] overflow-y-auto custom-scrollbar flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'bg-stone-800' : 'bg-stone-60050'}`}>
+            <div className={`h-[100dvh] overflow-y-auto custom-scrollbar flex flex-col items-center pt-6 sm:pt-12 px-4 transition-colors duration-300 ${isDark ? 'bg-stone-800' : 'bg-stone-50'}`}>
                 {SharedModal} 
                 <div className="w-full max-w-3xl z-10 pb-12">
                     {currentQaId && <FastQASection user={null} showAlert={showAlert} showConfirm={showConfirm} targetQaId={currentQaId} onRequireLogin={() => setForceLoginScreen(true)} />}
@@ -1753,9 +1767,7 @@ if (docs.length > 50) {
                     )}
 
                     {activeTab === 'profile' && <ProfilePage user={user} userProfile={userProfile} showAlert={showAlert} restartTutorial={restartTutorial} />}
-                {activeTab === 'profile' && <ProfilePage user={user} userProfile={userProfile} showAlert={showAlert} restartTutorial={restartTutorial} />}
-{/* ✨ 補上這行 */}
-{activeTab === 'shop' && <ShopDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
+                    {activeTab === 'shop' && <ShopDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
                 </div>
             ) : (
                 <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} userProfile={userProfile} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} tutorialStep={tutorialStep} setTutorialStep={setTutorialStep} />

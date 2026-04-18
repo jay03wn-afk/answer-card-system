@@ -23,7 +23,12 @@ const UserAvatar = ({ uid, name, className }) => {
 // --- 聊天室與系統 ---
 function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     const friends = userProfile.friends || [];
-    const [searchEmail, setSearchEmail] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [foundUser, setFoundUser] = useState(null);
+    const [pendingRequests, setPendingRequests] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
+    
+    const [activeProfile, setActiveProfile] = useState(null); // ✨ 新增：控制右側個人檔案顯示
     const [activeChat, setActiveChat] = useState(null);
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
@@ -33,13 +38,30 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     const chatInputRef = useRef(null); 
     const fileInputRef = useRef(null);
     
-    const [messageLimit, setMessageLimit] = useState(5);
+    const [messageLimit, setMessageLimit] = useState(15); // 放寬至 15 條
     const [lastMsgIdForScroll, setLastMsgIdForScroll] = useState(null);
 
     const getChatId = (uid1, uid2) => [uid1, uid2].sort().join('_');
 
     // ✨ 新增：限時動態狀態 (群組化每個人的全部考題)
     const [friendsQAGroups, setFriendsQAGroups] = useState([]);
+
+    // 1. 自動生成數位 ID (10碼)
+    useEffect(() => {
+        if (user && !userProfile.numericId) {
+            const newId = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+            window.db.collection('users').doc(user.uid).update({ numericId: newId });
+        }
+    }, [user, userProfile]);
+
+    // 2. 監聽好友申請
+    useEffect(() => {
+        if (!user) return;
+        return window.db.collection('users').doc(user.uid).collection('friendRequests')
+            .onSnapshot(snap => {
+                setPendingRequests(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            });
+    }, [user]);
 
     useEffect(() => {
         if (!friends || friends.length === 0) {
@@ -137,33 +159,80 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
         };
     }, [activeChat, user.uid, messageLimit]);
 
-    const handleAddFriend = () => {
-        const cleanEmail = searchEmail.trim().toLowerCase(); 
-        if(!cleanEmail) return;
-        if(cleanEmail === user.email.toLowerCase()) return showAlert('不能加自己為好友！');
-        
-        db.collection('users').where('email', '==', cleanEmail).get()
-        .then(snap => {
-            if(snap.empty) return showAlert('找不到此信箱的使用者 (請確認對方已登入過系統)');
-            const targetUser = snap.docs[0];
-            const targetData = targetUser.data();
-            const targetUid = targetUser.id;
-            
-            if(friends.find(f => f.uid === targetUid)) return showAlert('已經是好友了！');
+    // 3. 搜尋好友 (電子信箱或 10 碼 ID)
+    const handleSearch = async () => {
+        if (!searchQuery) return;
+        setIsSearching(true);
+        try {
+            let userDoc = null;
+            if (searchQuery.includes('@')) {
+                const snap = await window.db.collection('users').where('email', '==', searchQuery).get();
+                if (!snap.empty) userDoc = snap.docs[0];
+            } else {
+                const snap = await window.db.collection('users').where('numericId', '==', searchQuery).get();
+                if (!snap.empty) userDoc = snap.docs[0];
+            }
 
-            const batch = db.batch();
-            batch.update(db.collection('users').doc(user.uid), {
-                friends: firebase.firestore.FieldValue.arrayUnion({ uid: targetUid, name: targetData.displayName, email: targetData.email })
+            if (userDoc) {
+                setFoundUser({ uid: userDoc.id, ...userDoc.data() });
+            } else {
+                showAlert('找不到該用戶，請檢查 ID 或 Email 是否正確。');
+            }
+        } catch (e) { showAlert('搜尋出錯：' + e.message); }
+        setIsSearching(false);
+    };
+
+    // ✨ 新增：查看好友個人檔案 (解決 viewUserProfile is not defined)
+    const viewUserProfile = async (uid) => {
+        try {
+            const doc = await window.db.collection('users').doc(uid).get();
+            if (doc.exists) {
+                setActiveProfile({ uid: doc.id, ...doc.data() });
+                setActiveChat(null); // 關閉聊天室，顯示個人檔案
+            }
+        } catch (e) { console.error(e); }
+    };
+
+    // 4. 送出好友申請
+    const sendFriendRequest = async (targetUser) => {
+        if (targetUser.uid === user.uid) return showAlert('不能加自己為好友！');
+        if (userProfile.friends?.some(f => f.uid === targetUser.uid)) return showAlert('你們已經是好友了。');
+
+        try {
+            await window.db.collection('users').doc(targetUser.uid).collection('friendRequests').doc(user.uid).set({
+                fromUid: user.uid,
+                fromName: userProfile.displayName || '匿名用戶',
+                fromEmail: user.email,
+                fromAvatar: userProfile.avatar || '',
+                timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
             });
-            batch.update(db.collection('users').doc(targetUid), {
-                friends: firebase.firestore.FieldValue.arrayUnion({ uid: user.uid, name: userProfile.displayName, email: user.email })
+            showAlert('好友申請已送出！等待對方確認。');
+            setFoundUser(null);
+            setSearchQuery('');
+        } catch (e) { showAlert('申請失敗：' + e.message); }
+    };
+
+    // 同意好友申請
+    const acceptRequest = async (req) => {
+        try {
+            const batch = window.db.batch();
+            batch.update(window.db.collection('users').doc(user.uid), {
+                friends: window.firebase.firestore.FieldValue.arrayUnion({ uid: req.fromUid, name: req.fromName, email: req.fromEmail })
             });
-            
-            return batch.commit().then(() => {
-                showAlert(`已成功加入 ${targetData.displayName}！`);
-                setSearchEmail('');
+            batch.update(window.db.collection('users').doc(req.fromUid), {
+                friends: window.firebase.firestore.FieldValue.arrayUnion({ uid: user.uid, name: userProfile.displayName, email: user.email })
             });
-        }).catch(e => showAlert('加入失敗：' + e.message));
+            batch.delete(window.db.collection('users').doc(user.uid).collection('friendRequests').doc(req.fromUid));
+            await batch.commit();
+            showAlert(`已加入 ${req.fromName} 為好友！`);
+        } catch (e) { showAlert('加入失敗：' + e.message); }
+    };
+
+    // 拒絕好友申請
+    const rejectRequest = async (req) => {
+        try {
+            await window.db.collection('users').doc(user.uid).collection('friendRequests').doc(req.fromUid).delete();
+        } catch (e) { console.error(e); }
     };
 
     const sendMessage = (e) => {
@@ -189,20 +258,16 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
         });
     };
 
+    // 5. 開放圖片上傳並限制 5 張過期機制
     const handleImageUpload = (e) => {
-    const isAuth = user && (user.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
-    if (!isAuth) {
-        showAlert("⚠️ 權限不足：僅限管理員或受邀創作者上傳圖片。");
-        e.target.value = '';
-        return;
-    }
-    if (!activeChat) return;
-    const file = e.target.files[0];
+        if (!activeChat) return;
+        const file = e.target.files[0];
+        if (!file) return;
 
         const reader = new FileReader();
         reader.onload = (event) => {
             const img = new Image();
-            img.onload = () => {
+            img.onload = async () => {
                 const canvas = document.createElement('canvas');
                 let w = img.width;
                 let h = img.height;
@@ -221,19 +286,36 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                 const compressedBase64 = canvas.toDataURL('image/jpeg', 0.5); 
 
                 const chatId = getChatId(user.uid, activeChat.uid);
-                db.collection('chats').doc(chatId).collection('messages').add({
-                    type: 'image',
-                    imageUrl: compressedBase64,
-                    senderId: user.uid,
-                    senderName: userProfile.displayName,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    expiresAt: Date.now() + 10 * 60 * 1000, 
-                    read: false
-                }).then(() => {
+                
+                try {
+                    // 執行圖片過期機制：找出這個聊天室的所有圖片，如果即將超過 5 張，將最舊的標記為過期
+                    const chatRef = window.db.collection('chats').doc(chatId).collection('messages');
+                    const imgSnap = await chatRef.where('type', '==', 'image').orderBy('timestamp', 'desc').limit(5).get();
+                    
+                    if (imgSnap.size >= 5) {
+                         const oldDocs = imgSnap.docs.slice(4); // 取得第5張之後的舊圖片
+                         const batch = window.db.batch();
+                         oldDocs.forEach(d => batch.update(d.ref, { expired: true, text: '(圖片已過期)' }));
+                         await batch.commit();
+                    }
+
+                    await chatRef.add({
+                        type: 'image',
+                        imageUrl: compressedBase64,
+                        senderId: user.uid,
+                        senderName: userProfile.displayName,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                        expiresAt: Date.now() + 10 * 60 * 1000, // 依然保留 10 分鐘閱後即焚機制
+                        read: false,
+                        expired: false
+                    });
+                    
                     db.collection('users').doc(activeChat.uid).set({
                         unreadChats: { [user.uid]: true }
                     }, { merge: true });
-                }).catch(err => showAlert("圖片上傳失敗：" + err.message));
+                } catch (err) {
+                    showAlert("圖片上傳失敗：" + err.message);
+                }
             };
             img.src = event.target.result;
         };
@@ -378,13 +460,56 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                 </div>
             )}
 
-            <div className={`w-full md:w-auto bg-[#FCFBF7] dark:bg-stone-800 border-0 md:border border-stone-200 dark:border-stone-700 shadow-sm rounded-2xl flex-col h-full overflow-hidden transition-colors ${activeChat ? 'hidden md:flex' : 'flex'}`}>
-                <div className="p-4 border-b border-gray-100 dark:border-stone-700 bg-gray-50 dark:bg-stone-800 shrink-0">
-                    <h2 className="font-bold mb-3 dark:text-white">加入好友</h2>
-                    <div className="flex space-x-2">
-                        <input type="email" placeholder="輸入好友信箱..." className="flex-grow p-2 text-sm border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none" value={searchEmail} onChange={e=>setSearchEmail(e.target.value)} onFocus={handleFocusScroll} />
-                        <button onClick={handleAddFriend} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-3 py-2 rounded-2xl text-sm font-bold hover:bg-stone-800 dark:hover:bg-gray-300 transition-colors">加入</button>
+            <div className={`w-full md:w-auto bg-[#FCFBF7] dark:bg-stone-800 border-0 md:border border-stone-200 dark:border-stone-700 shadow-sm rounded-2xl flex-col h-full overflow-hidden transition-colors ${(activeChat || activeProfile) ? 'hidden md:flex' : 'flex'}`}>
+                <div className="p-4 border-b border-stone-200 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-900/50 shrink-0">
+                    <div className="flex gap-2 mb-3">
+                        <input 
+                            type="text" 
+                            placeholder="輸入 10 碼 ID 或 Email..." 
+                            className="flex-1 p-2.5 text-sm bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 text-stone-800 dark:text-white" 
+                            value={searchQuery} 
+                            onChange={e=>setSearchQuery(e.target.value)} 
+                            onFocus={handleFocusScroll}
+                        />
+                        <button onClick={handleSearch} disabled={isSearching} className="bg-amber-500 text-white px-4 rounded-xl font-bold text-sm active:scale-95 transition-transform flex items-center justify-center shadow-sm">
+                            {isSearching ? <span className="material-symbols-outlined animate-spin text-[20px]">sync</span> : <span className="material-symbols-outlined text-[20px]">search</span>}
+                        </button>
                     </div>
+
+                    {/* 搜尋結果：顯示個人檔案預覽 */}
+                    {foundUser && (
+                        <div className="p-3 bg-white dark:bg-stone-800 border border-amber-200 rounded-2xl shadow-sm animate-in fade-in slide-in-from-top-2">
+                            <div className="flex items-center gap-3 mb-3">
+                                {/* ✨ 點擊搜尋結果頭像 -> 打開右側個人檔案 */}
+                                <div onClick={() => viewUserProfile(foundUser.uid)} className="cursor-pointer hover:scale-105 transition-transform" title="查看完整檔案">
+                                    <UserAvatar uid={foundUser.uid} name={foundUser.displayName} className="w-12 h-12 rounded-full border-2 border-amber-100 hover:border-amber-400" />
+                                </div>
+                                <div>
+                                    <div className="font-black text-stone-800 dark:text-stone-100">{foundUser.displayName || '匿名'}</div>
+                                    <div className="text-[10px] text-stone-400 font-mono">ID: {foundUser.numericId}</div>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => sendFriendRequest(foundUser)} className="flex-1 py-2 bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 text-xs font-bold rounded-lg hover:bg-black transition-colors">送出申請</button>
+                                <button onClick={() => setFoundUser(null)} className="px-3 py-2 bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-300 text-xs font-bold rounded-lg">取消</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 待處理申請通知 */}
+                    {pendingRequests.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                            {pendingRequests.map(req => (
+                                <div key={req.id} className="flex items-center justify-between p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl">
+                                    <span className="text-[11px] font-bold text-amber-800 dark:text-amber-200 truncate flex-1 mr-2">{req.fromName} 想加你好友</span>
+                                    <div className="flex gap-1 shrink-0">
+                                        <button onClick={() => acceptRequest(req)} className="p-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg active:scale-90 transition-all"><span className="material-symbols-outlined text-[14px]">check</span></button>
+                                        <button onClick={() => rejectRequest(req)} className="p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg active:scale-90 transition-all"><span className="material-symbols-outlined text-[14px]">close</span></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* ✨ 新增：好友快問快答 IG 限時動態 (多題連播支援) */}
@@ -393,11 +518,7 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                         {friendsQAGroups.map(group => (
                             <div 
                                 key={group.creatorUid} 
-                                onClick={() => {
-                                    // ✨ 觸發多題連播事件
-                                    const event = new CustomEvent('openFastQAStory', { detail: group.qaIds });
-                                    window.dispatchEvent(event);
-                                }} 
+                                onClick={() => window.dispatchEvent(new CustomEvent('openFastQAStory', { detail: group.qaIds }))} 
                                 className="flex flex-col items-center gap-1 cursor-pointer shrink-0 w-14 group relative" 
                                 title={`點擊挑戰 ${group.creatorName} 的 ${group.qaIds.length} 題快問快答！`}
                             >
@@ -417,13 +538,17 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                 )}
 
                 <div className="flex-grow overflow-y-auto p-2 custom-scrollbar bg-[#FCFBF7] dark:bg-stone-900">
-                    {friends.length === 0 ? <p className="text-center text-gray-400 text-sm mt-10">尚無好友，趕快新增吧！</p> : null}
+                    {friends.length === 0 ? <p className="text-center text-gray-400 text-sm mt-10 font-bold">尚無好友，趕快透過 ID 搜尋吧！</p> : null}
                     {(friends || []).map(f => (
-                        <div key={f.uid} onClick={() => { setActiveChat(f); setMessageLimit(5); }} className={`p-3 border-b border-gray-50 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-stone-800 transition-colors flex items-center space-x-3 ${activeChat && activeChat.uid === f.uid ? 'bg-amber-50 dark:bg-gray-700 border-amber-100 dark:border-gray-600' : ''}`}>
-                            <UserAvatar uid={f.uid} name={f.name} className="w-10 h-10 bg-stone-100 dark:bg-gray-600 rounded-full shrink-0" />
-                            <div className="flex-grow overflow-hidden">
+                        <div key={f.uid} className={`p-3 border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-stone-800 transition-colors flex items-center space-x-3 ${activeChat && activeChat.uid === f.uid ? 'bg-amber-50 dark:bg-gray-700 border-amber-100 dark:border-gray-600' : ''}`}>
+                            {/* ✨ 點擊頭像 -> 打開右側個人檔案 */}
+                            <div onClick={() => viewUserProfile(f.uid)} className="shrink-0 cursor-pointer hover:scale-105 transition-transform" title="查看個人檔案">
+                                <UserAvatar uid={f.uid} name={f.name} className="w-10 h-10 bg-stone-100 dark:bg-gray-600 border-2 border-transparent hover:border-amber-400 rounded-full" />
+                            </div>
+                            {/* ✨ 點擊名字區域 -> 打開聊天室 */}
+                            <div className="flex-grow overflow-hidden cursor-pointer" onClick={() => { setActiveChat(f); setActiveProfile(null); setMessageLimit(15); }}>
                                 <div className="font-bold text-sm truncate dark:text-gray-200">{f.name}</div>
-                                <div className="text-xs text-gray-400 truncate">{f.email}</div>
+                                <div className="text-xs text-gray-400 truncate font-mono">{f.email}</div>
                             </div>
                             {userProfile && userProfile.unreadChats && userProfile.unreadChats[f.uid] && (
                                 <div className="w-2.5 h-2.5 bg-red-500 rounded-full shrink-0"></div>
@@ -433,8 +558,76 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                 </div>
             </div>
 
-            <div className={`flex-1 min-h-0 w-full md:w-auto md:col-span-2 bg-[#FCFBF7] dark:bg-stone-800 border-0 md:border border-stone-200 dark:border-stone-700 shadow-sm rounded-2xl flex-col h-full transition-colors ${activeChat ? 'flex' : 'hidden md:flex'}`}>
-                {activeChat ? (
+            <div className={`flex-1 min-h-0 w-full md:w-auto md:col-span-2 bg-[#FCFBF7] dark:bg-stone-800 border-0 md:border border-stone-200 dark:border-stone-700 shadow-sm rounded-2xl flex-col h-full transition-colors ${(activeChat || activeProfile) ? 'flex' : 'hidden md:flex'}`}>
+                
+                {/* ✨ 狀態一：右側大畫面 - 玩家個人檔案 */}
+                {activeProfile ? (
+                    <div className="flex flex-col h-full bg-[#FCFBF7] dark:bg-stone-900 relative">
+                        {/* 頂部標題 */}
+                        <div className="p-4 flex items-center shrink-0 border-b border-stone-200 dark:border-stone-700 bg-white/80 dark:bg-stone-800/80 backdrop-blur-md z-20">
+                            <button onClick={() => setActiveProfile(null)} className="md:hidden flex items-center justify-center w-8 h-8 mr-3 bg-stone-100 dark:bg-gray-700 rounded-full hover:bg-stone-200 transition-colors">
+                                <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+                            </button>
+                            <span className="font-black text-stone-800 dark:text-white flex items-center gap-2">
+                                <span className="material-symbols-outlined text-amber-500">account_circle</span> 玩家檔案
+                            </span>
+                        </div>
+                        
+                        {/* 檔案內容區 */}
+                        <div className="flex-grow overflow-y-auto custom-scrollbar p-6 flex flex-col items-center relative">
+                            <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-amber-200/40 to-transparent dark:from-amber-900/20"></div>
+                            
+                            <div className="relative z-10 mb-4 mt-2">
+                                <UserAvatar uid={activeProfile.uid} name={activeProfile.displayName} className="w-28 h-28 md:w-36 md:h-36 rounded-full border-4 border-white dark:border-stone-800 shadow-xl text-5xl bg-stone-100 dark:bg-stone-700" />
+                            </div>
+                            
+                            <h2 className="text-2xl md:text-3xl font-black text-stone-800 dark:text-white mb-2 relative z-10">{activeProfile.displayName || '匿名用戶'}</h2>
+                            <div className="text-xs font-mono text-stone-500 bg-white dark:bg-stone-800 px-4 py-1.5 rounded-full mb-6 shadow-sm border border-stone-200 dark:border-stone-700 relative z-10">
+                                數位 ID: <span className="font-bold text-stone-800 dark:text-gray-300">{activeProfile.numericId || '未知'}</span>
+                            </div>
+                            
+                            <div className="w-full max-w-sm bg-white dark:bg-stone-800 p-5 rounded-2xl shadow-sm border border-stone-200 dark:border-stone-700 mb-6 relative z-10">
+                                <h3 className="text-[11px] font-bold text-gray-400 mb-2 border-b border-gray-100 dark:border-gray-700 pb-1.5 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[14px]">edit_note</span> 個人簡介
+                                </h3>
+                                <p className="text-sm text-stone-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed font-medium">
+                                    {activeProfile.bio || '這名玩家很神秘，還沒有寫下任何自我介紹...'}
+                                </p>
+                            </div>
+
+                            <div className="w-full max-w-sm flex gap-3 mb-8 relative z-10">
+                                <div className="flex-1 bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-900/40 dark:to-stone-800 p-3 rounded-2xl border border-amber-200 dark:border-amber-800 flex flex-col items-center justify-center shadow-sm hover:scale-105 transition-transform">
+                                    <span className="material-symbols-outlined text-2xl text-amber-500 mb-1">kid_star</span>
+                                    <div className="text-[10px] text-amber-600 dark:text-amber-500 font-bold mb-0.5">學習等級</div>
+                                    <div className="text-lg font-black text-amber-800 dark:text-amber-400">Lv. {activeProfile.mcData?.level || 1}</div>
+                                </div>
+                                <div className="flex-1 bg-gradient-to-br from-cyan-50 to-cyan-100/50 dark:from-cyan-900/40 dark:to-stone-800 p-3 rounded-2xl border border-cyan-200 dark:border-cyan-800 flex flex-col items-center justify-center shadow-sm hover:scale-105 transition-transform">
+                                    <span className="material-symbols-outlined text-2xl text-cyan-500 mb-1">diamond</span>
+                                    <div className="text-[10px] text-cyan-600 dark:text-cyan-500 font-bold mb-0.5">擁有財富</div>
+                                    <div className="text-lg font-black text-cyan-800 dark:text-cyan-400">{activeProfile.mcData?.diamonds || 0} <span className="text-[10px]">鑽</span></div>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 w-full max-w-sm relative z-10 mt-auto">
+                                {friends.some(f => f.uid === activeProfile.uid) ? (
+                                    <button onClick={() => { setActiveChat({uid: activeProfile.uid, name: activeProfile.displayName, email: activeProfile.email}); setActiveProfile(null); setMessageLimit(15); }} className="flex-1 py-3.5 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-md active:scale-95">
+                                        <span className="material-symbols-outlined">chat</span> 發送訊息
+                                    </button>
+                                ) : activeProfile.uid !== user.uid ? (
+                                    <button onClick={() => sendFriendRequest(activeProfile)} className="flex-1 py-3.5 bg-stone-800 hover:bg-black dark:bg-stone-100 dark:hover:bg-white text-white dark:text-stone-800 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-md active:scale-95">
+                                        <span className="material-symbols-outlined">person_add</span> 送出申請
+                                    </button>
+                                ) : (
+                                    <button className="flex-1 py-3.5 bg-gray-200 dark:bg-stone-700 text-gray-500 font-black rounded-xl flex items-center justify-center gap-2 cursor-not-allowed">
+                                        <span className="material-symbols-outlined">person</span> 這是你自己
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                
+                /* ✨ 狀態二：聊天室畫面 */
+                ) : activeChat ? (
                     <>
                         <div className="p-4 border-b border-stone-200 dark:border-stone-700 font-bold flex items-center space-x-2 shrink-0 bg-[#FCFBF7] dark:bg-stone-800 dark:text-white">
                              <button onClick={() => setActiveChat(null)} className="md:hidden flex items-center justify-center w-8 h-8 mr-2 text-lg bg-stone-50 dark:bg-gray-700 rounded-full hover:bg-stone-100 transition-colors">⬅️</button>

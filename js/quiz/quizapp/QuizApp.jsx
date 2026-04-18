@@ -50,6 +50,14 @@ function QuizApp(props) {
 
     // ✨ 新增：自動捲動避開遮罩重疊，並加入「自由作答」放行機制
     useEffect(() => {
+        // ✨ 新增：每次進入作答模式時，自動跳轉到「最新還沒作答」的題目
+        if (step === 'answering' && parsedInteractiveQuestions && parsedInteractiveQuestions.length > 0) {
+            const firstUnansweredIdx = parsedInteractiveQuestions.findIndex(q => !userAnswers[q.globalIndex] && !(peekedAnswers && peekedAnswers[q.globalIndex]));
+            if (firstUnansweredIdx !== -1 && currentInteractiveIndex === 0 && !userAnswers[parsedInteractiveQuestions[0].globalIndex]) {
+                setCurrentInteractiveIndex(firstUnansweredIdx);
+            }
+        }
+
         // 1. 處理畫面滾動：將發光的按鈕自動捲動到畫面正中央，避免被教學對話框擋住
         if (tutorialStep > 0 && tutorialStep !== 99) {
             const timer = setTimeout(() => {
@@ -66,13 +74,15 @@ function QuizApp(props) {
                 setTutorialStep(9);
             }
         }
-    }, [tutorialStep, userAnswers, peekedAnswers, parsedInteractiveQuestions, setTutorialStep]);
+    }, [step, tutorialStep, userAnswers, peekedAnswers, parsedInteractiveQuestions, setTutorialStep]);
 
    // ✨ 新增：試卷尚未載入完成前，顯示載入動畫
     if (isQuizLoading) return (
         <div className="flex flex-col h-[100dvh] items-center justify-center bg-stone-50 dark:bg-stone-900 transition-colors">
             <div className="w-16 h-16 border-4 border-stone-200 dark:border-stone-700 border-t-amber-500 dark:border-t-amber-400 rounded-full animate-spin mb-6 shadow-sm"></div>
-            <div className="text-2xl font-black text-stone-800 dark:text-stone-100 mb-2 tracking-wide">🚀 試卷載入中...</div>
+            <div className="text-2xl font-black text-stone-800 dark:text-stone-100 mb-2 tracking-wide flex items-center gap-2">
+                <span className="material-symbols-outlined text-[32px]">rocket_launch</span> 試卷載入中...
+            </div>
             <div className="text-sm font-bold text-stone-500 dark:text-stone-400 animate-pulse bg-[#FCFBF7] dark:bg-stone-800 px-5 py-2 rounded-full shadow-sm border border-stone-200 dark:border-stone-700">
                 正在為您解壓縮題目與詳解，請稍候
             </div>
@@ -88,11 +98,12 @@ function QuizApp(props) {
                     setQuestionHtml(latestContent.questionHtml);
                     setExplanationHtml(latestContent.explanationHtml);
                     setBackgroundUpdateReady(false);
-                    showAlert("✅ 已為您載入最新版本的試卷內容！");
+                    showAlert("已為您載入最新版本的試卷內容！");
                 }}
                 className="bg-amber-500 text-white px-6 py-2.5 rounded-full shadow-xl font-bold flex items-center gap-2 hover:bg-amber-600 transition-all border border-amber-400 animate-bounce"
             >
-                <span>🔄 試題已在背景更新，點擊立即套用</span>
+                <span className="material-symbols-outlined text-[20px]">sync</span>
+                <span>試題已在背景更新，點擊立即套用</span>
             </button>
         </div>
     );
@@ -835,7 +846,7 @@ function QuizApp(props) {
                                 </div>
                             </div>
 
-                            <h3 className="font-bold text-xs text-amber-600 dark:text-amber-400 mb-2 mt-4">🔵 選擇題標準答案</h3>
+                            <h3 className="font-bold text-xs text-amber-600 dark:text-amber-400 mb-2 mt-4"><span className="material-symbols-outlined text-[18px] mr-1 align-bottom text-amber-500">radio_button_checked</span> 選擇題標準答案</h3>
                             <AnswerGridInput value={correctAnswersInput} onChange={setCorrectAnswersInput} parsedTypes={parsedQuestionTypes} maxQuestions={numQuestions} showConfirm={showConfirm} />
                             
                             {!!qParts.sq && (
@@ -1313,6 +1324,35 @@ function QuizApp(props) {
                                         <span className="text-xs hidden sm:inline">{showQuestionGrid ? '▲ 收起' : '▼ 展開列表'}</span>
                                     </button>
                                     
+                                    {/* ✨ 進階狀態顯示：偷看題數與正確率 */}
+                                    {(() => {
+                                        const peekedIndices = peekedAnswers ? peekedAnswers.map((p, i) => p ? i : -1).filter(i => i !== -1) : [];
+                                        if (peekedIndices.length === 0) return null;
+                                        
+                                        let correctPeeked = 0;
+                                        peekedIndices.forEach(idx => {
+                                            const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
+                                            const keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
+                                            const correctAns = keyArray[idx] || '';
+                                            const userAns = userAnswers[idx] || '';
+                                            
+                                            if (correctAns.toLowerCase() === 'z' || correctAns.toLowerCase() === 'abcd') correctPeeked++;
+                                            else if (correctAns !== '-' && correctAns !== '' && userAns) {
+                                                if (correctAns === correctAns.toUpperCase() ? (userAns === correctAns) : correctAns.toLowerCase().includes(userAns.toLowerCase())) correctPeeked++;
+                                            }
+                                        });
+                                        const accuracy = Math.round((correctPeeked / peekedIndices.length) * 100);
+                                        
+                                        return (
+                                            <div className="hidden lg:flex items-center gap-3 ml-2 px-3 py-1.5 bg-stone-100 dark:bg-stone-700/50 rounded-xl border border-stone-200 dark:border-stone-600 text-xs font-bold shrink-0 shadow-inner">
+                                                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><span className="material-symbols-outlined text-[16px]">lock_open</span> 已對答: {peekedIndices.length}</span>
+                                                <span className="text-emerald-600 dark:text-emerald-400">正確: {correctPeeked}</span>
+                                                <span className="text-rose-500 dark:text-rose-400">錯誤: {peekedIndices.length - correctPeeked}</span>
+                                                <span className="bg-stone-800 text-white dark:bg-stone-900 px-2 py-0.5 rounded shadow-sm">{accuracy}%</span>
+                                            </div>
+                                        );
+                                    })()}
+
                                     {/* ✨ 新增：文字大小調整控制器 */}
                                     <div className="flex items-center bg-stone-50 dark:bg-gray-700 rounded border border-stone-200 dark:border-gray-600">
                                         <button onClick={() => setImmersiveTextSize(prev => Math.max(0.6, prev - 0.2))} className="px-2 sm:px-3 py-1 text-gray-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-600 font-black transition-colors">A-</button>
@@ -1350,7 +1390,7 @@ function QuizApp(props) {
                                     {['Q', 'SQ', 'ASQ'].map(targetType => {
                                         const typeQuestions = parsedInteractiveQuestions.filter(q => q.type === targetType);
                                         if (typeQuestions.length === 0) return null;
-                                        const typeLabel = targetType === 'Q' ? '🔵 選擇題' : targetType === 'SQ' ? '🟢 簡答題' : '🟣 問答題';
+                                        const typeLabel = targetType === 'Q' ? '<span className="material-symbols-outlined text-[18px] mr-1 align-bottom text-amber-500">radio_button_checked</span> 選擇題' : targetType === 'SQ' ? '🟢 簡答題' : '🟣 問答題';
                                         
                                         return (
                                             <div key={targetType} className="mb-4 last:mb-0">
@@ -1363,6 +1403,30 @@ function QuizApp(props) {
                                                         const hasNote = notes && !!notes[actualIdx];
                                                         const isCurrent = currentInteractiveIndex === actualIdx;
                                                         
+                                                        const isPeeked = peekedAnswers && peekedAnswers[actualIdx];
+                                                        
+                                                        let btnClasses = 'border-stone-200 dark:border-gray-600 hover:border-amber-400 dark:hover:border-amber-400 text-gray-600 dark:text-gray-300';
+                                                        
+                                                        if (isCurrent) {
+                                                            btnClasses = 'border-black dark:border-white bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white shadow-md scale-105 z-10';
+                                                        } else if (isPeeked) {
+                                                            // 偷看答案後顯示對錯顏色
+                                                            const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
+                                                            const keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
+                                                            const correctAns = keyArray[actualIdx] || '';
+                                                            const userAns = userAnswers[actualIdx] || '';
+                                                            let isCorrect = false;
+                                                            if (correctAns.toLowerCase() === 'z' || correctAns.toLowerCase() === 'abcd') isCorrect = true;
+                                                            else if (correctAns !== '-' && correctAns !== '' && userAns) {
+                                                                isCorrect = correctAns === correctAns.toUpperCase() ? (userAns === correctAns) : correctAns.toLowerCase().includes(userAns.toLowerCase());
+                                                            }
+                                                            btnClasses = isCorrect 
+                                                                ? 'bg-emerald-100 border-emerald-400 text-emerald-800 dark:bg-emerald-900/40 dark:border-emerald-600 dark:text-emerald-300' 
+                                                                : 'bg-rose-100 border-rose-400 text-rose-800 dark:bg-rose-900/40 dark:border-rose-600 dark:text-rose-300';
+                                                        } else if (isAnswered) {
+                                                            btnClasses = 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-400';
+                                                        }
+
                                                         return (
                                                             <button
                                                                 key={actualIdx}
@@ -1370,14 +1434,11 @@ function QuizApp(props) {
                                                                     setCurrentInteractiveIndex(actualIdx); // 利用全域索引跳轉
                                                                     setShowQuestionGrid(false);
                                                                 }}
-                                                                className={`relative py-2 font-bold text-sm border-2 transition-colors
-                                                                    ${isCurrent ? 'border-black dark:border-white bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white' : 'border-stone-200 dark:border-gray-600 hover:border-amber-400 dark:hover:border-amber-400 text-gray-600 dark:text-gray-300'}
-                                                                    ${isAnswered && !isCurrent ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' : ''}
-                                                                `}
+                                                                className={`relative py-2 font-bold text-sm border-2 transition-all rounded-lg ${btnClasses}`}
                                                             >
                                                                 {q.number}
-                                                                {isStarred && <span className="absolute -top-3 -right-3 text-amber-500 drop-shadow-sm text-lg z-10">★</span>}
-                                                                {hasNote && <span className="absolute -top-3 left-0 text-amber-500 drop-shadow-sm text-xs z-10">📝</span>}
+                                                                {isStarred && <span className="absolute -top-2.5 -right-2.5 text-amber-500 drop-shadow-sm z-10 material-symbols-outlined text-[16px] bg-white dark:bg-stone-800 rounded-full">star</span>}
+                                                                {hasNote && <span className="absolute -top-2.5 -left-2.5 text-cyan-500 drop-shadow-sm z-10 material-symbols-outlined text-[16px] bg-white dark:bg-stone-800 rounded-full">edit_note</span>}
                                                             </button>
                                                         );
                                                     })}
@@ -1664,14 +1725,14 @@ function QuizApp(props) {
 
                 <div className={`flex-grow flex flex-col bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-xl rounded-2xl overflow-hidden transition-colors`}>
                     <div className="bg-stone-50 dark:bg-stone-900/50 border-b border-stone-200 dark:border-stone-700 px-5 py-3 shrink-0 flex justify-between items-center transition-colors">
-                        <span className="font-bold text-sm text-stone-600 dark:text-stone-300">✏️ 答案卡 {isTimeUp && <span className="text-red-500 ml-2">(已鎖定)</span>}</span>
+                        <span className="font-bold text-sm text-stone-600 dark:text-stone-300"><span className="material-symbols-outlined text-[18px] mr-1 align-bottom">edit_square</span> 答案卡 {isTimeUp && <span className="text-red-500 ml-2">(已鎖定)</span>}</span>
                     </div>
                     <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-[#FCFBF7] dark:bg-stone-800 transition-colors">
                         
-                        {/* 🔵 選擇題作答區塊 */}
+                        {/* <span className="material-symbols-outlined text-[18px] mr-1 align-bottom text-amber-500">radio_button_checked</span> 選擇題作答區塊 */}
                         {parsedQuestionTypes.some(t => t === 'Q') && (
                             <>
-                                <h4 className="font-bold text-amber-600 dark:text-amber-400 mb-2 border-b-2 border-amber-200 dark:border-amber-800 pb-1">🔵 選擇題作答區</h4>
+                                <h4 className="font-bold text-amber-600 dark:text-amber-400 mb-2 border-b-2 border-amber-200 dark:border-amber-800 pb-1"><span className="material-symbols-outlined text-[18px] mr-1 align-bottom text-amber-500">radio_button_checked</span> 選擇題作答區</h4>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px 16px', marginBottom: '24px' }}>
                                     {userAnswers.map((ans, i) => {
                                         if (parsedQuestionTypes[i] !== 'Q') return null;
@@ -1692,7 +1753,7 @@ function QuizApp(props) {
                                                         onClick={() => toggleStar(i)} 
                                                         className={`text-sm focus:outline-none ${starred[i] ? 'text-amber-500' : 'text-gray-300 dark:text-gray-600'} ${isTimeUp ? 'cursor-not-allowed opacity-50' : 'hover:text-gray-400'}`}
                                                     >★</button>
-                                                    {isBonus && <span className="text-[10px] bg-amber-400 text-stone-800 px-1.5 py-0.5 rounded-sm font-bold animate-pulse shadow-sm">🎁 送分</span>}
+                                                    {isBonus && <span className="text-[10px] bg-amber-400 text-stone-800 px-1.5 py-0.5 rounded-sm font-bold animate-pulse shadow-sm"><span className="material-symbols-outlined text-[14px] mr-1">card_giftcard</span></span>}
                                                 </div>
                                                 <div className="flex space-x-1 shrink-0 items-center flex-1">
 {peekedAnswers && peekedAnswers[i] && <span className="text-xs mr-2 text-amber-500 font-bold flex items-center" title="已偷看答案"><span className="material-symbols-outlined text-[16px]">lock</span></span>}                                                    {['A','B','C','D'].map(o => (
@@ -1714,10 +1775,10 @@ function QuizApp(props) {
                             </>
                         )}
 
-                        {/* 🟢 非選擇題作答區塊 */}
+                        {/* <span className="material-symbols-outlined text-[18px] mr-1 align-bottom text-cyan-500">short_text</span> 非選擇題作答區塊 */}
                         {parsedQuestionTypes.some(t => t !== 'Q') && (
                             <>
-                                <h4 className="font-bold text-cyan-600 dark:text-cyan-400 mb-2 border-b-2 border-cyan-200 dark:border-cyan-800 pb-1 mt-4">🟢 非選擇題作答區</h4>
+                                <h4 className="font-bold text-cyan-600 dark:text-cyan-400 mb-2 border-b-2 border-cyan-200 dark:border-cyan-800 pb-1 mt-4"><span className="material-symbols-outlined text-[18px] mr-1 align-bottom text-cyan-500">short_text</span> 非選擇題作答區</h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     {userAnswers.map((ans, i) => {
                                         const type = parsedQuestionTypes[i];
@@ -1786,11 +1847,13 @@ function QuizApp(props) {
                         qText: wrongBookAddingItem.extractedQText || '', 
                         qHtml: wrongBookAddingItem.extractedQHtml || '',
                         nText: wrongBookAddingItem.extractedExp || '', 
+                        folder: localStorage.getItem('lastWrongBookFolder') || '未分類',
                         userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']))
                     }}
                     onClose={() => setWrongBookAddingItem(null)}
                     onSave={async (data) => {
                         try {
+                            localStorage.setItem('lastWrongBookFolder', data.folder || '未分類');
                             await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').add({
                                 quizId: quizId,
                                 folder: data.folder || '未分類',
@@ -1810,7 +1873,7 @@ function QuizApp(props) {
                                     wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
                                 }, { merge: true });
                             }
-                            showAlert(`✅ 第 ${wrongBookAddingItem.number} 題已成功收錄至「錯題整理」！`);
+                            showAlert(`第 ${wrongBookAddingItem.number} 題已成功收錄至「錯題整理」！`, "收錄成功");
                             setWrongBookAddingItem(null);
                         } catch(e) {
                             showAlert("收錄失敗：" + e.message);
@@ -1867,7 +1930,7 @@ function QuizApp(props) {
                 </div>
             )}
 
-            {/* ✨ 錯題收錄 Modal */}
+            {/* ✨ 錯題收錄 Modal (含記憶上一次資料夾) */}
             {wrongBookAddingItem && (
                 <WrongBookModal
                     title={`收錄第 ${wrongBookAddingItem.number} 題`}
@@ -1875,11 +1938,13 @@ function QuizApp(props) {
                         qText: wrongBookAddingItem.extractedQText || '', 
                         qHtml: wrongBookAddingItem.extractedQHtml || '',
                         nText: wrongBookAddingItem.extractedExp || '', 
+                        folder: localStorage.getItem('lastWrongBookFolder') || '未分類',
                         userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']))
                     }}
                     onClose={() => setWrongBookAddingItem(null)}
                     onSave={async (data) => {
                         try {
+                            localStorage.setItem('lastWrongBookFolder', data.folder || '未分類');
                             await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').add({
                                 quizId: quizId,
                                 folder: data.folder || '未分類',
@@ -1899,7 +1964,7 @@ function QuizApp(props) {
                                     wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
                                 }, { merge: true });
                             }
-                            showAlert(`✅ 第 ${wrongBookAddingItem.number} 題已成功收錄至「錯題整理」！`);
+                            showAlert(`第 ${wrongBookAddingItem.number} 題已成功收錄至「錯題整理」！`, "收錄成功");
                             setWrongBookAddingItem(null);
                         } catch(e) {
                             showAlert("收錄失敗：" + e.message);
@@ -2621,13 +2686,15 @@ if (step === 'grading') return (
                     title={`收錄第 ${wrongBookAddingItem.number} 題`}
                     initialData={{ 
                         qText: wrongBookAddingItem.extractedQText || '', 
-                        qHtml: wrongBookAddingItem.extractedQHtml || '', // ✨ 帶入富文本
+                        qHtml: wrongBookAddingItem.extractedQHtml || '',
                         nText: wrongBookAddingItem.extractedExp || '', 
+                        folder: localStorage.getItem('lastWrongBookFolder') || '未分類',
                         userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']))
                     }}
                     onClose={() => setWrongBookAddingItem(null)}
                     onSave={async (data) => {
                         try {
+                            localStorage.setItem('lastWrongBookFolder', data.folder || '未分類');
                             await window.db.collection('users').doc(currentUser.uid).collection('wrongBook').add({
                                 quizId: quizId,
                                 folder: data.folder || '未分類',
@@ -2636,19 +2703,18 @@ if (step === 'grading') return (
                                 userAns: wrongBookAddingItem.userAns || '未填寫',
                                 correctAns: wrongBookAddingItem.correctAns,
                                 qText: data.qText || '',
-                                qHtml: data.qHtml || '', // ✨ 將富文本存入資料庫
+                                qHtml: data.qHtml || '',
                                 qImage: data.qImage,
                                 nText: data.nText,
                                 nImage: data.nImage,
                                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                             });
-                            // 如果是新資料夾，加到使用者資料夾清單
                             if (data.folder && !userProfile.wrongBookFolders?.includes(data.folder)) {
                                 await window.db.collection('users').doc(currentUser.uid).set({
                                     wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(data.folder)
                                 }, { merge: true });
                             }
-                            showAlert(`✅ 第 ${wrongBookAddingItem.number} 題已成功收錄至「錯題整理」！`);
+                            showAlert(`第 ${wrongBookAddingItem.number} 題已成功收錄至「錯題整理」！`, "收錄成功");
                             setWrongBookAddingItem(null);
                         } catch(e) {
                             showAlert("收錄失敗：" + e.message);
