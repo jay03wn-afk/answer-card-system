@@ -2294,7 +2294,7 @@ function MiningGame({ user, userProfile, mcData, updateMcData, onQuit, showAlert
     
     // ✨ 預設獎池與狀態
     const DEFAULT_PRIZES = [
-        { id: '711', name: '7-11 50元禮券', type: 'real', prob: 0.001, img: 'https://i.postimg.cc/pd20TjLs/638632987880299781.png', desc: '極巨獎！' },
+        { id: '711', name: '7-11 50元禮券', type: 'real', prob: 0.001, img: 'https://i.postimg.cc/pd20TjLs/638632987880299781.png', desc: '極巨獎！', limit: 2, code: '711GIFT50TWD' },
         { id: 'diamond_jackpot', name: '鑽石礦 (+100 💎)', type: 'diamond', amount: 100, prob: 0.049, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/diamond_ore.png' },
         { id: 'pack_legendary', name: '終界寶箱 (禮包)', type: 'pack', prob: 0.02, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/respawn_anchor_top.png' },
         { id: 'pack_rare', name: '廢棄礦井箱 (禮包)', type: 'pack', prob: 0.08, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/barrel_side.png' },
@@ -2323,6 +2323,7 @@ function MiningGame({ user, userProfile, mcData, updateMcData, onQuit, showAlert
     const [prizes, setPrizes] = useState(DEFAULT_PRIZES);
     const [showAdminModal, setShowAdminModal] = useState(false);
     const [editingPrize, setEditingPrize] = useState(null); // null 代表清單模式，有資料代表編輯模式
+    const [showProbModal, setShowProbModal] = useState(false); // ✨ 新增機率表 Modal 狀態
 
     useEffect(() => {
         // 從 Firebase 載入獎池資料
@@ -2371,22 +2372,21 @@ function MiningGame({ user, userProfile, mcData, updateMcData, onQuit, showAlert
             }
         }
 
-        // 7-11 特殊防護機制
-        if (selectedPrize.id === '711') {
-            try {
-                const sysDoc = await window.db.collection('system').doc('mining').get();
-                const count = sysDoc.exists ? (sysDoc.data().grandPrizeCount || 0) : 0;
-                if (count >= 2) {
-                    // 若抽完，替換為鑽石礦或其他獎項
-                    selectedPrize = prizes.find(p => p.type === 'diamond') || prizes[0]; 
-                } else {
-                    await window.db.collection('system').doc('mining').set({
-                        grandPrizeCount: window.firebase.firestore.FieldValue.increment(1)
-                    }, { merge: true });
-                }
-            } catch (e) {
+        // ✨ 檢查庫存與可抽出次數限制
+        try {
+            const sysDoc = await window.db.collection('system').doc('mining').get();
+            const counts = sysDoc.exists ? (sysDoc.data().prizeCounts || {}) : {};
+            
+            if (selectedPrize.limit && counts[selectedPrize.id] >= selectedPrize.limit) {
+                // 若抽完，替換為鑽石礦或其他保底獎項
                 selectedPrize = prizes.find(p => p.type === 'diamond') || prizes[0]; 
+            } else if (selectedPrize.limit) {
+                await window.db.collection('system').doc('mining').set({
+                    [`prizeCounts.${selectedPrize.id}`]: window.firebase.firestore.FieldValue.increment(1)
+                }, { merge: true });
             }
+        } catch (e) {
+            selectedPrize = prizes.find(p => p.type === 'diamond') || prizes[0]; 
         }
         return selectedPrize;
     };
@@ -2454,7 +2454,7 @@ function MiningGame({ user, userProfile, mcData, updateMcData, onQuit, showAlert
             updates.packs[prize.id] = (updates.packs[prize.id] || 0) + 1;
             msg += "\n📦 (已自動存入養成頁面的「終界儲物箱」中)";
         } else if (prize.type === 'real') {
-            msg += "\n\n🎫 請截圖此畫面並聯絡管理員領取獎品！";
+            msg += `\n\n🎫 你的兌換序號為：【${prize.code || '未設定序號'}】\n請至左側選單的「服務中心」輸入序號兌換獎品！`;
             showAlert(msg); 
         }
 
@@ -2501,9 +2501,12 @@ function MiningGame({ user, userProfile, mcData, updateMcData, onQuit, showAlert
                     <p className="text-gray-300 font-bold mb-6 text-sm">每次開挖消耗 50 💎，有機會挖中神級裝備或實體大獎！</p>
 
                     {gameState === 'idle' ? (
-                        <div className="flex-grow flex items-center justify-center w-full">
-                            <button onClick={handleStart} className="mc-btn px-8 py-5 text-2xl animate-bounce flex items-center">
+                        <div className="flex-grow flex flex-col items-center justify-center w-full">
+                            <button onClick={handleStart} className="mc-btn px-8 py-5 text-2xl animate-bounce flex items-center mb-4">
                                 開始挖礦 (50 <McImg src={imgDiamond} className="w-6 h-6 ml-2 pixelated"/>)
+                            </button>
+                            <button onClick={() => setShowProbModal(true)} className="text-amber-300 font-bold underline hover:text-amber-200">
+                                🎁 查看獎池與機率
                             </button>
                         </div>
                     ) : (
@@ -2627,6 +2630,16 @@ function MiningGame({ user, userProfile, mcData, updateMcData, onQuit, showAlert
                                     </>
                                 )}
 
+                                {editingPrize.type === 'real' && (
+                                    <>
+                                        <label className="text-gray-400 text-xs font-bold mb-1">兌換序號 (12碼，供玩家至服務中心兌換)</label>
+                                        <input type="text" maxLength="12" value={editingPrize.code || ''} onChange={e => setEditingPrize({...editingPrize, code: e.target.value})} className="mb-3 p-2 bg-stone-900 text-white border border-gray-600 rounded outline-none" placeholder="例如：ABCDEF123456" />
+                                    </>
+                                )}
+                                
+                                <label className="text-gray-400 text-xs font-bold mb-1">可抽出總次數 (留空代表無上限)</label>
+                                <input type="number" value={editingPrize.limit || ''} onChange={e => setEditingPrize({...editingPrize, limit: e.target.value === '' ? '' : parseInt(e.target.value)})} className="mb-3 p-2 bg-stone-900 text-white border border-gray-600 rounded outline-none" placeholder="無上限" />
+
                                 <label className="text-gray-400 text-xs font-bold mb-1">快速選取圖片模板</label>
                                 <div className="grid grid-cols-6 sm:grid-cols-8 gap-2 mb-3 bg-stone-900 p-2 rounded border border-gray-700">
                                     {IMG_TEMPLATES.map(url => (
@@ -2658,6 +2671,35 @@ function MiningGame({ user, userProfile, mcData, updateMcData, onQuit, showAlert
                     </div>
                 </div>
             )}
+
+            {/* ✨ 機率表 Modal */}
+            {showProbModal && (
+                <div className="fixed inset-0 z-[100] bg-black bg-opacity-80 flex justify-center items-center p-4">
+                    <div className="bg-stone-800 border-4 border-gray-600 p-6 rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[80vh]">
+                        <div className="flex justify-between items-center mb-4 border-b-2 border-gray-600 pb-2">
+                            <h2 className="text-white text-xl font-black text-amber-400">🎁 礦坑獎池機率表</h2>
+                            <button onClick={() => setShowProbModal(false)} className="text-red-500 font-black text-xl hover:text-red-400">✖</button>
+                        </div>
+                        <div className="overflow-y-auto custom-scrollbar flex-grow space-y-2 pr-2">
+                            {prizes.sort((a,b) => b.prob - a.prob).map((p, idx) => (
+                                <div key={idx} className="bg-stone-900 p-3 rounded border border-gray-700 flex items-center gap-4">
+                                    <McImg src={p.img} fallback="📦" className="w-10 h-10 pixelated" />
+                                    <div className="flex-grow">
+                                        <p className="text-white font-bold">{p.name}</p>
+                                        <p className="text-xs text-gray-400">
+                                            {p.limit ? `限量: ${p.limit} 份` : '無上限'}
+                                        </p>
+                                    </div>
+                                    <div className="text-amber-400 font-black text-right">
+                                        {(p.prob * 100).toFixed(2)}%
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }

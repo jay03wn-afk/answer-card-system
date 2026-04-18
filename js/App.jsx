@@ -699,16 +699,19 @@ function Main() {
         return params.get('newsId');
     });
 
-    // ✨ 監聽從 Chat.jsx (限時動態) 傳來的無縫開啟請求 (支援單題與連播)
+    // ✨ 監聽跨組件的無縫開啟請求 (支援單題、連播與電子報)
     useEffect(() => {
         const handleOpenFastQA = (e) => { setQaStoryIds([e.detail]); setQaStoryIndex(0); };
         const handleOpenFastQAStory = (e) => { setQaStoryIds(e.detail); setQaStoryIndex(0); };
+        const handleOpenNews = (e) => { setCurrentNewsId(e.detail); };
         
         window.addEventListener('openFastQA', handleOpenFastQA);
         window.addEventListener('openFastQAStory', handleOpenFastQAStory);
+        window.addEventListener('openNews', handleOpenNews);
         return () => {
             window.removeEventListener('openFastQA', handleOpenFastQA);
             window.removeEventListener('openFastQAStory', handleOpenFastQAStory);
+            window.removeEventListener('openNews', handleOpenNews);
         };
     }, []);
 
@@ -807,7 +810,7 @@ function Main() {
     const [claimingIds, setClaimingIds] = useState(new Set());
     const [showAdminMail, setShowAdminMail] = useState(false);
     const [isConfirmingSend, setIsConfirmingSend] = useState(false);
-    const [adminMailForm, setAdminMailForm] = useState({ title: '系統全服公告', content: '', reward: 0 });
+    const [adminMailForm, setAdminMailForm] = useState({ title: '系統公告', content: '', reward: 0, targetType: 'all', targetEmail: '', linkType: 'none', linkId: '' });
     
     // ✨ 信箱與連播狀態
     const [activeMailTab, setActiveMailTab] = useState('inbox');
@@ -917,9 +920,16 @@ if (docs.length > 50) {
         if (!adminMailForm.title || !adminMailForm.content) {
             return window.showAlert ? window.showAlert("請填寫完整標題與內容！") : alert("請填寫完整標題與內容！");
         }
+        if (adminMailForm.targetType === 'individual' && !adminMailForm.targetEmail.trim()) {
+            return window.showAlert ? window.showAlert("請輸入目標使用者的 Email！") : alert("請輸入目標使用者的 Email！");
+        }
+        if (adminMailForm.linkType !== 'none' && !adminMailForm.linkId.trim()) {
+            return window.showAlert ? window.showAlert("請輸入跳轉連結的 ID！") : alert("請輸入跳轉連結的 ID！");
+        }
         
-        // ✨ 改用系統內建的 showConfirm 彈窗，完全移除原生延遲的 confirm()
-        showConfirm(`確定要${adminMailForm.id ? '更新這則系統公告' : '發送這封信件給全服玩家'}嗎？\n\n標題：${adminMailForm.title}\n鑽石：${adminMailForm.reward}`, async () => {
+        const targetText = adminMailForm.targetType === 'all' ? '全服玩家' : `用戶 ${adminMailForm.targetEmail}`;
+        
+        showConfirm(`確定要${adminMailForm.id ? '更新這封信件' : `發送這封信件給 ${targetText}`}嗎？\n\n標題：${adminMailForm.title}\n鑽石：${adminMailForm.reward}`, async () => {
             setIsProcessingMail(true);
             try {
                 const isEdit = !!adminMailForm.id;
@@ -928,21 +938,38 @@ if (docs.length > 50) {
                     title: adminMailForm.title, 
                     content: adminMailForm.content, 
                     rewardDiamonds: adminMailForm.reward,
-                    isSystem: true,
+                    isSystem: adminMailForm.targetType === 'all',
+                    linkType: adminMailForm.linkType || 'none',
+                    linkId: adminMailForm.linkId || '',
                     updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 };
                 if (!isEdit) mailData.createdAt = window.firebase.firestore.FieldValue.serverTimestamp();
 
-                const usersSnap = await window.db.collection('users').get();
+                let targetUsers = [];
+                
+                if (adminMailForm.targetType === 'all') {
+                    const usersSnap = await window.db.collection('users').get();
+                    targetUsers = usersSnap.docs;
+                } else {
+                    const userSnap = await window.db.collection('users').where('email', '==', adminMailForm.targetEmail.trim()).get();
+                    if (userSnap.empty) {
+                        setIsProcessingMail(false);
+                        return window.showAlert ? window.showAlert("❌ 找不到該 Email 的使用者，請確認輸入是否正確！") : alert("找不到使用者！");
+                    }
+                    targetUsers = userSnap.docs;
+                }
+
                 const batches = [];
                 let currentBatch = window.db.batch();
                 let count = 0;
 
-                // 儲存至系統公告庫供「公告管理」使用
-                currentBatch.set(window.db.collection('systemMails').doc(mailId), mailData, { merge: true });
-                count++;
+                // ✨ 只有「全服公告」才儲存到 systemMails 庫供管理員查看與統一編輯
+                if (adminMailForm.targetType === 'all') {
+                    currentBatch.set(window.db.collection('systemMails').doc(mailId), mailData, { merge: true });
+                    count++;
+                }
 
-                usersSnap.docs.forEach(doc => {
+                targetUsers.forEach(doc => {
                     if (count >= 490) {
                         batches.push(currentBatch);
                         currentBatch = window.db.batch();
@@ -950,21 +977,26 @@ if (docs.length > 50) {
                     }
                     const ref = window.db.collection('users').doc(doc.id).collection('mailbox').doc(mailId);
                     if (isEdit) {
-                        currentBatch.set(ref, { title: mailData.title, content: mailData.content, rewardDiamonds: mailData.rewardDiamonds }, { merge: true });
+                        currentBatch.set(ref, { 
+                            title: mailData.title, content: mailData.content, 
+                            rewardDiamonds: mailData.rewardDiamonds,
+                            linkType: mailData.linkType, linkId: mailData.linkId
+                        }, { merge: true });
                     } else {
                         currentBatch.set(ref, { ...mailData, isClaimed: false, isRead: false });
                     }
                     count++;
                 });
+                
                 batches.push(currentBatch);
                 await Promise.all(batches.map(b => b.commit()));
                 
-                if (window.showAlert) window.showAlert(isEdit ? "公告更新成功！" : "全服信件發送成功！");
-                setAdminMailForm({ id: null, title: '系統公告', content: '', reward: 0 });
+                if (window.showAlert) window.showAlert(isEdit ? "公告信件更新成功！" : "信件發送成功！");
+                setAdminMailForm({ id: null, title: '系統公告', content: '', reward: 0, targetType: 'all', targetEmail: '', linkType: 'none', linkId: '' });
                 if (isEdit) setAdminMailTab('manage');
             } catch (e) {
                 console.error(e);
-                if (window.showAlert) window.showAlert("操作失敗");
+                if (window.showAlert) window.showAlert("操作失敗: " + e.message);
             }
             setIsProcessingMail(false);
         });
@@ -1364,6 +1396,7 @@ if (docs.length > 50) {
                         <span className="material-symbols-outlined text-[22px]">shopping_bag</span> 商店系統
                     </button>
                     <button onClick={() => handleTabClick('profile')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'profile' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">person</span> 個人檔案</button>
+                    <button onClick={() => handleTabClick('service')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'service' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">support_agent</span> 服務中心</button>
                 </div>
             </div>
         </>
@@ -1598,43 +1631,95 @@ if (docs.length > 50) {
             {/* ✨ 新增：行事曆考試彈出提醒 */}
             {user && userProfile && <ExamAlertPopup user={user} userProfile={userProfile} />}
 
-            {/* ✨ 信件詳細內容預覽 Modal */}
-            {selectedMail && (
-                <div className="fixed inset-0 z-[120] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-sm rounded-3xl shadow-2xl border-2 border-stone-300 dark:border-stone-600 flex flex-col overflow-hidden relative">
-                        <button onClick={() => setSelectedMail(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-stone-700 text-gray-500 rounded-full hover:bg-gray-200 dark:hover:bg-stone-600 transition-colors"><span className="material-symbols-outlined text-[18px]">close</span></button>
-                        
-                        <div className="p-6 pt-10">
-                            <h3 className="text-lg font-black text-stone-800 dark:text-white mb-2 leading-snug">{selectedMail.title}</h3>
-                            <div className="text-[10px] font-bold text-gray-400 mb-4">{selectedMail.createdAt?.toDate().toLocaleString('zh-TW')}</div>
-                            <div className="text-sm text-gray-700 dark:text-gray-300 font-medium whitespace-pre-wrap leading-relaxed max-h-[40vh] overflow-y-auto custom-scrollbar p-3 bg-white dark:bg-stone-900 border border-gray-200 dark:border-stone-700 rounded-xl mb-4">
-                                {selectedMail.content}
-                            </div>
-                            
-                            {selectedMail.rewardDiamonds > 0 && (
-                                <div className="mb-4">
-                                    <button 
-                                        onClick={(e) => handleClaimReward(e, selectedMail)} 
-                                        disabled={selectedMail.isClaimed || claimingIds.has(selectedMail.id)}
-                                        className={`w-full py-3 rounded-xl font-black flex items-center justify-center gap-2 transition-all shadow-sm ${selectedMail.isClaimed || claimingIds.has(selectedMail.id) ? 'bg-gray-200 text-gray-500 dark:bg-stone-700 dark:text-stone-400' : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-800 active:scale-[0.98]'}`}
-                                    >
-                                        {claimingIds.has(selectedMail.id) ? <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[20px]">{selectedMail.isClaimed ? 'check' : 'diamond'}</span>}
-                                        {selectedMail.isClaimed ? '已領取獎勵' : (claimingIds.has(selectedMail.id) ? '處理中...' : `領取 ${selectedMail.rewardDiamonds} 鑽石`)}
-                                    </button>
-                                </div>
-                            )}
+            {/* ✨ {/* ✨ 信件詳細內容預覽 Modal */}
+            {selectedMail && (() => {
+                // ✨ 核心功能：自動偵測信件內容是否包含跳轉網址參數 (?qaId=... 或 ?newsId=...)
+                let detectedLinkType = selectedMail.linkType && selectedMail.linkType !== 'none' ? selectedMail.linkType : null;
+                let detectedLinkId = selectedMail.linkId || '';
+                let cleanContent = selectedMail.content || '';
 
-                            <div className="flex gap-2">
-                                {!selectedMail.isArchived && (
-                                    <button onClick={(e) => handleArchiveMail(e, selectedMail.id)} className="flex-1 py-2.5 bg-gray-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 font-bold rounded-xl text-sm flex items-center justify-center gap-1 hover:bg-gray-200 dark:hover:bg-stone-600 transition-colors">
-                                        <span className="material-symbols-outlined text-[16px]">archive</span> 封存信件
-                                    </button>
+                if (!detectedLinkType && cleanContent) {
+                    const qaMatch = cleanContent.match(/qaId=([a-zA-Z0-9_-]+)/);
+                    if (qaMatch) {
+                        detectedLinkType = 'qa';
+                        detectedLinkId = qaMatch[1];
+                        // (選用) 將原本醜醜的網址從內文中過濾掉，讓版面更乾淨
+                        cleanContent = cleanContent.replace(/https?:\/\/[^\s]+qaId=[a-zA-Z0-9_-]+/g, '').trim();
+                    } else {
+                        const newsMatch = cleanContent.match(/newsId=([a-zA-Z0-9_-]+)/);
+                        if (newsMatch) {
+                            detectedLinkType = 'news';
+                            detectedLinkId = newsMatch[1];
+                            cleanContent = cleanContent.replace(/https?:\/\/[^\s]+newsId=[a-zA-Z0-9_-]+/g, '').trim();
+                        }
+                    }
+                }
+
+                return (
+                    <div className="fixed inset-0 z-[120] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                        <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-sm rounded-3xl shadow-2xl border-2 border-stone-300 dark:border-stone-600 flex flex-col overflow-hidden relative">
+                            <button onClick={() => setSelectedMail(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-stone-700 text-gray-500 rounded-full hover:bg-gray-200 dark:hover:bg-stone-600 transition-colors"><span className="material-symbols-outlined text-[18px]">close</span></button>
+                            
+                            <div className="p-6 pt-10">
+                                <h3 className="text-lg font-black text-stone-800 dark:text-white mb-2 leading-snug">{selectedMail.title}</h3>
+                                <div className="text-[10px] font-bold text-gray-400 mb-4">{selectedMail.createdAt?.toDate().toLocaleString('zh-TW')}</div>
+                                <div className="text-sm text-gray-700 dark:text-gray-300 font-medium whitespace-pre-wrap leading-relaxed max-h-[40vh] overflow-y-auto custom-scrollbar p-3 bg-white dark:bg-stone-900 border border-gray-200 dark:border-stone-700 rounded-xl mb-4">
+                                    {cleanContent}
+                                    {/* 顯示管理員回覆的圖片 */}
+                                    {selectedMail.imageUrl && (
+                                        <div className="mt-4">
+                                            <img src={selectedMail.imageUrl} className="w-full rounded-lg border border-gray-200 dark:border-stone-700 shadow-sm" alt="附圖" />
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                {selectedMail.rewardDiamonds > 0 && (
+                                    <div className="mb-4">
+                                        <button 
+                                            onClick={(e) => handleClaimReward(e, selectedMail)} 
+                                            disabled={selectedMail.isClaimed || claimingIds.has(selectedMail.id)}
+                                            className={`w-full py-3 rounded-xl font-black flex items-center justify-center gap-2 transition-all shadow-sm ${selectedMail.isClaimed || claimingIds.has(selectedMail.id) ? 'bg-gray-200 text-gray-500 dark:bg-stone-700 dark:text-stone-400' : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-800 active:scale-[0.98]'}`}
+                                        >
+                                            {claimingIds.has(selectedMail.id) ? <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[20px]">{selectedMail.isClaimed ? 'check' : 'diamond'}</span>}
+                                            {selectedMail.isClaimed ? '已領取獎勵' : (claimingIds.has(selectedMail.id) ? '處理中...' : `領取 ${selectedMail.rewardDiamonds} 鑽石`)}
+                                        </button>
+                                    </div>
                                 )}
+
+                                {/* ✨ 自動偵測並顯示信件網頁跳轉按鈕 */}
+                                {detectedLinkType && detectedLinkId && (
+                                    <div className="mb-4">
+                                        <button 
+                                            onClick={() => {
+                                                setSelectedMail(null);
+                                                setShowInbox(false);
+                                                // 觸發無縫跳轉，不需要重整網頁
+                                                if (detectedLinkType === 'qa') {
+                                                    window.dispatchEvent(new CustomEvent('openFastQA', { detail: detectedLinkId }));
+                                                } else if (detectedLinkType === 'news') {
+                                                    window.dispatchEvent(new CustomEvent('openNews', { detail: detectedLinkId }));
+                                                }
+                                            }}
+                                            className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
+                                        >
+                                            <span className="material-symbols-outlined text-[20px]">{detectedLinkType === 'qa' ? 'bolt' : 'newspaper'}</span>
+                                            {detectedLinkType === 'qa' ? '立刻挑戰：快問快答' : '立刻閱讀這篇：電子報'}
+                                        </button>
+                                    </div>
+                                )}
+
+                                <div className="flex gap-2">
+                                    {!selectedMail.isArchived && (
+                                        <button onClick={(e) => handleArchiveMail(e, selectedMail.id)} className="flex-1 py-2.5 bg-gray-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 font-bold rounded-xl text-sm flex items-center justify-center gap-1 hover:bg-gray-200 dark:hover:bg-stone-600 transition-colors">
+                                            <span className="material-symbols-outlined text-[16px]">archive</span> 封存信件
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* ✨ 新增：收件匣 (信箱) UI Modal */}
             {showInbox && (
@@ -1693,16 +1778,38 @@ if (docs.length > 50) {
                                     <div className="bg-white dark:bg-stone-800 border border-amber-300 dark:border-amber-700 rounded-xl p-4 shadow-md animate-fade-in flex flex-col max-h-[50vh]">
                                         <div className="flex justify-between items-center mb-3 border-b border-amber-200 dark:border-stone-700 pb-2 shrink-0">
                                             <div className="flex gap-2">
-                                                <button onClick={() => { setAdminMailTab('write'); setAdminMailForm({ id: null, title: '系統公告', content: '', reward: 0 }); }} className={`px-3 py-1 text-sm font-bold rounded-lg transition-colors flex items-center gap-1 ${adminMailTab === 'write' ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-stone-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}><span className="material-symbols-outlined text-[16px]">edit_document</span> 撰寫</button>
+                                                <button onClick={() => { setAdminMailTab('write'); setAdminMailForm({ id: null, title: '系統公告', content: '', reward: 0, targetType: 'all', targetEmail: '', linkType: 'none', linkId: '' }); }} className={`px-3 py-1 text-sm font-bold rounded-lg transition-colors flex items-center gap-1 ${adminMailTab === 'write' ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-stone-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}><span className="material-symbols-outlined text-[16px]">edit_document</span> 撰寫</button>
                                                 <button onClick={() => setAdminMailTab('manage')} className={`px-3 py-1 text-sm font-bold rounded-lg transition-colors flex items-center gap-1 ${adminMailTab === 'manage' ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-stone-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}><span className="material-symbols-outlined text-[16px]">format_list_bulleted</span> 公告管理</button>
                                             </div>
                                             <button onClick={() => setShowAdminMail(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><span className="material-symbols-outlined text-[20px]">close</span></button>
                                         </div>
 
                                         {adminMailTab === 'write' && (
-                                            <div className="flex-grow overflow-y-auto custom-scrollbar flex flex-col">
-                                                <input type="text" placeholder="信件標題" className="w-full p-2 mb-2 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white outline-none font-bold" value={adminMailForm.title} onChange={e => setAdminMailForm({...adminMailForm, title: e.target.value})} />
-                                                <textarea placeholder="信件內容..." className="w-full p-2 mb-2 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white outline-none min-h-[80px] flex-grow resize-none font-bold" value={adminMailForm.content} onChange={e => setAdminMailForm({...adminMailForm, content: e.target.value})} />
+                                            <div className="flex-grow overflow-y-auto custom-scrollbar flex flex-col p-1">
+                                                <div className="flex gap-2 mb-2">
+                                                    <select value={adminMailForm.targetType || 'all'} onChange={e => setAdminMailForm({...adminMailForm, targetType: e.target.value})} className="p-2 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white font-bold outline-none shadow-sm cursor-pointer">
+                                                        <option value="all">全服信件發布</option>
+                                                        <option value="individual">指定用戶信箱 (輸入 Email)</option>
+                                                    </select>
+                                                    {adminMailForm.targetType === 'individual' && (
+                                                        <input type="email" placeholder="輸入目標用戶 Email..." className="flex-1 p-2 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white outline-none font-bold shadow-sm focus:border-amber-500" value={adminMailForm.targetEmail || ''} onChange={e => setAdminMailForm({...adminMailForm, targetEmail: e.target.value})} />
+                                                    )}
+                                                </div>
+
+                                                <input type="text" placeholder="信件標題" className="w-full p-2 mb-2 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white outline-none font-bold shadow-sm focus:border-amber-500" value={adminMailForm.title} onChange={e => setAdminMailForm({...adminMailForm, title: e.target.value})} />
+                                                <textarea placeholder="信件內容..." className="w-full p-2 mb-2 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white outline-none min-h-[80px] flex-grow resize-none font-bold shadow-sm focus:border-amber-500" value={adminMailForm.content} onChange={e => setAdminMailForm({...adminMailForm, content: e.target.value})} />
+                                                
+                                                <div className="flex gap-2 mb-3 items-center">
+                                                    <select value={adminMailForm.linkType || 'none'} onChange={e => setAdminMailForm({...adminMailForm, linkType: e.target.value})} className="p-2 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white font-bold outline-none shadow-sm cursor-pointer">
+                                                        <option value="none">無跳轉連結</option>
+                                                        <option value="qa">跳轉至快問快答</option>
+                                                        <option value="news">跳轉至電子報</option>
+                                                    </select>
+                                                    {adminMailForm.linkType !== 'none' && (
+                                                        <input type="text" placeholder="貼上資料庫 ID..." className="flex-1 p-2 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white outline-none font-bold shadow-sm focus:border-amber-500" value={adminMailForm.linkId || ''} onChange={e => setAdminMailForm({...adminMailForm, linkId: e.target.value})} />
+                                                    )}
+                                                </div>
+
                                                 <div className="flex items-center gap-2 mb-3 shrink-0">
                                                     <span className="text-sm font-bold text-stone-600 dark:text-stone-300 flex items-center gap-1"><span className="material-symbols-outlined text-[16px] text-cyan-500">diamond</span> 附贈鑽石：</span>
                                                     <input type="number" min="0" className="w-20 p-1.5 border border-gray-300 dark:border-stone-600 rounded-lg text-sm bg-gray-50 dark:bg-stone-700 dark:text-white outline-none font-bold text-center" value={adminMailForm.reward} onChange={e => setAdminMailForm({...adminMailForm, reward: parseInt(e.target.value) || 0})} />
@@ -1726,7 +1833,11 @@ if (docs.length > 50) {
                                                             <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{mail.content}</div>
                                                         </div>
                                                         <button onClick={() => {
-                                                            setAdminMailForm({ id: mail.id, title: mail.title, content: mail.content, reward: mail.rewardDiamonds || 0 });
+                                                            setAdminMailForm({ 
+                                                                id: mail.id, title: mail.title, content: mail.content, reward: mail.rewardDiamonds || 0,
+                                                                targetType: 'all', targetEmail: '', // 系統公告庫出來的必定為全服
+                                                                linkType: mail.linkType || 'none', linkId: mail.linkId || ''
+                                                            });
                                                             setAdminMailTab('write');
                                                         }} className="bg-white dark:bg-stone-800 border border-gray-300 dark:border-stone-500 text-stone-700 dark:text-stone-300 px-3 py-1 rounded shadow-sm text-xs font-bold hover:bg-gray-100 dark:hover:bg-stone-600 transition-colors shrink-0 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">edit</span>編輯</button>
                                                     </div>
@@ -1768,6 +1879,7 @@ if (docs.length > 50) {
 
                     {activeTab === 'profile' && <ProfilePage user={user} userProfile={userProfile} showAlert={showAlert} restartTutorial={restartTutorial} />}
                     {activeTab === 'shop' && <ShopDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
+                    {activeTab === 'service' && <window.ServiceCenter user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
                 </div>
             ) : (
                 <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} userProfile={userProfile} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} tutorialStep={tutorialStep} setTutorialStep={setTutorialStep} />
