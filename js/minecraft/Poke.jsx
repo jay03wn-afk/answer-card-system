@@ -1,4 +1,7 @@
 const { useState, useEffect, useRef } = React;
+// 引入 Firebase 必要的工具
+const { doc, setDoc, updateDoc, onSnapshot, arrayUnion, getDoc, deleteDoc } = window.firebaseFirestore || {};
+const db = window.firestoreDb;
 
 function Poke({ user, userProfile, showAlert, onQuit }) {
     const [gameState, setGameState] = useState('menu');
@@ -147,9 +150,18 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         setSelectedCards([newIdx]);
     };
 
-    const startGameFromLobby = () => {
+    const startGameFromLobby = async (finalLobbyPlayers = lobbyPlayers) => {
         handlePlaySound();
-        // 準備洗牌
+        
+        // 1. 如果是房主主動點擊開始
+        if (isHost && gameState === 'lobby') {
+            await updateDoc(doc(db, "pokerRooms", roomCode), { 
+                status: 'playing',
+                finalPlayers: finalLobbyPlayers // 同步目前的真人名單
+            });
+        }
+
+        // 2. 準備洗牌與發牌
         let deck = [];
         VALUES.forEach((val, vIndex) => {
             SUITS.forEach((suit) => {
@@ -158,26 +170,20 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         });
         deck.sort(() => Math.random() - 0.5);
         const sortHand = (hand) => hand.sort((a, b) => a.weight - b.weight);
+        const hands = [sortHand(deck.slice(0, 13)), sortHand(deck.slice(13, 26)), sortHand(deck.slice(26, 39)), sortHand(deck.slice(39, 52))];
 
-        // 分配手牌
-        const hands = [
-            sortHand(deck.slice(0, 13)), sortHand(deck.slice(13, 26)),
-            sortHand(deck.slice(26, 39)), sortHand(deck.slice(39, 52))
-        ];
-
-        // 建立最終玩家名單 (將大廳玩家填入，剩下補 AI)
+        // 3. 真人填入 + AI 補位
         const finalPlayers = [];
-        // 1. 加入目前的真實玩家
-        lobbyPlayers.forEach((p, idx) => {
+        finalLobbyPlayers.forEach((p, idx) => {
             finalPlayers.push({ ...p, cardsLeft: 13, hand: hands[idx], isMe: p.id === user.uid });
         });
-        // 2. 補足 AI
-        const aiNames = ['村民 (AI)', '終界使者 (AI)', '苦力怕 (AI)'];
+        
+        const aiNames = ['村民 (AI)', '終界使者 (AI)', '苦力怕 (AI)', '史萊姆 (AI)'];
         while (finalPlayers.length < 4) {
             const aiIdx = finalPlayers.length;
             finalPlayers.push({ 
                 id: `ai_${aiIdx}`, 
-                name: aiNames[aiIdx - 1] || '史萊姆 (AI)', 
+                name: aiNames[aiIdx - 1], 
                 cardsLeft: 13, 
                 hand: hands[aiIdx], 
                 isMe: false 
@@ -185,9 +191,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         }
 
         let starterIndex = 0;
-        finalPlayers.forEach((p, idx) => {
-            if (p.hand.some(c => c.weight === 0)) starterIndex = idx;
-        });
+        finalPlayers.forEach((p, idx) => { if (p.hand.some(c => c.weight === 0)) starterIndex = idx; });
 
         setPlayers(finalPlayers);
         setMyHand(finalPlayers.find(p => p.isMe).hand);
@@ -266,14 +270,31 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         if (passCount >= 3) {
             setTableCombo(null);
             setPassCount(0);
-            setPassedPlayers([]); // 桌面清空，重設所有人的 Pass 狀態
+            setPassedPlayers([]); 
         }
     }, [passCount]);
+
+    // ⚡ Firebase 房間監聽：處理真人加入與同步開始
+    useEffect(() => {
+        if ((gameState === 'lobby' || gameState === 'playing') && roomCode) {
+            const unsub = onSnapshot(doc(db, "pokerRooms", roomCode), (snapshot) => {
+                const data = snapshot.data();
+                if (data) {
+                    setLobbyPlayers(data.players || []);
+                    setRoomSettings(data.settings || roomSettings);
+                    // 如果房主把狀態改成 playing，所有人一起進入遊戲
+                    if (data.status === 'playing' && gameState === 'lobby') {
+                        startGameFromLobby(data.players); 
+                    }
+                }
+            });
+            return () => unsub();
+        }
+    }, [gameState, roomCode]);
 
     useEffect(() => {
         if (gameState !== 'playing') return;
 
-        // 如果輪到的人已經在這一輪 Pass 過了，直接跳下一個
         if (passedPlayers.includes(players[currentTurn]?.id)) {
             const skipTimer = setTimeout(() => {
                 setPassCount(prev => prev + 1);
@@ -282,7 +303,6 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
             return () => clearTimeout(skipTimer);
         }
 
-        // 正常的計時邏輯 (支援自訂秒數)
         setTimeLeft(roomSettings.turnTime);
         const timer = setInterval(() => {
             setTimeLeft(prev => {
@@ -291,14 +311,13 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                     if (tableCombo) passTurn();
                     return 0;
                 }
-                if (prev <= 5) handlePlayTick(); // 最後五秒滴答提醒
+                if (prev <= 5) handlePlayTick(); 
                 return prev - 1;
             });
         }, 1000);
 
         return () => clearInterval(timer);
     }, [currentTurn, gameState, tableCombo, passedPlayers, roomSettings.turnTime]);
-
     // AI 產牌邏輯 (暴力找牌型)
     const generateAllCombos = (hand) => {
         let combos = [];
@@ -429,14 +448,23 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                     </select>
                                 </label>
                             </div>
-                            <button onClick={() => { 
+                            <button onClick={async () => { 
                                 handlePlaySound(); 
                                 const code = Math.floor(100000 + Math.random() * 900000).toString();
-                                setRoomCode(code);
-                                setIsHost(true);
-                                setLobbyPlayers([{ id: user.uid, name: userProfile?.displayName || '史蒂夫(我)' }]);
-                                setGameState('lobby'); 
-                                showToast(`房間 ${code} 創建成功！`);
+                                try {
+                                    await setDoc(doc(db, "pokerRooms", code), {
+                                        hostId: user.uid,
+                                        roomCode: code,
+                                        players: [{ id: user.uid, name: userProfile?.displayName || '史蒂夫(房主)' }],
+                                        settings: roomSettings,
+                                        status: 'waiting',
+                                        createdAt: Date.now()
+                                    });
+                                    setRoomCode(code);
+                                    setIsHost(true);
+                                    setGameState('lobby'); 
+                                    showToast(`房間 ${code} 建立成功！`);
+                                } catch (e) { showToast("建立失敗，請檢查權限", true); }
                             }} className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black border-2 border-emerald-400 border-r-[#373737] border-b-[#373737] transition-transform active:scale-95 shadow-md">
                                 建立大廳
                             </button>
@@ -450,21 +478,25 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                             <div className="flex space-x-2 mb-4">
                                 <input type="text" maxLength={6} placeholder="輸入 6 位代碼" className="flex-grow p-2 text-center text-xl tracking-widest font-bold bg-stone-200 border-2 border-[#555] focus:outline-none" value={roomJoinCode} onChange={(e) => setRoomJoinCode(e.target.value.replace(/\D/g, ''))} />
                             </div>
-                            <button onClick={() => { 
+                            <button onClick={async () => { 
                                 handlePlaySound();
                                 if(roomJoinCode.length === 6) {
-                                    setIsHost(false);
-                                    setRoomCode(roomJoinCode);
-                                    // 模擬加入：實際上這裡要抓 Firebase 的房間資料
-                                    setLobbyPlayers([
-                                        { id: 'host_id', name: '房主史蒂夫' },
-                                        { id: user.uid, name: userProfile?.displayName || '我' }
-                                    ]);
-                                    setGameState('lobby');
-                                    showToast(`已進入房間 ${roomJoinCode}`);
-                                } else {
-                                    showToast("請輸入完整的代碼！", true);
-                                }
+                                    try {
+                                        const roomRef = doc(db, "pokerRooms", roomJoinCode);
+                                        const roomSnap = await getDoc(roomRef);
+                                        if (!roomSnap.exists()) return showToast("找不到該房間！", true);
+                                        if (roomSnap.data().players.length >= 4) return showToast("房間已滿！", true);
+                                        
+                                        await updateDoc(roomRef, {
+                                            players: arrayUnion({ id: user.uid, name: userProfile?.displayName || '冒險者' })
+                                        });
+                                        
+                                        setRoomCode(roomJoinCode);
+                                        setIsHost(false);
+                                        setGameState('lobby');
+                                        showToast(`成功進入房間 ${roomJoinCode}`);
+                                    } catch (e) { showToast("加入失敗", true); }
+                                } else { showToast("請輸入完整的代碼！", true); }
                             }} className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-[#373737] font-black border-2 border-white border-r-[#555] border-b-[#555] transition-transform active:scale-95 shadow-md">
                                 加入連線
                             </button>
