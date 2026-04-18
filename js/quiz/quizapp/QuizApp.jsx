@@ -2420,7 +2420,7 @@ if (step === 'grading') return (
                                     if (!showOnlyWrong && !showOnlyStarred && !showOnlyNotes) return true;
                                     let show = false;
                                     if (showOnlyWrong && !item.isCorrect) show = true;
-                                    if (showOnlyStarred && item.isStarred) show = true;
+                                    if (showOnlyStarred && starred[item.number - 1]) show = true;
                                     if (showOnlyNotes && notes && notes[item.number - 1]) show = true;
                                     return show;
                                 });
