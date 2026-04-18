@@ -461,6 +461,32 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
             )}
 
             <div className={`w-full md:w-auto bg-[#FCFBF7] dark:bg-stone-800 border-0 md:border border-stone-200 dark:border-stone-700 shadow-sm rounded-2xl flex-col h-full overflow-hidden transition-colors ${(activeChat || activeProfile) ? 'hidden md:flex' : 'flex'}`}>
+                
+                {/* ✨ 新增：顯示自己的數位 ID 卡片 */}
+                <div className="p-3 bg-amber-100/50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-3">
+                        <UserAvatar uid={user.uid} name={userProfile.displayName} className="w-10 h-10 rounded-full border-2 border-amber-300 shadow-sm" />
+                        <div>
+                            <div className="text-[11px] font-bold text-stone-500 dark:text-gray-400 mb-0.5">我的交友專屬 ID</div>
+                            <div className="text-sm font-black text-amber-700 dark:text-amber-400 font-mono tracking-widest bg-white dark:bg-stone-800 px-2 py-0.5 rounded border border-amber-200 dark:border-stone-600 shadow-inner">
+                                {userProfile.numericId || '生成中...'}
+                            </div>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={() => {
+                            if (userProfile.numericId) {
+                                navigator.clipboard.writeText(userProfile.numericId);
+                                showAlert('已將您的交友 ID 複製到剪貼簿！\n快去分享給朋友吧！', '複製成功');
+                            }
+                        }} 
+                        className="p-2 bg-white dark:bg-stone-800 border border-amber-300 dark:border-stone-600 rounded-xl hover:bg-amber-50 dark:hover:bg-stone-700 transition-colors text-amber-600 dark:text-amber-400 shadow-sm active:scale-95"
+                        title="複製我的 ID"
+                    >
+                        <span className="material-symbols-outlined text-[20px]">content_copy</span>
+                    </button>
+                </div>
+
                 <div className="p-4 border-b border-stone-200 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-900/50 shrink-0">
                     <div className="flex gap-2 mb-3">
                         <input 
