@@ -10,23 +10,25 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
     
     // 反饋狀態
     const [feedbackText, setFeedbackText] = useState('');
-    const [feedbackType, setFeedbackType] = useState('問題回報'); // ✨ 新增：問題類型
-    const [feedbackImage, setFeedbackImage] = useState(null); // ✨ 新增：圖片 { url: '', path: '' }
+    const [feedbackType, setFeedbackType] = useState('問題回報');
+    const [feedbackImage, setFeedbackImage] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
     
     // 管理員狀態
     const [codes, setCodes] = useState([]);
     const [feedbacks, setFeedbacks] = useState([]);
     const [newCode, setNewCode] = useState({ code: '', type: 'contact', content: '', maxUses: 1 });
-    const [replyImage, setReplyImage] = useState(null); // ✨ 新增：管理員回覆用的圖片
+    const [replyImage, setReplyImage] = useState(null);
+    
+    // ✨ 新增：管理員內聯回覆狀態
+    const [replyingTo, setReplyingTo] = useState(null); // 紀錄正在回覆哪一則 feedback 的 ID
+    const [replyText, setReplyText] = useState('');     // 紀錄回覆的文字內容
 
     useEffect(() => {
         if (isAdmin) {
-            // 監聽序號庫
             const unsubCodes = window.db.collection('system').doc('redemptionCodes').onSnapshot(doc => {
                 if (doc.exists) setCodes(doc.data().codes || []);
             });
-            // 監聽反饋與領獎申請
             const unsubFeedback = window.db.collection('feedbacks').orderBy('createdAt', 'desc').onSnapshot(snap => {
                 setFeedbacks(snap.docs.map(d => ({id: d.id, ...d.data()})));
             });
@@ -34,7 +36,7 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
         }
     }, [isAdmin]);
 
-    // 🔄 ✨ 新增：圖片壓縮與上傳核心邏輯
+    // 圖片壓縮與上傳核心邏輯
     const uploadImage = (file, folder = 'feedback_images') => {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -65,7 +67,7 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
         });
     };
 
-    // ✨ 處理檔案選擇
+    // 處理檔案選擇
     const handleFileSelect = async (e, type = 'feedback') => {
         const file = e.target.files[0];
         if (!file) return;
@@ -107,7 +109,6 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
                 return;
             }
 
-            // 更新序號為「已使用」
             const updatedCodes = allCodes.map(c => {
                 if (c.code === cleanCode) {
                     return { ...c, usedBy: [...(c.usedBy || []), user.uid] };
@@ -117,11 +118,10 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
             await window.db.collection('system').doc('redemptionCodes').set({ codes: updatedCodes }, { merge: true });
 
             if (codeObj.type === 'contact') {
-                // 方式 1：聯絡客服
                 await window.db.collection('feedbacks').add({
                     uid: user.uid,
                     userName: userProfile.displayName,
-                    type: '兌換申請', // ✨ 統一類型名稱
+                    type: '兌換申請',
                     code: cleanCode,
                     text: `[系統通知] 使用者申請兌換序號：${cleanCode}`,
                     status: 'pending',
@@ -129,7 +129,6 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
                 });
                 showAlert("兌換成功！已通知客服，請等待郵件回覆。");
             } else {
-                // 方式 2：直接派發文字或圖片
                 await window.db.collection('users').doc(user.uid).collection('mailbox').add({
                     title: '獎品兌換成功',
                     content: codeObj.content,
@@ -147,12 +146,11 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
         setIsRedeeming(false);
     };
 
-    // 💬 反饋邏輯 (含 1 小時 3 則限制)
+    // 反饋邏輯
     const handleFeedback = async () => {
         if (!feedbackText.trim()) return showAlert("請輸入內容！");
         setIsUploading(true);
         try {
-            // ✨ 檢查一小時內的發送次數
             const oneHourAgo = new Date(Date.now() - 3600000);
             const snap = await window.db.collection('feedbacks').where('uid', '==', user.uid).where('createdAt', '>', oneHourAgo).get();
             if (snap.size >= 3) { 
@@ -164,15 +162,15 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
             await window.db.collection('feedbacks').add({
                 uid: user.uid,
                 userName: userProfile.displayName,
-                type: feedbackType, // ✨ 寫入選擇的類型
+                type: feedbackType,
                 text: feedbackText.trim(),
-                imageUrl: feedbackImage?.url || null, // ✨ 寫入圖片網址
-                imagePath: feedbackImage?.path || null, // ✨ 寫入圖片路徑(供刪除用)
+                imageUrl: feedbackImage?.url || null,
+                imagePath: feedbackImage?.path || null,
                 status: 'pending',
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
             setFeedbackText('');
-            setFeedbackImage(null); // 清空預覽
+            setFeedbackImage(null);
             showAlert("送出成功！感謝您的反饋。");
         } catch (e) {
             showAlert("送出失敗：" + e.message);
@@ -180,7 +178,7 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
         setIsUploading(false);
     };
 
-    // 管理員功能
+    // 管理員新增序號
     const handleSaveCode = async () => {
         if (!newCode.code.trim()) return showAlert("請輸入序號");
         const sysDoc = await window.db.collection('system').doc('redemptionCodes').get();
@@ -193,7 +191,7 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
         showAlert("序號新增成功！");
     };
 
-    // 🗑️ ✨ 新增：管理員刪除功能 (確保從 Storage 刪除圖片)
+    // 管理員刪除反饋
     const handleDeleteFeedback = (fb) => {
         showConfirm("確定刪除此反饋？若有圖片也將從雲端永久刪除。", async () => {
             try {
@@ -208,6 +206,7 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
         });
     };
 
+    // 管理員刪除序號
     const handleDeleteCode = async (codeStr) => {
         showConfirm(`確定要刪除序號 ${codeStr}？`, async () => {
             const updatedCodes = codes.filter(c => c.code !== codeStr);
@@ -215,22 +214,31 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
         });
     };
 
-    const handleReply = (fb) => {
-        showPrompt("回覆內容 (將寄送系統信件)：", "", async (replyText) => {
-            if (!replyText) return;
+    // ✨ 新增：送出回覆的核心邏輯
+    const submitReply = async (fb) => {
+        if (!replyText.trim() && !replyImage) return showAlert("請輸入回覆內容或上傳圖片！");
+        setIsUploading(true);
+        try {
             await window.db.collection('users').doc(fb.uid).collection('mailbox').add({
                 title: '客服中心回覆',
-                content: replyText,
-                imageUrl: replyImage?.url || null, // ✨ 管理員回覆的圖片
+                content: replyText.trim(),
+                imageUrl: replyImage?.url || null,
                 isRead: false,
                 isClaimed: false,
                 rewardDiamonds: 0,
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
             await window.db.collection('feedbacks').doc(fb.id).update({ status: 'replied' });
-            setReplyImage(null); // 回覆完清空選取的圖片
             showAlert("已寄出回覆信件！");
-        });
+            
+            // 清理狀態
+            setReplyingTo(null);
+            setReplyText('');
+            setReplyImage(null);
+        } catch (e) {
+            showAlert("回覆失敗：" + e.message);
+        }
+        setIsUploading(false);
     };
 
     return (
@@ -260,7 +268,7 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
                 )}
             </div>
 
-            {/* 內容區 */}
+            {/* 兌換區塊 (保持不變) */}
             {activeTab === 'redeem' && (
                 <div className="bg-white dark:bg-stone-800 p-8 rounded-2xl shadow-sm border border-stone-200 dark:border-stone-700 text-center max-w-md mx-auto">
                     <span className="material-symbols-outlined text-[64px] text-amber-500 mb-4">redeem</span>
@@ -276,11 +284,10 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
                 </div>
             )}
 
+            {/* 問題反饋區塊 (保持不變) */}
             {activeTab === 'feedback' && (
                 <div className="bg-white dark:bg-stone-800 p-6 rounded-2xl shadow-sm border border-stone-200 dark:border-stone-700 max-w-xl mx-auto">
                     <h2 className="text-lg font-black mb-4 dark:text-white">回報問題與建議</h2>
-                    
-                    {/* ✨ 類別選擇 */}
                     <select value={feedbackType} onChange={e => setFeedbackType(e.target.value)} className="w-full p-3 border border-stone-300 dark:border-stone-600 rounded-xl bg-white dark:bg-stone-900 dark:text-white mb-3 outline-none focus:border-cyan-500 font-bold">
                         <option value="問題回報">問題回報 (Bug)</option>
                         <option value="功能建議">功能建議</option>
@@ -294,7 +301,6 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
                         className="w-full p-3 border border-stone-300 dark:border-stone-600 rounded-xl bg-white dark:bg-stone-900 dark:text-white mb-3 outline-none focus:border-cyan-500 resize-none"
                     ></textarea>
 
-                    {/* ✨ 圖片上傳區 */}
                     <div className="flex items-center justify-between mb-4 bg-stone-50 dark:bg-stone-900 p-3 rounded-xl border border-dashed border-stone-300 dark:border-stone-600">
                         <div className="flex items-center gap-2">
                             <span className="material-symbols-outlined text-stone-500">image</span>
@@ -303,7 +309,6 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
                         <input type="file" id="fbFile" accept="image/*" className="hidden" onChange={e => handleFileSelect(e, 'feedback')} />
                         <label htmlFor="fbFile" className="text-xs bg-cyan-600 text-white px-3 py-1.5 rounded-lg cursor-pointer font-bold transition-colors hover:bg-cyan-700">選擇圖片</label>
                     </div>
-                    {/* 圖片預覽 */}
                     {feedbackImage && (
                         <div className="mb-4 relative inline-block">
                             <img src={feedbackImage.url} className="h-24 rounded border-2 border-cyan-500 shadow-sm"/>
@@ -317,6 +322,7 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
                 </div>
             )}
 
+            {/* 管理員管理序號區塊 (保持不變) */}
             {activeTab === 'admin_codes' && isAdmin && (
                 <div className="space-y-6">
                     <div className="bg-amber-50 dark:bg-stone-900/50 p-6 rounded-2xl border border-amber-200 dark:border-stone-700">
@@ -346,24 +352,10 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
                 </div>
             )}
 
+            {/* ✨ 管理員處理請求區塊 (大幅優化回覆介面) */}
             {activeTab === 'admin_feedback' && isAdmin && (
                 <div className="space-y-4">
-                    {/* ✨ 管理員回覆圖片選擇區 */}
-                    <div className="p-4 bg-amber-50 dark:bg-stone-900 border border-amber-200 dark:border-stone-700 rounded-xl mb-4 shadow-sm">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-sm font-black text-amber-800 dark:text-amber-400 flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[18px]">image</span> 回覆前選取圖片 (選填)
-                            </h3>
-                            <input type="file" id="replyFile" accept="image/*" className="hidden" onChange={e => handleFileSelect(e, 'reply')} />
-                            <label htmlFor="replyFile" className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-4 py-1.5 rounded-lg cursor-pointer font-bold transition-colors">點此選圖</label>
-                        </div>
-                        {replyImage && (
-                            <div className="mt-3 flex items-center gap-3">
-                                <img src={replyImage.url} className="h-16 rounded border border-amber-200 shadow-sm"/>
-                                <button onClick={() => setReplyImage(null)} className="text-red-500 text-xs font-bold hover:underline">移除圖片</button>
-                            </div>
-                        )}
-                    </div>
+                    {/* 移除原本的「回覆前選取圖片」全域區塊 */}
 
                     {feedbacks.map(fb => (
                         <div key={fb.id} className={`p-4 border rounded-xl shadow-sm ${fb.status === 'replied' ? 'bg-gray-50 border-gray-200 dark:bg-stone-900 dark:border-stone-700 opacity-70' : 'bg-white border-amber-300 dark:bg-stone-800 dark:border-amber-600'}`}>
@@ -376,27 +368,68 @@ function ServiceCenter({ user, userProfile, showAlert, showConfirm, showPrompt }
                             </div>
                             <p className="text-sm text-gray-800 dark:text-gray-200 mb-3 whitespace-pre-wrap">{fb.text}</p>
                             
-                            {/* ✨ 顯示用戶上傳的圖片 */}
                             {fb.imageUrl && (
                                 <div className="mb-3">
                                     <img src={fb.imageUrl} className="max-h-40 rounded border border-gray-200 dark:border-stone-600 cursor-zoom-in shadow-sm hover:opacity-90 transition-opacity" onClick={() => window.open(fb.imageUrl, '_blank')} alt="附圖" />
                                 </div>
                             )}
 
-                            <div className="flex justify-end gap-2 items-center">
-                                {/* 修改：刪除按鈕現在會觸發包含圖片刪除的 handleDeleteFeedback */}
-                                <button onClick={() => handleDeleteFeedback(fb)} className="text-red-500 hover:text-red-600 text-sm px-3 py-1 font-bold">刪除紀錄</button>
-                                
-                                {fb.status !== 'replied' ? (
-                                    <button onClick={() => handleReply(fb)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors">
-                                        {replyImage ? '帶圖回覆' : '回覆信件'}
-                                    </button>
-                                ) : (
-                                    <span className="text-gray-400 text-sm font-bold flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-[16px]">check_circle</span> 已回覆
-                                    </span>
-                                )}
-                            </div>
+                            {/* ✨ 內聯回覆編輯區塊 */}
+                            {replyingTo === fb.id ? (
+                                <div className="mt-4 p-4 bg-amber-50 dark:bg-stone-900/50 rounded-lg border border-amber-200 dark:border-stone-600">
+                                    <h4 className="text-sm font-bold text-amber-800 dark:text-amber-400 mb-2 flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-[18px]">reply</span> 撰寫回覆
+                                    </h4>
+                                    
+                                    <textarea
+                                        value={replyText}
+                                        onChange={e => setReplyText(e.target.value)}
+                                        placeholder="輸入回覆內容 (將派發至使用者信箱)..."
+                                        className="w-full p-3 text-sm border rounded-xl bg-white dark:bg-stone-800 dark:text-white border-stone-300 dark:border-stone-600 mb-3 outline-none focus:border-amber-500 resize-none"
+                                        rows="3"
+                                    />
+                                    
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3">
+                                            <input type="file" id={`replyFile_${fb.id}`} accept="image/*" className="hidden" onChange={e => handleFileSelect(e, 'reply')} />
+                                            <label htmlFor={`replyFile_${fb.id}`} className="text-xs bg-white dark:bg-stone-800 border border-amber-300 dark:border-stone-600 text-amber-700 dark:text-amber-400 px-4 py-1.5 rounded-lg cursor-pointer font-bold transition-colors hover:bg-amber-100 dark:hover:bg-stone-700 flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[16px]">add_photo_alternate</span>
+                                                {replyImage ? '更換附加圖片' : '附加圖片 (選填)'}
+                                            </label>
+                                            
+                                            {replyImage && (
+                                                <div className="relative inline-block">
+                                                    <img src={replyImage.url} className="h-8 rounded border border-amber-300" alt="預覽" />
+                                                    <button onClick={() => setReplyImage(null)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] shadow">✕</button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex gap-2">
+                                            <button onClick={() => { setReplyingTo(null); setReplyText(''); setReplyImage(null); }} className="px-4 py-1.5 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 font-bold transition-colors">
+                                                取消
+                                            </button>
+                                            <button onClick={() => submitReply(fb)} disabled={isUploading} className="px-5 py-1.5 bg-emerald-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-emerald-500 disabled:opacity-50 transition-colors">
+                                                {isUploading ? '處理中...' : '確認送出'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex justify-end gap-2 items-center border-t border-gray-100 dark:border-stone-700 pt-3 mt-1">
+                                    <button onClick={() => handleDeleteFeedback(fb)} className="text-red-500 hover:text-red-600 text-sm px-3 py-1 font-bold transition-colors">刪除紀錄</button>
+                                    
+                                    {fb.status !== 'replied' ? (
+                                        <button onClick={() => { setReplyingTo(fb.id); setReplyText(''); setReplyImage(null); }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[18px]">reply</span> 回覆信件
+                                        </button>
+                                    ) : (
+                                        <span className="text-gray-400 text-sm font-bold flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[16px]">check_circle</span> 已回覆
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
