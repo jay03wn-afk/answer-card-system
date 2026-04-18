@@ -1,5 +1,5 @@
 const { useState, useEffect, useRef } = React;
-// 引入 Firebase 必要的工具
+// 從橋樑抓取工具
 const { doc, setDoc, updateDoc, onSnapshot, arrayUnion, getDoc, deleteDoc } = window.firebaseFirestore || {};
 const db = window.firestoreDb;
 
@@ -14,16 +14,14 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
     const [currentTurn, setCurrentTurn] = useState(0);
     const [passCount, setPassCount] = useState(0);
     const [isFirstTurn, setIsFirstTurn] = useState(true); 
-    const [timeLeft, setTimeLeft] = useState(10); // 10秒計時
-    const [passedPlayers, setPassedPlayers] = useState([]); // 紀錄這一輪 Pass 的玩家
+    const [timeLeft, setTimeLeft] = useState(30); // 預設 30 秒
+    const [passedPlayers, setPassedPlayers] = useState([]); 
 
-    // 新增：小提示視窗狀態與多人房間設定
     const [toast, setToast] = useState(null);
     const [roomJoinCode, setRoomJoinCode] = useState('');
-    const [roomSettings, setRoomSettings] = useState({ players: 4, fillAi: true, turnTime: 30 }); // 預設 30 秒
-    const [isHost, setIsHost] = useState(false); // 是否為房主
-    const [lobbyPlayers, setLobbyPlayers] = useState([]); // 大廳中的真實玩家
-
+    const [roomSettings, setRoomSettings] = useState({ players: 4, fillAi: true, turnTime: 30 }); 
+    const [isHost, setIsHost] = useState(false); 
+    const [lobbyPlayers, setLobbyPlayers] = useState([]);
     const playCachedSound = window.playCachedSound || (() => {});
     const clickSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/ui/button/click.ogg';
     const errorSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/block/note_block/bass.ogg';
@@ -450,8 +448,10 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                             </div>
                             <button onClick={async () => { 
                                 handlePlaySound(); 
+                                if (!user) return showToast("請先登入！", true);
                                 const code = Math.floor(100000 + Math.random() * 900000).toString();
                                 try {
+                                    // 房主建立房間資料
                                     await setDoc(doc(db, "pokerRooms", code), {
                                         hostId: user.uid,
                                         roomCode: code,
@@ -464,7 +464,10 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                     setIsHost(true);
                                     setGameState('lobby'); 
                                     showToast(`房間 ${code} 建立成功！`);
-                                } catch (e) { showToast("建立失敗，請檢查權限", true); }
+                                } catch (e) { 
+                                    console.error(e);
+                                    showToast("建立失敗，請檢查 Firebase Rules", true); 
+                                }
                             }} className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black border-2 border-emerald-400 border-r-[#373737] border-b-[#373737] transition-transform active:scale-95 shadow-md">
                                 建立大廳
                             </button>
@@ -483,20 +486,19 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                 if(roomJoinCode.length === 6) {
                                     try {
                                         const roomRef = doc(db, "pokerRooms", roomJoinCode);
-                                        const roomSnap = await getDoc(roomRef);
-                                        if (!roomSnap.exists()) return showToast("找不到該房間！", true);
-                                        if (roomSnap.data().players.length >= 4) return showToast("房間已滿！", true);
+                                        const snap = await getDoc(roomRef);
+                                        if (!snap.exists()) return showToast("房間不存在！", true);
                                         
+                                        // 真的加入資料庫
                                         await updateDoc(roomRef, {
-                                            players: arrayUnion({ id: user.uid, name: userProfile?.displayName || '冒險者' })
+                                            players: arrayUnion({ id: user.uid, name: userProfile?.displayName || '挑戰者' })
                                         });
                                         
                                         setRoomCode(roomJoinCode);
                                         setIsHost(false);
                                         setGameState('lobby');
-                                        showToast(`成功進入房間 ${roomJoinCode}`);
                                     } catch (e) { showToast("加入失敗", true); }
-                                } else { showToast("請輸入完整的代碼！", true); }
+                                } else { showToast("請輸入 6 位代碼！", true); }
                             }} className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-[#373737] font-black border-2 border-white border-r-[#555] border-b-[#555] transition-transform active:scale-95 shadow-md">
                                 加入連線
                             </button>
