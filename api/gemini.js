@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+  async function handler(req, res) {
   // 限制僅允許 POST 請求
   if (req.method !== 'POST') {
     return res.status(405).json({ result: "❌ 錯誤：僅支援 POST 請求。" });

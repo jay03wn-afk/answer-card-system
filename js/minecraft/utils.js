@@ -1,7 +1,7 @@
 const { useState } = React;
 
-// --- 共用圖片組件 (支援 Fallback 替代文字) ---
-const McImg = ({ src, fallback, className, ...props }) => {
+// 1. 強制將圖片組件綁定在 window 上
+window.McImg = function McImg({ src, fallback, className, ...props }) {
     const [error, setError] = useState(false);
     
     if (error) {
@@ -23,48 +23,42 @@ const McImg = ({ src, fallback, className, ...props }) => {
     );
 };
 
-// --- 升級版：Web Audio API 核心系統 (無延遲引擎) ---
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const audioBufferCache = {};
+// 2. 音效引擎設定
+window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+window.audioBufferCache = {};
 
-// 預先載入並將音檔解碼為記憶體緩衝區
-const preloadFastSound = async (url) => {
-    if (audioBufferCache[url]) return; 
+// 3. 強制將載入音效函式綁定在 window 上
+window.preloadFastSound = async function(url) {
+    if (window.audioBufferCache[url]) return; 
     try {
         const response = await fetch(url);
         const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        audioBufferCache[url] = audioBuffer;
+        const audioBuffer = await window.audioCtx.decodeAudioData(arrayBuffer);
+        window.audioBufferCache[url] = audioBuffer;
     } catch (e) {
         console.warn("Web Audio API 載入失敗，退回傳統模式:", url, e);
     }
 };
 
-// 播放緩存音效
-const playCachedSound = (url) => {
-    // 解決瀏覽器自動播放限制
-    if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
+// 4. 強制將播放音效函式綁定在 window 上
+window.playCachedSound = function(url) {
+    if (window.audioCtx.state === 'suspended') {
+        window.audioCtx.resume();
     }
 
-    if (!audioBufferCache[url]) {
-        // 如果還沒載入完，退回使用傳統 Audio
+    if (!window.audioBufferCache[url]) {
         const fallbackAudio = new Audio(url);
         fallbackAudio.volume = 0.6;
         fallbackAudio.play().catch(() => {});
         return;
     }
 
-    // 建立無延遲音源節點
-    const source = audioCtx.createBufferSource();
-    source.buffer = audioBufferCache[url];
-    const gainNode = audioCtx.createGain();
-    gainNode.gain.value = 0.6; // 統一音量 0.6
+    const source = window.audioCtx.createBufferSource();
+    source.buffer = window.audioBufferCache[url];
+    const gainNode = window.audioCtx.createGain();
+    gainNode.gain.value = 0.6;
     
     source.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    source.start(0); // 🚀 零延遲立即播放
+    gainNode.connect(window.audioCtx.destination);
+    source.start(0);
 };
-window.McImg = McImg;
-window.preloadFastSound = preloadFastSound;
-window.playCachedSound = playCachedSound;
