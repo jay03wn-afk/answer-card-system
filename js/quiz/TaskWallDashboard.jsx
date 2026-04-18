@@ -11,13 +11,14 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [qaList, setQaList] = useState([]);
     const [records, setRecords] = useState({});
     const [loading, setLoading] = useState(true);
-    const [qaLimit, setQaLimit] = useState(5); 
+    const [qaLimit, setQaLimit] = useState(30); // ✨ 修改：一次載入 30 題
     const [refreshTrigger, setRefreshTrigger] = useState(0); 
     const [isRefreshing, setIsRefreshing] = useState(false); 
     const [jumpingQaId, setJumpingQaId] = useState(null); 
     const [showAdminMode, setShowAdminMode] = useState(false);
     const [isEditExpanded, setIsEditExpanded] = useState(false);
     const [showParseHelp, setShowParseHelp] = useState(false); 
+    const [isFastQAExpanded, setIsFastQAExpanded] = useState(true); // ✨ 新增：收合狀態 
     
     const isAdmin = user && user.email === 'jay03wn@gmail.com';
     
@@ -132,11 +133,32 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
 
         setIsPublishing(true);
         try {
+            let userDocRef = null;
+            let mcData = {};
+            let publishData = { date: '', count: 0 };
+            const today = new Date().toISOString().split('T')[0];
+
             if (!isAdmin) {
                 const myActiveQAs = qaList.filter(q => q.creatorUid === user.uid);
                 if (myActiveQAs.length >= 10) {
                     setIsPublishing(false);
-                    return showAlert('非管理員最多只能同時擁有 10 個有效的快問快答喔！');
+                    return showAlert('最多只能同時擁有 10 個有效的快問快答喔！\n請等舊題目過期，或手動刪除後再試。');
+                }
+
+                // ✨ 檢查一日發布 5 次的限制
+                userDocRef = window.db.collection('users').doc(user.uid);
+                const docSnap = await userDocRef.get();
+                if (docSnap.exists) {
+                    mcData = docSnap.data().mcData || {};
+                    publishData = mcData.fastQAPublishData || { date: '', count: 0 };
+                    if (publishData.date !== today) {
+                        publishData = { date: today, count: 0 };
+                    }
+                }
+                
+                if (publishData.count >= 5) {
+                    setIsPublishing(false);
+                    return showAlert(`您今日的發布次數已達上限 (5次)，請明天再來！\n\n(目前有效題目：${myActiveQAs.length}/10 題)`);
                 }
             }
 
@@ -197,7 +219,15 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                 }
             }
             
-            showAlert('快問快答發布成功！');
+            // ✨ 成功發布後更新次數與提示
+            if (!isAdmin && typeof userDocRef !== 'undefined' && userDocRef) {
+                publishData.count += 1;
+                await userDocRef.set({ mcData: { ...mcData, fastQAPublishData: publishData } }, { merge: true });
+                showAlert(`快問快答發布成功！(期限為三天)\n今日已發布：${publishData.count} / 5`);
+            } else {
+                showAlert('快問快答發布成功！');
+            }
+            
             setIsEditExpanded(false);
             setQuestion(''); setOptions(['', '', '', '']); setExplanation('');
         } catch (e) {
@@ -358,11 +388,11 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     };
 
     return (
-        <div className={`border border-rose-200 bg-[#FCFBF7] dark:bg-stone-900 p-6 shadow-xl relative rounded-3xl w-full ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
-           <div className="flex justify-between items-center mb-5 border-b border-rose-100 dark:border-stone-800 pb-4">
+        <div className={`border border-rose-200 bg-[#FCFBF7] dark:bg-stone-900 p-6 shadow-xl relative rounded-3xl w-full transition-all duration-300 ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
+           <div className={`flex justify-between items-center ${isFastQAExpanded ? 'mb-5 border-b border-rose-100 dark:border-stone-800 pb-4' : ''}`}>
                 <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-xl font-black text-rose-700 dark:text-rose-400 flex items-center gap-1"><span className="material-symbols-outlined text-2xl">bolt</span> 快問快答挑戰</h2>
-                    {!targetQaId && (
+                    {!targetQaId && isFastQAExpanded && (
                         <button 
                             onClick={() => { 
                                 setIsRefreshing(true); 
@@ -379,13 +409,23 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         </button>
                     )}
                 </div>
-                {user && !targetQaId && (
-                    <button onClick={() => setShowAdminMode(!showAdminMode)} className={`${isAdmin ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-900 hover:bg-stone-700' : 'bg-rose-500 text-white hover:bg-rose-600'} text-xs px-4 py-2 font-bold rounded-xl transition-all shadow-sm active:scale-95 flex items-center gap-1`}>
-                        {showAdminMode ? '關閉發布面板' : (isAdmin ? '管理/發布試題' : '發布我的快問快答')}
-                    </button>
+                
+                {!targetQaId && (
+                    <div className="flex items-center gap-2">
+                        {user && isFastQAExpanded && (
+                            <button onClick={() => setShowAdminMode(!showAdminMode)} className={`${isAdmin ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-900 hover:bg-stone-700' : 'bg-rose-500 text-white hover:bg-rose-600'} text-xs px-4 py-2 font-bold rounded-xl transition-all shadow-sm active:scale-95 flex items-center gap-1`}>
+                                {showAdminMode ? '關閉發布面板' : (isAdmin ? '管理/發布試題' : '發布我的快問快答')}
+                            </button>
+                        )}
+                        <button onClick={() => setIsFastQAExpanded(!isFastQAExpanded)} className="text-gray-400 hover:text-stone-600 dark:hover:text-gray-200 transition-colors w-8 h-8 flex items-center justify-center rounded-full bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700">
+                            <span className="material-symbols-outlined text-[24px]">{isFastQAExpanded ? 'expand_less' : 'expand_more'}</span>
+                        </button>
+                    </div>
                 )}
             </div>
 
+            {isFastQAExpanded && (
+                <>
            {user && showAdminMode && !targetQaId && (
                 <div className="mb-6 border border-rose-200 rounded-2xl bg-[#FCFBF7] dark:bg-stone-800 overflow-hidden shadow-lg">
                     <button onClick={() => setIsEditExpanded(!isEditExpanded)} className="w-full flex justify-between p-5 bg-rose-50 dark:bg-stone-700 hover:bg-rose-100 dark:hover:bg-stone-600 font-bold text-rose-800 dark:text-rose-200 transition-colors">
@@ -760,6 +800,8 @@ D. 第四個選項`}
                         </div>
                     )}
                 </div>
+            )}
+            </>
             )}
 
             {showShareModal && (

@@ -2272,8 +2272,8 @@ else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.g
 }
 
 // --- 礦坑尋寶小遊戲組件 ---
-// --- 礦坑尋寶小遊戲組件 ---
-function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
+
+function MiningGame({ user, userProfile, mcData, updateMcData, onQuit, showAlert }) {
     const [gameState, setGameState] = useState('idle');
     const [board, setBoard] = useState(Array(9).fill(null));
     const [isProcessing, setIsProcessing] = useState(false);
@@ -2286,12 +2286,14 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
     const imgStone = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png";
     const imgDiamond = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png";
-    
-    // ✨ 新增裂痕階段的貼圖
     const crackStage1 = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/destroy_stage_2.png";
     const crackStage2 = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/destroy_stage_6.png";
 
-    const PRIZES = [
+    // ✨ 判斷是否為管理員
+    const isAdmin = user && (user.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized);
+    
+    // ✨ 預設獎池與狀態
+    const DEFAULT_PRIZES = [
         { id: '711', name: '7-11 50元禮券', type: 'real', prob: 0.001, img: 'https://i.postimg.cc/pd20TjLs/638632987880299781.png', desc: '極巨獎！' },
         { id: 'diamond_jackpot', name: '鑽石礦 (+100 💎)', type: 'diamond', amount: 100, prob: 0.049, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/diamond_ore.png' },
         { id: 'pack_legendary', name: '終界寶箱 (禮包)', type: 'pack', prob: 0.02, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/respawn_anchor_top.png' },
@@ -2301,7 +2303,35 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         { id: 'coal_ore', name: '煤礦 (+5 💎)', type: 'diamond', amount: 5, prob: 0.45, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/coal_ore.png' }
     ];
 
+    // ✨ 提供後台編輯使用的模板圖片庫
+    const IMG_TEMPLATES = [
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/diamond_ore.png',
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/gold_ore.png',
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/iron_ore.png',
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/coal_ore.png',
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/emerald_ore.png',
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/lapis_ore.png',
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/redstone_ore.png',
+        'https://i.postimg.cc/pd20TjLs/638632987880299781.png', // 7-11
+        'https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg', // 寶箱
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/barrel_side.png',
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/respawn_anchor_top.png',
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond_sword.png',
+        'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/totem_of_undying.png'
+    ];
+
+    const [prizes, setPrizes] = useState(DEFAULT_PRIZES);
+    const [showAdminModal, setShowAdminModal] = useState(false);
+    const [editingPrize, setEditingPrize] = useState(null); // null 代表清單模式，有資料代表編輯模式
+
     useEffect(() => {
+        // 從 Firebase 載入獎池資料
+        window.db.collection('system').doc('mining').get().then(doc => {
+            if (doc.exists && doc.data().prizes) {
+                setPrizes(doc.data().prizes);
+            }
+        }).catch(e => console.error("無法讀取獎池設定", e));
+
         bgmRef.current = new Audio("https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/QE.mp3");
         bgmRef.current.loop = true;
         bgmRef.current.volume = 0.3;
@@ -2315,53 +2345,47 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
     }, []);
 
     const handleStart = () => {
-        if (mcData.diamonds < 50) {
-            return showAlert("💎 你的鑽石不足 50 顆！\n趕快去簽到或做測驗賺取吧！");
-        }
-        
-        if (bgmRef.current) {
-            bgmRef.current.play().catch(e => console.log("BGM 自動播放被阻擋", e));
-        }
+        if (mcData.diamonds < 50) return showAlert("💎 你的鑽石不足 50 顆！\n趕快去簽到或做測驗賺取吧！");
+        if (bgmRef.current) bgmRef.current.play().catch(e => console.log("BGM 自動播放被阻擋", e));
 
         updateMcData({ diamonds: mcData.diamonds - 50 }, true);
-        // ✨ 初始化 state 加上 hits 與 isHit 屬性
         setBoard(Array(9).fill({ revealed: false, prize: null, hits: 0, isHit: false }));
         setGameState('playing');
     };
 
     const handleQuit = () => {
-        if (bgmRef.current) {
-            bgmRef.current.pause();
-        }
+        if (bgmRef.current) bgmRef.current.pause();
         onQuit();
     };
 
     const drawPrize = async () => {
         const r = Math.random();
         let cumulative = 0;
-        let selectedPrize = PRIZES[PRIZES.length - 1]; 
+        let selectedPrize = prizes[prizes.length - 1]; 
 
-        for (let prize of PRIZES) {
-            cumulative += prize.prob;
+        for (let prize of prizes) {
+            cumulative += Number(prize.prob);
             if (r <= cumulative) {
                 selectedPrize = prize;
                 break;
             }
         }
 
+        // 7-11 特殊防護機制
         if (selectedPrize.id === '711') {
             try {
                 const sysDoc = await window.db.collection('system').doc('mining').get();
                 const count = sysDoc.exists ? (sysDoc.data().grandPrizeCount || 0) : 0;
                 if (count >= 2) {
-                    selectedPrize = PRIZES[1]; 
+                    // 若抽完，替換為鑽石礦或其他獎項
+                    selectedPrize = prizes.find(p => p.type === 'diamond') || prizes[0]; 
                 } else {
                     await window.db.collection('system').doc('mining').set({
                         grandPrizeCount: window.firebase.firestore.FieldValue.increment(1)
                     }, { merge: true });
                 }
             } catch (e) {
-                selectedPrize = PRIZES[1]; 
+                selectedPrize = prizes.find(p => p.type === 'diamond') || prizes[0]; 
             }
         }
         return selectedPrize;
@@ -2369,23 +2393,15 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
 
     const handleDig = async (index) => {
         if (gameState !== 'playing' || isProcessing) return;
-
         const currentBlock = board[index];
 
-        // ✨ 逐漸破壞邏輯：前 2 下只會產生音效與裂痕
         if (currentBlock.hits < 2) {
-            try { 
-                hitSfx.current.currentTime = 0; 
-                hitSfx.current.play(); 
-            } catch(e){}
-
+            try { hitSfx.current.currentTime = 0; hitSfx.current.play(); } catch(e){}
             setBoard(prev => {
                 const newBoard = [...prev];
                 newBoard[index] = { ...newBoard[index], hits: currentBlock.hits + 1, isHit: true };
                 return newBoard;
             });
-
-            // 短暫延遲後移除點擊特效
             setTimeout(() => {
                 setBoard(prev => {
                     const newBoard = [...prev];
@@ -2396,7 +2412,6 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             return;
         }
 
-        // ✨ 第 3 下，正式挖開
         setIsProcessing(true);
         try { breakSfx.current.currentTime = 0; breakSfx.current.play(); } catch(e){}
 
@@ -2407,10 +2422,10 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
             const shouldShowFakeGift = Math.random() < 0.04; 
             let dummy;
             if (shouldShowFakeGift) {
-                dummy = PRIZES.find(p => p.id === '711');
+                dummy = prizes.find(p => p.id === '711') || prizes[0];
             } else {
-                const normalPool = PRIZES.filter(p => p.id !== '711');
-                dummy = normalPool[Math.floor(Math.random() * normalPool.length)];
+                const normalPool = prizes.filter(p => p.id !== '711');
+                dummy = normalPool[Math.floor(Math.random() * normalPool.length)] || prizes[0];
             }
             return { revealed: true, prize: dummy, isPick: false, hits: 0, isHit: false };
         });
@@ -2426,7 +2441,7 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         let msg = `🎉 恭喜挖到了 ${prize.name}！`;
 
         if (prize.type === 'diamond') {
-            updates.diamonds = mcData.diamonds + prize.amount;
+            updates.diamonds = mcData.diamonds + Number(prize.amount);
         } else if (prize.type === 'item') {
             if (!(mcData.items || []).includes(prize.id)) {
                 updates.items = [...(mcData.items || []), prize.id];
@@ -2455,10 +2470,30 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
         setIsProcessing(false);
     };
 
+    // ✨ 後台儲存獎池邏輯
+    const saveAdminPrizes = async (updatedPrizes) => {
+        try {
+            await window.db.collection('system').doc('mining').set({ prizes: updatedPrizes }, { merge: true });
+            setPrizes(updatedPrizes);
+            setEditingPrize(null);
+            showAlert("✅ 獎池設定已成功儲存！");
+        } catch (e) {
+            showAlert("❌ 儲存失敗：" + e.message);
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-[80] bg-stone-800 bg-opacity-90 flex items-center justify-center p-2 sm:p-4 animate-in fade-in">
             <div className="bg-[#5c5c5c] border-4 border-[#2d2d2d] rounded-2xl max-w-4xl w-full relative shadow-2xl flex flex-col md:flex-row h-[500px]">
+                
+                {/* ✨ 管理員專屬編輯按鈕 */}
+                {isAdmin && (
+                    <button onClick={() => setShowAdminModal(true)} className="absolute -top-4 right-10 bg-amber-600 text-white px-3 py-1 border-2 border-white font-bold hover:bg-amber-500 z-10 shadow-lg text-sm rounded">
+                        ⚙️ 編輯獎池
+                    </button>
+                )}
                 <button onClick={handleQuit} className="absolute -top-4 -right-4 bg-red-600 text-white w-10 h-10 border-2 border-white font-black hover:bg-red-500 z-10 transition-colors">✖</button>
+                
                 <div className="w-full md:w-3/5 p-6 flex flex-col items-center justify-center relative border-b md:border-b-0 md:border-r-4 border-[#2d2d2d]">
                     <h2 className="text-2xl font-black text-white mb-2 drop-shadow-md flex items-center">
                         ⛏️ 礦坑尋寶 <span className="text-sm font-normal text-amber-300 ml-4 bg-stone-800 bg-opacity-40 px-2 py-1 rounded">擁有: {mcData.diamonds} 💎</span>
@@ -2484,7 +2519,6 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                                     {!block.revealed ? (
                                         <>
                                             <McImg src={imgStone} className="w-full h-full object-cover pixelated" />
-                                            {/* ✨ 依照打擊次數疊加不同深度的裂痕 */}
                                             {block.hits >= 1 && <McImg src={crackStage1} className="absolute inset-0 w-full h-full object-cover pixelated opacity-80 mix-blend-multiply" />}
                                             {block.hits >= 2 && <McImg src={crackStage2} className="absolute inset-0 w-full h-full object-cover pixelated opacity-90 mix-blend-multiply" />}
                                         </>
@@ -2524,6 +2558,106 @@ function MiningGame({ user, mcData, updateMcData, onQuit, showAlert }) {
                     </div>
                 </div>
             </div>
+
+            {/* ✨ 管理員獎池設定 Modal */}
+            {isAdmin && showAdminModal && (
+                <div className="fixed inset-0 z-[100] bg-black bg-opacity-80 flex justify-center items-center p-4">
+                    <div className="bg-stone-800 border-4 border-gray-600 p-6 rounded-xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh]">
+                        <div className="flex justify-between items-center mb-4 border-b-2 border-gray-600 pb-2">
+                            <h2 className="text-white text-2xl font-black text-amber-400">⚙️ 編輯礦坑獎池</h2>
+                            <button onClick={() => { setShowAdminModal(false); setEditingPrize(null); }} className="text-red-500 font-black text-xl hover:text-red-400">✖</button>
+                        </div>
+                        
+                        {!editingPrize ? (
+                            // 清單模式
+                            <div className="flex flex-col flex-grow overflow-hidden">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-gray-300 font-bold text-sm">目前總機率：{(prizes.reduce((sum, p) => sum + Number(p.prob), 0) * 100).toFixed(1)}%</span>
+                                    <button onClick={() => setEditingPrize({ id: 'prize_' + Date.now(), name: '', type: 'diamond', amount: 10, prob: 0.05, img: IMG_TEMPLATES[0] })} className="bg-emerald-600 text-white px-4 py-1 font-bold rounded hover:bg-emerald-500">➕ 新增獎項</button>
+                                </div>
+                                <div className="overflow-y-auto custom-scrollbar flex-grow space-y-2 pr-2">
+                                    {prizes.map((p, idx) => (
+                                        <div key={idx} className="bg-stone-900 p-3 rounded border border-gray-700 flex justify-between items-center hover:border-amber-500 transition-colors">
+                                            <div className="flex items-center gap-4">
+                                                <McImg src={p.img} fallback="📦" className="w-10 h-10 pixelated" />
+                                                <div>
+                                                    <p className="text-white font-bold">{p.name}</p>
+                                                    <p className="text-xs text-gray-400">
+                                                        類型: <span className="text-emerald-400">{p.type === 'diamond' ? `鑽石 (${p.amount})` : p.type === 'real' ? '實體獎勵' : p.type === 'pack' ? '禮包' : '裝備'}</span> | 
+                                                        機率: <span className="text-amber-400">{(p.prob * 100).toFixed(2)}%</span>
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setEditingPrize(p)} className="bg-amber-600 text-white px-3 py-1 rounded text-sm font-bold">編輯</button>
+                                                <button onClick={() => {
+                                                    if(confirm("確定刪除此獎項？")) {
+                                                        const newP = prizes.filter(item => item.id !== p.id);
+                                                        saveAdminPrizes(newP);
+                                                    }
+                                                }} className="bg-red-600 text-white px-3 py-1 rounded text-sm font-bold">刪除</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            // 編輯模式
+                            <div className="flex flex-col flex-grow overflow-y-auto custom-scrollbar pr-2">
+                                <h3 className="text-white font-bold mb-4">{editingPrize.name ? '✏️ 編輯獎品' : '✨ 新增獎品'}</h3>
+                                
+                                <label className="text-gray-400 text-xs font-bold mb-1">獎品名稱</label>
+                                <input type="text" value={editingPrize.name} onChange={e => setEditingPrize({...editingPrize, name: e.target.value})} className="mb-3 p-2 bg-stone-900 text-white border border-gray-600 rounded outline-none" placeholder="例如：1000鑽石大獎" />
+                                
+                                <label className="text-gray-400 text-xs font-bold mb-1">抽中機率 (小數點，例如 0.05 代表 5%)</label>
+                                <input type="number" step="0.001" value={editingPrize.prob} onChange={e => setEditingPrize({...editingPrize, prob: parseFloat(e.target.value) || 0})} className="mb-3 p-2 bg-stone-900 text-white border border-gray-600 rounded outline-none" />
+
+                                <label className="text-gray-400 text-xs font-bold mb-1">獎勵類型</label>
+                                <select value={editingPrize.type} onChange={e => setEditingPrize({...editingPrize, type: e.target.value})} className="mb-3 p-2 bg-stone-900 text-white border border-gray-600 rounded outline-none">
+                                    <option value="diamond">💎 鑽石 (直接派發)</option>
+                                    <option value="real">🎫 實體物品 (請玩家截圖)</option>
+                                    <option value="pack">📦 盲盒禮包 (存入終界箱)</option>
+                                    <option value="item">🗡️ 裝備/道具</option>
+                                </select>
+
+                                {editingPrize.type === 'diamond' && (
+                                    <>
+                                        <label className="text-gray-400 text-xs font-bold mb-1">給予的鑽石數量</label>
+                                        <input type="number" value={editingPrize.amount || 0} onChange={e => setEditingPrize({...editingPrize, amount: parseInt(e.target.value) || 0})} className="mb-3 p-2 bg-stone-900 text-white border border-gray-600 rounded outline-none" />
+                                    </>
+                                )}
+
+                                <label className="text-gray-400 text-xs font-bold mb-1">快速選取圖片模板</label>
+                                <div className="grid grid-cols-6 sm:grid-cols-8 gap-2 mb-3 bg-stone-900 p-2 rounded border border-gray-700">
+                                    {IMG_TEMPLATES.map(url => (
+                                        <div key={url} onClick={() => setEditingPrize({...editingPrize, img: url})} className={`cursor-pointer border-2 p-1 flex items-center justify-center ${editingPrize.img === url ? 'border-amber-400 bg-stone-700' : 'border-transparent hover:border-gray-500'}`}>
+                                            <McImg src={url} className="w-8 h-8 pixelated" fallback="📦" />
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <label className="text-gray-400 text-xs font-bold mb-1">或自訂圖片網址 (URL)</label>
+                                <input type="text" value={editingPrize.img} onChange={e => setEditingPrize({...editingPrize, img: e.target.value})} className="mb-6 p-2 bg-stone-900 text-white border border-gray-600 rounded outline-none" />
+
+                                <div className="flex gap-4 mt-auto">
+                                    <button onClick={() => setEditingPrize(null)} className="flex-1 bg-gray-600 text-white font-bold py-2 rounded hover:bg-gray-500">取消</button>
+                                    <button onClick={() => {
+                                        if(!editingPrize.name) return showAlert("請填寫獎品名稱！");
+                                        let newPrizes = [...prizes];
+                                        const existsIndex = newPrizes.findIndex(p => p.id === editingPrize.id);
+                                        if (existsIndex >= 0) {
+                                            newPrizes[existsIndex] = editingPrize;
+                                        } else {
+                                            newPrizes.push(editingPrize);
+                                        }
+                                        saveAdminPrizes(newPrizes);
+                                    }} className="flex-1 bg-emerald-600 text-white font-bold py-2 rounded hover:bg-emerald-500">儲存變更</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

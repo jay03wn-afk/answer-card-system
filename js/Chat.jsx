@@ -1,4 +1,3 @@
-
 // --- 大頭照動態載入組件 ---
 const UserAvatar = ({ uid, name, className }) => {
     const [avatar, setAvatar] = useState(null);
@@ -20,6 +19,7 @@ const UserAvatar = ({ uid, name, className }) => {
         </div>
     );
 };
+
 // --- 聊天室與系統 ---
 function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     const friends = userProfile.friends || [];
@@ -38,31 +38,40 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
 
     const getChatId = (uid1, uid2) => [uid1, uid2].sort().join('_');
 
-    // ✨ 新增：限時動態狀態
-    const [friendsQAs, setFriendsQAs] = useState([]);
+    // ✨ 新增：限時動態狀態 (群組化每個人的全部考題)
+    const [friendsQAGroups, setFriendsQAGroups] = useState([]);
 
     useEffect(() => {
-        if (!friends || friends.length === 0) return;
+        if (!friends || friends.length === 0) {
+            setFriendsQAGroups([]);
+            return;
+        }
         const friendUids = friends.map(f => f.uid);
+        
+        // ✨ 加入錯誤攔截器，避免權限切換瞬間產生的紅字導致整個畫面崩潰
         const unsub = window.db.collection('fastQA')
-            .orderBy('createdAt', 'desc')
-            .limit(50)
+            .orderBy('createdAt', 'asc')
             .onSnapshot(snap => {
                 const now = Date.now();
                 const qas = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                     .filter(q => q.endTime > now && friendUids.includes(q.creatorUid));
                 
-                // 過濾重複出題者，只顯示最新的一題當作頭像代表
-                const uniqueQAs = [];
-                const seenUids = new Set();
+                const groups = {};
                 qas.forEach(q => {
-                    if (!seenUids.has(q.creatorUid)) {
-                        seenUids.add(q.creatorUid);
-                        uniqueQAs.push(q);
+                    if (!groups[q.creatorUid]) {
+                        groups[q.creatorUid] = { 
+                            creatorUid: q.creatorUid, 
+                            creatorName: q.creatorName, 
+                            qaIds: [] 
+                        };
                     }
+                    groups[q.creatorUid].qaIds.push(q.id);
                 });
-                setFriendsQAs(uniqueQAs);
+                setFriendsQAGroups(Object.values(groups));
+            }, err => {
+                console.warn("限時動態讀取中斷 (可忽略的權限重置):", err.message);
             });
+            
         return () => unsub();
     }, [friends]);
 
@@ -235,20 +244,20 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
     const playRPS = () => {
         if(!activeChat) return;
         const choices = [
-            { face: '✊', name: '石頭' },
-            { face: '✌️', name: '剪刀' },
-            { face: '✋', name: '布' }
+            { icon: 'back_hand', name: '石頭' },
+            { icon: 'content_cut', name: '剪刀' },
+            { icon: 'front_hand', name: '布' }
         ];
         const result = choices[Math.floor(Math.random() * choices.length)];
         const chatId = getChatId(user.uid, activeChat.uid);
         
         db.collection('chats').doc(chatId).collection('messages').add({
-            text: `出了 ${result.name}！`,
+            text: `出了 ${result.name}`,
             senderId: user.uid,
             senderName: userProfile.displayName,
             timestamp: firebase.firestore.FieldValue.serverTimestamp(),
             type: 'game_rps',
-            rpsFace: result.face,
+            rpsIcon: result.icon,
             read: false
         }).then(() => {
             db.collection('users').doc(activeChat.uid).set({
@@ -378,26 +387,30 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                     </div>
                 </div>
 
-                {/* ✨ 新增：好友快問快答 IG 限時動態 */}
-                {friendsQAs.length > 0 && (
+                {/* ✨ 新增：好友快問快答 IG 限時動態 (多題連播支援) */}
+                {friendsQAGroups.length > 0 && (
                     <div className="p-3 border-b border-gray-100 dark:border-stone-700 flex gap-3 overflow-x-auto custom-scrollbar bg-white dark:bg-stone-800 shrink-0 shadow-inner">
-                        {friendsQAs.map(qa => (
+                        {friendsQAGroups.map(group => (
                             <div 
-                                key={qa.id} 
+                                key={group.creatorUid} 
                                 onClick={() => {
-                                    // ✨ 優化：改用自訂事件通知 App.jsx 直接打開視窗，達成「無縫秒開」不重新整理
-                                    const event = new CustomEvent('openFastQA', { detail: qa.id });
+                                    // ✨ 觸發多題連播事件
+                                    const event = new CustomEvent('openFastQAStory', { detail: group.qaIds });
                                     window.dispatchEvent(event);
                                 }} 
-                                className="flex flex-col items-center gap-1 cursor-pointer shrink-0 w-14 group" 
-                                title="點擊挑戰好友的快問快答！"
+                                className="flex flex-col items-center gap-1 cursor-pointer shrink-0 w-14 group relative" 
+                                title={`點擊挑戰 ${group.creatorName} 的 ${group.qaIds.length} 題快問快答！`}
                             >
-                                <div className="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-amber-400 to-rose-500 shrink-0">
+                                <div className="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-amber-400 to-rose-500 shrink-0 relative">
                                     <div className="w-full h-full bg-white dark:bg-stone-800 rounded-full p-[2px] overflow-hidden flex items-center justify-center">
-                                        <UserAvatar uid={qa.creatorUid} name={qa.creatorName} className="w-full h-full rounded-full object-cover group-hover:scale-110 transition-transform" />
+                                        <UserAvatar uid={group.creatorUid} name={group.creatorName} className="w-full h-full rounded-full object-cover group-hover:scale-110 transition-transform" />
+                                    </div>
+                                    {/* 顯示有幾題 */}
+                                    <div className="absolute -bottom-1 -right-1 bg-rose-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full border-2 border-white dark:border-stone-800">
+                                        {group.qaIds.length}
                                     </div>
                                 </div>
-                                <span className="text-[10px] font-bold text-stone-600 dark:text-stone-300 truncate w-full text-center">{qa.creatorName}</span>
+                                <span className="text-[10px] font-bold text-stone-600 dark:text-stone-300 truncate w-full text-center">{group.creatorName}</span>
                             </div>
                         ))}
                     </div>
@@ -507,11 +520,11 @@ function SocialDashboard({ user, userProfile, showAlert, showPrompt }) {
                             <div ref={messagesEndRef} />
                         </div>
                         <form onSubmit={sendMessage} className="p-2 md:p-3 border-t border-stone-200 dark:border-stone-700 flex gap-1 sm:gap-2 bg-[#FCFBF7] dark:bg-stone-800 shrink-0 items-center overflow-hidden w-full box-border">
-    <button type="button" onMouseDown={e => e.preventDefault()} onClick={playRPS} className="bg-stone-50 dark:bg-gray-700 text-base sm:text-xl px-2 sm:px-3 py-2 rounded-2xl border border-gray-300 dark:border-gray-600 hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors shrink-0" title="猜拳">✌️</button>
+    <button type="button" onMouseDown={e => e.preventDefault()} onClick={playRPS} className="bg-stone-50 dark:bg-gray-700 text-base sm:text-xl px-2 sm:px-3 py-2 rounded-2xl border border-gray-300 dark:border-gray-600 hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors shrink-0" title="猜拳"><span className="material-symbols-outlined">front_hand</span></button>
     
-    <button type="button" onMouseDown={e => e.preventDefault()} onClick={sendGift} className="bg-stone-50 dark:bg-gray-700 text-base sm:text-xl px-2 sm:px-3 py-2 rounded-2xl border border-gray-300 dark:border-gray-600 hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors shrink-0" title="贈送鑽石">🎁</button>
+    <button type="button" onMouseDown={e => e.preventDefault()} onClick={sendGift} className="bg-stone-50 dark:bg-gray-700 text-base sm:text-xl px-2 sm:px-3 py-2 rounded-2xl border border-gray-300 dark:border-gray-600 hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors shrink-0" title="贈送鑽石"><span className="material-symbols-outlined">redeem</span></button>
     
-    <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => fileInputRef.current.click()} className="bg-stone-50 dark:bg-gray-700 text-base sm:text-xl px-2 sm:px-3 py-2 rounded-2xl border border-gray-300 dark:border-gray-600 hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors shrink-0" title="上傳圖片(閱後即焚)">🖼️</button>
+    <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => fileInputRef.current.click()} className="bg-stone-50 dark:bg-gray-700 text-base sm:text-xl px-2 sm:px-3 py-2 rounded-2xl border border-gray-300 dark:border-gray-600 hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors shrink-0" title="上傳圖片(閱後即焚)"><span className="material-symbols-outlined">image</span></button>
     <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
     
     {/* ✨ 重要修正：強制加入 text-base (16px) 防止 iOS Safari 自動放大，並且給予 flex-1 w-full 完美佔據剩餘空間 */}

@@ -1,5 +1,5 @@
 // 從全域 (window) 拿回我們已經搬出去的四個大頁面
-const { Dashboard, QuizApp, TaskWallDashboard, WrongBookDashboard } = window;
+const { Dashboard, QuizApp, TaskWallDashboard, WrongBookDashboard, ShopDashboard } = window;
 
 // ==========================================
 // ✨ 國考戰況與 AI 口訣專屬 UI 介面
@@ -699,17 +699,31 @@ function Main() {
         return params.get('newsId');
     });
 
-    // ✨ 監聽從 Chat.jsx (限時動態) 傳來的無縫開啟請求
+    // ✨ 監聽從 Chat.jsx (限時動態) 傳來的無縫開啟請求 (支援單題與連播)
     useEffect(() => {
-        const handleOpenFastQA = (e) => setCurrentQaId(e.detail);
+        const handleOpenFastQA = (e) => { setQaStoryIds([e.detail]); setQaStoryIndex(0); };
+        const handleOpenFastQAStory = (e) => { setQaStoryIds(e.detail); setQaStoryIndex(0); };
+        
         window.addEventListener('openFastQA', handleOpenFastQA);
-        return () => window.removeEventListener('openFastQA', handleOpenFastQA);
+        window.addEventListener('openFastQAStory', handleOpenFastQAStory);
+        return () => {
+            window.removeEventListener('openFastQA', handleOpenFastQA);
+            window.removeEventListener('openFastQAStory', handleOpenFastQAStory);
+        };
     }, []);
+
+    useEffect(() => {
+        if (currentQaId) {
+            setQaStoryIds([currentQaId]);
+            setQaStoryIndex(0);
+        }
+    }, [currentQaId]);
 
     // ✨ 新增：用來關閉快問快答與電子報視窗的方法
     const closeFastQA = () => {
         window.history.replaceState({}, document.title, window.location.pathname);
         setCurrentQaId(null);
+        setQaStoryIds([]);
     };
     const closeNews = () => {
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -789,10 +803,18 @@ function Main() {
     const [showInbox, setShowInbox] = useState(false);
     const [inboxMessages, setInboxMessages] = useState([]);
     // ✨ 新增：防重領鎖定與管理員狀態
+    const claimLockRef = useRef(new Set());
     const [claimingIds, setClaimingIds] = useState(new Set());
-    const [showAdminMail, setShowAdminMail] = useState(false);
-    const [isConfirmingSend, setIsConfirmingSend] = useState(false);
-    const [adminMailForm, setAdminMailForm] = useState({ title: '系統全服公告', content: '', reward: 0 });
+    const [showAdminMail, setShowAdminMail] = useState(false);
+    const [isConfirmingSend, setIsConfirmingSend] = useState(false);
+    const [adminMailForm, setAdminMailForm] = useState({ title: '系統全服公告', content: '', reward: 0 });
+    
+    // ✨ 信箱與連播狀態
+    const [activeMailTab, setActiveMailTab] = useState('inbox');
+    const [activeShopTab, setActiveShopTab] = useState('browse'); // browse, manage, orders
+    const [selectedMail, setSelectedMail] = useState(null);
+    const [qaStoryIds, setQaStoryIds] = useState([]);
+    const [qaStoryIndex, setQaStoryIndex] = useState(0);
     
     // ✨ 修復：補上缺失的管理員相關狀態
     const [adminMailTab, setAdminMailTab] = useState('manage'); 
@@ -814,11 +836,16 @@ function Main() {
                 setInboxMessages(docs.slice(0, 50).map(doc => ({ id: doc.id, ...doc.data() })));
                 
                 // 自動清理超過 50 封的舊信件，讓資料庫保持乾淨輕量
-                if (docs.length > 50) {
-                    const batch = window.db.batch();
-                    docs.slice(50).forEach(doc => batch.delete(doc.ref));
-                    batch.commit().catch(e => console.error("清理信件失敗", e));
-                }
+                // 自動清理超過 50 封的舊信件，但「重要通知」不刪除
+if (docs.length > 50) {
+    const batch = window.db.batch();
+    // 只清理一般的 inbox 且超過 50 封的部分
+    const normalMails = docs.filter(d => d.data().category !== 'system_order');
+    if (normalMails.length > 50) {
+        normalMails.slice(50).forEach(doc => batch.delete(doc.ref));
+        batch.commit().catch(e => console.error("清理信件失敗", e));
+    }
+}
             });
 
         // 專屬管理員的系統公告監聽 (僅保留最新50封，其餘自動清理)
@@ -842,8 +869,16 @@ function Main() {
         return () => { unsub(); unsubSystem(); };
     }, [user]);
 
-    const handleReadMessage = (msgId) => {
-        window.db.collection('users').doc(user.uid).collection('mailbox').doc(msgId).update({ isRead: true });
+    const handleReadMessage = (msg) => {
+        window.db.collection('users').doc(user.uid).collection('mailbox').doc(msg.id).update({ isRead: true });
+        setSelectedMail(msg); // 打開信件預覽視窗
+    };
+
+    const handleArchiveMail = (e, msgId) => {
+        e.stopPropagation();
+        window.db.collection('users').doc(user.uid).collection('mailbox').doc(msgId).update({ isArchived: true });
+        setSelectedMail(null);
+        if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: '信件已移至封存' });
     };
 
     const handleClaimReward = async (e, msg) => {
@@ -1310,7 +1345,10 @@ function Main() {
                     
                     {/* ✨ 新增的國考進度追蹤 */}
                     <button onClick={() => handleTabClick('examProgress')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'examProgress' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">trending_up</span> 國考戰況追蹤</button>
-                    
+                    <button onClick={() => handleTabClick('shop')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'shop' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}>
+    <span className="material-symbols-outlined text-[20px]">shopping_bag</span> 
+    商店系統
+</button>
                     <button onClick={() => handleTabClick('profile')} className={`text-left px-6 py-4 font-bold transition-colors flex items-center gap-3 ${activeTab === 'profile' ? 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-white border-l-4 border-black dark:border-white' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-50 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px]">person</span> 個人檔案</button>
                 </div>
             </div>
@@ -1472,15 +1510,64 @@ function Main() {
             {SharedModal}
             {renderTutorialOverlay()}
 
-            {/* ✨ 新增：已經登入的玩家，如果網址有 qaId 或 newsId，直接蓋一個滿版視窗在最上層 */}
-            {user && currentQaId && (
-                <div className="fixed inset-0 z-[60] bg-stone-800/80 flex items-center justify-center p-2 sm:p-4 animate-fade-in">
-                    <div className="bg-stone-50 dark:bg-stone-900 w-full max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl relative shadow-2xl border-4 border-rose-500">
-                        <button onClick={closeFastQA} className="absolute top-4 right-4 text-3xl z-20 hover:scale-110 transition-transform bg-[#FCFBF7] dark:bg-stone-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md border border-gray-300 dark:border-gray-600">❌</button>
-                        <div className="p-4 sm:p-8 pt-16">
-                            <FastQASection user={user} showAlert={showAlert} showConfirm={showConfirm} targetQaId={currentQaId} onClose={closeFastQA} />
+            {/* ✨ 新增：已經登入的玩家，支援單題或多題限時動態連播 */}
+            {user && qaStoryIds.length > 0 && (
+                <div className="fixed inset-0 z-[60] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-fade-in">
+                    
+                    {/* 左箭頭 (多題模式) */}
+                    {qaStoryIds.length > 1 && (
+                        <button 
+                            onClick={() => setQaStoryIndex(i => Math.max(0, i - 1))}
+                            disabled={qaStoryIndex === 0}
+                            className="hidden sm:flex absolute left-4 z-50 w-12 h-12 bg-white/20 hover:bg-white/40 disabled:opacity-0 rounded-full items-center justify-center text-white transition-all"
+                        >
+                            <span className="material-symbols-outlined text-3xl">chevron_left</span>
+                        </button>
+                    )}
+
+                    <div className="bg-stone-50 dark:bg-stone-900 w-full max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl relative shadow-2xl border-4 border-rose-500 custom-scrollbar flex flex-col">
+                        
+                        {/* 進度條 (多題模式) */}
+                        {qaStoryIds.length > 1 && (
+                            <div className="absolute top-0 left-0 w-full flex gap-1 p-2 bg-stone-900/10 z-10">
+                                {qaStoryIds.map((id, idx) => (
+                                    <div key={id} className={`h-1.5 flex-1 rounded-full transition-colors ${idx === qaStoryIndex ? 'bg-rose-500' : idx < qaStoryIndex ? 'bg-rose-300' : 'bg-stone-300 dark:bg-stone-600'}`}></div>
+                                ))}
+                            </div>
+                        )}
+
+                        <button onClick={closeFastQA} className="absolute top-4 right-4 z-20 text-gray-500 hover:text-stone-800 bg-[#FCFBF7] dark:bg-stone-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md border border-gray-300 dark:border-gray-600 transition-colors">
+                            <span className="material-symbols-outlined text-[24px]">close</span>
+                        </button>
+                        
+                        <div className="p-4 sm:p-8 pt-16 flex-grow">
+                            <FastQASection key={qaStoryIds[qaStoryIndex]} user={user} showAlert={showAlert} showConfirm={showConfirm} targetQaId={qaStoryIds[qaStoryIndex]} onClose={closeFastQA} />
                         </div>
+
+                        {/* 手機版底部導覽 (多題模式) */}
+                        {qaStoryIds.length > 1 && (
+                            <div className="sm:hidden flex justify-between p-4 border-t border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-900 shrink-0">
+                                <button onClick={() => setQaStoryIndex(i => Math.max(0, i - 1))} disabled={qaStoryIndex === 0} className="p-2 font-bold text-stone-600 disabled:opacity-30 flex items-center">
+                                    <span className="material-symbols-outlined">chevron_left</span> 上一題
+                                </button>
+                                <div className="text-sm font-bold text-stone-400 self-center">{qaStoryIndex + 1} / {qaStoryIds.length}</div>
+                                <button onClick={() => setQaStoryIndex(i => Math.min(qaStoryIds.length - 1, i + 1))} disabled={qaStoryIndex === qaStoryIds.length - 1} className="p-2 font-bold text-stone-600 disabled:opacity-30 flex items-center">
+                                    下一題 <span className="material-symbols-outlined">chevron_right</span>
+                                </button>
+                            </div>
+                        )}
                     </div>
+
+                    {/* 右箭頭 (多題模式) */}
+                    {qaStoryIds.length > 1 && (
+                        <button 
+                            onClick={() => setQaStoryIndex(i => Math.min(qaStoryIds.length - 1, i + 1))}
+                            disabled={qaStoryIndex === qaStoryIds.length - 1}
+                            className="hidden sm:flex absolute right-4 z-50 w-12 h-12 bg-white/20 hover:bg-white/40 disabled:opacity-0 rounded-full items-center justify-center text-white transition-all"
+                        >
+                            <span className="material-symbols-outlined text-3xl">chevron_right</span>
+                        </button>
+                    )}
                 </div>
             )}
             {user && currentNewsId && (
@@ -1497,45 +1584,90 @@ function Main() {
             {/* ✨ 新增：行事曆考試彈出提醒 */}
             {user && userProfile && <ExamAlertPopup user={user} userProfile={userProfile} />}
 
+            {/* ✨ 信件詳細內容預覽 Modal */}
+            {selectedMail && (
+                <div className="fixed inset-0 z-[120] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-sm rounded-3xl shadow-2xl border-2 border-stone-300 dark:border-stone-600 flex flex-col overflow-hidden relative">
+                        <button onClick={() => setSelectedMail(null)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-stone-700 text-gray-500 rounded-full hover:bg-gray-200 dark:hover:bg-stone-600 transition-colors"><span className="material-symbols-outlined text-[18px]">close</span></button>
+                        
+                        <div className="p-6 pt-10">
+                            <h3 className="text-lg font-black text-stone-800 dark:text-white mb-2 leading-snug">{selectedMail.title}</h3>
+                            <div className="text-[10px] font-bold text-gray-400 mb-4">{selectedMail.createdAt?.toDate().toLocaleString('zh-TW')}</div>
+                            <div className="text-sm text-gray-700 dark:text-gray-300 font-medium whitespace-pre-wrap leading-relaxed max-h-[40vh] overflow-y-auto custom-scrollbar p-3 bg-white dark:bg-stone-900 border border-gray-200 dark:border-stone-700 rounded-xl mb-4">
+                                {selectedMail.content}
+                            </div>
+                            
+                            {selectedMail.rewardDiamonds > 0 && (
+                                <div className="mb-4">
+                                    <button 
+                                        onClick={(e) => handleClaimReward(e, selectedMail)} 
+                                        disabled={selectedMail.isClaimed || claimingIds.has(selectedMail.id)}
+                                        className={`w-full py-3 rounded-xl font-black flex items-center justify-center gap-2 transition-all shadow-sm ${selectedMail.isClaimed || claimingIds.has(selectedMail.id) ? 'bg-gray-200 text-gray-500 dark:bg-stone-700 dark:text-stone-400' : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-800 active:scale-[0.98]'}`}
+                                    >
+                                        {claimingIds.has(selectedMail.id) ? <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[20px]">{selectedMail.isClaimed ? 'check' : 'diamond'}</span>}
+                                        {selectedMail.isClaimed ? '已領取獎勵' : (claimingIds.has(selectedMail.id) ? '處理中...' : `領取 ${selectedMail.rewardDiamonds} 鑽石`)}
+                                    </button>
+                                </div>
+                            )}
+
+                            <div className="flex gap-2">
+                                {!selectedMail.isArchived && (
+                                    <button onClick={(e) => handleArchiveMail(e, selectedMail.id)} className="flex-1 py-2.5 bg-gray-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 font-bold rounded-xl text-sm flex items-center justify-center gap-1 hover:bg-gray-200 dark:hover:bg-stone-600 transition-colors">
+                                        <span className="material-symbols-outlined text-[16px]">archive</span> 封存信件
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ✨ 新增：收件匣 (信箱) UI Modal */}
             {showInbox && (
                 <div className="fixed inset-0 z-[110] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-lg rounded-3xl shadow-2xl border border-stone-200 dark:border-stone-700 flex flex-col max-h-[80vh] overflow-hidden">
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-lg rounded-3xl shadow-2xl border border-stone-200 dark:border-stone-700 flex flex-col max-h-[85vh] overflow-hidden">
                         <div className="px-6 py-4 border-b border-stone-200 dark:border-stone-700 flex justify-between items-center bg-stone-100 dark:bg-stone-900 shrink-0">
                             <h3 className="text-xl font-black text-stone-800 dark:text-white flex items-center gap-2"><span className="material-symbols-outlined">inbox</span> 系統信箱</h3>
-                            <button onClick={() => setShowInbox(false)} className="text-gray-400 hover:text-stone-800 dark:hover:text-white transition-colors"><span className="material-symbols-outlined">close</span></button>
+                            <button onClick={() => setShowInbox(false)} className="text-gray-400 hover:text-stone-800 dark:hover:text-white transition-colors"><span className="material-symbols-outlined text-[24px]">close</span></button>
                         </div>
+                        
+                        {/* 信箱分頁 */}
+                        <div className="flex gap-4 px-6 pt-3 border-b border-stone-200 dark:border-stone-700 shrink-0">
+                            <button onClick={() => setActiveMailTab('inbox')} className={`pb-2 font-bold text-sm transition-colors relative ${activeMailTab === 'inbox' ? 'text-rose-600 dark:text-rose-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                                收件匣
+                                {activeMailTab === 'inbox' && <div className="absolute bottom-0 left-0 w-full h-1 bg-rose-500 rounded-t-lg"></div>}
+                            </button>
+                            {user.email === 'jay03wn@gmail.com' && (
+    <button onClick={() => setActiveMailTab('important')} className={`pb-2 font-bold text-sm transition-colors relative ${activeMailTab === 'important' ? 'text-rose-600' : 'text-gray-500'}`}>
+        重要通知 (訂單)
+        {activeMailTab === 'important' && <div className="absolute bottom-0 left-0 w-full h-1 bg-rose-500 rounded-t-lg"></div>}
+    </button>
+)}
+                            <button onClick={() => setActiveMailTab('archived')} className={`pb-2 font-bold text-sm transition-colors relative ${activeMailTab === 'archived' ? 'text-rose-600 dark:text-rose-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                                已封存
+                                {activeMailTab === 'archived' && <div className="absolute bottom-0 left-0 w-full h-1 bg-rose-500 rounded-t-lg"></div>}
+                            </button>
+                        </div>
+
                         <div className="p-4 flex-grow overflow-y-auto custom-scrollbar space-y-3">
-                            {inboxMessages.length === 0 ? (
-                                <div className="text-center py-10 text-gray-500 font-bold">目前信箱空空如也！</div>
-                            ) : (
-                                inboxMessages.map(msg => (
-                                    <div key={msg.id} onClick={() => handleReadMessage(msg.id)} className={`p-4 rounded-2xl border cursor-pointer transition-all ${msg.isRead ? 'bg-gray-50 dark:bg-stone-900 border-gray-200 dark:border-stone-700 opacity-80' : 'bg-white dark:bg-stone-800 border-rose-300 dark:border-rose-700 shadow-md scale-[1.01]'}`}>
-                                        <div className="flex justify-between items-start mb-2 border-b border-gray-100 dark:border-stone-700 pb-2">
-                                            <div className="font-black text-sm flex items-center gap-2 dark:text-white">
+                            {(() => {
+                                const displayedMails = inboxMessages.filter(m => activeMailTab === 'inbox' ? !m.isArchived : m.isArchived);
+                                if (displayedMails.length === 0) return <div className="text-center py-10 text-gray-500 font-bold">目前沒有信件！</div>;
+                                
+                                return displayedMails.map(msg => (
+                                    <div key={msg.id} onClick={() => handleReadMessage(msg)} className={`p-4 rounded-2xl border cursor-pointer transition-all ${msg.isRead ? 'bg-gray-50 dark:bg-stone-900 border-gray-200 dark:border-stone-700 opacity-80 hover:bg-gray-100 dark:hover:bg-stone-800' : 'bg-white dark:bg-stone-800 border-rose-300 dark:border-rose-700 shadow-md hover:shadow-lg'}`}>
+                                        <div className="flex justify-between items-start mb-1">
+                                            <div className="font-black text-sm flex items-center gap-2 dark:text-white truncate pr-2">
                                                 {!msg.isRead && <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shrink-0 animate-pulse"></span>}
-                                                <span className="material-symbols-outlined text-[18px] text-stone-500">mail</span>
-                                                {msg.title}
+                                                <span className="material-symbols-outlined text-[18px] text-stone-500 shrink-0">mail</span>
+                                                <span className="truncate">{msg.title}</span>
                                             </div>
                                             <span className="text-[10px] text-gray-400 font-bold shrink-0 ml-2 bg-gray-100 dark:bg-stone-700 px-2 py-0.5 rounded-full">{msg.createdAt?.toDate().toLocaleDateString('zh-TW')}</span>
                                         </div>
-                                        <p className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-bold leading-relaxed">{msg.content}</p>
-                                        
-                                        {msg.rewardDiamonds > 0 && (
-                                            <div className="mt-3 flex justify-end">
-                                                <button 
-                                                    onClick={(e) => handleClaimReward(e, msg)} 
-                                                    disabled={msg.isClaimed || claimingIds.has(msg.id)}
-                                                    className={`text-xs font-black px-4 py-1.5 rounded-xl flex items-center gap-1 transition-all ${msg.isClaimed || claimingIds.has(msg.id) ? 'bg-gray-200 text-gray-500 dark:bg-stone-700 dark:text-stone-400' : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-800 shadow-sm active:scale-95'}`}
-                                                >
-                                                    {claimingIds.has(msg.id) ? <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[16px]">{msg.isClaimed ? 'check' : 'diamond'}</span>}
-                                                    {msg.isClaimed ? '已領取獎勵' : (claimingIds.has(msg.id) ? '處理中...' : `領取 ${msg.rewardDiamonds} 鑽石`)}
-                                                </button>
-                                            </div>
-                                        )}
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-2 font-bold">{msg.content}</p>
                                     </div>
-                                ))
-                            )}
+                                ));
+                            })()}
                         </div>
                         {user.email === 'jay03wn@gmail.com' && (
                             <div className="p-4 border-t border-stone-200 dark:border-stone-700 bg-amber-50 dark:bg-stone-900 shrink-0">
@@ -1621,6 +1753,9 @@ function Main() {
                     )}
 
                     {activeTab === 'profile' && <ProfilePage user={user} userProfile={userProfile} showAlert={showAlert} restartTutorial={restartTutorial} />}
+                {activeTab === 'profile' && <ProfilePage user={user} userProfile={userProfile} showAlert={showAlert} restartTutorial={restartTutorial} />}
+{/* ✨ 補上這行 */}
+{activeTab === 'shop' && <ShopDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
                 </div>
             ) : (
                 <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} userProfile={userProfile} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} tutorialStep={tutorialStep} setTutorialStep={setTutorialStep} />
