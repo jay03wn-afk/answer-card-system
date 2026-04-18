@@ -17,7 +17,9 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
     // 新增：小提示視窗狀態與多人房間設定
     const [toast, setToast] = useState(null);
     const [roomJoinCode, setRoomJoinCode] = useState('');
-    const [roomSettings, setRoomSettings] = useState({ players: 4, fillAi: true });
+    const [roomSettings, setRoomSettings] = useState({ players: 4, fillAi: true, turnTime: 30 }); // 預設 30 秒
+    const [isHost, setIsHost] = useState(false); // 是否為房主
+    const [lobbyPlayers, setLobbyPlayers] = useState([]); // 大廳中的真實玩家
 
     const playCachedSound = window.playCachedSound || (() => {});
     const clickSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/sounds/ui/button/click.ogg';
@@ -145,41 +147,54 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         setSelectedCards([newIdx]);
     };
 
-    const startSinglePlayer = () => {
+    const startGameFromLobby = () => {
         handlePlaySound();
+        // 準備洗牌
         let deck = [];
         VALUES.forEach((val, vIndex) => {
             SUITS.forEach((suit) => {
                 deck.push({ ...suit, value: val, vIdx: vIndex, weight: vIndex * 4 + suit.sIdx });
             });
         });
-        
         deck.sort(() => Math.random() - 0.5);
         const sortHand = (hand) => hand.sort((a, b) => a.weight - b.weight);
-        
+
+        // 分配手牌
         const hands = [
-            sortHand(deck.slice(0, 13)),
-            sortHand(deck.slice(13, 26)),
-            sortHand(deck.slice(26, 39)),
-            sortHand(deck.slice(39, 52))
+            sortHand(deck.slice(0, 13)), sortHand(deck.slice(13, 26)),
+            sortHand(deck.slice(26, 39)), sortHand(deck.slice(39, 52))
         ];
 
+        // 建立最終玩家名單 (將大廳玩家填入，剩下補 AI)
+        const finalPlayers = [];
+        // 1. 加入目前的真實玩家
+        lobbyPlayers.forEach((p, idx) => {
+            finalPlayers.push({ ...p, cardsLeft: 13, hand: hands[idx], isMe: p.id === user.uid });
+        });
+        // 2. 補足 AI
+        const aiNames = ['村民 (AI)', '終界使者 (AI)', '苦力怕 (AI)'];
+        while (finalPlayers.length < 4) {
+            const aiIdx = finalPlayers.length;
+            finalPlayers.push({ 
+                id: `ai_${aiIdx}`, 
+                name: aiNames[aiIdx - 1] || '史萊姆 (AI)', 
+                cardsLeft: 13, 
+                hand: hands[aiIdx], 
+                isMe: false 
+            });
+        }
+
         let starterIndex = 0;
-        hands.forEach((hand, idx) => {
-            if (hand.some(c => c.weight === 0)) starterIndex = idx;
+        finalPlayers.forEach((p, idx) => {
+            if (p.hand.some(c => c.weight === 0)) starterIndex = idx;
         });
 
-        setMyHand(hands[0]);
-        setPlayers([
-            { id: user.uid, name: userProfile?.displayName || '史蒂夫', cardsLeft: 13, isMe: true, hand: hands[0] },
-            { id: 'ai_1', name: '村民 (AI)', cardsLeft: 13, isMe: false, hand: hands[1] },
-            { id: 'ai_2', name: '終界使者 (AI)', cardsLeft: 13, isMe: false, hand: hands[2] },
-            { id: 'ai_3', name: '苦力怕 (AI)', cardsLeft: 13, isMe: false, hand: hands[3] },
-        ]);
-        
+        setPlayers(finalPlayers);
+        setMyHand(finalPlayers.find(p => p.isMe).hand);
         setTableCombo(null);
         setPassCount(0);
         setIsFirstTurn(true);
+        setPassedPlayers([]);
         setGameState('playing');
         setCurrentTurn(starterIndex);
     };
@@ -267,26 +282,22 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
             return () => clearTimeout(skipTimer);
         }
 
-        // 正常的計時邏輯
-        setTimeLeft(10);
+        // 正常的計時邏輯 (支援自訂秒數)
+        setTimeLeft(roomSettings.turnTime);
         const timer = setInterval(() => {
             setTimeLeft(prev => {
                 if (prev <= 1) {
                     clearInterval(timer);
-                    // 時間到自動 Pass。如果是桌面清空的狀態不能 Pass，強制隨便出一張 (這邊簡化為自動 Pass)
                     if (tableCombo) passTurn();
-                    else {
-                        // 桌面空的時候不能 Pass，此處略過計時
-                    }
                     return 0;
                 }
-                if (prev <= 4) handlePlayTick(); // 最後三秒滴答提醒
+                if (prev <= 5) handlePlayTick(); // 最後五秒滴答提醒
                 return prev - 1;
             });
         }, 1000);
 
         return () => clearInterval(timer);
-    }, [currentTurn, gameState, tableCombo, passedPlayers]);
+    }, [currentTurn, gameState, tableCombo, passedPlayers, roomSettings.turnTime]);
 
     // AI 產牌邏輯 (暴力找牌型)
     const generateAllCombos = (hand) => {
@@ -406,49 +417,56 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                         {/* 創建房間區塊 */}
                         <div className="bg-[#8b8b8b] p-6 border-4 border-white border-r-[#555] border-b-[#555] w-full max-w-md shadow-lg">
                             <h2 className="text-xl font-black text-[#373737] mb-4 flex items-center border-b-2 border-[#555] pb-2">
-                                <span className="material-symbols-outlined mr-2">add_circle</span> 創建房間
+                                <span className="material-symbols-outlined mr-2">add_circle</span> 創建新遊戲
                             </h2>
                             <div className="space-y-4 mb-4">
                                 <label className="flex items-center text-[#373737] font-bold">
-                                    <span className="w-24">玩家人數:</span>
-                                    <select className="flex-grow p-1 bg-stone-200 border-2 border-[#555] font-bold" value={roomSettings.players} onChange={(e) => { handlePlaySound(); setRoomSettings({...roomSettings, players: parseInt(e.target.value)}); }}>
-                                        <option value={2}>2 人</option><option value={3}>3 人</option><option value={4}>4 人</option>
+                                    <span className="w-28 text-sm">出牌時限(秒):</span>
+                                    <select className="flex-grow p-1 bg-stone-200 border-2 border-[#555] font-bold" value={roomSettings.turnTime} onChange={(e) => { handlePlaySound(); setRoomSettings({...roomSettings, turnTime: parseInt(e.target.value)}); }}>
+                                        <option value={10}>10 秒 (快節奏)</option>
+                                        <option value={30}>30 秒 (標準)</option>
+                                        <option value={60}>60 秒 (放空模式)</option>
                                     </select>
-                                </label>
-                                <label className="flex items-center text-[#373737] font-bold cursor-pointer">
-                                    <span className="w-24">填入 AI:</span>
-                                    <input type="checkbox" className="w-5 h-5" checked={roomSettings.fillAi} onChange={(e) => { handlePlaySound(); setRoomSettings({...roomSettings, fillAi: e.target.checked}); }} />
                                 </label>
                             </div>
                             <button onClick={() => { 
                                 handlePlaySound(); 
                                 const code = Math.floor(100000 + Math.random() * 900000).toString();
                                 setRoomCode(code);
-                                showToast(`房間創建成功！代碼: ${code}`);
-                                setTimeout(() => startSinglePlayer(), 800); 
+                                setIsHost(true);
+                                setLobbyPlayers([{ id: user.uid, name: userProfile?.displayName || '史蒂夫(我)' }]);
+                                setGameState('lobby'); 
+                                showToast(`房間 ${code} 創建成功！`);
                             }} className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black border-2 border-emerald-400 border-r-[#373737] border-b-[#373737] transition-transform active:scale-95 shadow-md">
-                                創建並進入遊戲
+                                建立大廳
                             </button>
                         </div>
 
                         {/* 加入房間區塊 */}
                         <div className="bg-[#8b8b8b] p-6 border-4 border-white border-r-[#555] border-b-[#555] w-full max-w-md shadow-lg">
                             <h2 className="text-xl font-black text-[#373737] mb-4 flex items-center border-b-2 border-[#555] pb-2">
-                                <span className="material-symbols-outlined mr-2">login</span> 加入房間
+                                <span className="material-symbols-outlined mr-2">login</span> 進入房間
                             </h2>
                             <div className="flex space-x-2 mb-4">
-                                <input type="text" maxLength={6} placeholder="輸入代碼" className="flex-grow p-2 text-center text-xl tracking-widest font-bold bg-stone-200 border-2 border-[#555] focus:outline-none" value={roomJoinCode} onChange={(e) => setRoomJoinCode(e.target.value.replace(/\D/g, ''))} />
+                                <input type="text" maxLength={6} placeholder="輸入 6 位代碼" className="flex-grow p-2 text-center text-xl tracking-widest font-bold bg-stone-200 border-2 border-[#555] focus:outline-none" value={roomJoinCode} onChange={(e) => setRoomJoinCode(e.target.value.replace(/\D/g, ''))} />
                             </div>
                             <button onClick={() => { 
                                 handlePlaySound();
                                 if(roomJoinCode.length === 6) {
-                                    showToast(`正在連接房間 ${roomJoinCode}...`);
-                                    setTimeout(() => startSinglePlayer(), 1000);
+                                    setIsHost(false);
+                                    setRoomCode(roomJoinCode);
+                                    // 模擬加入：實際上這裡要抓 Firebase 的房間資料
+                                    setLobbyPlayers([
+                                        { id: 'host_id', name: '房主史蒂夫' },
+                                        { id: user.uid, name: userProfile?.displayName || '我' }
+                                    ]);
+                                    setGameState('lobby');
+                                    showToast(`已進入房間 ${roomJoinCode}`);
                                 } else {
-                                    showToast("請輸入完整的 6 位數字代碼！", true);
+                                    showToast("請輸入完整的代碼！", true);
                                 }
                             }} className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-[#373737] font-black border-2 border-white border-r-[#555] border-b-[#555] transition-transform active:scale-95 shadow-md">
-                                加入連線遊戲
+                                加入連線
                             </button>
                         </div>
                         <button onClick={() => { handlePlaySound(); setGameState('menu'); }} className="mt-4 text-[#373737] font-bold hover:underline flex items-center">
@@ -456,7 +474,55 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                         </button>
                     </div>
                 )}
+{gameState === 'lobby' && (
+                    <div className="flex flex-col items-center justify-center flex-grow space-y-6 animate-in fade-in zoom-in duration-200">
+                        <div className="bg-[#8b8b8b] p-6 border-4 border-white border-r-[#555] border-b-[#555] w-full max-w-md shadow-2xl">
+                            <div className="flex justify-between items-center border-b-2 border-[#555] pb-2 mb-4">
+                                <h2 className="text-xl font-black text-[#373737] flex items-center">
+                                    <span className="material-symbols-outlined mr-2">meeting_room</span> 遊戲大廳
+                                </h2>
+                                <span className="bg-stone-800 text-amber-400 px-2 py-1 font-mono font-bold border border-stone-600">
+                                    #{roomCode}
+                                </span>
+                            </div>
+                            
+                            <div className="space-y-2 mb-6">
+                                <p className="text-[10px] font-bold text-[#555] uppercase">玩家名單 (等待中...)</p>
+                                {lobbyPlayers.map((p, idx) => (
+                                    <div key={p.id} className="flex items-center bg-stone-200 p-2 border-2 border-[#555]">
+                                        <span className="material-symbols-outlined text-stone-600 mr-2">
+                                            {idx === 0 ? 'shield_person' : 'person'}
+                                        </span>
+                                        <span className="font-bold text-[#373737] flex-grow">{p.name}</span>
+                                        {idx === 0 && <span className="text-[8px] bg-amber-500 text-white px-1 font-black rounded">HOST</span>}
+                                    </div>
+                                ))}
+                                {/* 顯示剩餘空位 */}
+                                {[...Array(4 - lobbyPlayers.length)].map((_, i) => (
+                                    <div key={i} className="flex items-center bg-stone-300/50 p-2 border-2 border-dashed border-[#555] opacity-50">
+                                        <span className="material-symbols-outlined text-stone-500 mr-2">hourglass_top</span>
+                                        <span className="font-bold text-[#555]">等待加入... (開始後補AI)</span>
+                                    </div>
+                                ))}
+                            </div>
 
+                            <div className="bg-stone-700 p-2 border-2 border-black/20 mb-6 text-center">
+                                <p className="text-white text-xs font-bold">出牌時限: <span className="text-amber-400">{roomSettings.turnTime}s</span></p>
+                            </div>
+
+                            {isHost ? (
+                                <button onClick={startGameFromLobby} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black border-2 border-emerald-400 border-r-[#373737] border-b-[#373737] transition-transform active:scale-95 shadow-md flex justify-center items-center">
+                                    <span className="material-symbols-outlined mr-2">play_arrow</span> 開始遊戲 (補足AI)
+                                </button>
+                            ) : (
+                                <div className="w-full py-3 bg-stone-500 text-stone-200 font-black border-2 border-stone-400 text-center animate-pulse cursor-wait">
+                                    等待房主開始...
+                                </div>
+                            )}
+                        </div>
+                        <button onClick={() => { handlePlaySound(); setGameState('menu'); }} className="text-[#373737] font-bold hover:underline">離開房間</button>
+                    </div>
+                )}
                 {gameState === 'playing' && (
                     <div className="flex flex-col flex-grow justify-between relative">
                         
@@ -481,7 +547,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                             <div className="w-64 h-3 bg-stone-800 border-2 border-white mb-6 relative overflow-hidden shadow-inner">
                                 <div 
                                     className="h-full bg-red-600 transition-all duration-1000 ease-linear"
-                                    style={{ width: `${(timeLeft / 10) * 100}%` }}
+                                    style={{ width: `${(timeLeft / roomSettings.turnTime) * 100}%` }}
                                 ></div>
                             </div>
 
