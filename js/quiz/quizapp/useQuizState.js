@@ -1332,7 +1332,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
     };
 
     const toggleStar = (idx) => {
-        if(isTimeUp) return;
+        if(step === 'answering' && isTimeUp) return;
         const newStar = [...starred];
         newStar[idx] = !newStar[idx];
         setStarred(newStar);
