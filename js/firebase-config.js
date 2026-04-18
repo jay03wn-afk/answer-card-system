@@ -21,9 +21,21 @@ db.enablePersistence().catch((err) => {
 
 const storage = firebase.storage(); // ✨ 新增這行
 
-window.auth = auth; // 確保全域可用
-window.db = db;     // 確保全域可用
-window.storage = storage; // ✨ 確保全域可用
+// --- 修正連線橋樑，確保 Poke.jsx 能抓到正確工具 ---
+window.auth = auth;
+window.db = db; 
+window.firestoreDb = db; // 讓 Poke.jsx 抓得到 db
+
+// 手動將新版函數對應到舊版 SDK 方法
+window.firebaseFirestore = {
+    doc: (db, coll, id) => db.collection(coll).doc(id),
+    setDoc: (ref, data) => ref.set(data),
+    updateDoc: (ref, data) => ref.update(data),
+    getDoc: (ref) => ref.get(),
+    deleteDoc: (ref) => ref.delete(),
+    onSnapshot: (ref, callback) => ref.onSnapshot(callback),
+    arrayUnion: firebase.firestore.FieldValue.arrayUnion // 處理加入房間的關鍵
+};
 
 const { useState, useEffect, useRef } = React;
 
