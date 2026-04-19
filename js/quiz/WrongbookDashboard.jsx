@@ -14,6 +14,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const [currentFolder,setCurrentFolder] = useState('全部');
     const [previewImage, setPreviewImage] = useState(null);
     const [localToast, setLocalToast] = useState(null); // ✨ 新增：小文字提示狀態
+    const [searchQuery, setSearchQuery] = useState(''); // ✨ 新增：搜尋關鍵字狀態
 
     const [isJumping, setIsJumping] = useState(false);
     const [visibleLimit, setVisibleLimit] = useState(50); 
@@ -49,11 +50,22 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const folders = ['全部', ...new Set([...customFolders, ...wrongItems.map(item => item.folder || '未分類')])];
     const filteredItems = currentFolder === '全部' ? wrongItems : wrongItems.filter(item => (item.folder || '未分類') === currentFolder);
 
+    // ✨ 新增：根據搜尋關鍵字過濾
+    const searchedItems = filteredItems.filter(item => {
+        if (!searchQuery.trim()) return true;
+        const keyword = searchQuery.toLowerCase();
+        const qTextMatch = (item.qText || '').toLowerCase().includes(keyword);
+        const qHtmlMatch = (item.qHtml || '').toLowerCase().includes(keyword);
+        const nTextMatch = (item.nText || item.note || '').toLowerCase().includes(keyword);
+        const quizNameMatch = (item.quizName || '').toLowerCase().includes(keyword);
+        return qTextMatch || qHtmlMatch || nTextMatch || quizNameMatch;
+    });
+
     useEffect(() => {
         setVisibleLimit(50); 
-    }, [currentFolder]);
+    }, [currentFolder, searchQuery]); // ✨ 修改：搜尋時也重置顯示數量
 
-    const displayedItems = filteredItems.slice(0, visibleLimit);
+    const displayedItems = searchedItems.slice(0, visibleLimit);
 
     // 極速背景同步機制
     useEffect(() => {
@@ -317,6 +329,23 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                         </button>
                     ))}
                 </div>
+
+                {/* ✨ 新增：搜尋列 UI */}
+                <div className="flex items-center w-full max-w-md bg-[#FCFBF7] dark:bg-stone-800 border border-gray-300 dark:border-gray-600 rounded-2xl px-3 py-1.5 shadow-sm">
+                    <span className="material-symbols-outlined text-gray-400 mr-2 text-[20px]">search</span>
+                    <input
+                        type="text"
+                        placeholder="搜尋題目、筆記或試卷名稱..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-transparent outline-none text-sm font-bold text-stone-800 dark:text-white placeholder-gray-400"
+                    />
+                    {searchQuery && (
+                        <button onClick={() => setSearchQuery('')} className="text-gray-400 hover:text-red-500 flex items-center ml-2 transition-colors">
+                            <span className="material-symbols-outlined text-[18px]">cancel</span>
+                        </button>
+                    )}
+                </div>
                 
                 <div className="flex flex-wrap items-center gap-2 pb-1 border-t border-stone-200 dark:border-stone-700 pt-3 mt-1">
                     <button 
@@ -367,7 +396,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
             </div>
             
            {loading && wrongItems.length === 0 ? <LoadingSpinner text="載入錯題中..." /> : 
-             filteredItems.length === 0 ? (
+             searchedItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 px-4 bg-[#FCFBF7] dark:bg-stone-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl text-center shadow-sm">
                     <div className="text-gray-400 mb-4"><span className="material-symbols-outlined" style={{ fontSize: '64px' }}>menu_book</span></div>
                     <h3 className="text-2xl font-black text-gray-800 dark:text-white mb-2">目前沒有錯題紀錄</h3>
@@ -464,7 +493,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
              </div>
             }
             
-            {!loading && wrongItems.length >= visibleLimit && (
+            {!loading && searchedItems.length >= visibleLimit && (
                 <div className="flex justify-center mt-2 mb-10">
                     <button 
                         onClick={() => setVisibleLimit(prev => prev + 50)} 

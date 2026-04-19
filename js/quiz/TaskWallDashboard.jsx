@@ -835,16 +835,61 @@ D. 第四個選項`}
 }
 
 function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
-    const [tasks, setTasks] = useState({});
-    const [officialTasks, setOfficialTasks] = useState({});
-    const [myTasks, setMyTasks] = useState({}); 
-    const [loading, setLoading] = useState(true);
-    const [taskLimit, setTaskLimit] = useState(5); // ✨ 新增：任務牆動態載入數量的狀態
-    
-    // ✨ 新增搜尋狀態
-    const [searchQuery, setSearchQuery] = useState('');
+    const isAdmin = user && user.email === 'jay03wn@gmail.com'; // ✨ 新增：判斷管理員
+    const [isJumping, setIsJumping] = useState(false); // ✨ 新增：跳轉載入狀態
+  const [tasks, setTasks] = useState({});
+  const [officialTasks, setOfficialTasks] = useState({});
+  const [myTasks, setMyTasks] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [taskLimit, setTaskLimit] = useState(5); // ✨ 新增：任務牆動態載入數量的狀態
+ 
+  // ✨ 新增搜尋狀態
+  const [searchQuery, setSearchQuery] = useState('');
 
-    const normalCategories = [
+    // ✨ 新增：管理員從任務牆直接建立試卷
+    const handleAdminCreateTask = (type) => {
+        onContinueQuiz({
+            forceStep: 'setup',
+            taskType: type,
+            folder: '[公開試題管理]',
+            testName: type === 'official' ? '新增國考題 [#op]' : '新增模擬試題 [#mnst]',
+            numQuestions: 50,
+            maxScore: 100,
+            allowPeek: false, // 規定不能偷看答案
+            publishAnswers: true,
+        });
+    };
+
+    // ✨ 新增：管理員從任務牆直接編輯試卷
+    const handleAdminEditTask = async (task) => {
+        setIsJumping(true);
+        try {
+            const docSnap = await window.db.collection('users').doc(user.uid).collection('quizzes').doc(task.id).get();
+            if (!docSnap.exists) {
+                setIsJumping(false);
+                return showAlert("找不到原始試卷，可能已刪除或您不是出題者！");
+            }
+            let finalRec = { id: docSnap.id, ...docSnap.data() };
+            
+            if (finalRec.hasSeparatedContent) {
+                const contentSnap = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(task.id).get();
+                if (contentSnap.exists) {
+                    const contentData = contentSnap.data();
+                    finalRec.questionText = window.safeDecompress(contentData.questionText);
+                    finalRec.questionHtml = window.safeDecompress(contentData.questionHtml);
+                    finalRec.explanationHtml = window.safeDecompress(contentData.explanationHtml);
+                }
+            }
+            
+            setIsJumping(false);
+            onContinueQuiz({ ...finalRec, forceStep: 'edit' });
+        } catch (e) {
+            setIsJumping(false);
+            showAlert("讀取失敗：" + e.message);
+        }
+    };
+
+  const normalCategories = [
         '1. 藥物分析學', '2. 生藥學', '3. 中藥學', 
         '4. 藥物化學與藥理學', '5. 藥劑學', '6. 生物藥劑學', '模擬試題 (其他)'
     ];
@@ -1059,14 +1104,26 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
 
     return (
         <div className="max-w-[1600px] w-full mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar">
-            <div className="flex justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 shrink-0">
-                <h1 className="text-2xl font-black dark:text-white flex items-center">
-                    🎯 公開任務牆
-                </h1>
-                <p className="text-sm font-bold text-gray-500 dark:text-gray-400">完成考驗獲取獎勵鑽石！</p>
-            </div>
+      <div className="flex justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 shrink-0">
+        <h1 className="text-2xl font-black dark:text-white flex items-center">
+          🎯 公開任務牆
+        </h1>
+                <div className="flex items-center gap-3">
+            <p className="text-sm font-bold text-gray-500 dark:text-gray-400 hidden sm:block">完成考驗獲取獎勵鑽石！</p>
+                    {isAdmin && (
+                        <div className="flex gap-2">
+                            <button onClick={() => handleAdminCreateTask('official')} className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl font-bold text-sm flex items-center gap-1 shadow-sm transition-colors">
+                                <span className="material-symbols-outlined text-[18px]">add</span> 新增國考題
+                            </button>
+                            <button onClick={() => handleAdminCreateTask('mock')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl font-bold text-sm flex items-center gap-1 shadow-sm transition-colors">
+                                <span className="material-symbols-outlined text-[18px]">add</span> 新增模擬題
+                            </button>
+                        </div>
+                    )}
+                </div>
+      </div>
 
-            {/* ✨ 新增：快問快答區塊 (放在最頂端) */}
+      {/* ✨ 新增：快問快答區塊 (放在最頂端) */}
             <FastQASection user={user} showAlert={showAlert} showConfirm={showConfirm} />
 
             {/* ✨ 新增：搜尋任務列 */}
@@ -1146,9 +1203,16 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                     return (
                                                         <div key={task.id} className="border border-amber-200 dark:border-amber-700 p-3 bg-[#FCFBF7] dark:bg-stone-800 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow rounded-2xl">
                                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
-                                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
-    {renderTestName(task.testName, isCompleted)}
-</h3>
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
+                                                              {renderTestName(task.testName, isCompleted)}
+                                                            </h3>
+                                                            {isAdmin && (
+                                                                <button onClick={() => handleAdminEditTask(task)} className="text-xs bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 px-2 py-0.5 rounded flex items-center transition-colors shadow-sm active:scale-95 shrink-0">
+                                                                    <span className="material-symbols-outlined text-[14px] mr-1">edit</span> 編輯
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
                                                                     {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
@@ -1202,9 +1266,16 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                                     return (
                                                         <div key={task.id} className="border border-stone-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-stone-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow rounded-2xl">
                                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
-                                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
-    {renderTestName(task.testName, isCompleted)}
-</h3>
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
+                                                              {renderTestName(task.testName, isCompleted)}
+                                                            </h3>
+                                                            {isAdmin && (
+                                                                <button onClick={() => handleAdminEditTask(task)} className="text-xs bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 px-2 py-0.5 rounded flex items-center transition-colors shadow-sm active:scale-95 shrink-0">
+                                                                    <span className="material-symbols-outlined text-[14px] mr-1">edit</span> 編輯
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
                                                                     {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
@@ -1249,9 +1320,16 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                     return (
                                         <div key={task.id} className="border border-stone-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-stone-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow rounded-2xl">
                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
-                                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
-    {renderTestName(task.testName, isCompleted)}
-</h3>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
+                                                              {renderTestName(task.testName, isCompleted)}
+                                                            </h3>
+                                                            {isAdmin && (
+                                                                <button onClick={() => handleAdminEditTask(task)} className="text-xs bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 px-2 py-0.5 rounded flex items-center transition-colors shadow-sm active:scale-95 shrink-0">
+                                                                    <span className="material-symbols-outlined text-[14px] mr-1">edit</span> 編輯
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
                                                     {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
@@ -1289,17 +1367,29 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
 
                     {/* ✨ 新增：任務牆的「載入更多」按鈕 */}
                     <div className="flex justify-center mt-8 pt-4">
-                        <button 
-                            onClick={() => setTaskLimit(prev => prev + 5)} 
-                            className="bg-[#FCFBF7] dark:bg-stone-800 border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 px-8 py-3 font-bold shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-all active:scale-95 flex items-center justify-center gap-2 rounded-2xl"
-                        >
-                            <span className="material-symbols-outlined text-[20px]">arrow_downward</span> 載入更早的任務...
-                        </button>
-                    </div>
+                        <button 
+                            onClick={() => setTaskLimit(prev => prev + 5)} 
+                            className="bg-[#FCFBF7] dark:bg-stone-800 border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 px-8 py-3 font-bold shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-all active:scale-95 flex items-center justify-center gap-2 rounded-2xl"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">arrow_downward</span> 載入更早的任務...
+                        </button>
+                    </div>
 
+                </div>
+            )}
+
+            {/* ✨ 新增：跳轉試卷時的載入 Modal */}
+            {isJumping && (
+                <div className="fixed inset-0 bg-stone-800 bg-opacity-80 flex items-center justify-center z-[200] p-4">
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-sm rounded-2xl shadow-2xl text-center border-t-8 border-indigo-500 animate-fade-in">
+                        <div className="w-16 h-16 border-4 border-stone-200 dark:border-stone-700 border-t-indigo-500 rounded-full animate-spin mx-auto mb-6"></div>
+                        <h3 className="text-xl font-black mb-2 dark:text-white">🚀 載入中...</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">正在讀取試卷資料</p>
+                    </div>
                 </div>
             )}
-        </div>
-    );
+
+        </div>
+    );
 }
 window.TaskWallDashboard = TaskWallDashboard;

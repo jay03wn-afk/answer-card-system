@@ -819,12 +819,12 @@ function Main() {
     const [qaStoryIds, setQaStoryIds] = useState([]);
     const [qaStoryIndex, setQaStoryIndex] = useState(0);
     
-    // ✨ 修復：補上缺失的管理員相關狀態
-    const [adminMailTab, setAdminMailTab] = useState('manage'); 
-    const [isProcessingMail, setIsProcessingMail] = useState(false);
-    const [systemMails, setSystemMails] = useState([]);
+  // ✨ 修復：補上缺失的管理員相關狀態
+  const [adminMailTab, setAdminMailTab] = useState('manage'); 
+  const [isProcessingMail, setIsProcessingMail] = useState(false);
+  const [systemMails, setSystemMails] = useState([]);
 
-    useEffect(() => {
+  useEffect(() => {
         window.setGlobalToast = setGlobalToast;
     }, []);
 
