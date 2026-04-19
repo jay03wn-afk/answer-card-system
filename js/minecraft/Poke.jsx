@@ -13,6 +13,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
     const [isFirstTurn, setIsFirstTurn] = useState(true); 
     const [timeLeft, setTimeLeft] = useState(30);
     const [passedPlayers, setPassedPlayers] = useState([]); 
+    const [draggedIdx, setDraggedIdx] = useState(null); // 新增拖曳狀態
 
     const [toast, setToast] = useState(null);
     const [roomJoinCode, setRoomJoinCode] = useState('');
@@ -491,6 +492,42 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         return () => clearTimeout(timer);
     }, [gameState, currentTurn, tableCombo, players, passCount, isFirstTurn, roomCode, isHost]);
 
+    // ✨ 新增拖曳排序邏輯
+    const handleDragStart = (e, index) => {
+        setDraggedIdx(index);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', index);
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault(); // 允許放下
+    };
+
+    const handleDrop = (e, dropIndex) => {
+        e.preventDefault();
+        if (draggedIdx === null || draggedIdx === dropIndex) return;
+        
+        handlePlaySort(); // 播放洗牌音效
+        const newHand = [...myHand];
+        const [draggedCard] = newHand.splice(draggedIdx, 1);
+        newHand.splice(dropIndex, 0, draggedCard);
+        
+        setMyHand(newHand);
+        
+        // 修正選擇的卡牌索引，讓被選取的牌在拖曳後依然保持選取狀態
+        setSelectedCards(prev => {
+            let newSelected = [];
+            for (let i = 0; i < prev.length; i++) {
+                let s = prev[i];
+                if (s === draggedIdx) newSelected.push(dropIndex);
+                else if (draggedIdx < s && dropIndex >= s) newSelected.push(s - 1);
+                else if (draggedIdx > s && dropIndex <= s) newSelected.push(s + 1);
+                else newSelected.push(s);
+            }
+            return newSelected;
+        });
+        setDraggedIdx(null);
+    };
 
     return (
         <div className="fixed inset-0 z-[200] bg-stone-900 bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in">
@@ -715,11 +752,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
 
                         <div className={`flex flex-col bg-[#8b8b8b] p-3 border-4 transition-colors duration-300 ${players[currentTurn]?.id === user.uid ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.8)]' : 'border-white border-r-[#555] border-b-[#555]'}`}>
                             
-                            {players[currentTurn]?.id === user.uid && (
-                                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-[100] animate-out fade-out zoom-out duration-1000 delay-500 fill-mode-forwards">
-                                    <h1 className="text-6xl md:text-8xl font-black text-amber-400 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]" style={{WebkitTextStroke: '3px black'}}>你的回合!</h1>
-                                </div>
-                            )}
+                            {/* 移除了原本擋在中間的「你的回合!」超大字樣 */}
 
                             <div className="flex justify-between items-center mb-3">
                                 <div className="flex items-center text-[#373737] font-black text-lg relative">
@@ -750,14 +783,21 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                             <div className="flex flex-wrap justify-center gap-1 sm:gap-2">
                                 {myHand.map((card, index) => {
                                     const isSelected = selectedCards.includes(index);
+                                    const isDragging = draggedIdx === index;
                                     return (
                                         <button 
                                             key={index}
+                                            draggable
+                                            onDragStart={(e) => handleDragStart(e, index)}
+                                            onDragOver={handleDragOver}
+                                            onDrop={(e) => handleDrop(e, index)}
+                                            onDragEnd={() => setDraggedIdx(null)}
                                             onClick={() => {
                                                 handlePlaySound();
                                                 setSelectedCards(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
                                             }}
-                                            className={`w-12 h-20 sm:w-16 sm:h-24 flex flex-col items-center justify-center transition-all relative
+                                            className={`w-12 h-20 sm:w-16 sm:h-24 flex flex-col items-center justify-center transition-all relative cursor-grab active:cursor-grabbing
+                                                ${isDragging ? 'opacity-30 scale-95' : 'opacity-100'}
                                                 ${isSelected 
                                                     ? 'bg-amber-50 -translate-y-6 shadow-[6px_6px_0px_#78350f] border-4 border-amber-600' 
                                                     : 'bg-[#dbdbdb] border-4 border-[#373737] hover:-translate-y-2 shadow-[4px_4px_0px_#222]'}`}

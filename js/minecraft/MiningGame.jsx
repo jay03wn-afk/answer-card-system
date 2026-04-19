@@ -77,10 +77,16 @@ const { useState, useEffect, useRef } = React;;
     }, []);
 
     const handleStart = () => {
-        if (mcData.diamonds < 50) return showAlert("💎 你的鑽石不足 50 顆！\n趕快去簽到或做測驗賺取吧！");
+        const hasTicket = (mcData.miningTickets && mcData.miningTickets > 0);
+        if (!hasTicket && mcData.diamonds < 50) return showAlert("💎 你的鑽石或挖礦券不足！\n趕快去簽到或做測驗賺取吧！");
         if (bgmRef.current) bgmRef.current.play().catch(e => console.log("BGM 自動播放被阻擋", e));
 
-        updateMcData({ diamonds: mcData.diamonds - 50 }, true);
+        if (hasTicket) {
+            updateMcData({ miningTickets: mcData.miningTickets - 1 }, true);
+        } else {
+            updateMcData({ diamonds: mcData.diamonds - 50 }, true);
+        }
+        
         setBoard(Array(9).fill({ revealed: false, prize: null, hits: 0, isHit: false }));
         setGameState('playing');
     };
@@ -226,15 +232,20 @@ const { useState, useEffect, useRef } = React;;
                 <button onClick={handleQuit} className="absolute -top-4 -right-4 bg-red-600 text-white w-10 h-10 border-2 border-white font-black hover:bg-red-500 z-10 transition-colors">✖</button>
                 
                 <div className="w-full md:w-3/5 p-6 flex flex-col items-center justify-center relative border-b md:border-b-0 md:border-r-4 border-[#2d2d2d]">
-                    <h2 className="text-2xl font-black text-white mb-2 drop-shadow-md flex items-center">
-                        ⛏️ 礦坑尋寶 <span className="text-sm font-normal text-amber-300 ml-4 bg-stone-800 bg-opacity-40 px-2 py-1 rounded">擁有: {mcData.diamonds} 💎</span>
+                    <h2 className="text-2xl font-black text-white mb-2 drop-shadow-md flex flex-wrap items-center gap-2">
+                        ⛏️ 礦坑尋寶 
+                        <span className="text-sm font-normal text-amber-300 bg-stone-800 bg-opacity-40 px-2 py-1 rounded">擁有: {mcData.diamonds} 💎</span>
+                        <span className="text-sm font-normal text-emerald-300 bg-stone-800 bg-opacity-40 px-2 py-1 rounded">挖礦券: {mcData.miningTickets || 0} 張</span>
                     </h2>
-                    <p className="text-gray-300 font-bold mb-6 text-sm">每次開挖消耗 50 💎，有機會挖中神級裝備或實體大獎！</p>
+                    <p className="text-gray-300 font-bold mb-6 text-sm">每次開挖優先消耗 1 張挖礦券，否則消耗 50 💎，有機會挖中神級裝備或實體大獎！</p>
 
                     {gameState === 'idle' ? (
                         <div className="flex-grow flex flex-col items-center justify-center w-full">
-                            <button onClick={handleStart} className="mc-btn px-8 py-5 text-2xl animate-bounce flex items-center mb-4">
-                                開始挖礦 (50 <McImg src={imgDiamond} className="w-6 h-6 ml-2 pixelated"/>)
+                            <button onClick={handleStart} className="mc-btn px-6 py-4 text-xl sm:text-2xl animate-bounce flex flex-col items-center mb-4">
+                                <span>開始挖礦</span>
+                                <span className="text-sm mt-1 font-bold">
+                                    {((mcData.miningTickets || 0) > 0) ? "🎫 消耗 1 張挖礦券" : <span className="flex items-center">消耗 50 <McImg src={imgDiamond} className="w-4 h-4 ml-1 inline pixelated"/></span>}
+                                </span>
                             </button>
                             <button onClick={() => setShowProbModal(true)} className="text-amber-300 font-bold underline hover:text-amber-200">
                                 🎁 查看獎池與機率
@@ -269,7 +280,7 @@ const { useState, useEffect, useRef } = React;;
 
                     {gameState === 'revealed' && (
                         <button onClick={handleStart} className="mt-6 bg-amber-600 hover:bg-amber-500 text-white px-6 py-2 border-2 border-black font-bold text-lg shadow-lg">
-                            🔄 再挖一次 (50 💎)
+                            🔄 再挖一次 ({((mcData.miningTickets || 0) > 0) ? "消耗 1 張挖礦券 🎫" : "消耗 50 💎"})
                         </button>
                     )}
                 </div>

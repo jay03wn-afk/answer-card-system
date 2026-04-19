@@ -36,10 +36,14 @@ const { useState, useEffect, useRef } = React;
         hunger: safeNum(rawMcData.hunger, 10),
         cats: safeNum(rawMcData.cats, 0),
         sandbox_cols: safeNum(rawMcData.sandbox_cols, 20),
+        miningTickets: safeNum(rawMcData.miningTickets, 0),
         items: rawMcData.items || [],
         lastCheckIn: rawMcData.lastCheckIn || null,
         packs: rawMcData.packs || {}
     };
+    
+    const todayTW = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const isCheckedIn = mcData.lastCheckIn === todayTW;
     
     const expToNextLevel = mcData.level * 20;
     
@@ -115,8 +119,7 @@ const { useState, useEffect, useRef } = React;
     };
 
     const handleCheckIn = () => {
-        const today = new Date().toISOString().split('T')[0];
-        if (mcData.lastCheckIn === today) {
+        if (isCheckedIn) {
             return showAlert("今日已經簽到過囉！");
         }
         
@@ -131,10 +134,11 @@ const { useState, useEffect, useRef } = React;
             diamonds: mcData.diamonds + 20, 
             exp: mcData.exp + 10,
             hunger: newHunger,
-            lastCheckIn: today,
-            packs: newPacks
+            lastCheckIn: todayTW,
+            packs: newPacks,
+            miningTickets: mcData.miningTickets + 1
         });
-        showAlert("✅ 簽到成功！獲得 20 💎 與 10 EXP\n(史蒂夫消耗了 2 點飽食度)\n🎁 額外獲得 1 個【每日簽到箱】，已放入終界儲物箱中！");
+        showAlert("✅ 簽到成功！獲得 20 💎、10 EXP 與 1 張挖礦券！\n(史蒂夫消耗了 2 點飽食度)\n🎁 額外獲得 1 個【每日簽到箱】，已放入終界儲物箱中！");
     };
 
     const handleBuy = (item) => {
@@ -376,8 +380,16 @@ const { useState, useEffect, useRef } = React;
                                     ))}
                                 </div>
                             </div>
-                            <button onClick={handleCheckIn} className="w-full py-2 flex justify-center items-center mb-2 bg-[#8b8b8b] hover:bg-[#a0a0a0] text-[#373737] border-2 border-white border-r-[#555] border-b-[#555] font-black active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white">
-                                📅 每日簽到 (+20 <McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mx-1 pixelated"/>)
+                            <button 
+                                onClick={handleCheckIn} 
+                                disabled={isCheckedIn}
+                                className={`w-full py-2 flex justify-center items-center mb-2 font-black border-2 transition-colors ${isCheckedIn ? 'bg-[#555555] text-[#aaaaaa] border-[#444444] cursor-not-allowed' : 'bg-[#8b8b8b] hover:bg-[#a0a0a0] text-[#373737] border-white border-r-[#555] border-b-[#555] active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white'}`}
+                            >
+                                {isCheckedIn ? (
+                                    "✅ 今日已簽到"
+                                ) : (
+                                    <>📅 每日簽到 (+20 <McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mx-1 pixelated"/> +1 🎫)</>
+                                )}
                             </button>
                             <button onClick={() => {
                                 playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/block/enderchest/open.ogg');
