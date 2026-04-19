@@ -386,6 +386,7 @@ window.useQuizState = function(props) {
     const [syncStatus, setSyncStatus] = useState({ isSyncing: false, current: 0, total: 0 });
     const [isCreating, setIsCreating] = useState(false); 
     const [isRegrading, setIsRegrading] = useState(false); 
+    const [wrongRetestState, setWrongRetestState] = useState(initialRecord.wrongRetestState || null);
     const [wrongBookAddingItem, setWrongBookAddingItem] = useState(null);
     const [loadingWrongBookNum, setLoadingWrongBookNum] = useState(null); 
     const [explanationModalItem, setExplanationModalItem] = useState(null); 
@@ -540,6 +541,7 @@ window.useQuizState = function(props) {
             isCompleted: !!results 
         };
         if (results !== undefined && results !== null) stateToSave.results = results;
+        if (wrongRetestState) stateToSave.wrongRetestState = wrongRetestState;
         if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
 
         if (isExiting) {
@@ -600,6 +602,7 @@ window.useQuizState = function(props) {
                 isCompleted: !!results 
             };
             if (results !== undefined && results !== null) stateToSave.results = results;
+            if (wrongRetestState) stateToSave.wrongRetestState = wrongRetestState;
             if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
 
             const timerId = setTimeout(() => {
@@ -1057,6 +1060,50 @@ ${difficultyInstruction}
             setIsCreating(false);
             showAlert('建立紀錄失敗：' + e.message);
         }
+    };
+
+    const handleStartWrongRetest = (isRetestingAgain = false) => {
+        if (!results || !results.data) return;
+
+        let newTargetIndices = [];
+        
+        if (isRetestingAgain && wrongRetestState && wrongRetestState.isCorrectMap) {
+            // 過濾掉剛剛已經答對的，只留下「一錯再錯」的題目
+            newTargetIndices = (wrongRetestState.targetIndices || []).filter(idx => !wrongRetestState.isCorrectMap[idx]);
+            if (newTargetIndices.length === 0) {
+                showAlert('太厲害了！你已經把這輪的所有錯題都答對了！');
+                setStep('results');
+                return;
+            }
+        } else {
+            // 第一次啟動錯題重測，抓取所有原本錯的題目
+            newTargetIndices = results.data.filter(d => !d.isCorrect).map(d => d.number - 1);
+            if (newTargetIndices.length === 0) {
+                showAlert('太厲害了！你沒有任何錯題，不需要重測。');
+                return;
+            }
+        }
+
+        setWrongRetestState({ 
+            targetIndices: newTargetIndices, 
+            answers: {}, 
+            peekedAnswers: {}, 
+            finished: false, 
+            correctCount: 0,
+            isCorrectMap: {}
+        });
+        setStep('wrong_retest');
+    };
+
+    const handleWrongRetestPeek = (idx) => {
+        setWrongRetestState(prev => {
+            if (!prev) return prev;
+            const newPeeked = { ...(prev.peekedAnswers || {}) };
+            newPeeked[idx] = true;
+
+            // 僅鎖定該題狀態，保留原本已經作答的答案
+            return { ...prev, peekedAnswers: newPeeked };
+        });
     };
 
     const handleRetake = () => {
@@ -1978,11 +2025,11 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         isDragging, setIsDragging, previewOpen, setPreviewOpen, splitContainerRef,
         showOnlyWrong, setShowOnlyWrong, showOnlyStarred, setShowOnlyStarred, showOnlyNotes, setShowOnlyNotes,
         showShareScoreModal, setShowShareScoreModal, syncStatus, setSyncStatus, isCreating, setIsCreating,
-        isRegrading, setIsRegrading, wrongBookAddingItem, setWrongBookAddingItem, loadingWrongBookNum, setLoadingWrongBookNum,
+        isRegrading, setIsRegrading, wrongRetestState, setWrongRetestState, wrongBookAddingItem, setWrongBookAddingItem, loadingWrongBookNum, setLoadingWrongBookNum,
         explanationModalItem, setExplanationModalItem, isEditLoading, setIsEditLoading, taskScores, setTaskScores,
         parsedQuestionTypes, parsedInteractiveQuestions, starredIndices, canSeeAnswers, isShared, isTask, userFolders, initialRecord,
         toggleSubject, toggleTag, handleDragStart, handleSaveProgress, onBackToDashboard,
-        handleStartTest, handleRetake, handleSaveEdit, handleBackFromEdit, handleAnswerSelect,
+        handleStartTest, handleRetake, handleStartWrongRetest, handleWrongRetestPeek, handleSaveEdit, handleBackFromEdit, handleAnswerSelect,
         executePeek, handlePeek, toggleStar, handleGrade, handleManualRegrade, handleSubmitClick,
         handleSendSuggestion, handleUploadComment, handleResetProgress, handleAddToWrongBook,
         shareScoreToFriend, scrollToQuestion, handleRichTextClick, toggleSection, handleProcessAiFile, handleGenerateAI
