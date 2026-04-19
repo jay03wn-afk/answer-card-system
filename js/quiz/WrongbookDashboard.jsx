@@ -16,9 +16,22 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const [localToast, setLocalToast] = useState(null); // ✨ 新增：小文字提示狀態
     const [searchQuery, setSearchQuery] = useState(''); // ✨ 新增：搜尋關鍵字狀態
 
-    const [isJumping, setIsJumping] = useState(false);
+   const [isJumping, setIsJumping] = useState(false);
     const [visibleLimit, setVisibleLimit] = useState(50); 
     const [isSyncingWb, setIsSyncingWb] = useState(false);
+
+    // ✨ 新增：直覺化介面狀態
+    const [showFolderModal, setShowFolderModal] = useState(false); // 新增資料夾視窗
+    const [parentFolder, setParentFolder] = useState('');
+    const [newFolderName, setNewFolderName] = useState('');
+    
+    const [moveItemTarget, setMoveItemTarget] = useState(null); // 移動錯題視窗 (存陣列)
+    const [batchMode, setBatchMode] = useState(false); // 批次選取模式
+    const [selectedItems, setSelectedItems] = useState([]); // 被打勾的錯題
+    
+    // ✨ 新增：控制資料夾目錄與題目展開的狀態
+    const [isFolderTreeOpen, setIsFolderTreeOpen] = useState(true); // 資料夾目錄是否展開
+    const [expandedQuestions, setExpandedQuestions] = useState({}); // 個別題目是否展開
 
     useEffect(() => {
         let isMounted = true;
@@ -48,7 +61,67 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     }, [user.uid, visibleLimit]);
 
     const folders = ['全部', ...new Set([...customFolders, ...wrongItems.map(item => item.folder || '未分類')])];
-    const filteredItems = currentFolder === '全部' ? wrongItems : wrongItems.filter(item => (item.folder || '未分類') === currentFolder);
+    
+    // ✨ 修改：支援前綴匹配，點擊父資料夾(如:數學)能看到所有子資料夾(如:數學/代數)裡的題目
+    const filteredItems = wrongItems.filter(item => {
+        if (currentFolder === '全部') return true;
+        const itemFolder = item.folder || '未分類';
+        return itemFolder === currentFolder || itemFolder.startsWith(currentFolder + '/');
+    });
+
+    // ✨ 新增：樹狀結構展開狀態與轉換邏輯
+    const [expandedFolders, setExpandedFolders] = useState({});
+    const folderTree = (() => {
+        const tree = {};
+        folders.forEach(f => {
+            if (f === '全部' || f === '未分類') return;
+            const parts = f.split('/');
+            let curr = tree;
+            let currentPath = '';
+            parts.forEach((p, i) => {
+                currentPath = currentPath ? currentPath + '/' + p : p;
+                if (!curr[p]) curr[p] = { name: p, path: currentPath, children: {} };
+                curr = curr[p].children;
+            });
+        });
+        return tree;
+    })();
+
+    const renderTree = (nodes, level = 0) => {
+        return Object.values(nodes).sort((a, b) => a.name.localeCompare(b.name)).map(node => {
+            const hasChildren = Object.keys(node.children).length > 0;
+            const isExpanded = expandedFolders[node.path];
+            const isSelected = currentFolder === node.path;
+
+            return (
+                <div key={node.path} className="flex flex-col w-full">
+                    <div 
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded-xl cursor-pointer transition-colors ${isSelected ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md font-bold' : 'hover:bg-stone-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium'}`}
+                        style={{ marginLeft: `${level * 1.2}rem` }}
+                        onClick={() => setCurrentFolder(node.path)}
+                    >
+                        {hasChildren ? (
+                            <span 
+                                className="material-symbols-outlined text-[20px] cursor-pointer text-gray-400 hover:text-amber-500"
+                                onClick={(e) => { e.stopPropagation(); setExpandedFolders(p => ({...p, [node.path]: !p[node.path]})); }}
+                            >
+                                {isExpanded ? 'arrow_drop_down' : 'arrow_right'}
+                            </span>
+                        ) : (
+                            <span className="w-[20px]"></span> 
+                        )}
+                        <span className="material-symbols-outlined text-[16px] text-amber-500">{hasChildren && isExpanded ? 'folder_open' : 'folder'}</span>
+                        <span className="text-sm truncate">{node.name}</span>
+                    </div>
+                    {hasChildren && isExpanded && (
+                        <div className="flex flex-col w-full mt-0.5 gap-0.5 border-l-2 border-stone-200 dark:border-stone-700 ml-4 pl-1">
+                            {renderTree(node.children, 0)}
+                        </div>
+                    )}
+                </div>
+            );
+        });
+    };
 
     // ✨ 新增：根據搜尋關鍵字過濾
     const searchedItems = filteredItems.filter(item => {
@@ -322,12 +395,44 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
             </div>
 
             <div className="flex flex-col mb-6 gap-3 shrink-0 w-full">
-                <div className="flex flex-wrap items-center gap-2 pb-1">
-                    {folders.map(f => (
-                        <button key={f} onClick={() => setCurrentFolder(f)} className={`px-4 py-1.5 font-bold text-sm rounded-2xl transition-colors flex items-center gap-1 ${currentFolder === f ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md' : 'bg-[#FCFBF7] dark:bg-stone-800 text-gray-600 dark:text-gray-300 hover:bg-stone-50 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600'}`}>
-                            <span className="material-symbols-outlined text-[16px]">{f === '全部' ? 'search' : 'folder'}</span> {f}
-                        </button>
-                    ))}
+                <div className="flex flex-col w-full max-w-md border border-stone-200 dark:border-stone-700 rounded-2xl bg-[#FCFBF7] dark:bg-stone-900 shadow-sm overflow-hidden transition-all">
+                    {/* ✨ 新增：點擊收合/展開的標題列 */}
+                    <button 
+                        onClick={() => setIsFolderTreeOpen(!isFolderTreeOpen)} 
+                        className="flex items-center justify-between w-full px-4 py-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-gray-700 transition-colors border-b border-stone-200 dark:border-stone-700 font-bold text-stone-800 dark:text-white"
+                    >
+                        <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-amber-500">folder_open</span>
+                            <span>錯題分類目錄</span>
+                            <span className="text-xs bg-stone-800 text-white dark:bg-stone-100 dark:text-stone-800 px-2 py-0.5 rounded-full ml-1">{folders.length - 1}</span>
+                        </div>
+                        <span className="material-symbols-outlined text-gray-500 transition-transform duration-300" style={{ transform: isFolderTreeOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                            expand_more
+                        </span>
+                    </button>
+                    
+                    {/* ✨ 內容區域 (依照狀態顯示/隱藏) */}
+                    {isFolderTreeOpen && (
+                        <div className="flex flex-col gap-1 p-3 max-h-[250px] overflow-y-auto custom-scrollbar shadow-inner">
+                            <div 
+                                className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${currentFolder === '全部' ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md font-bold' : 'hover:bg-stone-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium'}`}
+                                onClick={() => setCurrentFolder('全部')}
+                            >
+                                <span className="material-symbols-outlined text-[18px]">search</span>
+                                <span className="text-sm">全部錯題</span>
+                            </div>
+                            {renderTree(folderTree)}
+                            {folders.includes('未分類') && (
+                                <div 
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors mt-1 border-t border-stone-200 dark:border-stone-700 pt-2 ${currentFolder === '未分類' ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md font-bold' : 'hover:bg-stone-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium'}`}
+                                    onClick={() => setCurrentFolder('未分類')}
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">folder_off</span>
+                                    <span className="text-sm">未分類</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* ✨ 新增：搜尋列 UI */}
@@ -356,23 +461,25 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     </button>
                     <button 
                         onClick={() => {
-                            showPrompt("請輸入新的錯題資料夾名稱：", "", (folderName) => {
-                                const cleanName = folderName?.trim();
-                                if (cleanName && !folders.includes(cleanName)) {
-                                    window.db.collection('users').doc(user.uid).set({
-                                        wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(cleanName)
-                                    }, { merge: true }).then(() => {
-                                        setCurrentFolder(cleanName);
-                                        showAlert(`[成功] 已成功建立錯題資料夾「${cleanName}」！`);
-                                    });
-                                } else if (folders.includes(cleanName)) {
-                                    showAlert('[錯誤] 資料夾已存在！');
-                                }
-                            });
+                            setParentFolder(currentFolder === '全部' || currentFolder === '未分類' ? '' : currentFolder);
+                            setNewFolderName('');
+                            setShowFolderModal(true);
                         }} 
                         className="px-3 py-1.5 text-sm font-bold bg-[#FCFBF7] dark:bg-stone-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-2xl transition-colors flex items-center gap-1"
                     >
-                        <span className="material-symbols-outlined text-[18px]">create_new_folder</span> 新增錯題資料夾
+                        <span className="material-symbols-outlined text-[18px]">create_new_folder</span> 新增資料夾
+                    </button>
+
+                    {/* ✨ 新增：批次管理按鈕 */}
+                    <button 
+                        onClick={() => {
+                            setBatchMode(!batchMode);
+                            setSelectedItems([]);
+                        }} 
+                        className={`px-3 py-1.5 text-sm font-bold rounded-2xl transition-colors flex items-center gap-1 border ${batchMode ? 'bg-indigo-100 dark:bg-indigo-900 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 shadow-inner' : 'bg-[#FCFBF7] dark:bg-stone-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                    >
+                        <span className="material-symbols-outlined text-[18px]">{batchMode ? 'close' : 'checklist'}</span> 
+                        {batchMode ? '取消批次整理' : '批次整理'}
                     </button>
 
                     {currentFolder !== '全部' && (
@@ -423,71 +530,93 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                             <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">正確答案: {item.correctAns}</span>
                          </div>
                          
-                         {(item.qHtml || item.qText || item.qImage) && (
-                             <div className="mb-3">
-                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">description</span> 題目</p>
-                                 <div className="bg-[#FCFBF7] dark:bg-stone-900 p-3 text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap border-l-4 border-amber-500 font-bold shadow-sm">
-                                     {item.qHtml ? (
-                                         <>
-                                             <style dangerouslySetInnerHTML={{__html: `
-                                                 .wb-rich-text { word-break: break-word; white-space: pre-wrap; }
-                                                 .wb-rich-text * { color: inherit !important; background-color: transparent !important; }
-                                                 .wb-rich-text img {
-                                                     display: block !important;
-                                                     max-width: 100% !important;
-                                                     height: auto !important;
-                                                     margin: 10px 0 !important;
-                                                     background-color: #FCFBF7 !important;
-                                                     opacity: 1 !important;
-                                                     visibility: visible !important;
-                                                     border-radius: 4px;
-                                                 }
-                                                 .wb-rich-text canvas {
-                                                     background-color: #FCFBF7 !important;
-                                                 }
-                                             `}} />
-                                             <div className="wb-rich-text" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(item.qHtml) }} />
-                                         </>
-                                     ) : (
-                                         item.qText && <p>{item.qText}</p>
-                                     )}
-                                     {item.qImage && <img src={item.qImage} onClick={() => setPreviewImage(item.qImage)} className="mt-2 max-h-[300px] w-full object-contain border border-stone-200 dark:border-stone-700 cursor-pointer hover:opacity-80 transition-opacity bg-[#FCFBF7]" alt="題目附圖" title="點擊放大" />}
+                         {/* ✨ 新增：內容過長時隱藏並加上漸層效果 */}
+                         <div className={`relative transition-all duration-300 ${expandedQuestions[item.id] ? '' : 'max-h-[160px] overflow-hidden'}`}>
+                             {(item.qHtml || item.qText || item.qImage) && (
+                                 <div className="mb-3">
+                                     <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">description</span> 題目</p>
+                                     <div className="bg-[#FCFBF7] dark:bg-stone-900 p-3 text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap border-l-4 border-amber-500 font-bold shadow-sm">
+                                         {item.qHtml ? (
+                                             <>
+                                                 <style dangerouslySetInnerHTML={{__html: `
+                                                     .wb-rich-text { word-break: break-word; white-space: pre-wrap; }
+                                                     .wb-rich-text * { color: inherit !important; background-color: transparent !important; }
+                                                     .wb-rich-text img {
+                                                         display: block !important;
+                                                         max-width: 100% !important;
+                                                         height: auto !important;
+                                                         margin: 10px 0 !important;
+                                                         background-color: #FCFBF7 !important;
+                                                         opacity: 1 !important;
+                                                         visibility: visible !important;
+                                                         border-radius: 4px;
+                                                     }
+                                                     .wb-rich-text canvas {
+                                                         background-color: #FCFBF7 !important;
+                                                     }
+                                                 `}} />
+                                                 <div className="wb-rich-text" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(item.qHtml) }} />
+                                             </>
+                                         ) : (
+                                             item.qText && <p>{item.qText}</p>
+                                         )}
+                                         {item.qImage && <img src={item.qImage} onClick={() => setPreviewImage(item.qImage)} className="mt-2 max-h-[300px] w-full object-contain border border-stone-200 dark:border-stone-700 cursor-pointer hover:opacity-80 transition-opacity bg-[#FCFBF7]" alt="題目附圖" title="點擊放大" />}
+                                     </div>
                                  </div>
-                             </div>
-                         )}
+                             )}
 
-                         {(item.nText || item.note || item.nImage) && (
-                             <div className="mb-3">
-                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">lightbulb</span> 筆記</p>
-                                 <div className="bg-amber-50 dark:bg-stone-900 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap border-l-4 border-amber-400 font-bold">
-                                     {(item.nText || item.note) && <p>{item.nText || item.note}</p>}
-                                    {item.nImage && <img src={item.nImage} onClick={() => setPreviewImage(item.nImage)} className="mt-2 max-h-[300px] w-full object-contain border border-stone-200 dark:border-stone-700 cursor-pointer hover:opacity-80 transition-opacity bg-[#FCFBF7]" alt="筆記附圖" title="點擊放大" />}
+                             {(item.nText || item.note || item.nImage) && (
+                                 <div className="mb-3">
+                                     <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">lightbulb</span> 筆記</p>
+                                     <div className="bg-amber-50 dark:bg-stone-900 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap border-l-4 border-amber-400 font-bold">
+                                         {(item.nText || item.note) && <p>{item.nText || item.note}</p>}
+                                        {item.nImage && <img src={item.nImage} onClick={() => setPreviewImage(item.nImage)} className="mt-2 max-h-[300px] w-full object-contain border border-stone-200 dark:border-stone-700 cursor-pointer hover:opacity-80 transition-opacity bg-[#FCFBF7]" alt="筆記附圖" title="點擊放大" />}
+                                     </div>
                                  </div>
-                             </div>
-                         )}
+                             )}
+                             
+                             {/* 漸層遮罩 */}
+                             {!expandedQuestions[item.id] && (
+                                 <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-[#FCFBF7] dark:from-stone-800 to-transparent pointer-events-none z-10"></div>
+                             )}
+                         </div>
 
-                         <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-100 dark:border-stone-700">
-                             <div className="flex items-center gap-1">
-                                 <span className="material-symbols-outlined text-[16px] text-gray-400">folder</span>
-                                 <select 
-                                     value={item.folder || '未分類'} 
-                                     onChange={(e) => {
-                                         window.db.collection('users').doc(user.uid).collection('wrongBook').doc(item.id).update({
-                                             folder: e.target.value
-                                         }).then(() => {
-                                             setLocalToast('[成功] 分類已更新！');
-                                             setTimeout(() => setLocalToast(null), 2000);
-                                         });
-                                     }}
-                                     className="text-[10px] text-gray-600 dark:text-gray-300 font-bold px-1 py-0.5 bg-stone-50 dark:bg-gray-700 border border-stone-200 dark:border-gray-600 outline-none cursor-pointer"
+                         {/* ✨ 新增：展開/收起按鈕 */}
+                         <button 
+                             onClick={() => setExpandedQuestions(prev => ({...prev, [item.id]: !prev[item.id]}))} 
+                             className="w-full text-center text-xs text-indigo-500 dark:text-indigo-400 font-bold mt-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1"
+                         >
+                            {expandedQuestions[item.id] ? <><span className="material-symbols-outlined text-[16px]">expand_less</span> 收起完整內容</> : <><span className="material-symbols-outlined text-[16px]">expand_more</span> 展開完整內容</>}
+                         </button>
+
+                         <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-100 dark:border-stone-700 relative z-10">
+                             <div className="flex items-center gap-2">
+                                 {/* ✨ 改進：圖形化移動按鈕 */}
+                                 <button 
+                                     onClick={() => setMoveItemTarget([item.id])} 
+                                     className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 px-2 py-1.5 rounded-lg transition-colors flex items-center gap-1 border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-stone-800"
                                  >
-                                     {folders.filter(f => f !== '全部').map(f => (
-                                         <option key={f} value={f}>{f}</option>
-                                     ))}
-                                 </select>
+                                     <span className="material-symbols-outlined text-[14px]">drive_file_move</span> 移動至...
+                                 </button>
+                                 <span className="text-[11px] font-bold text-gray-400 px-1 truncate max-w-[100px]" title={item.folder || '未分類'}>{item.folder || '未分類'}</span>
                              </div>
                              <button onClick={() => setEditingItem(item)} className="text-xs font-bold text-gray-500 hover:text-stone-800 dark:hover:text-white transition-colors flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">edit</span> 編輯內容</button>
                          </div>
+
+                         {/* ✨ 新增：批次模式的選取框 (覆蓋在卡片上層) */}
+                         {batchMode && (
+                             <div 
+                                 className="absolute inset-0 bg-stone-800/5 dark:bg-black/20 rounded-2xl cursor-pointer border-2 transition-all z-20 flex items-start justify-end p-4"
+                                 style={{ borderColor: selectedItems.includes(item.id) ? '#4f46e5' : 'transparent' }}
+                                 onClick={() => {
+                                     setSelectedItems(prev => prev.includes(item.id) ? prev.filter(id => id !== item.id) : [...prev, item.id]);
+                                 }}
+                             >
+                                 <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 shadow-sm transition-colors ${selectedItems.includes(item.id) ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-300 dark:border-gray-500'}`}>
+                                     {selectedItems.includes(item.id) && <span className="material-symbols-outlined text-[18px]">check</span>}
+                                 </div>
+                             </div>
+                         )}
                      </div>
                  ))}
              </div>
@@ -559,6 +688,142 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
             {localToast && (
                 <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-stone-800/80 text-white px-4 py-2 rounded-full text-sm font-bold z-[300] shadow-lg pointer-events-none animate-fade-in flex items-center gap-2">
                     <span className="material-symbols-outlined text-[18px]">check_circle</span> {localToast.replace('[成功] ', '')}
+                </div>
+            )}
+
+            {/* ✨ 新增 1：批次管理底部浮動工具列 */}
+            {batchMode && (
+                <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-[#FCFBF7] dark:bg-stone-800 border-2 border-indigo-200 dark:border-indigo-800 shadow-2xl px-6 py-4 rounded-2xl z-[150] flex items-center gap-4 animate-fade-in w-[90%] max-w-md justify-between">
+                    <div className="text-sm font-bold dark:text-white flex items-center gap-2">
+                        <span className="material-symbols-outlined text-indigo-500">checklist</span>
+                        已選取 <span className="text-indigo-600 dark:text-indigo-400 text-lg px-1">{selectedItems.length}</span> 題
+                    </div>
+                    <div className="flex gap-2">
+                        <button 
+                            disabled={selectedItems.length === 0}
+                            onClick={() => {
+                                showConfirm(`確定要刪除這 ${selectedItems.length} 題嗎？`, async () => {
+                                    const batch = window.db.batch();
+                                    selectedItems.forEach(id => {
+                                        const ref = window.db.collection('users').doc(user.uid).collection('wrongBook').doc(id);
+                                        batch.delete(ref);
+                                    });
+                                    await batch.commit();
+                                    setSelectedItems([]);
+                                    showAlert(`[成功] 已刪除 ${selectedItems.length} 題！`);
+                                });
+                            }}
+                            className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 border border-red-200"
+                        >
+                            <span className="material-symbols-outlined text-[16px]">delete</span> 刪除
+                        </button>
+                        <button 
+                            disabled={selectedItems.length === 0}
+                            onClick={() => setMoveItemTarget(selectedItems)}
+                            className="bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                            <span className="material-symbols-outlined text-[16px]">drive_file_move</span> 移動
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ✨ 新增 2：直覺化新增資料夾視窗 */}
+            {showFolderModal && (
+                <div className="fixed inset-0 bg-stone-900/60 flex items-center justify-center z-[250] p-4 backdrop-blur-sm">
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl transform transition-all border border-stone-200 dark:border-stone-700">
+                        <h3 className="text-xl font-black mb-4 dark:text-white flex justify-between items-center">
+                            建立新資料夾
+                            <button onClick={() => setShowFolderModal(false)} className="text-gray-400 hover:text-red-500"><span className="material-symbols-outlined">close</span></button>
+                        </h3>
+                        
+                        <div className="mb-4">
+                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">account_tree</span> 建立於哪裡？ (可選)</label>
+                            <select 
+                                value={parentFolder} 
+                                onChange={(e) => setParentFolder(e.target.value)}
+                                className="w-full p-3 border-2 border-gray-200 dark:border-stone-600 bg-white dark:bg-stone-700 rounded-xl outline-none font-bold text-stone-800 dark:text-white focus:border-indigo-400 transition-colors cursor-pointer"
+                            >
+                                <option value="">📁 (無) 建立為主資料夾</option>
+                                {folders.filter(f => f !== '全部' && f !== '未分類').map(f => (
+                                    <option key={f} value={f}>↳ {f}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="mb-6">
+                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">edit_document</span> 新資料夾名稱</label>
+                            <input 
+                                type="text" 
+                                value={newFolderName}
+                                onChange={(e) => setNewFolderName(e.target.value)}
+                                placeholder="例如：代數、第一章"
+                                className="w-full p-3 border-2 border-gray-200 dark:border-stone-600 bg-white dark:bg-stone-700 rounded-xl outline-none font-bold text-stone-800 dark:text-white focus:border-indigo-400 transition-colors"
+                                autoFocus
+                            />
+                        </div>
+
+                        <button 
+                            onClick={() => {
+                                const cleanName = newFolderName.trim().replace(/\//g, ''); // 防呆：移除手動打的斜線
+                                if (!cleanName) return showAlert('名稱不能為空喔！');
+                                const finalPath = parentFolder ? `${parentFolder}/${cleanName}` : cleanName;
+                                
+                                if (folders.includes(finalPath)) return showAlert('這個資料夾已經存在囉！');
+
+                                window.db.collection('users').doc(user.uid).set({
+                                    wrongBookFolders: window.firebase.firestore.FieldValue.arrayUnion(finalPath)
+                                }, { merge: true }).then(() => {
+                                    setCurrentFolder(finalPath);
+                                    setShowFolderModal(false);
+                                    showAlert(`[成功] 已建立「${finalPath}」！`);
+                                });
+                            }}
+                            className="w-full bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 font-black py-3 rounded-xl hover:bg-stone-700 transition-colors shadow-md flex justify-center items-center gap-2"
+                        >
+                            <span className="material-symbols-outlined">add_circle</span> 確認建立
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ✨ 新增 3：圖形化移動錯題大視窗 */}
+            {moveItemTarget && (
+                <div className="fixed inset-0 bg-stone-900/60 flex items-center justify-center z-[250] p-4 backdrop-blur-sm">
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl transform transition-all border border-stone-200 dark:border-stone-700 flex flex-col max-h-[80vh]">
+                        <h3 className="text-xl font-black mb-1 dark:text-white flex justify-between items-center">
+                            移動錯題至...
+                            <button onClick={() => setMoveItemTarget(null)} className="text-gray-400 hover:text-red-500 bg-gray-100 dark:bg-stone-700 rounded-full p-1"><span className="material-symbols-outlined block">close</span></button>
+                        </h3>
+                        <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400 mb-4 bg-indigo-50 dark:bg-indigo-900/30 inline-block px-3 py-1 rounded-full self-start">
+                            即將移動 {moveItemTarget.length} 題
+                        </p>
+
+                        <div className="flex-1 overflow-y-auto custom-scrollbar border-2 border-stone-100 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-900 p-2 space-y-1">
+                            {folders.filter(f => f !== '全部').map(f => (
+                                <button 
+                                    key={f}
+                                    onClick={async () => {
+                                        const targetFolder = f;
+                                        const batch = window.db.batch();
+                                        moveItemTarget.forEach(id => {
+                                            const ref = window.db.collection('users').doc(user.uid).collection('wrongBook').doc(id);
+                                            batch.update(ref, { folder: targetFolder });
+                                        });
+                                        await batch.commit();
+                                        setMoveItemTarget(null);
+                                        if (batchMode) setSelectedItems([]); // 批次移動完後自動清空打勾
+                                        setLocalToast(`[成功] 已將 ${moveItemTarget.length} 題移動至 ${targetFolder}`);
+                                        setTimeout(() => setLocalToast(null), 2000);
+                                    }}
+                                    className="w-full text-left px-4 py-3 rounded-xl font-bold text-sm text-stone-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-700 dark:hover:text-indigo-300 transition-all flex items-center gap-3 group active:scale-[0.98]"
+                                >
+                                    <span className="material-symbols-outlined text-gray-400 group-hover:text-indigo-500 transition-colors">folder</span>
+                                    {f}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             )}
 

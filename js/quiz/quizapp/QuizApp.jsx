@@ -10,6 +10,75 @@ const {
 function QuizApp(props) {
     // 呼叫我們剛剛建立的大腦，把所有的狀態跟功能「借」過來用
     const { currentUser, userProfile, showAlert, showConfirm, showPrompt, tutorialStep, setTutorialStep } = props;
+    
+    // ✨ 新增：將平坦的資料夾陣列轉換為樹狀結構，並管理展開狀態
+    const [expandedFolders, setExpandedFolders] = useState({});
+    
+    // 使用 useMemo 確保不會每次渲染都重新計算
+    const folderTree = React.useMemo(() => {
+        // 從 props 取出 userFolders，如果沒有就預設一個空陣列
+        const foldersList = props.userFolders || (userProfile?.folders ? ['未分類', ...userProfile.folders] : ['未分類']);
+        const uniqueFolders = Array.from(new Set(foldersList));
+        
+        const tree = {};
+        uniqueFolders.forEach(f => {
+            if (f === '未分類') return;
+            const parts = f.split('/');
+            let curr = tree;
+            let currentPath = '';
+            parts.forEach((p, i) => {
+                currentPath = currentPath ? currentPath + '/' + p : p;
+                if (!curr[p]) curr[p] = { name: p, path: currentPath, children: {} };
+                curr = curr[p].children;
+            });
+        });
+        return tree;
+    }, [props.userFolders, userProfile?.folders]);
+
+    // ✨ 新增：遞迴渲染樹狀結構的 UI 函式
+    const renderFolderTree = (nodes, level = 0, currentSelected, onSelect) => {
+        return Object.values(nodes).sort((a, b) => a.name.localeCompare(b.name)).map(node => {
+            const hasChildren = Object.keys(node.children).length > 0;
+            const isExpanded = expandedFolders[node.path];
+            const isSelected = currentSelected === node.path;
+
+            return (
+                <div key={node.path} className="flex flex-col w-full">
+                    <div 
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${isSelected ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-800' : 'hover:bg-stone-100 dark:hover:bg-gray-700 text-stone-700 dark:text-gray-300 font-medium'}`}
+                        style={{ marginLeft: `${level * 1.2}rem` }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            onSelect(node.path);
+                        }}
+                    >
+                        {hasChildren ? (
+                            <span 
+                                className="material-symbols-outlined text-[20px] cursor-pointer text-gray-400 hover:text-amber-500"
+                                onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    e.preventDefault();
+                                    setExpandedFolders(p => ({...p, [node.path]: !p[node.path]})); 
+                                }}
+                            >
+                                {isExpanded ? 'arrow_drop_down' : 'arrow_right'}
+                            </span>
+                        ) : (
+                            <span className="w-[20px]"></span> 
+                        )}
+                        <span className={`material-symbols-outlined text-[18px] ${isSelected ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500'}`}>{hasChildren && isExpanded ? 'folder_open' : 'folder'}</span>
+                        <span className="text-sm truncate">{node.name}</span>
+                    </div>
+                    {hasChildren && isExpanded && (
+                        <div className="flex flex-col w-full mt-0.5 gap-0.5 border-l-2 border-stone-200 dark:border-stone-700 ml-5 pl-1">
+                            {renderFolderTree(node.children, 0, currentSelected, onSelect)}
+                        </div>
+                    )}
+                </div>
+            );
+        });
+    };
+
     const {
         lastExtractValRef,
         showHelp, setShowHelp, isAdmin, isQuizLoading, backgroundUpdateReady, latestContent,
@@ -525,10 +594,22 @@ function QuizApp(props) {
                         </div>
                     )}
                     <div>
-                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">存放資料夾</label>
-                        <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none focus:border-black dark:focus:border-white text-sm cursor-pointer">
-                            {userFolders.map(f => <option key={f} value={f}>{f}</option>)}
-                        </select>
+                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">存放資料夾</label>
+                        {/* ✨ 套用樹狀結構 UI */}
+                        <div className="flex flex-col gap-1 w-full border border-stone-200 dark:border-stone-700 rounded-2xl p-2 bg-[#FCFBF7] dark:bg-stone-800 shadow-inner max-h-[200px] overflow-y-auto custom-scrollbar">
+                            {/* 未分類永遠在最上方 */}
+                            <div 
+                                className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${folder === '未分類' || !folder ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-800' : 'hover:bg-stone-100 dark:hover:bg-gray-700 text-stone-700 dark:text-gray-300 font-medium'}`}
+                                onClick={() => setFolder('未分類')}
+                            >
+                                <span className="w-[20px]"></span>
+                                <span className="material-symbols-outlined text-[18px] text-gray-400">folder_off</span>
+                                <span className="text-sm">未分類</span>
+                            </div>
+                            
+                            {/* 遞迴渲染其他資料夾 */}
+                            {renderFolderTree(folderTree, 0, folder, setFolder)}
+                        </div>
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">測驗名稱</label>
@@ -1848,7 +1929,25 @@ function QuizApp(props) {
                         qHtml: wrongBookAddingItem.extractedQHtml || '',
                         nText: wrongBookAddingItem.extractedExp || '', 
                         folder: localStorage.getItem('lastWrongBookFolder') || '未分類',
-                        userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']))
+                        userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類'])),
+                        // ✨ 傳入樹狀結構所需的資料與渲染函式
+                        folderTree: (() => {
+                            const rawList = Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']));
+                            const tree = {};
+                            rawList.forEach(f => {
+                                if (f === '未分類') return;
+                                const parts = f.split('/');
+                                let curr = tree;
+                                let currentPath = '';
+                                parts.forEach((p, i) => {
+                                    currentPath = currentPath ? currentPath + '/' + p : p;
+                                    if (!curr[p]) curr[p] = { name: p, path: currentPath, children: {} };
+                                    curr = curr[p].children;
+                                });
+                            });
+                            return tree;
+                        })(),
+                        renderFolderTree: renderFolderTree
                     }}
                     onClose={() => setWrongBookAddingItem(null)}
                     onSave={async (data) => {
@@ -1939,7 +2038,25 @@ function QuizApp(props) {
                         qHtml: wrongBookAddingItem.extractedQHtml || '',
                         nText: wrongBookAddingItem.extractedExp || '', 
                         folder: localStorage.getItem('lastWrongBookFolder') || '未分類',
-                        userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']))
+                        userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類'])),
+                        // ✨ 傳入樹狀結構所需的資料與渲染函式
+                        folderTree: (() => {
+                            const rawList = Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']));
+                            const tree = {};
+                            rawList.forEach(f => {
+                                if (f === '未分類') return;
+                                const parts = f.split('/');
+                                let curr = tree;
+                                let currentPath = '';
+                                parts.forEach((p, i) => {
+                                    currentPath = currentPath ? currentPath + '/' + p : p;
+                                    if (!curr[p]) curr[p] = { name: p, path: currentPath, children: {} };
+                                    curr = curr[p].children;
+                                });
+                            });
+                            return tree;
+                        })(),
+                        renderFolderTree: renderFolderTree
                     }}
                     onClose={() => setWrongBookAddingItem(null)}
                     onSave={async (data) => {
@@ -2925,7 +3042,25 @@ if (step === 'grading') return (
                         qHtml: wrongBookAddingItem.extractedQHtml || '',
                         nText: wrongBookAddingItem.extractedExp || '', 
                         folder: localStorage.getItem('lastWrongBookFolder') || '未分類',
-                        userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']))
+                        userFolders: Array.from(new Set(userProfile?.wrongBookFolders || ['未分類'])),
+                        // ✨ 傳入樹狀結構所需的資料與渲染函式
+                        folderTree: (() => {
+                            const rawList = Array.from(new Set(userProfile?.wrongBookFolders || ['未分類']));
+                            const tree = {};
+                            rawList.forEach(f => {
+                                if (f === '未分類') return;
+                                const parts = f.split('/');
+                                let curr = tree;
+                                let currentPath = '';
+                                parts.forEach((p, i) => {
+                                    currentPath = currentPath ? currentPath + '/' + p : p;
+                                    if (!curr[p]) curr[p] = { name: p, path: currentPath, children: {} };
+                                    curr = curr[p].children;
+                                });
+                            });
+                            return tree;
+                        })(),
+                        renderFolderTree: renderFolderTree
                     }}
                     onClose={() => setWrongBookAddingItem(null)}
                     onSave={async (data) => {

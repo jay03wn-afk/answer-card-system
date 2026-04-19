@@ -719,7 +719,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                 </button>
             </div>
 
-            <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-4 sm:p-6 w-full max-w-5xl shadow-2xl flex flex-col flex-grow relative overflow-hidden">
+            <div className="bg-[#c6c6c6] border-2 sm:border-4 border-white border-r-[#555] border-b-[#555] p-1 sm:p-6 w-full max-w-5xl shadow-2xl flex flex-col flex-grow relative overflow-hidden max-h-[100dvh]">
                 
                 {gameState === 'menu' && (
                     <div className="flex flex-col items-center justify-center flex-grow space-y-4">
@@ -925,16 +925,15 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                     </div>
                 )}
                 {gameState === 'playing' && (
-                    <div className="flex flex-col flex-grow justify-between relative">
+                    <div className="flex flex-col flex-grow justify-between relative min-h-0">
                         
-                        {/* ✨ 其他玩家區 (相對座位分配) */}
-                        <div className="flex justify-around items-start bg-[#8b8b8b] p-2 sm:p-3 border-2 border-[#555] border-r-white border-b-white h-24 sm:h-32">
+                        {/* ✨ 其他玩家區 (相對座位分配 - 手機版高度與頭像壓縮) */}
+                        <div className="flex justify-around items-start bg-[#8b8b8b] p-1 sm:p-3 border-2 border-[#555] border-r-white border-b-white h-16 sm:h-32 shrink-0">
                             {(() => {
-                                const myIndex = players.findIndex(p => p.id === user.uid);
-                                // 讓對手永遠保持：右邊(下家)、上面(對家)、左邊(上家) 的相對順序
+                                const myIndex = players.findIndex(p => p.id === user?.uid);
                                 const opps = myIndex !== -1 
                                     ? [players[(myIndex + 1) % 4], players[(myIndex + 2) % 4], players[(myIndex + 3) % 4]].filter(Boolean)
-                                    : players.filter(p => p.id !== user.uid);
+                                    : players.filter(p => p.id !== user?.uid);
 
                                 return opps.map((p, displayIndex) => {
                                     if (!p) return null;
@@ -944,21 +943,21 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                             
                                             {/* ✨ 浮動聊天氣泡 */}
                                             {floatingChats[p.id] && (
-                                                <div className="absolute -top-8 bg-white border-2 border-stone-800 text-stone-800 text-[10px] sm:text-xs font-black px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap animate-bounce">
+                                                <div className="absolute -top-6 sm:-top-8 bg-white border-2 border-stone-800 text-stone-800 text-[9px] sm:text-xs font-black px-1.5 py-0.5 sm:px-2 sm:py-1 rounded shadow-lg z-50 whitespace-nowrap animate-bounce">
                                                     {floatingChats[p.id]}
                                                 </div>
                                             )}
 
                                             {isTheirTurn && !p.isDisconnected && (
-                                                <div className="absolute -top-3 bg-amber-500 text-white text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce shadow-md">
+                                                <div className="absolute -top-2 sm:-top-3 bg-amber-500 text-white text-[8px] sm:text-[10px] font-black px-1.5 sm:px-2 py-0.5 rounded-full animate-bounce shadow-md">
                                                     思考中...
                                                 </div>
                                             )}
 
-                                            <div className={`w-10 h-10 sm:w-12 sm:h-12 border-2 relative overflow-hidden shadow-md ${isTheirTurn ? 'border-amber-500' : 'border-[#373737] bg-stone-400'}`}>
+                                            <div className={`w-8 h-8 sm:w-12 sm:h-12 border-2 relative overflow-hidden shadow-md ${isTheirTurn ? 'border-amber-500' : 'border-[#373737] bg-stone-400'}`}>
                                                 {p.isDisconnected && (
                                                     <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
-                                                        <span className="text-white text-[8px] font-black transform -rotate-12">已斷線</span>
+                                                        <span className="text-white text-[6px] sm:text-[8px] font-black transform -rotate-12">已斷線</span>
                                                     </div>
                                                 )}
                                                 {p.id.startsWith('ai_') ? (
@@ -966,15 +965,15 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                                 ) : p.avatar ? (
                                                     <img src={p.avatar} alt={p.name} className="w-full h-full object-cover bg-white" />
                                                 ) : (
-                                                    <span className="material-symbols-outlined text-3xl sm:text-4xl text-white mt-1">person</span>
+                                                    <span className="material-symbols-outlined text-2xl sm:text-4xl text-white mt-0.5 sm:mt-1">person</span>
                                                 )}
                                             </div>
-                                            <span className={`text-[9px] sm:text-[10px] font-black mt-1 uppercase tracking-tighter truncate w-16 sm:w-20 text-center ${isTheirTurn ? 'text-amber-700' : 'text-[#373737]'}`}>
+                                            <span className={`text-[8px] sm:text-[10px] font-black mt-0.5 sm:mt-1 uppercase tracking-tighter truncate w-12 sm:w-20 text-center ${isTheirTurn ? 'text-amber-700' : 'text-[#373737]'}`}>
                                                 {p.name}
                                             </span>
-                                            <div className="flex items-center mt-1 text-emerald-800 font-black bg-white/80 px-1 py-0.5 rounded shadow-sm border border-emerald-200">
-                                                <span className="material-symbols-outlined text-[10px] sm:text-xs mr-1">style</span> 
-                                                <span className="text-[10px] sm:text-xs">{p.cardsLeft}</span>
+                                            <div className="flex items-center mt-0.5 sm:mt-1 text-emerald-800 font-black bg-white/80 px-1 py-0.5 rounded shadow-sm border border-emerald-200">
+                                                <span className="material-symbols-outlined text-[8px] sm:text-xs mr-0.5 sm:mr-1">style</span> 
+                                                <span className="text-[8px] sm:text-xs leading-none">{p.cardsLeft}</span>
                                             </div>
                                         </div>
                                     );
@@ -983,15 +982,15 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                         </div>
 
                         {/* ✨ 桌面中央區 (出牌與動畫) */}
-                        <div className="flex-grow flex flex-col items-center justify-center p-2 sm:p-4 min-h-[160px] relative">
+                        <div className="flex-grow flex flex-col items-center justify-center p-1 sm:p-4 min-h-[100px] sm:min-h-[160px] relative overflow-hidden">
                             {/* 聊天與工具按鈕 */}
-                            <div className="absolute top-2 left-2 flex gap-2">
-                                <button onClick={() => setShowChatModal(true)} className="bg-stone-800/80 hover:bg-stone-900 text-white p-2 rounded-full shadow-lg flex items-center justify-center transition-transform active:scale-90">
-                                    <span className="material-symbols-outlined text-[18px]">chat</span>
+                            <div className="absolute top-1 left-1 sm:top-2 sm:left-2 flex gap-1 sm:gap-2 z-20">
+                                <button onClick={() => setShowChatModal(true)} className="bg-stone-800/80 hover:bg-stone-900 text-white p-1.5 sm:p-2 rounded-full shadow-lg flex items-center justify-center transition-transform active:scale-90">
+                                    <span className="material-symbols-outlined text-[14px] sm:text-[18px]">chat</span>
                                 </button>
                             </div>
 
-                            <div className="w-48 sm:w-64 h-2 sm:h-3 bg-stone-800 border-2 border-white mb-4 relative overflow-hidden shadow-inner">
+                            <div className="w-32 sm:w-64 h-1.5 sm:h-3 bg-stone-800 border border-white sm:border-2 mb-2 sm:mb-4 relative overflow-hidden shadow-inner">
                                 <div className="h-full bg-red-600 transition-all duration-1000 ease-linear" style={{ width: `${(timeLeft / roomSettings.turnTime) * 100}%` }}></div>
                             </div>
 
@@ -1004,7 +1003,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                             flyAnim = 'anim-fly-up';
                                         } else {
                                             const myIndex = players.findIndex(p => p.isMe);
-                                            const opps = myIndex !== -1 ? [players[(myIndex + 1) % 4], players[(myIndex + 2) % 4], players[(myIndex + 3) % 4]] : players.filter(p => p.id !== user.uid);
+                                            const opps = myIndex !== -1 ? [players[(myIndex + 1) % 4], players[(myIndex + 2) % 4], players[(myIndex + 3) % 4]] : players.filter(p => p.id !== user?.uid);
                                             const oppPos = opps.findIndex(p => p && p.id === players[lastPlayedTurn].id);
                                             
                                             if (oppPos === 0) flyAnim = 'anim-fly-left';       // 下家(右) -> 往左飛
@@ -1017,14 +1016,14 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                     
                                     return (
                                         <div key={animKey} className={`flex flex-col items-center ${flyAnim}`}>
-                                            <span className="bg-stone-900 text-amber-400 text-[9px] sm:text-[10px] px-2 py-0.5 mb-2 font-bold border border-stone-600 shadow-lg tracking-widest">
+                                            <span className="bg-stone-900 text-amber-400 text-[8px] sm:text-[10px] px-1.5 py-0.5 mb-1 sm:mb-2 font-bold border border-stone-600 shadow-lg tracking-widest">
                                                 {tableCombo.type.toUpperCase()}
                                             </span>
                                             <div className="flex space-x-1 sm:space-x-2">
                                                 {tableCombo.cards.map((card, idx) => (
-                                                    <div key={idx} className="w-10 h-16 sm:w-16 sm:h-24 bg-[#dbdbdb] border-2 sm:border-4 border-[#373737] flex flex-col items-center justify-center shadow-[2px_2px_0_rgba(0,0,0,0.4)] sm:shadow-[4px_4px_0_rgba(0,0,0,0.4)] transform -translate-y-1 sm:-translate-y-2 relative">
-                                                        <span className={`text-base sm:text-2xl ${card.color}`}>{card.symbol}</span>
-                                                        <span className={`text-sm sm:text-xl font-black ${card.color}`}>{card.value}</span>
+                                                    <div key={idx} className="w-8 h-12 sm:w-16 sm:h-24 bg-[#dbdbdb] border-2 sm:border-4 border-[#373737] flex flex-col items-center justify-center shadow-[2px_2px_0_rgba(0,0,0,0.4)] sm:shadow-[4px_4px_0_rgba(0,0,0,0.4)] transform -translate-y-1 sm:-translate-y-2 relative">
+                                                        <span className={`text-[12px] sm:text-2xl leading-none ${card.color}`}>{card.symbol}</span>
+                                                        <span className={`text-[12px] sm:text-xl font-black leading-none ${card.color}`}>{card.value}</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -1032,66 +1031,73 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                     );
                                 })()
                             ) : (
-                                <div className="text-white bg-stone-800/60 px-4 sm:px-6 py-2 sm:py-3 border-2 sm:border-4 border-dashed border-stone-500 font-black tracking-widest text-sm sm:text-lg shadow-2xl">
+                                <div className="text-white bg-stone-800/60 px-3 sm:px-6 py-1.5 sm:py-3 border-2 sm:border-4 border-dashed border-stone-500 font-black tracking-widest text-[10px] sm:text-lg shadow-2xl">
                                     WAITING FOR PLAYERS...
                                 </div>
                             )}
                         </div>
 
-                        {/* ✨ 自己手牌區 (手機排版優化) */}
-                        <div className={`flex flex-col bg-[#8b8b8b] p-2 sm:p-3 border-2 sm:border-4 transition-all duration-300 relative ${(!isSpectator && players[currentTurn]?.id === user.uid) ? 'border-amber-400 shadow-[0_0_30px_rgba(251,191,36,1)] bg-stone-500' : 'border-white border-r-[#555] border-b-[#555]'}`}>
-                            {(!isSpectator && players[currentTurn]?.id === user.uid) && (
-                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 overflow-hidden">
-                                    <span className="text-6xl sm:text-8xl font-black text-amber-300 drop-shadow-2xl uppercase tracking-widest whitespace-nowrap animate-pulse">YOUR TURN</span>
+                        {/* ✨ 自己手牌區 */}
+                        <div className={`flex flex-col bg-[#8b8b8b] p-1 sm:p-3 border-2 sm:border-4 transition-all duration-300 relative shrink-0 ${(!isSpectator && players[currentTurn]?.id === user?.uid) ? 'border-amber-400 shadow-[0_0_30px_rgba(251,191,36,1)] bg-stone-500' : 'border-white border-r-[#555] border-b-[#555]'}`}>
+                            {(!isSpectator && players[currentTurn]?.id === user?.uid) && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10 sm:opacity-20 overflow-hidden">
+                                    <span className="text-4xl sm:text-8xl font-black text-amber-300 drop-shadow-2xl uppercase tracking-widest whitespace-nowrap animate-pulse">YOUR TURN</span>
                                 </div>
                             )}
 
                             {isSpectator ? (
-                                <div className="flex flex-col items-center justify-center py-6">
-                                    <span className="material-symbols-outlined text-4xl text-[#555] mb-2 animate-bounce">visibility</span>
-                                    <h3 className="text-xl font-black text-[#373737]">觀戰模式</h3>
-                                    <p className="text-stone-700 font-bold">遊戲正在進行中，請等待這局結束後自動加入！</p>
+                                <div className="flex flex-col items-center justify-center py-2 sm:py-6 z-10 relative">
+                                    <span className="material-symbols-outlined text-2xl sm:text-4xl text-[#555] mb-1 sm:mb-2 animate-bounce">visibility</span>
+                                    <h3 className="text-sm sm:text-xl font-black text-[#373737]">觀戰模式</h3>
+                                    <p className="text-[10px] sm:text-base text-stone-700 font-bold">遊戲正在進行中，請等待這局結束後自動加入！</p>
                                 </div>
                             ) : (
-                                <>
-                                    <div className="flex justify-between items-center mb-3">
-                                        <div className="flex items-center text-[#373737] font-black text-lg relative">
-                                            <span className="material-symbols-outlined mr-2">person</span> {userProfile?.displayName || '你'} 
-                                            {players[currentTurn]?.id === user.uid && (
-                                                <span className="ml-3 bg-amber-500 text-white px-2 py-1 rounded shadow-md animate-bounce border-2 border-black flex items-center">
-                                                    <span className="material-symbols-outlined text-sm mr-1">priority_high</span> 換你出牌了！
+                                <div className="relative z-10 flex flex-col">
+                                    {/* 緊湊的按鈕控制列 */}
+                                    <div className="flex justify-between items-center mb-1 sm:mb-3">
+                                        <div className="flex items-center text-[#373737] font-black text-[10px] sm:text-lg relative">
+                                            <span className="material-symbols-outlined mr-0.5 sm:mr-2 text-[14px] sm:text-[24px]">person</span> 
+                                            <span className="truncate max-w-[50px] sm:max-w-none">{userProfile?.displayName || '你'}</span>
+                                            {players[currentTurn]?.id === user?.uid && (
+                                                <span className="ml-1 sm:ml-3 bg-amber-500 text-white px-1 sm:px-2 py-0.5 sm:py-1 rounded shadow-md animate-bounce border border-black flex items-center whitespace-nowrap">
+                                                    <span className="material-symbols-outlined text-[10px] sm:text-sm mr-0.5 sm:mr-1">priority_high</span> 換你！
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="flex flex-wrap gap-2 justify-end">
-                                            <div className="flex bg-stone-700 p-1 rounded border border-[#555]">
-                                                <button onClick={() => handleSortHand('weight')} className="px-2 py-1 text-[10px] bg-stone-600 hover:bg-stone-500 text-white font-bold border border-white/20 mr-1 shadow-[1px_1px_0px_#000]">點數排序</button>
-                                                <button onClick={() => handleSortHand('suit')} className="px-2 py-1 text-[10px] bg-stone-600 hover:bg-stone-500 text-white font-bold border border-white/20 shadow-[1px_1px_0px_#000]">花色排序</button>
+                                        <div className="flex flex-wrap gap-0.5 sm:gap-2 justify-end">
+                                            <div className="flex bg-stone-700 p-0.5 sm:p-1 rounded border border-[#555]">
+                                                <button onClick={() => handleSortHand('weight')} className="px-1 sm:px-2 py-0.5 sm:py-1 text-[8px] sm:text-[10px] bg-stone-600 hover:bg-stone-500 text-white font-bold border border-white/20 mr-0.5 sm:mr-1 shadow-[1px_1px_0px_#000]">123</button>
+                                                <button onClick={() => handleSortHand('suit')} className="px-1 sm:px-2 py-0.5 sm:py-1 text-[8px] sm:text-[10px] bg-stone-600 hover:bg-stone-500 text-white font-bold border border-white/20 shadow-[1px_1px_0px_#000]">花色</button>
                                             </div>
-                                            <div className="flex bg-stone-700 p-1 rounded border border-[#555]">
-                                                <button onClick={() => handleMoveCard('left')} disabled={selectedCards.length !== 1} className="px-2 py-1 bg-stone-600 hover:bg-stone-500 disabled:opacity-30 text-white border border-white/20 mr-1 shadow-[1px_1px_0px_#000]"><span className="material-symbols-outlined text-xs">arrow_back</span></button>
-                                                <button onClick={() => handleMoveCard('right')} disabled={selectedCards.length !== 1} className="px-2 py-1 bg-stone-600 hover:bg-stone-500 disabled:opacity-30 text-white border border-white/20 shadow-[1px_1px_0px_#000]"><span className="material-symbols-outlined text-xs">arrow_forward</span></button>
+                                            <div className="flex bg-stone-700 p-0.5 sm:p-1 rounded border border-[#555]">
+                                                <button onClick={() => handleMoveCard('left')} disabled={selectedCards.length !== 1} className="px-1 sm:px-2 py-0.5 sm:py-1 bg-stone-600 hover:bg-stone-500 disabled:opacity-30 text-white border border-white/20 mr-0.5 sm:mr-1 shadow-[1px_1px_0px_#000]"><span className="material-symbols-outlined text-[10px] sm:text-xs">arrow_back</span></button>
+                                                <button onClick={() => handleMoveCard('right')} disabled={selectedCards.length !== 1} className="px-1 sm:px-2 py-0.5 sm:py-1 bg-stone-600 hover:bg-stone-500 disabled:opacity-30 text-white border border-white/20 shadow-[1px_1px_0px_#000]"><span className="material-symbols-outlined text-[10px] sm:text-xs">arrow_forward</span></button>
                                             </div>
-                                            <button onClick={passTurn} disabled={players[currentTurn]?.id !== user.uid} className="px-4 py-2 bg-stone-500 hover:bg-stone-400 disabled:opacity-50 text-white font-bold border-2 border-stone-300 border-r-stone-700 border-b-stone-700 flex items-center shadow-md active:translate-y-[1px]">
-                                                <span className="material-symbols-outlined text-sm mr-1">skip_next</span> Pass
+                                            <button onClick={passTurn} disabled={players[currentTurn]?.id !== user?.uid} className="px-2 sm:px-4 py-1 sm:py-2 bg-stone-500 hover:bg-stone-400 disabled:opacity-50 text-white font-bold text-[10px] sm:text-sm border sm:border-2 border-stone-300 border-r-stone-700 border-b-stone-700 flex items-center shadow-md active:translate-y-[1px]">
+                                                <span className="material-symbols-outlined text-[10px] sm:text-sm mr-0.5 sm:mr-1">skip_next</span> Pass
                                             </button>
-                                            <button onClick={playSelectedCards} disabled={players[currentTurn]?.id !== user.uid || selectedCards.length === 0} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold border-2 border-emerald-400 border-r-emerald-800 border-b-emerald-800 flex items-center shadow-md active:translate-y-[1px]">
-                                                <span className="material-symbols-outlined text-sm mr-1">publish</span> 出牌
+                                            <button onClick={playSelectedCards} disabled={players[currentTurn]?.id !== user?.uid || selectedCards.length === 0} className="px-2 sm:px-4 py-1 sm:py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-[10px] sm:text-sm border sm:border-2 border-emerald-400 border-r-emerald-800 border-b-emerald-800 flex items-center shadow-md active:translate-y-[1px]">
+                                                <span className="material-symbols-outlined text-[10px] sm:text-sm mr-0.5 sm:mr-1">publish</span> 出牌
                                             </button>
                                         </div>
                                     </div>
-                                    {/* ✨ 手機版多行排版優化 */}
-                                    <div className="flex flex-wrap justify-center gap-1 sm:gap-2 px-1">
+                                    
+                                    {/* ✨ 電腦版展開排版 (sm:flex-wrap)，手機版重疊 (-ml-5) */}
+                                    <div className="flex justify-center items-end w-full h-16 sm:h-auto sm:min-h-[7rem] mt-1 sm:mt-2 sm:flex-wrap sm:gap-2 px-1 sm:px-0">
                                         {myHand.map((card, index) => {
                                             const isSelected = selectedCards.includes(index);
                                             const isDragging = draggedIdx === index;
                                             const isDragOverLeft = dragOverIdx === index && draggedIdx > index;
                                             const isDragOverRight = dragOverIdx === index && draggedIdx < index;
                                             
-                                            // 手機版排開距離縮小
-                                            const marginStyle = window.innerWidth < 640 
-                                                ? { marginLeft: isDragOverLeft ? '2rem' : '0', marginRight: isDragOverRight ? '2rem' : '0' }
-                                                : { marginLeft: isDragOverLeft ? '4rem' : '0', marginRight: isDragOverRight ? '4rem' : '0' };
+                                            let marginStyle = {};
+                                            if (window.innerWidth < 640) {
+                                                if (isDragOverLeft) marginStyle.marginLeft = '1.5rem';
+                                                if (isDragOverRight) marginStyle.marginRight = '1.5rem';
+                                            } else {
+                                                if (isDragOverLeft) marginStyle.marginLeft = '3rem';
+                                                if (isDragOverRight) marginStyle.marginRight = '3rem';
+                                            }
 
                                             return (
                                                 <button 
@@ -1108,24 +1114,25 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                                         setSelectedCards(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
                                                     }}
                                                     style={marginStyle}
-                                                    className={`w-9 h-14 sm:w-16 sm:h-24 flex flex-col items-center justify-center transition-all duration-200 relative cursor-grab active:cursor-grabbing
+                                                    className={`w-10 h-14 sm:w-16 sm:h-24 flex flex-col items-center justify-center transition-transform duration-200 relative cursor-grab active:cursor-grabbing shrink-0
+                                                        ${index !== 0 ? '-ml-5 sm:ml-0' : ''} 
                                                         ${isDragging ? 'opacity-30 scale-95' : 'opacity-100'}
                                                         ${isSelected 
-                                                            ? 'bg-amber-50 -translate-y-4 sm:-translate-y-6 shadow-[3px_3px_0px_#78350f] sm:shadow-[6px_6px_0px_#78350f] border-2 sm:border-4 border-amber-600' 
-                                                            : 'bg-[#dbdbdb] border-2 sm:border-4 border-[#373737] hover:-translate-y-2 shadow-[2px_2px_0px_#222] sm:shadow-[4px_4px_0px_#222]'}`}
+                                                            ? 'bg-amber-50 -translate-y-4 sm:-translate-y-6 shadow-[2px_2px_0px_#78350f] sm:shadow-[6px_6px_0px_#78350f] border border-amber-600 sm:border-4 z-20' 
+                                                            : 'bg-[#dbdbdb] border border-[#373737] sm:border-4 hover:-translate-y-2 shadow-[2px_2px_0px_#222] sm:shadow-[4px_4px_0px_#222] hover:z-10'}`}
                                                 >
-                                                    <span className={`text-sm sm:text-2xl ${card.color}`}>{card.symbol}</span>
-                                                    <span className={`text-sm sm:text-xl font-black leading-none ${card.color}`}>{card.value}</span>
+                                                    <span className={`text-[12px] sm:text-2xl leading-none ${card.color}`}>{card.symbol}</span>
+                                                    <span className={`text-[12px] sm:text-xl font-black leading-none ${card.color}`}>{card.value}</span>
                                                 </button>
                                             );
                                         })}
                                     </div>
-                                </>
+                                </div>
                             )}
                             
-                            {/* ✨ 浮動自己頭像的對話氣泡 */}
-                            {floatingChats[user.uid] && (
-                                <div className="absolute top-0 right-4 -translate-y-full bg-white border-2 border-stone-800 text-stone-800 text-[10px] sm:text-xs font-black px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap animate-bounce">
+                            {/* ✨ 浮動自己頭像的對話氣泡 (加入 user 防呆) */}
+                            {user && floatingChats[user.uid] && (
+                                <div className="absolute top-0 right-2 -translate-y-full bg-white border-2 border-stone-800 text-stone-800 text-[9px] sm:text-xs font-black px-1.5 py-0.5 sm:px-2 sm:py-1 rounded shadow-lg z-50 whitespace-nowrap animate-bounce">
                                     {floatingChats[user.uid]}
                                 </div>
                             )}
@@ -1142,9 +1149,9 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                     <div className="flex-grow p-3 overflow-y-auto flex flex-col gap-2 custom-scrollbar">
                                         {chatMessages.length === 0 ? <span className="text-gray-400 text-xs text-center mt-4">還沒有人講話...</span> : 
                                             chatMessages.map((c, i) => (
-                                                <div key={i} className={`flex flex-col ${c.senderId === user.uid ? 'items-end' : 'items-start'}`}>
+                                                <div key={i} className={`flex flex-col ${c.senderId === user?.uid ? 'items-end' : 'items-start'}`}>
                                                     <span className="text-[10px] text-gray-500 font-bold mb-0.5">{c.senderName}</span>
-                                                    <div className={`px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm ${c.senderId === user.uid ? 'bg-amber-400 text-stone-900 rounded-tr-none' : 'bg-white border border-gray-300 text-stone-800 rounded-tl-none'}`}>
+                                                    <div className={`px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm ${c.senderId === user?.uid ? 'bg-amber-400 text-stone-900 rounded-tr-none' : 'bg-white border border-gray-300 text-stone-800 rounded-tl-none'}`}>
                                                         {c.text}
                                                     </div>
                                                 </div>
@@ -1154,11 +1161,14 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                     <form onSubmit={async (e) => {
                                         e.preventDefault();
                                         if(!chatText.trim() || !roomCode) return;
-                                        const newChat = { senderId: user.uid, senderName: userProfile?.displayName || '我', text: chatText.trim(), time: Date.now() };
-                                        await window.db.collection("pokerRooms").doc(roomCode).update({
-                                            chats: window.firebase.firestore.FieldValue.arrayUnion(newChat)
-                                        });
-                                        setChatText('');
+                                        try {
+                                            const newChat = { senderId: user?.uid || 'guest', senderName: userProfile?.displayName || '我', text: chatText.trim(), time: Date.now() };
+                                            const roomRef = window.db.collection("pokerRooms").doc(roomCode);
+                                            const snap = await roomRef.get();
+                                            const d = snap.data();
+                                            await roomRef.update({ chats: [...(d.chats || []), newChat] });
+                                            setChatText('');
+                                        } catch (err) { console.error(err); }
                                     }} className="p-2 border-t border-gray-300 flex gap-2 shrink-0 bg-white">
                                         <input type="text" value={chatText} onChange={e=>setChatText(e.target.value)} placeholder="輸入訊息..." className="flex-grow px-2 py-1.5 bg-gray-100 border border-gray-300 rounded text-sm outline-none focus:border-amber-500" />
                                         <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white px-3 rounded font-bold text-sm shadow-sm">傳送</button>

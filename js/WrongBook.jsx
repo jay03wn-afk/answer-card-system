@@ -10,31 +10,81 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
     const [nText, setNText] = useState(initialData?.nText || '');
     const [nImage, setNImage] = useState(initialData?.nImage || null);
     const [isSaving, setIsSaving] = useState(false);
+    
+    // ✨ 新增：用來顯示建立新資料夾的視窗
+    const [showNewFolderInput, setShowNewFolderInput] = useState(false);
 
     const handleSave = async () => {
-        const finalFolder = (folder === '新增資料夾' ? newFolder.trim() : folder) || '未分類';
+        const finalFolder = (showNewFolderInput && newFolder.trim() ? newFolder.trim() : folder) || '未分類';
         setIsSaving(true);
         await onSave({ folder: finalFolder, qText: qText.trim(), qHtml, qImage, nText: nText.trim(), nImage });
         setIsSaving(false);
     };
 
     return (
-        <div className="fixed inset-0 bg-stone-800 bg-opacity-70 flex items-center justify-center z-[100] p-4">
-            <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-lg rounded-2xl shadow-2xl transform transition-all max-h-[90dvh] overflow-y-auto custom-scrollbar border-t-4 border-black dark:border-gray-500">
+        <div className="fixed inset-0 bg-stone-800 bg-opacity-70 flex items-center justify-center z-[200] p-4">
+            <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-lg rounded-2xl shadow-2xl transform transition-all max-h-[90dvh] overflow-y-auto custom-scrollbar border-t-4 border-amber-500 dark:border-amber-600">
                 <h3 className="font-black text-xl mb-4 flex justify-between items-center dark:text-white border-b border-stone-200 dark:border-stone-700 pb-2">
                     <span>{title}</span>
                     <button onClick={onClose} className="text-gray-400 hover:text-red-500 font-bold transition-colors flex items-center"><span className="material-symbols-outlined">close</span></button>
                 </h3>
                 
                 <div className="mb-4">
-                    <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">folder</span> 選擇資料夾</label>
-                    <select value={folder} onChange={e => setFolder(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none text-sm mb-2">
-                        {initialData?.userFolders && initialData.userFolders.map(f => <option key={f} value={f}>{f}</option>)}
-                        {!initialData?.userFolders?.includes('未分類') && <option value="未分類">未分類</option>}
-                        <option value="新增資料夾">+ 新增資料夾</option>
-                    </select>
-                    {folder === '新增資料夾' && (
-                        <input type="text" placeholder="輸入新資料夾名稱..." value={newFolder} onChange={e => setNewFolder(e.target.value)} className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-stone-900 text-stone-800 dark:text-white rounded-2xl outline-none text-sm" />
+                    <div className="flex justify-between items-center mb-2">
+                        <label className="text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">folder</span> 選擇收錄資料夾</label>
+                        <button 
+                            onClick={() => {
+                                setShowNewFolderInput(!showNewFolderInput);
+                                if (!showNewFolderInput) setNewFolder(folder === '未分類' ? '' : folder + '/');
+                            }} 
+                            className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1"
+                        >
+                            <span className="material-symbols-outlined text-[14px]">create_new_folder</span> 
+                            {showNewFolderInput ? '取消新增' : '建立新資料夾'}
+                        </button>
+                    </div>
+
+                    {showNewFolderInput ? (
+                        <div className="animate-fade-in bg-amber-50 dark:bg-stone-900 p-3 rounded-2xl border border-amber-200 dark:border-stone-700">
+                            <label className="block text-xs font-bold text-amber-800 dark:text-amber-400 mb-1">輸入新資料夾路徑 (可用 / 分隔層級)</label>
+                            <input 
+                                type="text" 
+                                placeholder="例如: 藥理學/抗生素" 
+                                value={newFolder} 
+                                onChange={e => setNewFolder(e.target.value)} 
+                                autoFocus
+                                className="w-full p-2 border-2 border-amber-300 dark:border-stone-600 focus:border-amber-500 bg-white dark:bg-stone-700 text-stone-800 dark:text-white rounded-xl outline-none text-sm font-bold shadow-inner" 
+                            />
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-1 w-full border border-stone-200 dark:border-stone-700 rounded-2xl p-2 bg-[#FCFBF7] dark:bg-stone-900 shadow-inner max-h-[160px] overflow-y-auto custom-scrollbar">
+                            <div 
+                                className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${folder === '未分類' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-800' : 'hover:bg-stone-100 dark:hover:bg-gray-700 text-stone-700 dark:text-gray-300 font-medium'}`}
+                                onClick={() => setFolder('未分類')}
+                            >
+                                <span className="w-[20px]"></span>
+                                <span className="material-symbols-outlined text-[18px] text-gray-400">folder_off</span>
+                                <span className="text-sm">未分類</span>
+                            </div>
+                            
+                            {/* ✨ 判斷是否有傳入外部的 renderFolderTree，有的話就使用樹狀結構 */}
+                            {initialData?.renderFolderTree && initialData?.folderTree ? (
+                                initialData.renderFolderTree(initialData.folderTree, 0, folder, setFolder)
+                            ) : (
+                                /* 💡 保底機制：如果沒有傳入樹狀函數 (例如舊版相容)，則顯示一般選單 */
+                                initialData?.userFolders && initialData.userFolders.filter(f => f !== '未分類').map(f => (
+                                    <div 
+                                        key={f}
+                                        className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${folder === f ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-800' : 'hover:bg-stone-100 dark:hover:bg-gray-700 text-stone-700 dark:text-gray-300 font-medium'}`}
+                                        onClick={() => setFolder(f)}
+                                    >
+                                        <span className="w-[20px]"></span>
+                                        <span className={`material-symbols-outlined text-[18px] ${folder === f ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500'}`}>folder</span>
+                                        <span className="text-sm truncate">{f}</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     )}
                 </div>
 
