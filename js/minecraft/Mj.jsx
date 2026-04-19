@@ -13,21 +13,28 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     
     // 個人UI狀態
     const [myHand, setMyHand] = useState([]);
+    const seenTileIds = useRef(new Set());
     
-    // ✨ 核心修復：統一所有更新手牌的入口，保證絕對不打亂瀏覽器端的拖曳排序 (單人/多人皆適用)
+    useEffect(() => {
+        if (gameState !== 'playing') seenTileIds.current.clear();
+    }, [gameState]);
+
     const updateMyHandSmartly = (engineHand) => {
         if (!engineHand) return;
         setMyHand(prev => {
             const engineIds = engineHand.map(t => t.id);
             const prevIds = prev.map(t => t.id);
-            // 1. 檢查內容是否真的有變（無視順序），沒變就不理它，避免畫面閃爍
+            
             const isSetEqual = engineIds.length === prevIds.length && engineIds.every(id => prevIds.includes(id));
             if (isSetEqual) return prev;
-            // 2. 濾掉已經不在資料庫裡的手牌（別人幫你打掉或你打掉的）
+            
+            prev.forEach(t => seenTileIds.current.add(t.id));
+            
             let nextHand = prev.filter(t => engineIds.includes(t.id));
-            // 3. 找出資料庫裡有、但本地沒有的新牌（新摸的牌）
-            const newTiles = engineHand.filter(t => !prevIds.includes(t.id));
-            // 4. 將新牌默默接在目前排序的後面
+            const newTiles = engineHand.filter(t => !prevIds.includes(t.id) && !seenTileIds.current.has(t.id));
+            
+            newTiles.forEach(t => seenTileIds.current.add(t.id));
+            
             return [...nextHand, ...newTiles];
         });
     };
@@ -842,7 +849,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                 className={`${baseClass} bg-[#f4ebd0] shrink-0 flex items-center justify-center cursor-pointer transition-all relative
                 ${selected ? '-translate-y-4 border-amber-500 shadow-[2px_6px_0px_#222] z-20' : 
                   isHighlighted ? '-translate-y-2 border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.9)] z-10' : 
-                  'border-[#d4c3a3] hover:-translate-y-1 hover:z-10'}`}
+                  'border-[#d4c3a3] hover:brightness-105 hover:border-amber-300 hover:z-10'}`}
             >
                 <div className="absolute top-0 left-0 w-full h-1 bg-white opacity-50 pointer-events-none"></div>
                 <div className="absolute bottom-0 left-0 w-full h-1 bg-stone-400 opacity-50 pointer-events-none"></div>
