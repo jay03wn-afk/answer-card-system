@@ -38,11 +38,11 @@ function QuizApp(props) {
         isDragging, setIsDragging, previewOpen, setPreviewOpen, splitContainerRef,
         showOnlyWrong, setShowOnlyWrong, showOnlyStarred, setShowOnlyStarred, showOnlyNotes, setShowOnlyNotes,
         showShareScoreModal, setShowShareScoreModal, syncStatus, setSyncStatus, isCreating, setIsCreating,
-        isRegrading, setIsRegrading, wrongBookAddingItem, setWrongBookAddingItem, loadingWrongBookNum, setLoadingWrongBookNum,
+        isRegrading, setIsRegrading, wrongRetestState, setWrongRetestState, wrongBookAddingItem, setWrongBookAddingItem, loadingWrongBookNum, setLoadingWrongBookNum,
         explanationModalItem, setExplanationModalItem, isEditLoading, setIsEditLoading, taskScores, setTaskScores,
         parsedQuestionTypes, parsedInteractiveQuestions, starredIndices, canSeeAnswers, isShared, isTask, userFolders, initialRecord,
         toggleSubject, toggleTag, handleDragStart, handleSaveProgress, onBackToDashboard,
-        handleStartTest, handleRetake, handleSaveEdit, handleBackFromEdit, handleAnswerSelect,
+        handleStartTest, handleRetake, handleStartWrongRetest, handleWrongRetestPeek, handleSaveEdit, handleBackFromEdit, handleAnswerSelect,
         executePeek, handlePeek, toggleStar, handleGrade, handleManualRegrade, handleSubmitClick,
         handleSendSuggestion, handleUploadComment, handleResetProgress, handleAddToWrongBook,
         shareScoreToFriend, scrollToQuestion, handleRichTextClick, toggleSection, handleProcessAiFile, handleGenerateAI
@@ -2194,6 +2194,231 @@ if (step === 'grading') return (
         </div>
     );
 
+    if (step === 'wrong_retest') {
+        const wrongQuestions = parsedInteractiveQuestions.filter(q => {
+            // 優先使用 targetIndices，若無則回退到舊版抓全部錯題的邏輯 (兼容舊紀錄)
+            if (wrongRetestState?.targetIndices) {
+                return wrongRetestState.targetIndices.includes(q.globalIndex);
+            }
+            const resItem = results?.data?.find(d => d.number === q.globalIndex + 1);
+            return resItem && !resItem.isCorrect;
+        });
+
+        const handleSubmitWrongRetest = () => {
+            let correct = 0;
+            const newIsCorrectMap = {};
+            
+            wrongQuestions.forEach(q => {
+                const actualIdx = q.globalIndex;
+                const resItem = results.data.find(d => d.number === actualIdx + 1);
+                const userAns = wrongRetestState.answers[actualIdx] || '';
+                const correctAns = resItem.correctAns;
+                
+                let isCorrect = false;
+                if (q.type === 'Q') {
+                    if (correctAns.toLowerCase() === 'z' || correctAns.toLowerCase() === 'abcd') isCorrect = true;
+                    else if (correctAns !== '-' && correctAns !== '' && userAns) {
+                        isCorrect = correctAns === correctAns.toUpperCase() ? (userAns === correctAns) : correctAns.toLowerCase().includes(userAns.toLowerCase());
+                    }
+                } else if (q.type === 'SQ') {
+                    if (correctAns && userAns.trim().toLowerCase() === correctAns.toLowerCase()) isCorrect = true;
+                }
+                
+                newIsCorrectMap[actualIdx] = isCorrect;
+                if (isCorrect) correct++;
+            });
+            
+            setWrongRetestState(prev => ({ 
+                ...prev, 
+                finished: true, 
+                correctCount: correct, 
+                isCorrectMap: newIsCorrectMap 
+            }));
+
+            // 同步更新主結果頁的資料，標記哪些題目已經重測成功
+            if (results && results.data) {
+                const updatedData = results.data.map(item => {
+                    const idx = item.number - 1;
+                    if (newIsCorrectMap[idx] === true) {
+                        return { ...item, retestCorrect: true };
+                    }
+                    return item;
+                });
+                setResults({ ...results, data: updatedData });
+            }
+        };
+
+        return (
+            <div className="flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors" onClick={handleRichTextClick}>
+                <div className="bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex justify-between items-center rounded-2xl shrink-0 z-10 transition-colors w-full mb-4">
+                    <div className="flex items-center space-x-2">
+                        <button onClick={() => setStep('results')} className="text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 font-bold mr-2">
+                            <span className="material-symbols-outlined text-[20px] align-middle">arrow_back</span>
+                        </button>
+                        <h2 className="font-bold text-lg dark:text-white flex items-center">
+                            <span className="material-symbols-outlined text-[20px] mr-2 text-cyan-600">replay</span>
+                            錯題重測
+                        </h2>
+                        <span className="text-sm font-bold text-gray-500 bg-gray-100 dark:bg-stone-700 px-2 py-0.5 rounded-full ml-2">{wrongQuestions.length} 題</span>
+                    </div>
+                    {!wrongRetestState?.finished && (
+                        <button onClick={handleSubmitWrongRetest} className="bg-cyan-600 hover:bg-cyan-700 text-white px-5 py-2 rounded-full font-bold shadow-sm transition-colors flex items-center text-sm">
+                            <span className="material-symbols-outlined text-[18px] mr-1">check_circle</span> 提交重測
+                        </button>
+                    )}
+                </div>
+                
+                <div className="flex-grow overflow-y-auto custom-scrollbar px-2 sm:px-4 pb-10">
+                    {wrongRetestState?.finished && (
+                        <div className="bg-cyan-50 dark:bg-cyan-900/20 border-2 border-cyan-400 rounded-2xl p-6 mb-6 text-center shadow-sm">
+                            <h3 className="text-xl font-black text-cyan-800 dark:text-cyan-300 mb-2">重測完成</h3>
+                            <p className="text-cyan-700 dark:text-cyan-400 font-bold text-lg">正確率：{Math.round((wrongRetestState.correctCount / wrongQuestions.length) * 100)}% ({wrongRetestState.correctCount} / {wrongQuestions.length})</p>
+                            
+                            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+                                <button onClick={() => setStep('results')} className="bg-white dark:bg-stone-800 border border-cyan-200 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300 px-6 py-2 rounded-full font-bold hover:bg-cyan-50 dark:hover:bg-stone-700 transition-colors flex items-center shadow-sm">
+                                    <span className="material-symbols-outlined text-[18px] mr-1">arrow_back</span> 返回結果頁
+                                </button>
+                                
+                                {wrongRetestState.correctCount < wrongQuestions.length && (
+                                    <button onClick={() => handleStartWrongRetest(true)} className="bg-cyan-600 text-white px-6 py-2 rounded-full font-bold hover:bg-cyan-700 transition-colors flex items-center shadow-sm">
+                                        <span className="material-symbols-outlined text-[18px] mr-1">filter_alt</span> 僅重測錯題 (一錯再錯)
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="max-w-4xl mx-auto space-y-6">
+                        {wrongQuestions.map((q) => {
+                            const actualIdx = q.globalIndex;
+                            const currentAns = wrongRetestState?.answers[actualIdx];
+                            const isFinished = wrongRetestState?.finished;
+                            const isPeeked = wrongRetestState?.peekedAnswers?.[actualIdx];
+                            const resItem = results.data.find(d => d.number === actualIdx + 1);
+                            const correctAns = resItem.correctAns;
+                            
+                            const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
+                            const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number);
+                            
+                            let isCorrect = false;
+                            if (isFinished) {
+                                if (q.type === 'Q') {
+                                    if (correctAns.toLowerCase() === 'z' || correctAns.toLowerCase() === 'abcd') isCorrect = true;
+                                    else if (correctAns !== '-' && correctAns !== '' && currentAns) {
+                                        isCorrect = correctAns === correctAns.toUpperCase() ? (currentAns === correctAns) : correctAns.toLowerCase().includes(currentAns.toLowerCase());
+                                    }
+                                } else if (q.type === 'SQ') {
+                                    if (correctAns && (currentAns||'').trim().toLowerCase() === correctAns.toLowerCase()) isCorrect = true;
+                                }
+                            }
+
+                            return (
+                                <div key={actualIdx} className={`bg-[#FCFBF7] dark:bg-stone-800 border ${isFinished ? (isCorrect ? 'border-emerald-400' : 'border-rose-400') : 'border-stone-200 dark:border-stone-700'} shadow-md rounded-2xl p-5 sm:p-6 transition-colors`}>
+                                    <div className="flex justify-between items-start mb-4 border-b border-stone-100 dark:border-stone-700 pb-3">
+                                        <span className="text-lg font-black text-cyan-700 dark:text-cyan-400 flex items-center">
+                                            第 {q.type === 'Q' ? q.number : `${q.type}.${q.number}`} 題
+                                        </span>
+                                        {isFinished && (
+                                            <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center ${isCorrect ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                                                <span className="material-symbols-outlined text-[16px] mr-1">{isCorrect ? 'check' : 'close'}</span>
+                                                {isCorrect ? '答對' : '錯誤'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="text-gray-800 dark:text-gray-200 leading-relaxed preview-rich-text !border-none !p-0 !bg-transparent mb-4" dangerouslySetInnerHTML={{ __html: q.mainText }} />
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                        {q.type === 'Q' ? ['A', 'B', 'C', 'D'].map(opt => {
+                                            const hasCustomContent = !!q.options[opt];
+                                            const isSelected = currentAns === opt;
+                                            const isCorrectOpt = isFinished && (correctAns.toLowerCase().includes(opt.toLowerCase()) || correctAns.toLowerCase() === 'abcd' || correctAns.toLowerCase() === 'z');
+                                            
+                                            let btnClasses = "text-left w-full py-3 px-4 border-2 transition-all flex items-start space-x-3 rounded-xl ";
+                                            
+                                            if (isFinished) {
+                                                if (isCorrectOpt) btnClasses += 'bg-emerald-50 border-emerald-400 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 ';
+                                                else if (isSelected) btnClasses += 'bg-rose-50 border-rose-400 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300 ';
+                                                else btnClasses += 'bg-stone-50/50 border-stone-100 dark:bg-stone-800/50 opacity-50 ';
+                                                btnClasses += 'cursor-default ';
+                                            } else {
+                                                btnClasses += isSelected ? 'bg-cyan-50 border-cyan-400 dark:bg-cyan-900/30 shadow-sm ' : 'bg-white border-stone-200 dark:bg-stone-800 hover:border-cyan-300 ';
+                                            }
+
+                                            return (
+                                                <button 
+                                                    key={opt}
+                                                    disabled={isFinished || isPeeked}
+                                                    onClick={() => {
+                                                        setWrongRetestState(prev => {
+                                                            const newAns = { ...(prev?.answers || {}) };
+                                                            newAns[actualIdx] = newAns[actualIdx] === opt ? '' : opt;
+                                                            return { ...prev, answers: newAns };
+                                                        });
+                                                    }}
+                                                    className={btnClasses}
+                                                >
+                                                    <span className={`font-black mt-0.5 w-6 shrink-0 text-center ${isSelected ? 'text-cyan-600' : 'text-gray-400'}`}>{opt}.</span>
+                                                    {hasCustomContent ? (
+                                                        <div className={`preview-rich-text !p-0 !border-none !bg-transparent w-full flex-1 ${isSelected ? 'text-stone-800 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`} dangerouslySetInnerHTML={{ __html: q.options[opt] }} />
+                                                    ) : (
+                                                        <span className="w-full flex-1 text-gray-400 italic">(選項無內容)</span>
+                                                    )}
+                                                </button>
+                                            );
+                                        }) : (
+                                            <textarea 
+                                                disabled={isFinished || isPeeked}
+                                                value={currentAns || ''}
+                                                onChange={e => {
+                                                    const val = e.target.value;
+                                                    setWrongRetestState(prev => ({ ...prev, answers: { ...(prev?.answers || {}), [actualIdx]: val } }));
+                                                }}
+                                                className="w-full p-4 h-32 text-sm border-2 outline-none bg-white dark:bg-stone-800 dark:text-white shadow-inner transition-colors focus:border-cyan-400 border-stone-200 dark:border-stone-700 resize-none custom-scrollbar col-span-1 lg:col-span-2 rounded-xl"
+                                                placeholder="請輸入答案..."
+                                            />
+                                        )}
+                                    </div>
+
+                                    {allowPeek && !isPeeked && !isFinished && (
+                                        <div className="mt-4 flex justify-end">
+                                            <button 
+                                                onClick={() => handleWrongRetestPeek(actualIdx)} 
+                                                className="text-xs font-bold px-4 py-1.5 bg-amber-100 text-amber-700 dark:bg-amber-900/40 hover:bg-amber-200 border border-amber-200 rounded-full shadow-sm flex items-center gap-1.5 transition-colors"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">key</span>
+                                                偷看答案
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {(isPeeked || isFinished) && (
+                                        <div className="mt-4 p-4 bg-amber-50 dark:bg-stone-900 border border-amber-200 dark:border-amber-800 text-sm rounded-xl">
+                                            <div className="font-bold text-amber-700 dark:text-amber-400 mb-2 pb-2 border-b border-amber-200 flex items-center justify-between">
+                                                <span className="flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[18px]">{isPeeked && !isFinished ? 'lock' : 'lightbulb'}</span> 
+                                                    {isPeeked && !isFinished ? '此題已偷看並鎖定' : '試題詳解'}
+                                                </span>
+                                                <span className="bg-white dark:bg-stone-800 px-2 py-0.5 rounded border border-amber-200 text-stone-800 dark:text-white">
+                                                    標準答案: {correctAns || '未設定'}
+                                                </span>
+                                            </div>
+                                            {currentExp ? (
+                                                <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(currentExp) }} />
+                                            ) : (
+                                                <p className="text-gray-500 italic font-bold">此題無提供詳解。</p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     if (step === 'results') return (
         <div className="flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors" onClick={handleRichTextClick}>
             {UpdateNotification}
@@ -2251,6 +2476,10 @@ if (step === 'grading') return (
                     
                     <button onClick={handleRetake} className="text-sm font-bold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-4 py-2 rounded-full border border-emerald-200 dark:border-emerald-700/50 hover:bg-emerald-100 dark:hover:bg-emerald-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
                         <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> 再做一次
+                    </button>
+
+                    <button onClick={handleStartWrongRetest} className="text-sm font-bold bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 px-4 py-2 rounded-full border border-cyan-200 dark:border-cyan-700/50 hover:bg-cyan-100 dark:hover:bg-cyan-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
+                        <span className="material-symbols-outlined text-[16px] mr-1.5">replay</span> 錯題重測
                     </button>
 
                     {(questionFileUrl || questionText || questionHtml) && previewOpen && (
@@ -2464,7 +2693,7 @@ if (step === 'grading') return (
                                                                     }, 100);
                                                                 }
                                                             }}
-                                                            className={`break-avoid flex flex-col justify-between p-4 border border-gray-200 dark:border-stone-600 rounded-xl transition-colors ${item.isCorrect ? 'bg-[#FCFBF7] dark:bg-stone-800 hover:border-emerald-400' : 'bg-rose-50/50 dark:bg-rose-900/10 hover:border-rose-400'} cursor-pointer shadow-sm`}
+                                                            className={`break-avoid flex flex-col justify-between p-4 border border-gray-200 dark:border-stone-600 rounded-xl transition-colors ${item.isCorrect ? 'bg-[#FCFBF7] dark:bg-stone-800 hover:border-emerald-400' : (item.retestCorrect ? 'bg-cyan-50/20 dark:bg-cyan-900/10 hover:border-cyan-400' : 'bg-rose-50/50 dark:bg-rose-900/10 hover:border-rose-400')} cursor-pointer shadow-sm`}
                                                             title="點擊跳轉至此題題目與討論"
                                                         >
                                                             <div className="flex justify-between items-center w-full mb-3 border-b border-stone-100 dark:border-gray-700 pb-3">
@@ -2474,9 +2703,14 @@ if (step === 'grading') return (
                                                                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
                                                                     </button>
                                                                     {notes && notes[item.number - 1] && <svg className="w-4 h-4 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>}
-                                                                    <span className={`font-mono text-lg font-black hover:underline whitespace-nowrap ${item.isCorrect ? 'text-stone-800 dark:text-stone-200' : 'text-rose-600 dark:text-rose-400'}`}>
+                                                                    <span className={`font-mono text-lg font-black hover:underline whitespace-nowrap ${item.isCorrect ? 'text-stone-800 dark:text-stone-200' : (item.retestCorrect ? 'text-cyan-700 dark:text-cyan-400' : 'text-rose-600 dark:text-rose-400')}`}>
                                                                         第 {qType === 'Q' ? qLocalNum : `${qType}.${qLocalNum}`} 題 
                                                                     </span>
+                                                                    {item.retestCorrect && (
+                                                                        <span className="text-[10px] px-1.5 py-0.5 ml-2 rounded-full font-bold border whitespace-nowrap bg-cyan-50 text-cyan-700 border-cyan-300 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-700 flex items-center">
+                                                                            <span className="material-symbols-outlined text-[12px] mr-0.5 font-black">done_all</span>已修正
+                                                                        </span>
+                                                                    )}
                                                                     {qType !== 'Q' && <span className={`text-[10px] px-1.5 py-0.5 ml-1 rounded font-bold border whitespace-nowrap ${qType === 'SQ' ? 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300' : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300'}`}>{qType === 'SQ' ? '簡答題' : '問答題'}</span>}
                                                                 </div>
                                                                 </div>
