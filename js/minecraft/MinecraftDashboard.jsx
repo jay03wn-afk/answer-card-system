@@ -10,6 +10,7 @@ const { useState, useEffect, useRef } = React;
     const [showSandbox, setShowSandbox] = useState(false);
     const [showVolleyball, setShowVolleyball] = useState(false);
     const [showPoke, setShowPoke] = useState(false);
+    const [showMj, setShowMj] = useState(false); // ✨ 新增麻將狀態
     
     // ✨ 新增：村民狀態與終界儲物箱狀態
     const [showEnderChest, setShowEnderChest] = useState(false);
@@ -340,8 +341,11 @@ const { useState, useEffect, useRef } = React;
                         🏐 史萊姆排球
                     </button>
                     <button onClick={() => setShowPoke(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-indigo-800 font-bold transition-colors shadow-md flex items-center">
-    <span className="material-symbols-outlined text-[14px] mr-1">style</span>大老二
-</button>
+                        <span className="material-symbols-outlined text-[14px] mr-1">style</span>大老二
+                    </button>
+                    <button onClick={() => setShowMj(true)} className="bg-red-600 hover:bg-red-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-red-800 font-bold transition-colors shadow-md flex items-center">
+                        <span className="material-symbols-outlined text-[14px] mr-1">grid_view</span>麻將
+                    </button>
                 </div>
 
                 <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-2 w-full md:w-auto text-[#373737] shadow-lg shrink-0">
@@ -553,6 +557,15 @@ const { useState, useEffect, useRef } = React;
                     userProfile={userProfile}
                     showAlert={showAlert}
                     onQuit={() => setShowPoke(false)}
+                />
+            )}
+
+            {showMj && (
+                <Mj 
+                    user={user}
+                    userProfile={userProfile}
+                    showAlert={showAlert}
+                    onQuit={() => setShowMj(false)}
                 />
             )}
         </div>

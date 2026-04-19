@@ -113,17 +113,28 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
             const vals = Object.values(counts).sort((a, b) => b - a);
             const keysByCount = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
 
+            const vIdxs = sorted.map(c => c.vIdx).sort((a,b)=>a-b);
+            const vIdxStr = vIdxs.join(',');
+            // ✨ 完美支援大老二常見順子，包含 10JQKA 與 A2345 等
+            const validStraights = [
+                '0,1,2,11,12', '0,1,2,3,12', '0,1,2,3,4', '1,2,3,4,5', '2,3,4,5,6', 
+                '3,4,5,6,7', '4,5,6,7,8', '5,6,7,8,9', '6,7,8,9,10', '7,8,9,10,11'
+            ];
+            let isStraight = validStraights.includes(vIdxStr);
+            let isFlush = sorted.every(c => c.sIdx === sorted[0].sIdx);
+
+            if (isStraight && isFlush) {
+                return { type: 'straight_flush', weight: sorted[4].weight, cards: sorted };
+            }
             if (vals[0] === 4) {
                 return { type: 'four', weight: parseInt(keysByCount[0]) * 4, cards: sorted };
             }
             if (vals[0] === 3 && vals[1] === 2) {
                 return { type: 'fullhouse', weight: parseInt(keysByCount[0]) * 4, cards: sorted };
             }
-            let isStraight = true;
-            for (let i = 1; i < 5; i++) {
-                if (sorted[i].vIdx !== sorted[i-1].vIdx + 1) isStraight = false;
+            if (isStraight) {
+                return { type: 'straight', weight: sorted[4].weight, cards: sorted };
             }
-            if (isStraight) return { type: 'straight', weight: sorted[4].weight, cards: sorted };
             
             return null;
         }
@@ -131,18 +142,34 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
     };
 
     const checkPlayValid = (playCombo, currentTable, isFirst) => {
-        if (!playCombo) return { valid: false, msg: "無效的牌型！只支援單張、對子、順子、葫蘆或鐵支。" };
+        if (!playCombo) return { valid: false, msg: "無效的牌型！只支援單張、對子、順子、葫蘆、鐵支或同花順。" };
         if (isFirst && !playCombo.cards.some(c => c.weight === 0)) {
             return { valid: false, msg: "第一局的第一手必須包含梅花 3！" };
         }
         if (!currentTable) return { valid: true };
+        
+        // ✨ 同花順可以無視規則直接壓制除了更大同花順以外的所有牌
+        if (playCombo.type === 'straight_flush') {
+            if (currentTable.type === 'straight_flush' && playCombo.weight <= currentTable.weight) {
+                return { valid: false, msg: "你的同花順必須比桌上的大！" };
+            }
+            return { valid: true };
+        }
+
+        // ✨ 鐵支可以無視規則直接壓制除了同花順或更大鐵支以外的所有牌
+        if (playCombo.type === 'four') {
+            if (currentTable.type === 'straight_flush') return { valid: false, msg: "鐵支無法打敗同花順！" };
+            if (currentTable.type === 'four' && playCombo.weight <= currentTable.weight) {
+                return { valid: false, msg: "你的鐵支必須比桌上的大！" };
+            }
+            return { valid: true };
+        }
+
         if (playCombo.type === currentTable.type) {
             if (playCombo.weight > currentTable.weight) return { valid: true };
             return { valid: false, msg: "你的牌必須比桌上的大！" };
         }
-        if (currentTable.type === 'straight' || currentTable.type === 'fullhouse') {
-            if (playCombo.type === 'four') return { valid: true };
-        }
+
         return { valid: false, msg: `你必須出與桌面相同的牌型 (${currentTable.type})！` };
     };
 
@@ -185,6 +212,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
     const startSinglePlayer = () => {
         setRoomCode('');
         setIsHost(true);
+        setRoomSettings(prev => ({ ...prev, baseBet: 0 })); // ✨ 強制將單人模式的底注歸零，不扣鑽石
         const singlePlayer = [{ id: user.uid, name: userProfile?.displayName || '史蒂夫', avatar: userProfile?.avatar || '' }];
         setLobbyPlayers(singlePlayer);
         startGameFromLobby(singlePlayer);
