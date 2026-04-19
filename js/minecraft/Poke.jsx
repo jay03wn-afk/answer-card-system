@@ -22,6 +22,9 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
     const [lobbyPlayers, setLobbyPlayers] = useState([]);
     const [summaryData, setSummaryData] = useState(null);
     const [hasProcessedPayout, setHasProcessedPayout] = useState(false);
+    const [isLoading, setIsLoading] = useState(false); // 載入動畫狀態
+    const [dragOverIdx, setDragOverIdx] = useState(null); // 拖曳排開動畫狀態
+    const [lastPlayedTurn, setLastPlayedTurn] = useState(null); // 記錄誰出牌，用來決定動畫方向
 
     // 120秒閒置自動退出機制
     useEffect(() => {
@@ -256,6 +259,8 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         newPlayers[playerIndex].cardsLeft = newHand.length;
         const newTurn = (currentTurn + 1) % 4;
         const isWinner = newHand.length === 0;
+        
+        setLastPlayedTurn(playerIndex); // 記錄剛剛是誰出牌
 
         if (roomCode) {
             const dbPlayers = newPlayers.map(p => ({...p, isMe: false}));
@@ -283,8 +288,31 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
 
             if (isWinner) {
                 if (players[playerIndex].id === user.uid) handlePlayWin();
-                showToast(players[playerIndex].id === user.uid ? "恭喜！你贏了！" : `${players[playerIndex].name} 贏了，你輸了！`);
-                setGameState('menu');
+                else handlePlayError();
+
+                const base = roomSettings?.baseBet || 0;
+                let totalPrize = 0;
+                
+                const results = newPlayers.map(p => {
+                    let penalty = 0;
+                    let hasTwo = p.hand.some(c => c.value === '2');
+                    let cardsLeft = p.hand.length;
+                    
+                    if (cardsLeft > 0) {
+                        let mult = hasTwo ? 2 : 1;
+                        penalty = cardsLeft * base * mult;
+                        totalPrize += penalty;
+                    }
+                    return { ...p, penalty, hasTwo, cardsLeft };
+                });
+
+                const finalResults = results.map(p => {
+                    if (p.cardsLeft === 0) p.prize = totalPrize;
+                    return p;
+                });
+
+                setSummaryData({ winnerName: players[playerIndex].name, results: finalResults, baseBet: base, totalPrize });
+                setGameState('summary');
             }
         }
     };
@@ -314,7 +342,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                     }
 
                     if (data.status === 'playing' || data.status === 'summary') {
-                        if (gameState === 'lobby' && !isHost && data.status === 'playing') setGameState('playing');
+                        if (gameState === 'lobby' && data.status === 'playing') setGameState('playing');
                         
                         const syncedPlayers = (data.players || []).map(p => ({ ...p, isMe: p.id === user.uid }));
                         setPlayers(syncedPlayers);
@@ -492,29 +520,36 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         return () => clearTimeout(timer);
     }, [gameState, currentTurn, tableCombo, players, passCount, isFirstTurn, roomCode, isHost]);
 
-    // ✨ 新增拖曳排序邏輯
+    // ✨ 新增拖曳排序邏輯 (包含排開動畫)
     const handleDragStart = (e, index) => {
         setDraggedIdx(index);
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', index);
     };
 
-    const handleDragOver = (e) => {
-        e.preventDefault(); // 允許放下
+    const handleDragEnter = (e, index) => {
+        e.preventDefault();
+        if (draggedIdx !== null && draggedIdx !== index) setDragOverIdx(index);
+    };
+
+    const handleDragOver = (e) => { e.preventDefault(); };
+
+    const handleDragLeave = (e, index) => {
+        e.preventDefault();
+        if (dragOverIdx === index) setDragOverIdx(null);
     };
 
     const handleDrop = (e, dropIndex) => {
         e.preventDefault();
+        setDragOverIdx(null);
         if (draggedIdx === null || draggedIdx === dropIndex) return;
         
-        handlePlaySort(); // 播放洗牌音效
+        handlePlaySort();
         const newHand = [...myHand];
         const [draggedCard] = newHand.splice(draggedIdx, 1);
         newHand.splice(dropIndex, 0, draggedCard);
         
         setMyHand(newHand);
-        
-        // 修正選擇的卡牌索引，讓被選取的牌在拖曳後依然保持選取狀態
         setSelectedCards(prev => {
             let newSelected = [];
             for (let i = 0; i < prev.length; i++) {
@@ -527,6 +562,11 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
             return newSelected;
         });
         setDraggedIdx(null);
+    };
+    
+    const handleDragEnd = () => {
+        setDraggedIdx(null);
+        setDragOverIdx(null);
     };
 
     return (
@@ -592,6 +632,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                     return showToast(`你的鑽石太少啦！建議至少準備 ${roomSettings.baseBet * 10} 鑽石再開這局。`, true);
                                 }
 
+                                setIsLoading(true);
                                 const code = Math.floor(100000 + Math.random() * 900000).toString();
                                 try {
                                     await window.db.collection("pokerRooms").doc(code).set({
@@ -609,6 +650,8 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                 } catch (e) { 
                                     console.error("【詳細錯誤】", e);
                                     showToast("建立失敗：" + e.message, true); 
+                                } finally {
+                                    setIsLoading(false);
                                 }
                             }} className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black border-2 border-emerald-400 border-r-[#373737] border-b-[#373737] transition-transform active:scale-95 shadow-md">
                                 建立大廳
@@ -625,6 +668,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                             <button onClick={async () => { 
                                 handlePlaySound();
                                 if(roomJoinCode.length === 6) {
+                                    setIsLoading(true);
                                     try {
                                         const roomRef = window.db.collection("pokerRooms").doc(roomJoinCode);
                                         const snap = await roomRef.get();
@@ -644,7 +688,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                         setRoomCode(roomJoinCode);
                                         setIsHost(false);
                                         setGameState('lobby');
-                                    } catch (e) { showToast("加入失敗", true); }
+                                    } catch (e) { showToast("加入失敗", true); } finally { setIsLoading(false); }
                                 } else { showToast("請輸入 6 位代碼！", true); }
                             }} className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-[#373737] font-black border-2 border-white border-r-[#555] border-b-[#555] transition-transform active:scale-95 shadow-md">
                                 加入連線
@@ -729,7 +773,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                             </div>
 
                             {tableCombo ? (
-                                <div className="flex flex-col items-center animate-in zoom-in duration-300">
+                                <div key={tableCombo.cards.map(c=>c.weight).join(',')} className={`flex flex-col items-center animate-in zoom-in duration-300 ${players[lastPlayedTurn]?.isMe ? 'slide-in-from-bottom-12' : 'slide-in-from-top-12'}`}>
                                     <span className="bg-stone-900 text-amber-400 text-[10px] px-2 py-0.5 mb-3 font-bold border border-stone-600 shadow-lg tracking-widest">
                                         {tableCombo.type.toUpperCase()}
                                     </span>
@@ -752,8 +796,6 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
 
                         <div className={`flex flex-col bg-[#8b8b8b] p-3 border-4 transition-colors duration-300 ${players[currentTurn]?.id === user.uid ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.8)]' : 'border-white border-r-[#555] border-b-[#555]'}`}>
                             
-                            {/* 移除了原本擋在中間的「你的回合!」超大字樣 */}
-
                             <div className="flex justify-between items-center mb-3">
                                 <div className="flex items-center text-[#373737] font-black text-lg relative">
                                     <span className="material-symbols-outlined mr-2">person</span> {userProfile?.displayName || '你'} 
@@ -784,19 +826,28 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                 {myHand.map((card, index) => {
                                     const isSelected = selectedCards.includes(index);
                                     const isDragging = draggedIdx === index;
+                                    const isDragOverLeft = dragOverIdx === index && draggedIdx > index;
+                                    const isDragOverRight = dragOverIdx === index && draggedIdx < index;
+                                    
                                     return (
                                         <button 
                                             key={index}
                                             draggable
                                             onDragStart={(e) => handleDragStart(e, index)}
+                                            onDragEnter={(e) => handleDragEnter(e, index)}
                                             onDragOver={handleDragOver}
+                                            onDragLeave={(e) => handleDragLeave(e, index)}
                                             onDrop={(e) => handleDrop(e, index)}
-                                            onDragEnd={() => setDraggedIdx(null)}
+                                            onDragEnd={handleDragEnd}
                                             onClick={() => {
                                                 handlePlaySound();
                                                 setSelectedCards(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
                                             }}
-                                            className={`w-12 h-20 sm:w-16 sm:h-24 flex flex-col items-center justify-center transition-all relative cursor-grab active:cursor-grabbing
+                                            style={{
+                                                marginLeft: isDragOverLeft ? '4rem' : '0',
+                                                marginRight: isDragOverRight ? '4rem' : '0',
+                                            }}
+                                            className={`w-12 h-20 sm:w-16 sm:h-24 flex flex-col items-center justify-center transition-all duration-200 relative cursor-grab active:cursor-grabbing
                                                 ${isDragging ? 'opacity-30 scale-95' : 'opacity-100'}
                                                 ${isSelected 
                                                     ? 'bg-amber-50 -translate-y-6 shadow-[6px_6px_0px_#78350f] border-4 border-amber-600' 
@@ -862,13 +913,17 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                             </div>
 
                             <div className="flex justify-center space-x-4">
-                                {isHost ? (
+                                {(!roomCode || isHost) ? (
                                     <button onClick={async () => {
                                         handlePlaySound();
-                                        await window.db.collection("pokerRooms").doc(roomCode).update({ status: 'lobby' });
-                                        setGameState('lobby');
+                                        if (roomCode) {
+                                            await window.db.collection("pokerRooms").doc(roomCode).update({ status: 'lobby' });
+                                            setGameState('lobby');
+                                        } else {
+                                            setGameState('menu');
+                                        }
                                     }} className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white font-black border-2 border-black shadow-lg transition-transform active:scale-95">
-                                        再來一局 (回到大廳)
+                                        {roomCode ? '再來一局 (回到大廳)' : '回到主選單'}
                                     </button>
                                 ) : (
                                     <div className="px-6 py-3 bg-stone-600 text-stone-300 font-black border-2 border-black shadow-lg">
@@ -889,9 +944,16 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                         <span className="font-bold tracking-wide">{toast}</span>
                     </div>
                 )}
+
+                {isLoading && (
+                    <div className="absolute inset-0 z-[400] bg-black/60 flex flex-col items-center justify-center animate-in fade-in">
+                        <div className="w-16 h-16 border-8 border-stone-600 border-t-amber-400 rounded-full animate-spin mb-4"></div>
+                        <span className="text-white font-black tracking-widest animate-pulse">連線中...</span>
+                    </div>
+                )}
             </div>
         </div>
     );
 }
 
-export default Poke;
+window.Poke = Poke;
