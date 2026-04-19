@@ -16,15 +16,19 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     
     // ✨ 核心修復：統一所有更新手牌的入口，保證絕對不打亂瀏覽器端的拖曳排序 (單人/多人皆適用)
     const updateMyHandSmartly = (engineHand) => {
+        if (!engineHand) return;
         setMyHand(prev => {
-            if (!prev || prev.length === 0) return engineHand;
-            const newHandIds = engineHand.map(t => t.id);
+            const engineIds = engineHand.map(t => t.id);
             const prevIds = prev.map(t => t.id);
-            const isSame = newHandIds.length === prevIds.length && newHandIds.every(id => prevIds.includes(id));
-            if (isSame) return prev;
-            let updatedHand = prev.filter(t => newHandIds.includes(t.id));
-            const addedTiles = engineHand.filter(t => !prevIds.includes(t.id));
-            return [...updatedHand, ...addedTiles];
+            // 1. 檢查內容是否真的有變（無視順序），沒變就不理它，避免畫面閃爍
+            const isSetEqual = engineIds.length === prevIds.length && engineIds.every(id => prevIds.includes(id));
+            if (isSetEqual) return prev;
+            // 2. 濾掉已經不在資料庫裡的手牌（別人幫你打掉或你打掉的）
+            let nextHand = prev.filter(t => engineIds.includes(t.id));
+            // 3. 找出資料庫裡有、但本地沒有的新牌（新摸的牌）
+            const newTiles = engineHand.filter(t => !prevIds.includes(t.id));
+            // 4. 將新牌默默接在目前排序的後面
+            return [...nextHand, ...newTiles];
         });
     };
 
@@ -38,7 +42,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
     const [toast, setToast] = useState(null);
     const [roomJoinCode, setRoomJoinCode] = useState('');
-    const [roomSettings, setRoomSettings] = useState({ turnTime: 8, baseBet: 50, taiBet: 20 }); // ✨ 新增底/台設定
+    
+    const [roomSettings, setRoomSettings] = useState({ turnTime: 20, baseBet: 50, taiBet: 20 }); // ✨ 新增底/台設定
     const [isHost, setIsHost] = useState(false);
     const [lobbyPlayers, setLobbyPlayers] = useState([]);
     const [summaryData, setSummaryData] = useState(null);
@@ -302,11 +307,12 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             lastDiscard: { tile: tileToDiscard, from: pIndex },
         };
 
+        
         if (canIntercept) {
             updateData.pendingAction = {
                 tile: tileWithTime, 
                 from: pIndex,
-                expires: Date.now() + 8000 // ✨ 延長至 8 秒反應時間
+                expires: Date.now() + 20000 // ✨ 延長至 20 秒反應時間
             };
         } else {
             // 沒有人能攔截，直接換下家摸牌
@@ -324,17 +330,16 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         }
 
         if (roomCode) {
-            await window.db.collection("mjRooms").doc(roomCode).update(updateData);
-        } else {
-            setPlayers(updateData.players);
-            setLastDiscard(updateData.lastDiscard);
-            setPendingAction(updateData.pendingAction);
-            if (!canIntercept) {
-                setWall(updateData.wall);
-                setCurrentTurn(nextTurn);
-                if (updateData.players[nextTurn].id === user.uid) {
-                    updateMyHandSmartly(updateData.players[nextTurn].hand); // ✨ 改用智慧排序，不打亂手牌
-                }
+            window.db.collection("mjRooms").doc(roomCode).update(updateData);
+        }
+        setPlayers(updateData.players);
+        setLastDiscard(updateData.lastDiscard);
+        setPendingAction(updateData.pendingAction);
+        if (!canIntercept) {
+            setWall(updateData.wall);
+            setCurrentTurn(nextTurn);
+            if (updateData.players[nextTurn].id === user.uid) {
+                updateMyHandSmartly(updateData.players[nextTurn].hand); // ✨ 改用智慧排序，不打亂手牌
             }
         }
     };
@@ -372,15 +377,14 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             newPlayers[actorIdx].melds.push({ type: 'pong', tiles: [...used, tile] });
             newPlayers[pendingAction.from].discards.pop();
 
+            
             const updateData = { players: newPlayers.map(p => ({...p, isMe: false})), currentTurn: actorIdx, pendingAction: null, lastDiscard: null };
-            if (roomCode) await window.db.collection("mjRooms").doc(roomCode).update(updateData);
-            else { 
-                setPlayers(newPlayers); 
-                setCurrentTurn(actorIdx); 
-                setPendingAction(null); 
-                if(actorIdx === players.findIndex(p=>p.id===user.uid)) {
-                    updateMyHandSmartly(remainingHand); // ✨ 改用智慧排序
-                }
+            if (roomCode) window.db.collection("mjRooms").doc(roomCode).update(updateData);
+            setPlayers(newPlayers); 
+            setCurrentTurn(actorIdx); 
+            setPendingAction(null); 
+            if(actorIdx === players.findIndex(p=>p.id===user.uid)) {
+                updateMyHandSmartly(remainingHand); // ✨ 改用智慧排序
             }
         }
 
@@ -401,16 +405,15 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             newPlayers[actorIdx].melds.push({ type: 'kong', tiles: [...used, tile] });
             newPlayers[pendingAction.from].discards.pop();
 
+            
             const updateData = { players: newPlayers.map(p => ({...p, isMe: false})), currentTurn: actorIdx, pendingAction: null, lastDiscard: null, wall: newWall };
-            if (roomCode) await window.db.collection("mjRooms").doc(roomCode).update(updateData);
-            else { 
-                setPlayers(newPlayers); 
-                setCurrentTurn(actorIdx);
-                setWall(newWall); 
-                setPendingAction(null); 
-                if(actorIdx === players.findIndex(p=>p.id===user.uid)) {
-                    updateMyHandSmartly(remainingHand);
-                }
+            if (roomCode) window.db.collection("mjRooms").doc(roomCode).update(updateData);
+            setPlayers(newPlayers); 
+            setCurrentTurn(actorIdx);
+            setWall(newWall); 
+            setPendingAction(null); 
+            if(actorIdx === players.findIndex(p=>p.id===user.uid)) {
+                updateMyHandSmartly(remainingHand);
             }
         }
 
@@ -426,14 +429,13 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             newPlayers[actorIdx].melds.push({ type: 'chow', tiles: meldTiles });
             newPlayers[pendingAction.from].discards.pop();
 
+            
             const updateData = { players: newPlayers.map(p => ({...p, isMe: false})), currentTurn: actorIdx, pendingAction: null, lastDiscard: null };
-            if (roomCode) await window.db.collection("mjRooms").doc(roomCode).update(updateData);
-            else { 
-                setPlayers(newPlayers); 
-                setCurrentTurn(actorIdx); 
-                setPendingAction(null); 
-                if(actorIdx === players.findIndex(p=>p.id===user.uid)) updateMyHandSmartly(remainingHand); // ✨ 改用智慧排序
-            }
+            if (roomCode) window.db.collection("mjRooms").doc(roomCode).update(updateData);
+            setPlayers(newPlayers); 
+            setCurrentTurn(actorIdx); 
+            setPendingAction(null); 
+            if(actorIdx === players.findIndex(p=>p.id===user.uid)) updateMyHandSmartly(remainingHand); // ✨ 改用智慧排序
         }
     };
 
@@ -465,12 +467,10 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         p.hand = remainingHand;
 
         const updateData = { players: newPlayers.map(pl => ({...pl, isMe: false})), wall: newWall };
-        if (roomCode) await window.db.collection("mjRooms").doc(roomCode).update(updateData);
-        else {
-            setPlayers(newPlayers);
-            setWall(newWall);
-            if(p.id === user.uid) updateMyHandSmartly(remainingHand);
-        }
+        if (roomCode) window.db.collection("mjRooms").doc(roomCode).update(updateData);
+        setPlayers(newPlayers);
+        setWall(newWall);
+        if(p.id === user.uid) updateMyHandSmartly(remainingHand);
     };
 
     const proceedNextTurnAfterPass = async () => {
@@ -490,14 +490,13 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         };
 
         if (roomCode) {
-            await window.db.collection("mjRooms").doc(roomCode).update(updateData);
-        } else {
-            setWall(newWall);
-            setCurrentTurn(nextTurn);
-            setPendingAction(null);
-            setPlayers(newPlayers);
-            if (newPlayers[nextTurn].id === user.uid) updateMyHandSmartly(newPlayers[nextTurn].hand); // ✨ 改用智慧排序
+            window.db.collection("mjRooms").doc(roomCode).update(updateData);
         }
+        setWall(newWall);
+        setCurrentTurn(nextTurn);
+        setPendingAction(null);
+        setPlayers(newPlayers);
+        if (newPlayers[nextTurn].id === user.uid) updateMyHandSmartly(newPlayers[nextTurn].hand); // ✨ 改用智慧排序
     };
 
     // ✨ 核心：結算與台數計算引擎
@@ -597,12 +596,11 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             taiDetails: details
         };
 
-        if (roomCode && isHost) {
-            await window.db.collection("mjRooms").doc(roomCode).update(updateData);
-        } else if (!roomCode) {
-            setSummaryData(updateData);
-            setGameState('summary');
+        if (roomCode) {
+            window.db.collection("mjRooms").doc(roomCode).update(updateData);
         }
+        setSummaryData(updateData);
+        setGameState('summary');
     };
 
     const handleDrawGame = () => {
@@ -611,11 +609,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             winner: '流局',
             results: players.map(p => ({ ...p, penalty: 0, prize: 0 }))
         };
-        if (roomCode && isHost) window.db.collection("mjRooms").doc(roomCode).update(updateData);
-        else if (!roomCode) {
-            setSummaryData(updateData);
-            setGameState('summary');
-        }
+        if (roomCode) window.db.collection("mjRooms").doc(roomCode).update(updateData);
+        setSummaryData(updateData);
+        setGameState('summary');
     };
 
     // Firebase 狀態同步
@@ -675,7 +671,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     useEffect(() => {
         if (gameState !== 'playing' || pendingAction) return;
         
-        setTimeLeft(roomSettings.turnTime || 8); // ✨ 配合預設 8 秒
+        setTimeLeft(roomSettings.turnTime || 20); // ✨ 配合預設 20 秒
         const timer = setInterval(() => {
             setTimeLeft(prev => {
                 if (prev <= 1) {
@@ -969,11 +965,11 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 牌山剩餘: <span className="text-amber-400">{wall.length}</span> 張
                             </div>
                             
-                            {/* ✨ 視覺化倒數進度條 (更新攔截時間為 8 秒) */}
+                            {/* ✨ 視覺化倒數進度條 (更新攔截時間為 20 秒) */}
                             <div className="w-32 sm:w-64 h-2 sm:h-3 bg-stone-900 border-2 border-stone-600 rounded-full overflow-hidden shadow-inner mt-1">
                                 <div 
                                     className={`h-full transition-all duration-1000 ease-linear ${pendingAction ? 'bg-amber-500' : 'bg-emerald-500'}`} 
-                                    style={{ width: pendingAction ? `${(actionTimer / 8) * 100}%` : `${(timeLeft / (roomSettings.turnTime || 8)) * 100}%` }}
+                                    style={{ width: pendingAction ? `${(actionTimer / 20) * 100}%` : `${(timeLeft / (roomSettings.turnTime || 20)) * 100}%` }}
                                 ></div>
                             </div>
 
@@ -1102,9 +1098,13 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     )}
                                 </div>
                                 <div className="flex gap-2">
+                                    
                                     {/* ✨ 新增：自動排序按鈕 */}
                                     <button 
-                                        onClick={() => { playCachedSound(tileSound); setMyHand(sortHand([...myHand])); }} 
+                                        onClick={() => { 
+                                            playCachedSound(tileSound); 
+                                            setMyHand(sortHand([...myHand])); 
+                                        }} 
                                         className="bg-stone-600 hover:bg-stone-500 text-white font-black px-4 py-1 border-2 border-stone-400 shadow-md transition-transform active:scale-95"
                                     >
                                         整理
@@ -1159,6 +1159,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                             onDragStart={(e) => { setDraggedIdx(index); e.dataTransfer.effectAllowed = 'move'; }}
                                             onDragOver={(e) => { e.preventDefault(); if (draggedIdx !== null && draggedIdx !== index) setDragOverIdx(index); }}
                                             onDragLeave={() => { if(dragOverIdx === index) setDragOverIdx(null); }}
+                                            
                                             onDrop={(e) => {
                                                 e.preventDefault();
                                                 if (draggedIdx === null || draggedIdx === index) {
@@ -1175,8 +1176,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                                 setMyHand(newHand);
                                                 setDraggedIdx(null);
                                                 setDragOverIdx(null);
-                                            }}
-                                            onDragEnd={() => { setDraggedIdx(null); setDragOverIdx(null); }}
+                                            }}                                            onDragEnd={() => { setDraggedIdx(null); setDragOverIdx(null); }}
                                             className={`transition-all duration-200 cursor-grab active:cursor-grabbing ${isDrawnTile ? 'ml-2 sm:ml-4' : ''} ${isDragging ? 'opacity-30 scale-75 -translate-y-4' : ''} ${isDragOverLeft ? 'border-l-[8px] border-l-amber-500 rounded-l-lg pl-1' : ''} ${isDragOverRight ? 'border-r-[8px] border-r-amber-500 rounded-r-lg pr-1' : ''}`}
                                         >
                                             <TileBlock 
