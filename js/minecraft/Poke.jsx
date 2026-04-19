@@ -27,6 +27,31 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
     const [lastPlayedTurn, setLastPlayedTurn] = useState(null); // 記錄誰出牌，用來決定動畫方向
     const [isSpectator, setIsSpectator] = useState(false); // 是否在觀戰席
     const [spectators, setSpectators] = useState([]); // 觀戰名單
+    
+    // ✨ 新增：聊天與動畫系統狀態
+    const [chatText, setChatText] = useState('');
+    const [chatMessages, setChatMessages] = useState([]);
+    const [showChatModal, setShowChatModal] = useState(false);
+    const [floatingChats, setFloatingChats] = useState({}); // 儲存頭像旁的浮動文字
+
+    // ✨ 新增：保證 100% 觸發的自訂飛行動畫 (解決 Tailwind CDN 沒抓到的問題)
+    useEffect(() => {
+        if (!document.getElementById('poker-animations')) {
+            const style = document.createElement('style');
+            style.id = 'poker-animations';
+            style.innerHTML = `
+                @keyframes flyUp { 0% { transform: translateY(150px) scale(0.5); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+                @keyframes flyDown { 0% { transform: translateY(-150px) scale(0.5); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+                @keyframes flyLeft { 0% { transform: translate(-150px, -100px) scale(0.5); opacity: 0; } 100% { transform: translate(0, 0) scale(1); opacity: 1; } }
+                @keyframes flyRight { 0% { transform: translate(150px, -100px) scale(0.5); opacity: 0; } 100% { transform: translate(0, 0) scale(1); opacity: 1; } }
+                .anim-fly-up { animation: flyUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+                .anim-fly-down { animation: flyDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+                .anim-fly-left { animation: flyLeft 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+                .anim-fly-right { animation: flyRight 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+            `;
+            document.head.appendChild(style);
+        }
+    }, []);
 
     // 120秒閒置自動退出機制
     useEffect(() => {
@@ -121,7 +146,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         return { valid: false, msg: `你必須出與桌面相同的牌型 (${currentTable.type})！` };
     };
 
-    // ✨ 安全離開房間邏輯 (清除資料庫內的自己)
+    // ✨ 安全離開房間邏輯 (遊戲中改為標記斷線)
     const quitAndLeaveRoom = async () => {
         handlePlaySound();
         if (roomCode && window.db) {
@@ -129,17 +154,24 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                 const snap = await window.db.collection("pokerRooms").doc(roomCode).get();
                 if (snap.exists) {
                     const d = snap.data();
-                    if (isHost) {
-                        await window.db.collection("pokerRooms").doc(roomCode).delete();
+                    if (gameState === 'playing' || gameState === 'summary') {
+                        // 遊戲中退出：標記為斷線，讓 AI 接管，輸了照樣扣錢
+                        const p = (d.players || []).map(pl => pl.id === user.uid ? { ...pl, isDisconnected: true } : pl);
+                        await window.db.collection("pokerRooms").doc(roomCode).update({ players: p });
                     } else {
-                        const p = (d.players || []).filter(pl => pl.id !== user.uid);
-                        const s = (d.spectators || []).filter(pl => pl.id !== user.uid);
-                        await window.db.collection("pokerRooms").doc(roomCode).update({ players: p, spectators: s });
+                        // 大廳中退出：直接移除
+                        if (isHost) {
+                            await window.db.collection("pokerRooms").doc(roomCode).delete();
+                        } else {
+                            const p = (d.players || []).filter(pl => pl.id !== user.uid);
+                            const s = (d.spectators || []).filter(pl => pl.id !== user.uid);
+                            await window.db.collection("pokerRooms").doc(roomCode).update({ players: p, spectators: s });
+                        }
                     }
                 }
             } catch(e) {}
         }
-        onQuit(); // 呼叫原本的關閉函數
+        onQuit(); 
     };
 
     // ✨ 修正 MC 頭像抓取網址 (MHF_ 標籤)
@@ -413,7 +445,19 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                         if (data.passCount !== undefined) setPassCount(data.passCount);
                         if (data.isFirstTurn !== undefined) setIsFirstTurn(data.isFirstTurn);
                         if (data.passedPlayers !== undefined) setPassedPlayers(data.passedPlayers);
-                        if (data.lastPlayedTurn !== undefined) setLastPlayedTurn(data.lastPlayedTurn); // ✨ 接收最後出牌者
+                        if (data.lastPlayedTurn !== undefined) setLastPlayedTurn(data.lastPlayedTurn);
+
+                        // ✨ 接收聊天訊息並觸發浮動氣泡
+                        if (data.chats) {
+                            setChatMessages(data.chats);
+                            const lastChat = data.chats[data.chats.length - 1];
+                            if (lastChat && Date.now() - lastChat.time < 3000) {
+                                setFloatingChats(prev => ({ ...prev, [lastChat.senderId]: lastChat.text }));
+                                setTimeout(() => {
+                                    setFloatingChats(prev => ({ ...prev, [lastChat.senderId]: null }));
+                                }, 3000);
+                            }
+                        }
 
                         if (data.status === 'summary' && !hasProcessedPayout) {
                             setGameState('summary');
@@ -542,7 +586,8 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         if (gameState !== 'playing' || players.length === 0) return;
 
         const aiPlayer = players[currentTurn];
-        if (!aiPlayer || !aiPlayer.id.startsWith('ai_')) return;
+        // ✨ 如果是 AI，或是「已斷線的真實玩家」，都由房主的電腦進行自動出牌接管
+        if (!aiPlayer || (!aiPlayer.id.startsWith('ai_') && !aiPlayer.isDisconnected)) return;
         if (roomCode && !isHost) return;
 
         const timer = setTimeout(() => {
@@ -882,72 +927,104 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                 {gameState === 'playing' && (
                     <div className="flex flex-col flex-grow justify-between relative">
                         
-                        <div className="flex justify-around items-start bg-[#8b8b8b] p-2 border-2 border-[#555] border-r-white border-b-white">
-                            {players.filter(p => !p.isMe).map((p) => {
-                                const isTheirTurn = players[currentTurn]?.id === p.id;
-                                return (
-                                    <div key={p.id} className={`flex flex-col items-center p-2 border-2 transition-all duration-300 relative ${isTheirTurn ? 'bg-amber-100 border-amber-500 shadow-[0_0_15px_rgba(251,191,36,1)] scale-110 z-10' : 'bg-[#c6c6c6] border-transparent scale-100'}`}>
-                                        {isTheirTurn && (
-                                            <div className="absolute -top-3 bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce shadow-md">
-                                                思考中...
-                                            </div>
-                                        )}
-                                        <div className={`w-12 h-12 border-2 overflow-hidden shadow-md ${isTheirTurn ? 'border-amber-500' : 'border-[#373737] bg-stone-400'}`}>
-                                            {p.id.startsWith('ai_') ? (
-                                                <img src={AI_AVATARS[p.id]} alt={p.name} className="w-full h-full object-cover" />
-                                            ) : p.avatar ? (
-                                                <img src={p.avatar} alt={p.name} className="w-full h-full object-cover bg-white" />
-                                            ) : (
-                                                <span className="material-symbols-outlined text-4xl text-white mt-1">person</span>
+                        {/* ✨ 其他玩家區 (相對座位分配) */}
+                        <div className="flex justify-around items-start bg-[#8b8b8b] p-2 sm:p-3 border-2 border-[#555] border-r-white border-b-white h-24 sm:h-32">
+                            {(() => {
+                                const myIndex = players.findIndex(p => p.id === user.uid);
+                                // 讓對手永遠保持：右邊(下家)、上面(對家)、左邊(上家) 的相對順序
+                                const opps = myIndex !== -1 
+                                    ? [players[(myIndex + 1) % 4], players[(myIndex + 2) % 4], players[(myIndex + 3) % 4]].filter(Boolean)
+                                    : players.filter(p => p.id !== user.uid);
+
+                                return opps.map((p, displayIndex) => {
+                                    if (!p) return null;
+                                    const isTheirTurn = players[currentTurn]?.id === p.id;
+                                    return (
+                                        <div key={p.id} className={`flex flex-col items-center p-1 sm:p-2 border-2 transition-all duration-300 relative ${isTheirTurn ? 'bg-amber-100 border-amber-500 shadow-[0_0_15px_rgba(251,191,36,1)] scale-105 sm:scale-110 z-10' : 'bg-[#c6c6c6] border-transparent scale-100'}`}>
+                                            
+                                            {/* ✨ 浮動聊天氣泡 */}
+                                            {floatingChats[p.id] && (
+                                                <div className="absolute -top-8 bg-white border-2 border-stone-800 text-stone-800 text-[10px] sm:text-xs font-black px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap animate-bounce">
+                                                    {floatingChats[p.id]}
+                                                </div>
                                             )}
+
+                                            {isTheirTurn && !p.isDisconnected && (
+                                                <div className="absolute -top-3 bg-amber-500 text-white text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce shadow-md">
+                                                    思考中...
+                                                </div>
+                                            )}
+
+                                            <div className={`w-10 h-10 sm:w-12 sm:h-12 border-2 relative overflow-hidden shadow-md ${isTheirTurn ? 'border-amber-500' : 'border-[#373737] bg-stone-400'}`}>
+                                                {p.isDisconnected && (
+                                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
+                                                        <span className="text-white text-[8px] font-black transform -rotate-12">已斷線</span>
+                                                    </div>
+                                                )}
+                                                {p.id.startsWith('ai_') ? (
+                                                    <img src={AI_AVATARS[p.id]} alt={p.name} className="w-full h-full object-cover" />
+                                                ) : p.avatar ? (
+                                                    <img src={p.avatar} alt={p.name} className="w-full h-full object-cover bg-white" />
+                                                ) : (
+                                                    <span className="material-symbols-outlined text-3xl sm:text-4xl text-white mt-1">person</span>
+                                                )}
+                                            </div>
+                                            <span className={`text-[9px] sm:text-[10px] font-black mt-1 uppercase tracking-tighter truncate w-16 sm:w-20 text-center ${isTheirTurn ? 'text-amber-700' : 'text-[#373737]'}`}>
+                                                {p.name}
+                                            </span>
+                                            <div className="flex items-center mt-1 text-emerald-800 font-black bg-white/80 px-1 py-0.5 rounded shadow-sm border border-emerald-200">
+                                                <span className="material-symbols-outlined text-[10px] sm:text-xs mr-1">style</span> 
+                                                <span className="text-[10px] sm:text-xs">{p.cardsLeft}</span>
+                                            </div>
                                         </div>
-                                        <span className={`text-[10px] font-black mt-1 uppercase tracking-tighter ${isTheirTurn ? 'text-amber-700' : 'text-[#373737]'}`}>{p.name}</span>
-                                        <div className="flex items-center mt-1 text-emerald-800 font-black bg-white/80 px-1.5 py-0.5 rounded shadow-sm border border-emerald-200">
-                                            <span className="material-symbols-outlined text-xs mr-1">style</span> {p.cardsLeft}
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                });
+                            })()}
                         </div>
 
-                        <div className="flex-grow flex flex-col items-center justify-center p-4">
-                            <div className="w-64 h-3 bg-stone-800 border-2 border-white mb-6 relative overflow-hidden shadow-inner">
-                                <div 
-                                    className="h-full bg-red-600 transition-all duration-1000 ease-linear"
-                                    style={{ width: `${(timeLeft / roomSettings.turnTime) * 100}%` }}
-                                ></div>
+                        {/* ✨ 桌面中央區 (出牌與動畫) */}
+                        <div className="flex-grow flex flex-col items-center justify-center p-2 sm:p-4 min-h-[160px] relative">
+                            {/* 聊天與工具按鈕 */}
+                            <div className="absolute top-2 left-2 flex gap-2">
+                                <button onClick={() => setShowChatModal(true)} className="bg-stone-800/80 hover:bg-stone-900 text-white p-2 rounded-full shadow-lg flex items-center justify-center transition-transform active:scale-90">
+                                    <span className="material-symbols-outlined text-[18px]">chat</span>
+                                </button>
+                            </div>
+
+                            <div className="w-48 sm:w-64 h-2 sm:h-3 bg-stone-800 border-2 border-white mb-4 relative overflow-hidden shadow-inner">
+                                <div className="h-full bg-red-600 transition-all duration-1000 ease-linear" style={{ width: `${(timeLeft / roomSettings.turnTime) * 100}%` }}></div>
                             </div>
 
                             {tableCombo ? (
                                 (() => {
-                                    let flyAnim = 'animate-in fade-in zoom-in duration-500 ';
-                                    
-                                    // 使用標準的 Tailwind 距離 (如 48 = 12rem = 192px) 確保所有環境都會飛
+                                    // ✨ 保證觸發的自訂 CSS 動畫
+                                    let flyAnim = '';
                                     if (lastPlayedTurn !== null && players[lastPlayedTurn]) {
                                         if (players[lastPlayedTurn].isMe) {
-                                            flyAnim += 'slide-in-from-bottom-48';
+                                            flyAnim = 'anim-fly-up';
                                         } else {
-                                            const oppPos = players.filter(p => !p.isMe).findIndex(p => p.id === players[lastPlayedTurn].id);
-                                            if (oppPos === 0) flyAnim += 'slide-in-from-top-48 slide-in-from-left-48';
-                                            if (oppPos === 1) flyAnim += 'slide-in-from-top-48';
-                                            if (oppPos === 2) flyAnim += 'slide-in-from-top-48 slide-in-from-right-48';
+                                            const myIndex = players.findIndex(p => p.isMe);
+                                            const opps = myIndex !== -1 ? [players[(myIndex + 1) % 4], players[(myIndex + 2) % 4], players[(myIndex + 3) % 4]] : players.filter(p => p.id !== user.uid);
+                                            const oppPos = opps.findIndex(p => p && p.id === players[lastPlayedTurn].id);
+                                            
+                                            if (oppPos === 0) flyAnim = 'anim-fly-left';       // 下家(右) -> 往左飛
+                                            else if (oppPos === 1) flyAnim = 'anim-fly-down';  // 對家(上) -> 往下飛
+                                            else if (oppPos === 2) flyAnim = 'anim-fly-right'; // 上家(左) -> 往右飛
                                         }
                                     }
                                     
-                                    // 確保有人 Pass 後重新出相同牌型的牌，動畫依然會觸發
-                                    const animKey = tableCombo.cards.map(c=>c.weight).join(',') + '-' + currentTurn;
+                                    const animKey = tableCombo.cards.map(c=>c.weight).join(',') + '-' + currentTurn + '-' + passCount;
                                     
                                     return (
                                         <div key={animKey} className={`flex flex-col items-center ${flyAnim}`}>
-                                            <span className="bg-stone-900 text-amber-400 text-[10px] px-2 py-0.5 mb-3 font-bold border border-stone-600 shadow-lg tracking-widest">
+                                            <span className="bg-stone-900 text-amber-400 text-[9px] sm:text-[10px] px-2 py-0.5 mb-2 font-bold border border-stone-600 shadow-lg tracking-widest">
                                                 {tableCombo.type.toUpperCase()}
                                             </span>
-                                            <div className="flex space-x-2">
+                                            <div className="flex space-x-1 sm:space-x-2">
                                                 {tableCombo.cards.map((card, idx) => (
-                                                    <div key={idx} className="w-16 h-24 bg-[#dbdbdb] border-4 border-[#373737] flex flex-col items-center justify-center shadow-[4px_4px_0_rgba(0,0,0,0.4)] transform -translate-y-2 relative">
-                                                        <span className={`text-2xl ${card.color}`}>{card.symbol}</span>
-                                                        <span className={`text-xl font-black ${card.color}`}>{card.value}</span>
-                                                        <div className="absolute inset-0 border-t-2 border-l-2 border-white/20 pointer-events-none"></div>
+                                                    <div key={idx} className="w-10 h-16 sm:w-16 sm:h-24 bg-[#dbdbdb] border-2 sm:border-4 border-[#373737] flex flex-col items-center justify-center shadow-[2px_2px_0_rgba(0,0,0,0.4)] sm:shadow-[4px_4px_0_rgba(0,0,0,0.4)] transform -translate-y-1 sm:-translate-y-2 relative">
+                                                        <span className={`text-base sm:text-2xl ${card.color}`}>{card.symbol}</span>
+                                                        <span className={`text-sm sm:text-xl font-black ${card.color}`}>{card.value}</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -955,14 +1032,14 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                     );
                                 })()
                             ) : (
-                                <div className="text-white bg-stone-800/60 px-6 py-3 border-4 border-dashed border-stone-500 font-black tracking-widest text-lg shadow-2xl">
+                                <div className="text-white bg-stone-800/60 px-4 sm:px-6 py-2 sm:py-3 border-2 sm:border-4 border-dashed border-stone-500 font-black tracking-widest text-sm sm:text-lg shadow-2xl">
                                     WAITING FOR PLAYERS...
                                 </div>
                             )}
                         </div>
 
-                        <div className={`flex flex-col bg-[#8b8b8b] p-3 border-4 transition-all duration-300 relative ${(!isSpectator && players[currentTurn]?.id === user.uid) ? 'border-amber-400 shadow-[0_0_30px_rgba(251,191,36,1)] bg-stone-500' : 'border-white border-r-[#555] border-b-[#555]'}`}>
-                            
+                        {/* ✨ 自己手牌區 (手機排版優化) */}
+                        <div className={`flex flex-col bg-[#8b8b8b] p-2 sm:p-3 border-2 sm:border-4 transition-all duration-300 relative ${(!isSpectator && players[currentTurn]?.id === user.uid) ? 'border-amber-400 shadow-[0_0_30px_rgba(251,191,36,1)] bg-stone-500' : 'border-white border-r-[#555] border-b-[#555]'}`}>
                             {(!isSpectator && players[currentTurn]?.id === user.uid) && (
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 overflow-hidden">
                                     <span className="text-6xl sm:text-8xl font-black text-amber-300 drop-shadow-2xl uppercase tracking-widest whitespace-nowrap animate-pulse">YOUR TURN</span>
@@ -1003,13 +1080,19 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                             </button>
                                         </div>
                                     </div>
-                                    <div className="flex flex-wrap justify-center gap-1 sm:gap-2">
+                                    {/* ✨ 手機版多行排版優化 */}
+                                    <div className="flex flex-wrap justify-center gap-1 sm:gap-2 px-1">
                                         {myHand.map((card, index) => {
                                             const isSelected = selectedCards.includes(index);
                                             const isDragging = draggedIdx === index;
                                             const isDragOverLeft = dragOverIdx === index && draggedIdx > index;
                                             const isDragOverRight = dragOverIdx === index && draggedIdx < index;
                                             
+                                            // 手機版排開距離縮小
+                                            const marginStyle = window.innerWidth < 640 
+                                                ? { marginLeft: isDragOverLeft ? '2rem' : '0', marginRight: isDragOverRight ? '2rem' : '0' }
+                                                : { marginLeft: isDragOverLeft ? '4rem' : '0', marginRight: isDragOverRight ? '4rem' : '0' };
+
                                             return (
                                                 <button 
                                                     key={index}
@@ -1024,24 +1107,65 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                                         handlePlaySound();
                                                         setSelectedCards(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
                                                     }}
-                                                    style={{ marginLeft: isDragOverLeft ? '4rem' : '0', marginRight: isDragOverRight ? '4rem' : '0' }}
-                                                    className={`w-12 h-20 sm:w-16 sm:h-24 flex flex-col items-center justify-center transition-all duration-200 relative cursor-grab active:cursor-grabbing
+                                                    style={marginStyle}
+                                                    className={`w-9 h-14 sm:w-16 sm:h-24 flex flex-col items-center justify-center transition-all duration-200 relative cursor-grab active:cursor-grabbing
                                                         ${isDragging ? 'opacity-30 scale-95' : 'opacity-100'}
                                                         ${isSelected 
-                                                            ? 'bg-amber-50 -translate-y-6 shadow-[6px_6px_0px_#78350f] border-4 border-amber-600' 
-                                                            : 'bg-[#dbdbdb] border-4 border-[#373737] hover:-translate-y-2 shadow-[4px_4px_0px_#222]'}`}
+                                                            ? 'bg-amber-50 -translate-y-4 sm:-translate-y-6 shadow-[3px_3px_0px_#78350f] sm:shadow-[6px_6px_0px_#78350f] border-2 sm:border-4 border-amber-600' 
+                                                            : 'bg-[#dbdbdb] border-2 sm:border-4 border-[#373737] hover:-translate-y-2 shadow-[2px_2px_0px_#222] sm:shadow-[4px_4px_0px_#222]'}`}
                                                 >
-                                                    <span className={`text-2xl ${card.color}`}>{card.symbol}</span>
-                                                    <span className={`text-xl font-black leading-none ${card.color}`}>{card.value}</span>
-                                                    <div className="absolute inset-0 border-t-2 border-l-2 border-white/30 pointer-events-none"></div>
+                                                    <span className={`text-sm sm:text-2xl ${card.color}`}>{card.symbol}</span>
+                                                    <span className={`text-sm sm:text-xl font-black leading-none ${card.color}`}>{card.value}</span>
                                                 </button>
                                             );
                                         })}
                                     </div>
                                 </>
                             )}
+                            
+                            {/* ✨ 浮動自己頭像的對話氣泡 */}
+                            {floatingChats[user.uid] && (
+                                <div className="absolute top-0 right-4 -translate-y-full bg-white border-2 border-stone-800 text-stone-800 text-[10px] sm:text-xs font-black px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap animate-bounce">
+                                    {floatingChats[user.uid]}
+                                </div>
+                            )}
                         </div>
 
+                        {/* ✨ 聊天室面板 Modal */}
+                        {showChatModal && (
+                            <div className="absolute inset-0 z-50 bg-black/50 flex justify-end animate-fade-in">
+                                <div className="w-64 sm:w-80 bg-stone-100 h-full flex flex-col shadow-2xl animate-in slide-in-from-right-8">
+                                    <div className="bg-stone-800 text-white p-3 flex justify-between items-center shrink-0">
+                                        <span className="font-bold flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">forum</span> 對戰聊天室</span>
+                                        <button onClick={() => setShowChatModal(false)} className="hover:text-red-400"><span className="material-symbols-outlined">close</span></button>
+                                    </div>
+                                    <div className="flex-grow p-3 overflow-y-auto flex flex-col gap-2 custom-scrollbar">
+                                        {chatMessages.length === 0 ? <span className="text-gray-400 text-xs text-center mt-4">還沒有人講話...</span> : 
+                                            chatMessages.map((c, i) => (
+                                                <div key={i} className={`flex flex-col ${c.senderId === user.uid ? 'items-end' : 'items-start'}`}>
+                                                    <span className="text-[10px] text-gray-500 font-bold mb-0.5">{c.senderName}</span>
+                                                    <div className={`px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm ${c.senderId === user.uid ? 'bg-amber-400 text-stone-900 rounded-tr-none' : 'bg-white border border-gray-300 text-stone-800 rounded-tl-none'}`}>
+                                                        {c.text}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        }
+                                    </div>
+                                    <form onSubmit={async (e) => {
+                                        e.preventDefault();
+                                        if(!chatText.trim() || !roomCode) return;
+                                        const newChat = { senderId: user.uid, senderName: userProfile?.displayName || '我', text: chatText.trim(), time: Date.now() };
+                                        await window.db.collection("pokerRooms").doc(roomCode).update({
+                                            chats: window.firebase.firestore.FieldValue.arrayUnion(newChat)
+                                        });
+                                        setChatText('');
+                                    }} className="p-2 border-t border-gray-300 flex gap-2 shrink-0 bg-white">
+                                        <input type="text" value={chatText} onChange={e=>setChatText(e.target.value)} placeholder="輸入訊息..." className="flex-grow px-2 py-1.5 bg-gray-100 border border-gray-300 rounded text-sm outline-none focus:border-amber-500" />
+                                        <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white px-3 rounded font-bold text-sm shadow-sm">傳送</button>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
