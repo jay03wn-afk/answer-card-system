@@ -17,7 +17,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
 
     const [toast, setToast] = useState(null);
     const [roomJoinCode, setRoomJoinCode] = useState('');
-    const [roomSettings, setRoomSettings] = useState({ players: 4, fillAi: true, turnTime: 30, baseBet: 10 }); 
+    const [roomSettings, setRoomSettings] = useState({ players: 4, fillAi: true, turnTime: 30, baseBet: 10, randomSeat: true }); 
     const [isHost, setIsHost] = useState(false); 
     const [lobbyPlayers, setLobbyPlayers] = useState([]);
     const [summaryData, setSummaryData] = useState(null);
@@ -25,6 +25,8 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
     const [isLoading, setIsLoading] = useState(false); // 載入動畫狀態
     const [dragOverIdx, setDragOverIdx] = useState(null); // 拖曳排開動畫狀態
     const [lastPlayedTurn, setLastPlayedTurn] = useState(null); // 記錄誰出牌，用來決定動畫方向
+    const [isSpectator, setIsSpectator] = useState(false); // 是否在觀戰席
+    const [spectators, setSpectators] = useState([]); // 觀戰名單
 
     // 120秒閒置自動退出機制
     useEffect(() => {
@@ -33,7 +35,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
             timeoutId = setTimeout(() => {
                 showToast("房間閒置過久 (120秒)，已自動解散/退出！", true);
                 if (isHost) window.db.collection("pokerRooms").doc(roomCode).delete().catch(()=>{});
-                onQuit();
+                quitAndLeaveRoom();
             }, 120000);
         }
         return () => clearTimeout(timeoutId);
@@ -119,16 +121,39 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         return { valid: false, msg: `你必須出與桌面相同的牌型 (${currentTable.type})！` };
     };
 
+    // ✨ 安全離開房間邏輯 (清除資料庫內的自己)
+    const quitAndLeaveRoom = async () => {
+        handlePlaySound();
+        if (roomCode && window.db) {
+            try {
+                const snap = await window.db.collection("pokerRooms").doc(roomCode).get();
+                if (snap.exists) {
+                    const d = snap.data();
+                    if (isHost) {
+                        await window.db.collection("pokerRooms").doc(roomCode).delete();
+                    } else {
+                        const p = (d.players || []).filter(pl => pl.id !== user.uid);
+                        const s = (d.spectators || []).filter(pl => pl.id !== user.uid);
+                        await window.db.collection("pokerRooms").doc(roomCode).update({ players: p, spectators: s });
+                    }
+                }
+            } catch(e) {}
+        }
+        onQuit(); // 呼叫原本的關閉函數
+    };
+
+    // ✨ 修正 MC 頭像抓取網址 (MHF_ 標籤)
     const AI_AVATARS = {
-        'ai_1': 'https://mc-heads.net/avatar/villager',
-        'ai_2': 'https://mc-heads.net/avatar/enderman',
-        'ai_3': 'https://mc-heads.net/avatar/creeper'
+        'ai_1': 'https://mc-heads.net/avatar/MHF_Villager',
+        'ai_2': 'https://mc-heads.net/avatar/MHF_Enderman',
+        'ai_3': 'https://mc-heads.net/avatar/MHF_Creeper',
+        'ai_4': 'https://mc-heads.net/avatar/MHF_Slime'
     };
 
     const startSinglePlayer = () => {
         setRoomCode('');
         setIsHost(true);
-        const singlePlayer = [{ id: user.uid, name: userProfile?.displayName || '史蒂夫' }];
+        const singlePlayer = [{ id: user.uid, name: userProfile?.displayName || '史蒂夫', avatar: userProfile?.avatar || '' }];
         setLobbyPlayers(singlePlayer);
         startGameFromLobby(singlePlayer);
     };
@@ -172,16 +197,21 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
         const sortHand = (hand) => hand.sort((a, b) => a.weight - b.weight);
         const hands = [sortHand(deck.slice(0, 13)), sortHand(deck.slice(13, 26)), sortHand(deck.slice(26, 39)), sortHand(deck.slice(39, 52))];
 
-        const finalPlayers = [];
-        finalLobbyPlayers.forEach((p, idx) => {
-            finalPlayers.push({ ...p, cardsLeft: 13, hand: hands[idx], isMe: p.id === user.uid });
-        });
-        
+        // 1. 先建立 4 人名單 (包含真實玩家與 AI)
+        let roster = finalLobbyPlayers.map(p => ({ ...p, isMe: p.id === user.uid }));
         const aiNames = ['村民 (AI)', '終界使者 (AI)', '苦力怕 (AI)', '史萊姆 (AI)'];
-        while (finalPlayers.length < 4) {
-            const aiIdx = finalPlayers.length;
-            finalPlayers.push({ id: `ai_${aiIdx}`, name: aiNames[aiIdx - 1], cardsLeft: 13, hand: hands[aiIdx], isMe: false });
+        while (roster.length < 4) {
+            const aiIdx = roster.length;
+            roster.push({ id: `ai_${aiIdx}`, name: aiNames[aiIdx - 1], isMe: false });
         }
+
+        // 2. 如果設定隨機座位，徹底打亂名單
+        if (roomSettings.randomSeat) {
+            roster.sort(() => Math.random() - 0.5);
+        }
+
+        // 3. 依序配發手牌
+        const finalPlayers = roster.map((p, idx) => ({ ...p, cardsLeft: 13, hand: hands[idx] }));
 
         let starterIndex = 0;
         finalPlayers.forEach((p, idx) => { if (p.hand.some(c => c.weight === 0)) starterIndex = idx; });
@@ -270,6 +300,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                 isFirstTurn: false,
                 players: dbPlayers,
                 currentTurn: newTurn,
+                lastPlayedTurn: playerIndex, // ✨ 同步最後出牌者，讓所有人都能看到正確的動畫方向
                 winner: isWinner ? players[playerIndex].name : null,
                 status: isWinner ? 'summary' : 'playing'
             });
@@ -334,6 +365,29 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
             const unsub = window.db.collection("pokerRooms").doc(roomCode).onSnapshot((snapshot) => {
                 const data = snapshot.data();
                 if (data) {
+                    // ✨ 進出房間提示與被踢出偵測
+                    const allCurrentIds = [...(data.players || []), ...(data.spectators || [])].map(p => p.id);
+                    if (window._prevRoomIds && data.status !== 'waiting') {
+                        const joined = [...(data.players||[]), ...(data.spectators||[])].filter(p => !window._prevRoomIds.includes(p.id) && !p.id.startsWith('ai_'));
+                        const leftIds = window._prevRoomIds.filter(id => !allCurrentIds.includes(id) && !id.startsWith('ai_'));
+                        
+                        joined.forEach(p => { if (p.id !== user.uid) showToast(`👋 ${p.name} 加入了房間！`); });
+                        leftIds.forEach(id => {
+                            const leftP = window._prevRoomPlayers?.find(p => p.id === id);
+                            if (leftP && leftP.id !== user.uid) showToast(`🚪 ${leftP.name} 離開了房間！`);
+                        });
+                    }
+                    window._prevRoomIds = allCurrentIds;
+                    window._prevRoomPlayers = [...(data.players||[]), ...(data.spectators||[])];
+                    
+                    // 如果自己不在名單上且不是主機，代表被踢或房間關閉
+                    if (!allCurrentIds.includes(user.uid) && !isHost && roomCode) {
+                        showToast("🚪 你已離開或被房主踢出房間！", true);
+                        setRoomCode('');
+                        setGameState('menu');
+                        return;
+                    }
+
                     setLobbyPlayers(data.players || []);
                     setRoomSettings(data.settings || roomSettings);
                     
@@ -346,7 +400,12 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                         
                         const syncedPlayers = (data.players || []).map(p => ({ ...p, isMe: p.id === user.uid }));
                         setPlayers(syncedPlayers);
+                        
                         const myPlayer = syncedPlayers.find(p => p.id === user.uid);
+                        const iAmSpectator = !myPlayer && data.spectators?.some(s => s.id === user.uid);
+                        setIsSpectator(iAmSpectator);
+                        setSpectators(data.spectators || []);
+
                         if (myPlayer && data.status !== 'summary') setMyHand(myPlayer.hand); 
 
                         if (data.tableCombo !== undefined) setTableCombo(data.tableCombo);
@@ -354,6 +413,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                         if (data.passCount !== undefined) setPassCount(data.passCount);
                         if (data.isFirstTurn !== undefined) setIsFirstTurn(data.isFirstTurn);
                         if (data.passedPlayers !== undefined) setPassedPlayers(data.passedPlayers);
+                        if (data.lastPlayedTurn !== undefined) setLastPlayedTurn(data.lastPlayedTurn); // ✨ 接收最後出牌者
 
                         if (data.status === 'summary' && !hasProcessedPayout) {
                             setGameState('summary');
@@ -491,26 +551,56 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
             let validPlays = analyzedCombos.filter(combo => checkPlayValid(combo, tableCombo, isFirstTurn).valid);
             
             if (validPlays.length > 0) {
-                validPlays.sort((a, b) => a.weight - b.weight);
-                if (!tableCombo && !isFirstTurn) {
-                    const lengths = { 'straight': 5, 'fullhouse': 5, 'four': 5, 'pair': 2, 'single': 1 };
-                    validPlays.sort((a, b) => {
-                        if (lengths[b.type] !== lengths[a.type]) return lengths[b.type] - lengths[a.type];
-                        return a.weight - b.weight;
-                    });
+                let chosenPlay = null;
+                const opponents = players.filter(p => p.id !== aiPlayer.id);
+                const danger = opponents.some(p => p.cardsLeft <= 2); // 偵測是否有人快贏了！
+
+                if (aiPlayer.id === 'ai_1') {
+                    // 🟢 村民 AI (保守穩健型)：總是出最小的牌，自己出牌時優先出最長的組合。
+                    validPlays.sort((a, b) => a.weight - b.weight);
+                    if (!tableCombo && !isFirstTurn) {
+                        const lengths = { 'straight': 5, 'fullhouse': 5, 'four': 5, 'pair': 2, 'single': 1 };
+                        validPlays.sort((a, b) => lengths[b.type] - lengths[a.type] || a.weight - b.weight);
+                    }
+                    chosenPlay = validPlays[0];
+                } 
+                else if (aiPlayer.id === 'ai_2') {
+                    // 🟣 終界使者 AI (侵略防守型)：如果有人快贏了，必定砸出手中最大的單張/對子來卡死對方！
+                    if (danger && tableCombo && (tableCombo.type === 'single' || tableCombo.type === 'pair')) {
+                        validPlays.sort((a, b) => b.weight - a.weight); 
+                        chosenPlay = validPlays[0];
+                    } else {
+                        // 自己出牌時喜歡先出大牌壓制
+                        validPlays.sort((a, b) => a.weight - b.weight);
+                        if (!tableCombo && !isFirstTurn) {
+                            const lengths = { 'single': 1, 'pair': 2, 'straight': 5, 'fullhouse': 5, 'four': 5 };
+                            validPlays.sort((a, b) => lengths[b.type] - lengths[a.type] || b.weight - a.weight);
+                        }
+                        chosenPlay = validPlays[0];
+                    }
+                } 
+                else {
+                    // 💥 苦力怕 AI (炸彈狂魔型)：喜歡出對子跟炸彈，有人快贏時有炸彈必定引爆！
+                    validPlays.sort((a, b) => a.weight - b.weight);
+                    if (!tableCombo && !isFirstTurn) {
+                        const lengths = { 'pair': 2, 'four': 5, 'fullhouse': 5, 'single': 1, 'straight': 5 };
+                        validPlays.sort((a, b) => lengths[b.type] - lengths[a.type] || a.weight - b.weight);
+                    }
+                    const bomb = validPlays.find(p => p.type === 'four');
+                    if (danger && bomb) chosenPlay = bomb;
+                    else chosenPlay = validPlays[0];
                 }
-                executePlay(currentTurn, validPlays[0]);
+
+                executePlay(currentTurn, chosenPlay);
                 handlePlayCardDrop();
             } else {
                 if (roomCode) {
                     window.db.collection("pokerRooms").doc(roomCode).update({
-                        passCount: passCount + 1,
-                        currentTurn: (currentTurn + 1) % 4,
+                        passCount: passCount + 1, currentTurn: (currentTurn + 1) % 4,
                         passedPlayers: passedPlayers.includes(aiPlayer.id) ? passedPlayers : [...passedPlayers, aiPlayer.id]
                     });
                 } else {
-                    setPassCount(prev => prev + 1);
-                    setCurrentTurn((currentTurn + 1) % 4);
+                    setPassCount(prev => prev + 1); setCurrentTurn((currentTurn + 1) % 4);
                     setPassedPlayers(prev => prev.includes(aiPlayer.id) ? prev : [...prev, aiPlayer.id]);
                 }
                 handlePlaySound();
@@ -577,7 +667,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                     史蒂夫大老二
                 </h1>
                 <button 
-                    onClick={() => { handlePlaySound(); onQuit(); }} 
+                    onClick={quitAndLeaveRoom}
                     className="bg-[#c6c6c6] hover:bg-red-500 hover:text-white text-[#373737] border-2 border-white border-r-[#555] border-b-[#555] px-3 py-1 font-bold transition-colors flex items-center"
                 >
                     <span className="material-symbols-outlined mr-1 text-sm">close</span> 關閉
@@ -622,6 +712,13 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                         <option value={100}>100 鑽石 (傾家蕩產)</option>
                                     </select>
                                 </label>
+                                <label className="flex items-center text-[#373737] font-bold mt-2">
+                                    <span className="w-28 text-sm text-indigo-800">座位分配:</span>
+                                    <select className="flex-grow p-1 bg-indigo-100 border-2 border-indigo-600 font-bold text-indigo-900" value={roomSettings.randomSeat ? 'true' : 'false'} onChange={(e) => { handlePlaySound(); setRoomSettings({...roomSettings, randomSeat: e.target.value === 'true'}); }}>
+                                        <option value="true">隨機打亂 (公平)</option>
+                                        <option value="false">依加入順序</option>
+                                    </select>
+                                </label>
                             </div>
                             <button onClick={async () => { 
                                 handlePlaySound(); 
@@ -638,7 +735,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                     await window.db.collection("pokerRooms").doc(code).set({
                                         hostId: user.uid,
                                         roomCode: code,
-                                        players: [{ id: user.uid, name: userProfile?.displayName || '史蒂夫(房主)' }],
+                                        players: [{ id: user.uid, name: userProfile?.displayName || '史蒂夫(房主)', avatar: userProfile?.avatar || '' }],
                                         settings: roomSettings,
                                         status: 'waiting',
                                         createdAt: Date.now()
@@ -663,7 +760,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                 <span className="material-symbols-outlined mr-2">login</span> 進入房間
                             </h2>
                             <div className="flex space-x-2 mb-4">
-                                <input type="text" maxLength={6} placeholder="輸入 6 位代碼" className="flex-grow p-2 text-center text-xl tracking-widest font-bold bg-stone-200 border-2 border-[#555] focus:outline-none" value={roomJoinCode} onChange={(e) => setRoomJoinCode(e.target.value.replace(/\D/g, ''))} />
+                                <input type="text" maxLength={6} placeholder="輸入 6 位代碼" className="text-stone-900 flex-grow p-2 text-center text-xl tracking-widest font-bold bg-stone-200 border-2 border-[#555] focus:outline-none placeholder:text-stone-400" value={roomJoinCode} onChange={(e) => setRoomJoinCode(e.target.value.replace(/\D/g, ''))} />
                             </div>
                             <button onClick={async () => { 
                                 handlePlaySound();
@@ -681,9 +778,16 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                         }
 
                                         const currentPlayers = roomData.players || [];
-                                        await roomRef.update({
-                                            players: [...currentPlayers, { id: user.uid, name: userProfile?.displayName || '挑戰者' }]
-                                        });
+                                        const isGameActive = roomData.status === 'playing' || roomData.status === 'summary';
+                                        
+                                        const playerObj = { id: user.uid, name: userProfile?.displayName || '挑戰者', avatar: userProfile?.avatar || '' };
+                                        if (isGameActive) {
+                                            const currentSpecs = roomData.spectators || [];
+                                            await roomRef.update({ spectators: [...currentSpecs, playerObj] });
+                                            showToast("遊戲進行中，已加入觀戰席！");
+                                        } else {
+                                            await roomRef.update({ players: [...currentPlayers, playerObj] });
+                                        }
                                         
                                         setRoomCode(roomJoinCode);
                                         setIsHost(false);
@@ -715,11 +819,26 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                 <p className="text-[10px] font-bold text-[#555] uppercase">玩家名單 (等待中...)</p>
                                 {lobbyPlayers.map((p, idx) => (
                                     <div key={p.id} className="flex items-center bg-stone-200 p-2 border-2 border-[#555]">
-                                        <span className="material-symbols-outlined text-stone-600 mr-2">
-                                            {idx === 0 ? 'shield_person' : 'person'}
-                                        </span>
+                                        {p.avatar ? (
+                                            <img src={p.avatar} className="w-6 h-6 rounded-full border border-stone-400 mr-2 object-cover bg-white" />
+                                        ) : (
+                                            <span className="material-symbols-outlined text-stone-600 mr-2">
+                                                {idx === 0 ? 'shield_person' : 'person'}
+                                            </span>
+                                        )}
                                         <span className="font-bold text-[#373737] flex-grow">{p.name}</span>
-                                        {idx === 0 && <span className="text-[8px] bg-amber-500 text-white px-1 font-black rounded">HOST</span>}
+                                        {idx === 0 && <span className="text-[8px] bg-amber-500 text-white px-1 font-black rounded mr-2">HOST</span>}
+                                        
+                                        {/* 踢人按鈕 */}
+                                        {isHost && idx !== 0 && !p.id.startsWith('ai_') && (
+                                            <button onClick={async () => {
+                                                handlePlaySound();
+                                                const newP = lobbyPlayers.filter(lp => lp.id !== p.id);
+                                                await window.db.collection("pokerRooms").doc(roomCode).update({ players: newP });
+                                            }} className="text-xs bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded shadow-sm flex items-center transition-transform active:scale-90" title="踢出此玩家">
+                                                <span className="material-symbols-outlined text-[14px]">person_remove</span>
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                                 {[...Array(4 - lobbyPlayers.length)].map((_, i) => (
@@ -730,8 +849,21 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                 ))}
                             </div>
 
-                            <div className="bg-stone-700 p-2 border-2 border-black/20 mb-6 text-center">
+                            {spectators && spectators.length > 0 && (
+                                <div className="space-y-2 mb-6">
+                                    <p className="text-[10px] font-bold text-amber-600 uppercase">👀 觀戰席 (下一局加入)</p>
+                                    {spectators.map((s) => (
+                                        <div key={s.id} className="flex items-center bg-stone-200 p-2 border-2 border-amber-600/50 opacity-80">
+                                            <span className="material-symbols-outlined text-stone-600 mr-2">visibility</span>
+                                            <span className="font-bold text-stone-700">{s.name}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="bg-stone-700 p-2 border-2 border-black/20 mb-6 text-center flex justify-around">
                                 <p className="text-white text-xs font-bold">出牌時限: <span className="text-amber-400">{roomSettings.turnTime}s</span></p>
+                                <p className="text-white text-xs font-bold">座位: <span className="text-amber-400">{roomSettings.randomSeat ? '隨機打亂' : '依序入座'}</span></p>
                             </div>
 
                             {isHost ? (
@@ -751,17 +883,31 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                     <div className="flex flex-col flex-grow justify-between relative">
                         
                         <div className="flex justify-around items-start bg-[#8b8b8b] p-2 border-2 border-[#555] border-r-white border-b-white">
-                            {players.filter(p => !p.isMe).map((p) => (
-                                <div key={p.id} className={`flex flex-col items-center p-2 border-2 ${players[currentTurn]?.id === p.id ? 'bg-stone-300 border-white shadow-[inset_0_0_10px_rgba(0,0,0,0.2)]' : 'bg-[#c6c6c6] border-transparent'}`}>
-                                    <div className="w-12 h-12 border-2 border-[#373737] bg-stone-400 overflow-hidden shadow-md">
-                                        <img src={AI_AVATARS[p.id]} alt={p.name} className="w-full h-full object-cover" />
+                            {players.filter(p => !p.isMe).map((p) => {
+                                const isTheirTurn = players[currentTurn]?.id === p.id;
+                                return (
+                                    <div key={p.id} className={`flex flex-col items-center p-2 border-2 transition-all duration-300 relative ${isTheirTurn ? 'bg-amber-100 border-amber-500 shadow-[0_0_15px_rgba(251,191,36,1)] scale-110 z-10' : 'bg-[#c6c6c6] border-transparent scale-100'}`}>
+                                        {isTheirTurn && (
+                                            <div className="absolute -top-3 bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-bounce shadow-md">
+                                                思考中...
+                                            </div>
+                                        )}
+                                        <div className={`w-12 h-12 border-2 overflow-hidden shadow-md ${isTheirTurn ? 'border-amber-500' : 'border-[#373737] bg-stone-400'}`}>
+                                            {p.id.startsWith('ai_') ? (
+                                                <img src={AI_AVATARS[p.id]} alt={p.name} className="w-full h-full object-cover" />
+                                            ) : p.avatar ? (
+                                                <img src={p.avatar} alt={p.name} className="w-full h-full object-cover bg-white" />
+                                            ) : (
+                                                <span className="material-symbols-outlined text-4xl text-white mt-1">person</span>
+                                            )}
+                                        </div>
+                                        <span className={`text-[10px] font-black mt-1 uppercase tracking-tighter ${isTheirTurn ? 'text-amber-700' : 'text-[#373737]'}`}>{p.name}</span>
+                                        <div className="flex items-center mt-1 text-emerald-800 font-black bg-white/80 px-1.5 py-0.5 rounded shadow-sm border border-emerald-200">
+                                            <span className="material-symbols-outlined text-xs mr-1">style</span> {p.cardsLeft}
+                                        </div>
                                     </div>
-                                    <span className="text-[10px] font-black text-[#373737] mt-1 uppercase tracking-tighter">{p.name}</span>
-                                    <div className="flex items-center mt-1 text-emerald-800 font-black bg-white/50 px-1 rounded">
-                                        <span className="material-symbols-outlined text-xs mr-1">style</span> {p.cardsLeft}
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
                         <div className="flex-grow flex flex-col items-center justify-center p-4">
@@ -773,20 +919,41 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                             </div>
 
                             {tableCombo ? (
-                                <div key={tableCombo.cards.map(c=>c.weight).join(',')} className={`flex flex-col items-center animate-in zoom-in duration-300 ${players[lastPlayedTurn]?.isMe ? 'slide-in-from-bottom-12' : 'slide-in-from-top-12'}`}>
-                                    <span className="bg-stone-900 text-amber-400 text-[10px] px-2 py-0.5 mb-3 font-bold border border-stone-600 shadow-lg tracking-widest">
-                                        {tableCombo.type.toUpperCase()}
-                                    </span>
-                                    <div className="flex space-x-2">
-                                        {tableCombo.cards.map((card, idx) => (
-                                            <div key={idx} className="w-16 h-24 bg-[#dbdbdb] border-4 border-[#373737] flex flex-col items-center justify-center shadow-[4px_4px_0_rgba(0,0,0,0.4)] transform -translate-y-2 relative">
-                                                <span className={`text-2xl ${card.color}`}>{card.symbol}</span>
-                                                <span className={`text-xl font-black ${card.color}`}>{card.value}</span>
-                                                <div className="absolute inset-0 border-t-2 border-l-2 border-white/20 pointer-events-none"></div>
+                                (() => {
+                                    let flyAnim = 'animate-in fade-in zoom-in duration-500 ';
+                                    
+                                    // 使用標準的 Tailwind 距離 (如 48 = 12rem = 192px) 確保所有環境都會飛
+                                    if (lastPlayedTurn !== null && players[lastPlayedTurn]) {
+                                        if (players[lastPlayedTurn].isMe) {
+                                            flyAnim += 'slide-in-from-bottom-48';
+                                        } else {
+                                            const oppPos = players.filter(p => !p.isMe).findIndex(p => p.id === players[lastPlayedTurn].id);
+                                            if (oppPos === 0) flyAnim += 'slide-in-from-top-48 slide-in-from-left-48';
+                                            if (oppPos === 1) flyAnim += 'slide-in-from-top-48';
+                                            if (oppPos === 2) flyAnim += 'slide-in-from-top-48 slide-in-from-right-48';
+                                        }
+                                    }
+                                    
+                                    // 確保有人 Pass 後重新出相同牌型的牌，動畫依然會觸發
+                                    const animKey = tableCombo.cards.map(c=>c.weight).join(',') + '-' + currentTurn;
+                                    
+                                    return (
+                                        <div key={animKey} className={`flex flex-col items-center ${flyAnim}`}>
+                                            <span className="bg-stone-900 text-amber-400 text-[10px] px-2 py-0.5 mb-3 font-bold border border-stone-600 shadow-lg tracking-widest">
+                                                {tableCombo.type.toUpperCase()}
+                                            </span>
+                                            <div className="flex space-x-2">
+                                                {tableCombo.cards.map((card, idx) => (
+                                                    <div key={idx} className="w-16 h-24 bg-[#dbdbdb] border-4 border-[#373737] flex flex-col items-center justify-center shadow-[4px_4px_0_rgba(0,0,0,0.4)] transform -translate-y-2 relative">
+                                                        <span className={`text-2xl ${card.color}`}>{card.symbol}</span>
+                                                        <span className={`text-xl font-black ${card.color}`}>{card.value}</span>
+                                                        <div className="absolute inset-0 border-t-2 border-l-2 border-white/20 pointer-events-none"></div>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
-                                    </div>
-                                </div>
+                                        </div>
+                                    );
+                                })()
                             ) : (
                                 <div className="text-white bg-stone-800/60 px-6 py-3 border-4 border-dashed border-stone-500 font-black tracking-widest text-lg shadow-2xl">
                                     WAITING FOR PLAYERS...
@@ -794,72 +961,85 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                             )}
                         </div>
 
-                        <div className={`flex flex-col bg-[#8b8b8b] p-3 border-4 transition-colors duration-300 ${players[currentTurn]?.id === user.uid ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.8)]' : 'border-white border-r-[#555] border-b-[#555]'}`}>
+                        <div className={`flex flex-col bg-[#8b8b8b] p-3 border-4 transition-all duration-300 relative ${(!isSpectator && players[currentTurn]?.id === user.uid) ? 'border-amber-400 shadow-[0_0_30px_rgba(251,191,36,1)] bg-stone-500' : 'border-white border-r-[#555] border-b-[#555]'}`}>
                             
-                            <div className="flex justify-between items-center mb-3">
-                                <div className="flex items-center text-[#373737] font-black text-lg relative">
-                                    <span className="material-symbols-outlined mr-2">person</span> {userProfile?.displayName || '你'} 
-                                    {players[currentTurn]?.id === user.uid && (
-                                        <span className="ml-3 bg-amber-500 text-white px-2 py-1 rounded shadow-md animate-bounce border-2 border-black flex items-center">
-                                            <span className="material-symbols-outlined text-sm mr-1">priority_high</span> 換你出牌了！
-                                        </span>
-                                    )}
+                            {(!isSpectator && players[currentTurn]?.id === user.uid) && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 overflow-hidden">
+                                    <span className="text-6xl sm:text-8xl font-black text-amber-300 drop-shadow-2xl uppercase tracking-widest whitespace-nowrap animate-pulse">YOUR TURN</span>
                                 </div>
-                                <div className="flex flex-wrap gap-2 justify-end">
-                                    <div className="flex bg-stone-700 p-1 rounded border border-[#555]">
-                                        <button onClick={() => handleSortHand('weight')} className="px-2 py-1 text-[10px] bg-stone-600 hover:bg-stone-500 text-white font-bold border border-white/20 mr-1 shadow-[1px_1px_0px_#000]">點數排序</button>
-                                        <button onClick={() => handleSortHand('suit')} className="px-2 py-1 text-[10px] bg-stone-600 hover:bg-stone-500 text-white font-bold border border-white/20 shadow-[1px_1px_0px_#000]">花色排序</button>
-                                    </div>
-                                    <div className="flex bg-stone-700 p-1 rounded border border-[#555]">
-                                        <button onClick={() => handleMoveCard('left')} disabled={selectedCards.length !== 1} className="px-2 py-1 bg-stone-600 hover:bg-stone-500 disabled:opacity-30 text-white border border-white/20 mr-1 shadow-[1px_1px_0px_#000]"><span className="material-symbols-outlined text-xs">arrow_back</span></button>
-                                        <button onClick={() => handleMoveCard('right')} disabled={selectedCards.length !== 1} className="px-2 py-1 bg-stone-600 hover:bg-stone-500 disabled:opacity-30 text-white border border-white/20 shadow-[1px_1px_0px_#000]"><span className="material-symbols-outlined text-xs">arrow_forward</span></button>
-                                    </div>
-                                    <button onClick={passTurn} disabled={players[currentTurn]?.id !== user.uid} className="px-4 py-2 bg-stone-500 hover:bg-stone-400 disabled:opacity-50 text-white font-bold border-2 border-stone-300 border-r-stone-700 border-b-stone-700 flex items-center shadow-md active:translate-y-[1px]">
-                                        <span className="material-symbols-outlined text-sm mr-1">skip_next</span> Pass
-                                    </button>
-                                    <button onClick={playSelectedCards} disabled={players[currentTurn]?.id !== user.uid || selectedCards.length === 0} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold border-2 border-emerald-400 border-r-emerald-800 border-b-emerald-800 flex items-center shadow-md active:translate-y-[1px]">
-                                        <span className="material-symbols-outlined text-sm mr-1">publish</span> 出牌
-                                    </button>
+                            )}
+
+                            {isSpectator ? (
+                                <div className="flex flex-col items-center justify-center py-6">
+                                    <span className="material-symbols-outlined text-4xl text-[#555] mb-2 animate-bounce">visibility</span>
+                                    <h3 className="text-xl font-black text-[#373737]">觀戰模式</h3>
+                                    <p className="text-stone-700 font-bold">遊戲正在進行中，請等待這局結束後自動加入！</p>
                                 </div>
-                            </div>
-                            <div className="flex flex-wrap justify-center gap-1 sm:gap-2">
-                                {myHand.map((card, index) => {
-                                    const isSelected = selectedCards.includes(index);
-                                    const isDragging = draggedIdx === index;
-                                    const isDragOverLeft = dragOverIdx === index && draggedIdx > index;
-                                    const isDragOverRight = dragOverIdx === index && draggedIdx < index;
-                                    
-                                    return (
-                                        <button 
-                                            key={index}
-                                            draggable
-                                            onDragStart={(e) => handleDragStart(e, index)}
-                                            onDragEnter={(e) => handleDragEnter(e, index)}
-                                            onDragOver={handleDragOver}
-                                            onDragLeave={(e) => handleDragLeave(e, index)}
-                                            onDrop={(e) => handleDrop(e, index)}
-                                            onDragEnd={handleDragEnd}
-                                            onClick={() => {
-                                                handlePlaySound();
-                                                setSelectedCards(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
-                                            }}
-                                            style={{
-                                                marginLeft: isDragOverLeft ? '4rem' : '0',
-                                                marginRight: isDragOverRight ? '4rem' : '0',
-                                            }}
-                                            className={`w-12 h-20 sm:w-16 sm:h-24 flex flex-col items-center justify-center transition-all duration-200 relative cursor-grab active:cursor-grabbing
-                                                ${isDragging ? 'opacity-30 scale-95' : 'opacity-100'}
-                                                ${isSelected 
-                                                    ? 'bg-amber-50 -translate-y-6 shadow-[6px_6px_0px_#78350f] border-4 border-amber-600' 
-                                                    : 'bg-[#dbdbdb] border-4 border-[#373737] hover:-translate-y-2 shadow-[4px_4px_0px_#222]'}`}
-                                        >
-                                            <span className={`text-2xl ${card.color}`}>{card.symbol}</span>
-                                            <span className={`text-xl font-black leading-none ${card.color}`}>{card.value}</span>
-                                            <div className="absolute inset-0 border-t-2 border-l-2 border-white/30 pointer-events-none"></div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                            ) : (
+                                <>
+                                    <div className="flex justify-between items-center mb-3">
+                                        <div className="flex items-center text-[#373737] font-black text-lg relative">
+                                            <span className="material-symbols-outlined mr-2">person</span> {userProfile?.displayName || '你'} 
+                                            {players[currentTurn]?.id === user.uid && (
+                                                <span className="ml-3 bg-amber-500 text-white px-2 py-1 rounded shadow-md animate-bounce border-2 border-black flex items-center">
+                                                    <span className="material-symbols-outlined text-sm mr-1">priority_high</span> 換你出牌了！
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-wrap gap-2 justify-end">
+                                            <div className="flex bg-stone-700 p-1 rounded border border-[#555]">
+                                                <button onClick={() => handleSortHand('weight')} className="px-2 py-1 text-[10px] bg-stone-600 hover:bg-stone-500 text-white font-bold border border-white/20 mr-1 shadow-[1px_1px_0px_#000]">點數排序</button>
+                                                <button onClick={() => handleSortHand('suit')} className="px-2 py-1 text-[10px] bg-stone-600 hover:bg-stone-500 text-white font-bold border border-white/20 shadow-[1px_1px_0px_#000]">花色排序</button>
+                                            </div>
+                                            <div className="flex bg-stone-700 p-1 rounded border border-[#555]">
+                                                <button onClick={() => handleMoveCard('left')} disabled={selectedCards.length !== 1} className="px-2 py-1 bg-stone-600 hover:bg-stone-500 disabled:opacity-30 text-white border border-white/20 mr-1 shadow-[1px_1px_0px_#000]"><span className="material-symbols-outlined text-xs">arrow_back</span></button>
+                                                <button onClick={() => handleMoveCard('right')} disabled={selectedCards.length !== 1} className="px-2 py-1 bg-stone-600 hover:bg-stone-500 disabled:opacity-30 text-white border border-white/20 shadow-[1px_1px_0px_#000]"><span className="material-symbols-outlined text-xs">arrow_forward</span></button>
+                                            </div>
+                                            <button onClick={passTurn} disabled={players[currentTurn]?.id !== user.uid} className="px-4 py-2 bg-stone-500 hover:bg-stone-400 disabled:opacity-50 text-white font-bold border-2 border-stone-300 border-r-stone-700 border-b-stone-700 flex items-center shadow-md active:translate-y-[1px]">
+                                                <span className="material-symbols-outlined text-sm mr-1">skip_next</span> Pass
+                                            </button>
+                                            <button onClick={playSelectedCards} disabled={players[currentTurn]?.id !== user.uid || selectedCards.length === 0} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold border-2 border-emerald-400 border-r-emerald-800 border-b-emerald-800 flex items-center shadow-md active:translate-y-[1px]">
+                                                <span className="material-symbols-outlined text-sm mr-1">publish</span> 出牌
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap justify-center gap-1 sm:gap-2">
+                                        {myHand.map((card, index) => {
+                                            const isSelected = selectedCards.includes(index);
+                                            const isDragging = draggedIdx === index;
+                                            const isDragOverLeft = dragOverIdx === index && draggedIdx > index;
+                                            const isDragOverRight = dragOverIdx === index && draggedIdx < index;
+                                            
+                                            return (
+                                                <button 
+                                                    key={index}
+                                                    draggable
+                                                    onDragStart={(e) => handleDragStart(e, index)}
+                                                    onDragEnter={(e) => handleDragEnter(e, index)}
+                                                    onDragOver={handleDragOver}
+                                                    onDragLeave={(e) => handleDragLeave(e, index)}
+                                                    onDrop={(e) => handleDrop(e, index)}
+                                                    onDragEnd={handleDragEnd}
+                                                    onClick={() => {
+                                                        handlePlaySound();
+                                                        setSelectedCards(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
+                                                    }}
+                                                    style={{ marginLeft: isDragOverLeft ? '4rem' : '0', marginRight: isDragOverRight ? '4rem' : '0' }}
+                                                    className={`w-12 h-20 sm:w-16 sm:h-24 flex flex-col items-center justify-center transition-all duration-200 relative cursor-grab active:cursor-grabbing
+                                                        ${isDragging ? 'opacity-30 scale-95' : 'opacity-100'}
+                                                        ${isSelected 
+                                                            ? 'bg-amber-50 -translate-y-6 shadow-[6px_6px_0px_#78350f] border-4 border-amber-600' 
+                                                            : 'bg-[#dbdbdb] border-4 border-[#373737] hover:-translate-y-2 shadow-[4px_4px_0px_#222]'}`}
+                                                >
+                                                    <span className={`text-2xl ${card.color}`}>{card.symbol}</span>
+                                                    <span className={`text-xl font-black leading-none ${card.color}`}>{card.value}</span>
+                                                    <div className="absolute inset-0 border-t-2 border-l-2 border-white/30 pointer-events-none"></div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                     </div>
@@ -917,7 +1097,24 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                     <button onClick={async () => {
                                         handlePlaySound();
                                         if (roomCode) {
-                                            await window.db.collection("pokerRooms").doc(roomCode).update({ status: 'lobby' });
+                                            const snap = await window.db.collection("pokerRooms").doc(roomCode).get();
+                                            const d = snap.data();
+                                            const realPlayers = (d.players || []).filter(p => !p.id.startsWith('ai_'));
+                                            const specs = d.spectators || [];
+                                            
+                                            // 合併真實玩家與觀戰者，限制最多 4 人，剩下的繼續觀戰
+                                            let nextLobby = [...realPlayers, ...specs];
+                                            let nextSpecs = [];
+                                            if (nextLobby.length > 4) {
+                                                nextSpecs = nextLobby.slice(4);
+                                                nextLobby = nextLobby.slice(0, 4);
+                                            }
+                                            
+                                            await window.db.collection("pokerRooms").doc(roomCode).update({ 
+                                                status: 'lobby', 
+                                                players: nextLobby,
+                                                spectators: nextSpecs
+                                            });
                                             setGameState('lobby');
                                         } else {
                                             setGameState('menu');
@@ -930,7 +1127,7 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                         等待房主決定...
                                     </div>
                                 )}
-                                <button onClick={() => { handlePlaySound(); onQuit(); }} className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-black border-2 border-black shadow-lg transition-transform active:scale-95">
+                                <button onClick={quitAndLeaveRoom} className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-black border-2 border-black shadow-lg transition-transform active:scale-95">
                                     退出房間
                                 </button>
                             </div>
