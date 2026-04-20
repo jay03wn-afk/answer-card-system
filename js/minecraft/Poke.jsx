@@ -275,7 +275,11 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                 deck.push({ ...suit, value: val, vIdx: vIndex, weight: vIndex * 4 + suit.sIdx });
             });
         });
-        deck.sort(() => Math.random() - 0.5);
+        // ✨ 修正洗牌演算法 (Fisher-Yates) 解決房主總是拿到梅花 3 的問題
+        for (let i = deck.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [deck[i], deck[j]] = [deck[j], deck[i]];
+        }
         const sortHand = (hand) => hand.sort((a, b) => a.weight - b.weight);
         const hands = [sortHand(deck.slice(0, 13)), sortHand(deck.slice(13, 26)), sortHand(deck.slice(26, 39)), sortHand(deck.slice(39, 52))];
 
@@ -318,6 +322,8 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
             setPassedPlayers([]);
             setGameState('playing');
             setCurrentTurn(starterIndex);
+            // ✨ 單機模式開局提示誰有梅花 3
+            showToast(`🎲 開局！由 ${finalPlayers[starterIndex].name} 拿到梅花 3 先出牌！`);
         }
     };
 
@@ -478,7 +484,13 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                     }
 
                     if (data.status === 'playing' || data.status === 'summary') {
-                        if (gameState === 'lobby' && data.status === 'playing') setGameState('playing');
+                        if (gameState === 'lobby' && data.status === 'playing') {
+                            setGameState('playing');
+                            // ✨ 多人連線開局提示誰有梅花 3
+                            if (data.isFirstTurn && data.players && data.currentTurn !== undefined) {
+                                showToast(`🎲 開局！由 ${data.players[data.currentTurn].name} 拿到梅花 3 先出牌！`);
+                            }
+                        }
                         
                         const syncedPlayers = (data.players || []).map(p => ({ ...p, isMe: p.id === user.uid }));
                         setPlayers(syncedPlayers);
@@ -1060,13 +1072,14 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                                             else if (oppPos === 1) flyAnim = 'anim-fly-down';  // 對家(上) -> 往下飛
                                             else if (oppPos === 2) flyAnim = 'anim-fly-right'; // 上家(左) -> 往右飛
                                         }
-                                    }
-                                    
-                                    const animKey = tableCombo.cards.map(c=>c.weight).join(',') + '-' + currentTurn + '-' + passCount;
-                                    
-                                    return (
-                                        <div key={animKey} className={`flex flex-col items-center ${flyAnim}`}>
-                                            <span className="bg-stone-900 text-amber-400 text-[8px] sm:text-[10px] px-1.5 py-0.5 mb-1 sm:mb-2 font-bold border border-stone-600 shadow-lg tracking-widest">
+                                   }
+                                
+                                // ✨ 修復：移除 currentTurn 與 passCount，讓桌面上牌沒換時不重複觸發動畫
+                                const animKey = tableCombo.cards.map(c=>c.weight).join(',');
+                                
+                                return (
+                                    <div key={animKey} className={`flex flex-col items-center ${flyAnim}`}>
+                                        <span className="bg-stone-900 text-amber-400 text-[8px] sm:text-[10px] px-1.5 py-0.5 mb-1 sm:mb-2 font-bold border border-stone-600 shadow-lg tracking-widest">
                                                 {tableCombo.type.toUpperCase()}
                                             </span>
                                             <div className="flex space-x-1 sm:space-x-2">
