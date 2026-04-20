@@ -28,6 +28,8 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
     const [isSpectator, setIsSpectator] = useState(false); // 是否在觀戰席
     const [spectators, setSpectators] = useState([]); // 觀戰名單
     
+    const [summaryCountdown, setSummaryCountdown] = useState(0); // 新增：結算畫面倒數計時
+    
     // ✨ 新增：聊天與動畫系統狀態
     const [chatText, setChatText] = useState('');
     const [chatMessages, setChatMessages] = useState([]);
@@ -52,6 +54,26 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
             document.head.appendChild(style);
         }
     }, []);
+
+    // 結算畫面強制停留 10 秒倒數機制
+    useEffect(() => {
+        let timer;
+        if (gameState === 'summary') {
+            setSummaryCountdown(10);
+            timer = setInterval(() => {
+                setSummaryCountdown(prev => {
+                    if (prev <= 1) {
+                        clearInterval(timer);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+        } else {
+            setSummaryCountdown(0);
+        }
+        return () => clearInterval(timer);
+    }, [gameState]);
 
     // 120秒閒置自動退出機制
     useEffect(() => {
@@ -1256,33 +1278,39 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
 
                             <div className="flex justify-center space-x-4">
                                 {(!roomCode || isHost) ? (
-                                    <button onClick={async () => {
-                                        handlePlaySound();
-                                        if (roomCode) {
-                                            const snap = await window.db.collection("pokerRooms").doc(roomCode).get();
-                                            const d = snap.data();
-                                            const realPlayers = (d.players || []).filter(p => !p.id.startsWith('ai_'));
-                                            const specs = d.spectators || [];
-                                            
-                                            // 合併真實玩家與觀戰者，限制最多 4 人，剩下的繼續觀戰
-                                            let nextLobby = [...realPlayers, ...specs];
-                                            let nextSpecs = [];
-                                            if (nextLobby.length > 4) {
-                                                nextSpecs = nextLobby.slice(4);
-                                                nextLobby = nextLobby.slice(0, 4);
+                                    <button 
+                                        disabled={roomCode && summaryCountdown > 0}
+                                        onClick={async () => {
+                                            handlePlaySound();
+                                            if (roomCode) {
+                                                const snap = await window.db.collection("pokerRooms").doc(roomCode).get();
+                                                const d = snap.data();
+                                                const realPlayers = (d.players || []).filter(p => !p.id.startsWith('ai_'));
+                                                const specs = d.spectators || [];
+                                                
+                                                // 合併真實玩家與觀戰者，限制最多 4 人，剩下的繼續觀戰
+                                                let nextLobby = [...realPlayers, ...specs];
+                                                let nextSpecs = [];
+                                                if (nextLobby.length > 4) {
+                                                    nextSpecs = nextLobby.slice(4);
+                                                    nextLobby = nextLobby.slice(0, 4);
+                                                }
+                                                
+                                                await window.db.collection("pokerRooms").doc(roomCode).update({ 
+                                                    status: 'lobby', 
+                                                    players: nextLobby,
+                                                    spectators: nextSpecs
+                                                });
+                                                setGameState('lobby');
+                                            } else {
+                                                setGameState('menu');
                                             }
-                                            
-                                            await window.db.collection("pokerRooms").doc(roomCode).update({ 
-                                                status: 'lobby', 
-                                                players: nextLobby,
-                                                spectators: nextSpecs
-                                            });
-                                            setGameState('lobby');
-                                        } else {
-                                            setGameState('menu');
-                                        }
-                                    }} className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white font-black border-2 border-black shadow-lg transition-transform active:scale-95">
-                                        {roomCode ? '再來一局 (回到大廳)' : '回到主選單'}
+                                        }} 
+                                        className={`px-6 py-3 text-white font-black border-2 border-black shadow-lg transition-transform ${roomCode && summaryCountdown > 0 ? 'bg-stone-500 opacity-50 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-500 active:scale-95'}`}
+                                    >
+                                        {roomCode 
+                                            ? (summaryCountdown > 0 ? `請等待 ${summaryCountdown} 秒...` : '再來一局 (回到大廳)') 
+                                            : '回到主選單'}
                                     </button>
                                 ) : (
                                     <div className="px-6 py-3 bg-stone-600 text-stone-300 font-black border-2 border-black shadow-lg">
