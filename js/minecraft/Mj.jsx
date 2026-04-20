@@ -50,7 +50,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     const [toast, setToast] = useState(null);
     const [roomJoinCode, setRoomJoinCode] = useState('');
     
-    const [roomSettings, setRoomSettings] = useState({ turnTime: 20, baseBet: 50, taiBet: 20 }); // ✨ 新增底/台設定
+    const [roomSettings, setRoomSettings] = useState({ turnTime: 20, baseBet: 50, taiBet: 20, length: '1局' }); // ✨ 新增底/台與長度設定
+    const [gameContext, setGameContext] = useState({ wind: 0, round: 0, dealer: 0, consecutive: 0, scores: [0,0,0,0], totalHands: 0 }); // ✨ 記錄風圈局數連莊與分數
     const [isHost, setIsHost] = useState(false);
     const [lobbyPlayers, setLobbyPlayers] = useState([]);
     const [summaryData, setSummaryData] = useState(null);
@@ -157,7 +158,21 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                 const snap = await window.db.collection("mjRooms").doc(roomCode).get();
                 if (snap.exists) {
                     const d = snap.data();
-                    if (gameState === 'playing' || gameState === 'summary') {
+                    if (gameState === 'playing') {
+                        // ✨ 中途退出懲罰：直接賠三家 (底+10台)
+                        const penalty = (roomSettings.baseBet || 50) + ((roomSettings.taiBet || 20) * 10);
+                        showToast(`中途退出！扣除懲罰金 ${penalty * 3} 💎`);
+                        const newScores = [...(d.gameContext?.scores || [0,0,0,0])];
+                        const myIdx = (d.players || []).findIndex(pl => pl.id === user.uid);
+                        if(myIdx !== -1) {
+                            newScores.forEach((_, i) => {
+                                if (i === myIdx) newScores[i] -= penalty * 3;
+                                else newScores[i] += penalty;
+                            });
+                        }
+                        const p = (d.players || []).map(pl => pl.id === user.uid ? { ...pl, isDisconnected: true } : pl);
+                        await window.db.collection("mjRooms").doc(roomCode).update({ players: p, 'gameContext.scores': newScores, status: 'summary', winner: '玩家逃跑', results: p.map(x=>({...x, penalty:0, prize:0})) });
+                    } else if (gameState === 'summary') {
                         const p = (d.players || []).map(pl => pl.id === user.uid ? { ...pl, isDisconnected: true } : pl);
                         await window.db.collection("mjRooms").doc(roomCode).update({ players: p });
                     } else {
@@ -224,8 +239,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         roster.sort(() => Math.random() - 0.5); // 隨機座位 (莊家為 index 0)
 
         // 3. 發牌 (莊家 17 張，閒家 16 張)
+        const nextDealerIdx = gameContext ? gameContext.dealer : 0;
         const finalPlayers = roster.map((p, idx) => {
-            const count = idx === 0 ? 17 : 16;
+            const count = idx === nextDealerIdx ? 17 : 16;
             const hand = deck.splice(0, count);
             return { ...p, hand: sortHand(hand), melds: [], discards: [] };
         });
@@ -234,18 +250,19 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             status: 'playing',
             players: finalPlayers,
             wall: deck,
-            currentTurn: 0,
+            currentTurn: nextDealerIdx, // ✨ 由莊家先出牌
             lastDiscard: null,
             pendingAction: null
         };
 
         if (roomCode && isHost) {
             const dbPlayers = finalPlayers.map(p => ({...p, isMe: false}));
+            // ✨ 保護其他玩家手牌順序機制：更新資料庫時僅同步公開資訊
             await window.db.collection("mjRooms").doc(roomCode).update({ ...initialGameState, players: dbPlayers });
         } else if (!roomCode) {
             setPlayers(finalPlayers);
             setWall(deck);
-            setCurrentTurn(0);
+            setCurrentTurn(nextDealerIdx);
             setLastDiscard(null);
             setPendingAction(null);
             setGameState('playing');
@@ -355,7 +372,27 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     const handleIntercept = async (actionType, specificTiles = null, forceActorIdx = null) => {
         const actorIdx = forceActorIdx !== null ? forceActorIdx : players.findIndex(p => p.id === user.uid);
         const currentHand = players[actorIdx].hand;
+        const tile = pendingAction?.tile;
         
+        // ✨ 新增：動作優先級判斷 (胡 > 碰/槓 > 吃)
+        if (tile && actionType !== 'pass' && actionType !== 'hu') {
+            // 1. 檢查是否有其他玩家可以「胡」
+            const someoneCanHu = players.some((p, idx) => idx !== actorIdx && idx !== pendingAction.from && checkHu([...p.hand, tile]));
+            if (someoneCanHu) {
+                if (forceActorIdx === null) showToast("⚠️ 有其他玩家可胡牌 (優先級最高)！請等待對方決定。");
+                return; // 攔截動作暫停執行
+            }
+
+            // 2. 如果動作是「吃」，檢查是否有其他玩家可以「碰/槓」
+            if (actionType === 'chow') {
+                const someoneCanPong = players.some((p, idx) => idx !== actorIdx && idx !== pendingAction.from && p.hand.filter(ht => ht.type === tile.type && ht.val === tile.val).length >= 2);
+                if (someoneCanPong) {
+                    if (forceActorIdx === null) showToast("⚠️ 有其他玩家可碰牌/槓牌 (優先級較高)！請等待對方決定。");
+                    return; // 攔截動作暫停執行
+                }
+            }
+        }
+
         if (actionType === 'pass') {
             if (forceActorIdx === null) playCachedSound(passSound); // 只有真實玩家按才發出村民的拒絕聲
             proceedNextTurnAfterPass();
@@ -363,7 +400,6 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         }
 
         const newPlayers = [...players];
-        const tile = pendingAction.tile;
         
         if (actionType === 'hu') {
             playCachedSound(totemSound); // 不死圖騰音效
@@ -590,9 +626,33 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
         results[winnerIdx].prize = totalPrize;
 
-        // 如果贏家有拿莊家台，加進明細給他看
-        if (winnerIdx === 0 || (loserIdx !== null && loserIdx === 0)) {
-            details.push("莊家 (1台)");
+        // ✨ 連莊與局數計算引擎
+        let newContext = { ...gameContext };
+        let isDealerWin = (winnerIdx === newContext.dealer);
+        
+        if (isDealerWin) {
+            newContext.consecutive += 1; // 莊家贏，連莊
+        } else {
+            newContext.dealer = (newContext.dealer + 1) % 4; // 換下家做莊
+            newContext.consecutive = 0;
+            newContext.round += 1;
+            if (newContext.round > 3) {
+                newContext.round = 0;
+                newContext.wind = (newContext.wind + 1) % 4;
+            }
+        }
+        newContext.totalHands += 1;
+
+        // 計算此局後的累計分數
+        newContext.scores = newContext.scores.map((score, i) => {
+            if (i === winnerIdx) return score + totalPrize;
+            return score - results[i].penalty;
+        });
+
+        // 莊家台計算與顯示 (底台+連莊)
+        if (winnerIdx === gameContext.dealer || loserIdx === gameContext.dealer) {
+            const dTai = 1 + gameContext.consecutive * 2;
+            details.push(`莊家連${gameContext.consecutive} (${dTai}台)`);
         }
 
         const updateData = {
@@ -600,7 +660,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             winner: players[winnerIdx].name,
             results,
             isZimo,
-            taiDetails: details
+            taiDetails: details,
+            gameContext: newContext
         };
 
         if (roomCode) {
@@ -611,10 +672,15 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     };
 
     const handleDrawGame = () => {
+        let newContext = { ...gameContext };
+        newContext.consecutive += 1; // 流局原莊家連莊
+        newContext.totalHands += 1;
+
         const updateData = {
             status: 'summary',
             winner: '流局',
-            results: players.map(p => ({ ...p, penalty: 0, prize: 0 }))
+            results: players.map(p => ({ ...p, penalty: 0, prize: 0 })),
+            gameContext: newContext
         };
         if (roomCode) window.db.collection("mjRooms").doc(roomCode).update(updateData);
         setSummaryData(updateData);
@@ -663,6 +729,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                             }
                         }
 
+                        if (data.gameContext) setGameContext(data.gameContext);
+                        if (data.roomSettings) setRoomSettings(data.roomSettings);
+
                         if (data.status === 'summary') {
                             setSummaryData(data);
                             setGameState('summary');
@@ -710,28 +779,52 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             // AI 攔截判斷 (單機或房主代管)
             if (!roomCode || isHost) {
                 const aiPlayers = players.filter(p => p.id.startsWith('ai_') && players.findIndex(x=>x.id===p.id) !== pendingAction.from);
+                const t = pendingAction.tile;
+                
+                // 1. 優先判斷：有沒有任何 AI 可以胡牌？
                 for (let ai of aiPlayers) {
                     if (aiHandled) break;
                     const aiIdx = players.findIndex(p => p.id === ai.id);
-                    const t = pendingAction.tile;
-                    
-                    // ✨ AI 必胡 (加快反應時間)
                     if (checkHu([...ai.hand, t])) {
                         aiHandled = true; timeoutId = setTimeout(() => handleIntercept('hu', null, aiIdx), 1000); break;
                     }
-                    // ✨ AI 變積極：90% 機率碰牌
-                    if (ai.hand.filter(ht => ht.type === t.type && ht.val === t.val).length >= 2 && Math.random() > 0.1) {
-                        aiHandled = true; timeoutId = setTimeout(() => handleIntercept('pong', null, aiIdx), 1000); break;
+                }
+
+                // 2. 次優先判斷：有沒有任何 AI 可以碰/槓？
+                if (!aiHandled) {
+                    for (let ai of aiPlayers) {
+                        if (aiHandled) break;
+                        const aiIdx = players.findIndex(p => p.id === ai.id);
+                        if (ai.hand.filter(ht => ht.type === t.type && ht.val === t.val).length >= 2 && Math.random() > 0.1) {
+                            // ✨ 防護：檢查有沒有「真實玩家」可以胡牌 (優先級最高)，有的話 AI 就讓步，不偷碰
+                            const humanCanHu = players.some((p, i) => !p.id.startsWith('ai_') && i !== pendingAction.from && checkHu([...p.hand, t]));
+                            if (!humanCanHu) {
+                                aiHandled = true; timeoutId = setTimeout(() => handleIntercept('pong', null, aiIdx), 1000); break;
+                            }
+                        }
                     }
-                    // ✨ AI 變積極：85% 機率吃牌
-                    if (pendingAction.from === (aiIdx + 3) % 4 && t.type !== 'Z' && Math.random() > 0.15) {
-                        const typeHand = ai.hand.filter(ht => ht.type === t.type);
-                        const getT = v => typeHand.find(ht => ht.val === v);
-                        let chowTiles = (getT(t.val-2) && getT(t.val-1)) ? [getT(t.val-2), getT(t.val-1)] : 
-                                        (getT(t.val-1) && getT(t.val+1)) ? [getT(t.val-1), getT(t.val+1)] : 
-                                        (getT(t.val+1) && getT(t.val+2)) ? [getT(t.val+1), getT(t.val+2)] : null;
-                        if (chowTiles) {
-                            aiHandled = true; timeoutId = setTimeout(() => handleIntercept('chow', chowTiles, aiIdx), 1500); break;
+                }
+
+                // 3. 最低優先判斷：有沒有任何 AI 可以吃？
+                if (!aiHandled) {
+                    for (let ai of aiPlayers) {
+                        if (aiHandled) break;
+                        const aiIdx = players.findIndex(p => p.id === ai.id);
+                        if (pendingAction.from === (aiIdx + 3) % 4 && t.type !== 'Z' && Math.random() > 0.15) {
+                            // ✨ 防護：檢查有沒有「真實玩家」可以胡或碰/槓 (優先級較高)
+                            const humanCanHuOrPong = players.some((p, i) => !p.id.startsWith('ai_') && i !== pendingAction.from && (
+                                checkHu([...p.hand, t]) || p.hand.filter(ht => ht.type === t.type && ht.val === t.val).length >= 2
+                            ));
+                            if (!humanCanHuOrPong) {
+                                const typeHand = ai.hand.filter(ht => ht.type === t.type);
+                                const getT = v => typeHand.find(ht => ht.val === v);
+                                let chowTiles = (getT(t.val-2) && getT(t.val-1)) ? [getT(t.val-2), getT(t.val-1)] : 
+                                                (getT(t.val-1) && getT(t.val+1)) ? [getT(t.val-1), getT(t.val+1)] : 
+                                                (getT(t.val+1) && getT(t.val+2)) ? [getT(t.val+1), getT(t.val+2)] : null;
+                                if (chowTiles) {
+                                    aiHandled = true; timeoutId = setTimeout(() => handleIntercept('chow', chowTiles, aiIdx), 1500); break;
+                                }
+                            }
                         }
                     }
                 }
@@ -830,34 +923,62 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     }
 
     // ✨ UI 輔助渲染組件 (支援 mini 縮小版與超大 Emoji)
-    const TileBlock = ({ tile, isHidden = false, onClick, selected = false, isHighlighted = false, mini = false }) => {
-        const baseClass = mini 
-            ? "w-6 h-9 sm:w-8 sm:h-12 border border-b-2 shadow-sm" 
-            : "w-11 h-16 sm:w-14 sm:h-20 border-2 sm:border-4 border-b-4 sm:border-b-[6px] shadow-[2px_2px_0px_#222]";
+   // ✨ 統一渲染麻將牌 - 超立體雕刻風格 (支援拖曳)
+    const TileBlock = ({ tile, mini = false, isHighlighted = false }) => {
+        if (!tile) return null;
 
-        if (isHidden) {
-            return (
-                <div className={`${baseClass} bg-emerald-600 border-emerald-400 border-r-emerald-900 border-b-emerald-900 shrink-0 flex items-center justify-center relative overflow-hidden`}>
-                    <div className="absolute inset-0 opacity-20 bg-[url('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/bamboo_stalk.png')] bg-cover"></div>
-                </div>
-            );
-        }
+        // 定義牌面文字雕刻顏色 (模擬實體雕刻後的填色)
+        const getTileColor = (type, val) => {
+            if (tile.isBack) return 'text-emerald-500'; // 未開牌的綠背，不顯示字
+            if (['M', 'T', 'P'].includes(type)) return 'text-zinc-950'; // 萬筒條 (黑色雕刻)
+            if (type === 'W') { // 風牌
+                if (val === 0) return 'text-rose-600'; // 東 (紅色)
+                if (val === 1) return 'text-sky-600';  // 南 (藍色)
+                if (val === 2) return 'text-amber-600'; // 西 (黃色)
+                if (val === 3) return 'text-emerald-600'; // 北 (綠色)
+            }
+            if (type === 'D') { // Dragons
+                if (val === 0) return 'text-red-600'; // 紅中
+                if (val === 1) return 'text-emerald-700'; // 發財
+                return 'text-zinc-950'; // 白板
+            }
+            if (['F', 'S'].includes(type)) return 'text-rose-600'; // 花/季 (紅色)
+            return 'text-zinc-950';
+        };
+
+        // 定義牌身顏色 (模擬竹背或玉背)
+        const getSideColor = (type, val) => {
+            if (tile.isBack) return 'bg-emerald-700'; // 未開牌顯示背面綠色
+            // 根據牌型給予不同側邊基色，增加層次
+            if (['W', 'D', 'F', 'S'].includes(type)) return 'bg-rose-50'; // 特殊牌用粉白側邊
+            return 'bg-amber-100'; // 普通萬筒條用淺黃側邊
+        };
+
+        const sideColor = getSideColor(tile.type, tile.val);
+        // 牌面永遠是白色
+        const faceColor = 'bg-stone-50';
+
+        const baseClasses = `relative select-none transition-all duration-300 rounded ${isHighlighted ? 'ring-4 ring-amber-400 scale-105 shadow-2xl z-20' : ''}`;
 
         return (
-            <div 
-                onClick={onClick}
-                className={`${baseClass} bg-[#f4ebd0] shrink-0 flex items-center justify-center cursor-pointer transition-all relative
-                ${selected ? '-translate-y-4 border-amber-500 shadow-[2px_6px_0px_#222] z-20' : 
-                  isHighlighted ? '-translate-y-2 border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.9)] z-10' : 
-                  'border-[#d4c3a3] hover:brightness-105 hover:border-amber-300 hover:z-10'}`}
-            >
-                <div className="absolute top-0 left-0 w-full h-1 bg-white opacity-50 pointer-events-none"></div>
-                <div className="absolute bottom-0 left-0 w-full h-1 bg-stone-400 opacity-50 pointer-events-none"></div>
-                
-                {/* ✨ 統一使用 Emoji，無特殊框，尺寸與顏色均一致 */}
-                <span className={`absolute flex items-center justify-center w-full h-full pb-1 ${mini ? 'text-3xl sm:text-4xl' : 'text-[60px] sm:text-[80px]'} font-black ${getTileColor(tile.type, tile.val)} drop-shadow-sm leading-none pointer-events-none`}>
-                    {tile.symbol}
-                </span>
+            <div className={`${baseClasses} ${mini ? 'w-8 h-10 sm:w-10 sm:h-13' : 'w-12 h-16 sm:w-14 sm:h-18'} shadow-xl group overflow-hidden`}>
+
+                {/* 1. 立體牌身與側邊基底 */}
+                <div className={`absolute inset-0 ${sideColor} rounded border-2 border-stone-800 shadow-[inset_2px_2px_4px_rgba(255,255,255,0.2),_inset_-2px_-2px_4px_rgba(0,0,0,0.4)] z-0`}></div>
+
+                {/* 2. 背面顏色層 (模擬竹/玉背，佔底部40%) */}
+                <div className={`absolute bottom-0 left-0 w-full h-[40%] ${sideColor === 'bg-amber-100' ? 'bg-emerald-700' : 'bg-emerald-800'} rounded-b z-0 border-t-2 border-stone-800`}></div>
+
+                {/* 3. 臉面雕刻層 (模擬凹陷效果，將臉面往內縮) */}
+                <div className={`absolute inset-[6px] ${faceColor} rounded-sm shadow-[inset_-3px_-3px_6px_rgba(0,0,0,0.1),_inset_3px_3px_6px_rgba(255,255,255,0.7)] z-10 flex items-center justify-center overflow-hidden`}>
+
+                    {/* ✨ 4. 適中雕刻字體 - 調整為合適大小，保留邊緣呼吸空間，並完美置中 */}
+                    <span className={`flex items-center justify-center w-full h-full ${mini ? 'text-[24px] sm:text-[28px]' : 'text-[40px] sm:text-[48px]'} font-black ${getTileColor(tile.type, tile.val)} drop-shadow-md leading-none pointer-events-none transform translate-y-[1px]`}>
+                        {tile.symbol}
+                    </span>
+
+                </div>
+
             </div>
         );
     };
@@ -889,8 +1010,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                 )}
 
                 {gameState === 'multiplayer_setup' && (
-                    <div className="flex flex-col items-center justify-center flex-grow space-y-6">
-                        <div className="bg-[#8b8b8b] p-6 border-4 border-white border-r-[#555] border-b-[#555] w-full max-w-md shadow-lg">
+                    <div className="flex flex-col items-center justify-start sm:justify-center flex-grow space-y-6 p-4 overflow-y-auto custom-scrollbar">
+                        <div className="bg-[#8b8b8b] p-6 border-4 border-white border-r-[#555] border-b-[#555] w-full max-w-md shadow-lg my-auto">
                             <h2 className="text-xl font-black text-white mb-4 border-b-2 border-[#555] pb-2">創建新遊戲</h2>
                             <label className="flex items-center text-white font-bold mb-4">
                                 <span className="w-24 text-sm">底 / 台:</span>
@@ -905,11 +1026,27 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     <option value="300/100">300底 / 100台</option>
                                 </select>
                             </label>
+                            <label className="flex items-center text-white font-bold mb-4">
+                                <span className="w-24 text-sm">遊戲長度:</span>
+                                <select className="flex-grow p-1 text-stone-900 font-bold" value={roomSettings.length} onChange={e => {
+                                    setRoomSettings({...roomSettings, length: e.target.value});
+                                }}>
+                                    <option value="1局">1局 (含連莊直到下莊)</option>
+                                    <option value="1圈">1圈 (打完一整個東風圈)</option>
+                                    <option value="1將">1將 (打完東南西北四圈)</option>
+                                    <option value="無限">無限制</option>
+                                </select>
+                            </label>
                             <button onClick={async () => {
                                 playCachedSound(clickSound);
+                                const requiredCoins = roomSettings.baseBet * 10;
+                                if ((userProfile?.coins || 1000) < requiredCoins) return showToast(`籌碼不足！建議準備 ${requiredCoins} 💎 以上。`);
+                                
                                 const code = Math.floor(100000 + Math.random() * 900000).toString();
                                 await window.db.collection("mjRooms").doc(code).set({
                                     hostId: user.uid, roomCode: code, status: 'lobby',
+                                    roomSettings: roomSettings,
+                                    gameContext: { wind: 0, round: 0, dealer: 0, consecutive: 0, scores: [0,0,0,0], totalHands: 0 },
                                     players: [{ id: user.uid, name: userProfile?.displayName || '史蒂夫(房主)', avatar: userProfile?.avatar || '' }]
                                 });
                                 setRoomCode(code); setIsHost(true); setGameState('lobby');
@@ -928,6 +1065,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 const snap = await roomRef.get();
                                 if (!snap.exists) return showToast("房間不存在！");
                                 const d = snap.data();
+                                const reqCoins = (d.roomSettings?.baseBet || 50) * 10;
+                                if ((userProfile?.coins || 1000) < reqCoins) return showToast("您的籌碼不足以加入此房間！");
+                                
                                 await roomRef.update({ players: [...d.players, { id: user.uid, name: userProfile?.displayName || '挑戰者', avatar: userProfile?.avatar || '' }] });
                                 setRoomCode(roomJoinCode); setIsHost(false); setGameState('lobby');
                             }} className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-stone-900 font-black border-2 border-amber-300 shadow-md">
@@ -967,9 +1107,15 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                 {gameState === 'playing' && (
                     <div className="flex flex-col flex-grow relative bg-[#6a994e] overflow-hidden">
                         {/* 頂部資訊列 */}
-                        <div className="absolute top-0 w-full flex justify-between p-2 pointer-events-none z-10">
-                            <div className="bg-stone-900/80 text-white px-3 py-1 font-mono font-bold text-sm border-2 border-stone-600">
-                                牌山剩餘: <span className="text-amber-400">{wall.length}</span> 張
+                        <div className="absolute top-0 w-full flex justify-between p-2 pointer-events-none z-[100]">
+                            <div className="flex gap-2">
+                                <div className="bg-stone-900/90 text-white px-3 py-1 font-bold text-sm border-2 border-amber-500 shadow-md">
+                                    {['東','南','西','北'][gameContext.wind]}風{['一','二','三','四'][gameContext.round]}局 
+                                    <span className="text-amber-400 ml-2">連莊 {gameContext.consecutive}</span>
+                                </div>
+                                <div className="bg-stone-900/80 text-white px-3 py-1 font-mono font-bold text-sm border-2 border-stone-600 hidden sm:block">
+                                    剩餘: <span className="text-amber-400">{wall.length}</span> 張
+                                </div>
                             </div>
                             
                             {/* ✨ 視覺化倒數進度條 (更新攔截時間為 20 秒) */}
@@ -1002,7 +1148,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     // 取消內部 absolute，讓外層決定絕對位置，徹底避免跑到海底
                                     return (
                                         <div className={`flex ${pos === 'top' ? 'flex-row' : 'flex-col'} items-center gap-2 pointer-events-auto`}>
-                                            <div className={`flex flex-col items-center bg-stone-800/95 p-2 border-2 ${isTurn ? 'border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.8)] scale-110' : 'border-stone-600'} rounded-lg transition-transform`}>
+                                            {/* ✨ 對手動畫：加上發光與脈衝動畫，讓遊戲更生動 */}
+                                            <div className={`flex flex-col items-center bg-stone-800/95 p-2 border-2 ${isTurn ? 'border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.8)] scale-110 animate-pulse' : 'border-stone-600'} rounded-lg transition-all duration-300`}>
                                                 <div className="w-8 h-8 sm:w-12 sm:h-12 mb-1 border-2 border-stone-500 bg-stone-700 relative overflow-hidden">
                                                     {isTurn && <div className="absolute inset-0 bg-amber-400/30 animate-pulse z-10"></div>}
                                                     <img src={avatarImg} alt={p.name} className="w-full h-full object-cover pixelated" />
@@ -1026,17 +1173,18 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
                                 return (
                                     <>
-                                        <div className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2">{renderOpponent(leftIdx, 'left')}</div>
-                                        <div className="absolute top-12 left-1/2 -translate-x-1/2">{renderOpponent(topIdx, 'top')}</div>
-                                        <div className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2">{renderOpponent(rightIdx, 'right')}</div>
+                                        {/* ✨ 修復：將上方對手往下推避開資訊列，左右對手再微調往上避開手牌 */}
+                                        <div className="absolute left-1 sm:left-4 top-[35%] sm:top-[40%] -translate-y-1/2 z-10">{renderOpponent(leftIdx, 'left')}</div>
+                                        <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-10">{renderOpponent(topIdx, 'top')}</div>
+                                        <div className="absolute right-1 sm:right-4 top-[35%] sm:top-[40%] -translate-y-1/2 z-10">{renderOpponent(rightIdx, 'right')}</div>
                                     </>
                                 );
                             })()}
                         </div>
 
-                        {/* ✨ 海底 (棄牌區大擴建與絕對排序) - 支援拖曳丟牌 */}
+                        {/* ✨ 海底 (棄牌區大擴建與絕對排序) - 縮小高度並降底 Z-index 避免蓋住手牌 */}
                         <div 
-                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-11/12 sm:w-3/4 max-w-3xl h-64 sm:h-80 bg-emerald-800/40 border-4 border-dashed border-emerald-900/60 flex flex-wrap content-start p-2 gap-1 sm:gap-2 overflow-y-auto custom-scrollbar shadow-inner z-10"
+                            className="absolute top-[48%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[65%] sm:w-[60%] max-w-2xl h-40 sm:h-56 bg-emerald-800/40 border-4 border-dashed border-emerald-900/60 flex flex-wrap content-start p-2 gap-1 sm:gap-2 overflow-y-auto custom-scrollbar shadow-inner z-0 rounded-lg"
                             onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
                             onDrop={(e) => {
                                 e.preventDefault();
@@ -1053,8 +1201,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 .map((t, i, arr) => {
                                     const isLatest = i === arr.length - 1; // 找出最新打出的一張
                                     return (
-                                        <div key={t.id + i} className={`scale-[0.55] sm:scale-75 origin-top-left -mr-5 -mb-6 sm:-mr-2 sm:-mb-4 drop-shadow-md ${isLatest ? 'animate-in zoom-in slide-in-from-top-4 duration-300 z-10 opacity-100' : 'opacity-90'}`}>
-                                            {/* 最新的一張會發光 */}
+                                        <div key={t.id + i} className={`scale-[0.55] sm:scale-75 origin-top-left -mr-5 -mb-6 sm:-mr-2 sm:-mb-4 drop-shadow-md transition-all ${isLatest ? 'animate-in zoom-in slide-in-from-top-10 fade-in duration-500 z-10 opacity-100 scale-[0.65] sm:scale-[0.85] rotate-2' : 'opacity-90'}`}>
+                                            {/* ✨ 更新：讓最新打出的一張牌有更生動的飛入與旋轉放大動畫 */}
                                             <TileBlock tile={t} isHighlighted={isLatest && pendingAction} />
                                         </div>
                                     );
@@ -1066,9 +1214,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                         {pendingAction && myIdx !== -1 && pendingAction.from !== myIdx && !isSpectator && (
                             (canHu || canPong || canKong || chowOptions.length > 0) ? (
                                
-                                <div className="absolute top-2/3 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 flex gap-2 sm:gap-4 bg-stone-900/95 p-4 sm:p-5 border-4 border-amber-500 shadow-[0_0_30px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-200 flex-wrap justify-center items-center mt-8">
+                                <div className="absolute top-[60%] sm:top-[65%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-[150] flex gap-2 sm:gap-4 bg-stone-900/95 p-3 sm:p-5 border-4 border-amber-500 shadow-[0_0_40px_rgba(0,0,0,0.9)] animate-in fade-in zoom-in-95 duration-200 flex-wrap justify-center items-center rounded-lg">
                                     {/* ✨ 超清晰提示：誰打出了哪張牌 */}
-                                    <div className="absolute -top-16 left-1/2 -translate-x-1/2 text-white font-bold bg-stone-900 border-2 border-amber-400 px-4 py-2 text-sm sm:text-lg flex items-center gap-2 whitespace-nowrap shadow-lg">
+                                    <div className="absolute -top-14 left-1/2 -translate-x-1/2 text-white font-bold bg-stone-900 border-2 border-amber-400 px-4 py-2 text-sm sm:text-lg flex items-center gap-2 whitespace-nowrap shadow-lg rounded-full">
                                         <img src={players[pendingAction.from].id.startsWith('ai_') ? AI_AVATARS[players[pendingAction.from].id] : (players[pendingAction.from].avatar || 'https://minotar.net/helm/Steve/64.png')} className="w-8 h-8 border border-stone-400 pixelated" />
                                         【<span className="text-amber-300">{players[pendingAction.from].name}</span>】 打出了
                                         <span className="scale-75 origin-center inline-block -mx-2 -my-4 pointer-events-none"><TileBlock tile={pendingAction.tile} /></span>
@@ -1237,9 +1385,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                 )}
 
                 {gameState === 'summary' && summaryData && (
-                    <div className="flex flex-col flex-grow items-center justify-center p-4">
-                        <div className="bg-stone-900 border-4 border-amber-500 p-6 w-full max-w-2xl shadow-2xl text-center">
-                            <h2 className="text-4xl font-black text-amber-400 mb-2 drop-shadow-md">
+                    <div className="flex flex-col flex-grow items-center justify-start sm:justify-center p-2 sm:p-4 overflow-y-auto custom-scrollbar">
+                        <div className="bg-stone-900 border-4 border-amber-500 p-4 sm:p-6 w-full max-w-2xl shadow-2xl text-center my-auto">
+                            <h2 className="text-3xl sm:text-4xl font-black text-amber-400 mb-2 drop-shadow-md">
                                 {summaryData.winner === '流局' ? '🤝 流局平手' : `🏆 ${summaryData.winner} 胡牌！`}
                             </h2>
                             
@@ -1307,19 +1455,50 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 })}
                             </div>
 
+                            {/* ✨ 顯示目前累計戰況計分板 */}
+                            <div className="bg-stone-800/80 p-4 border-2 border-stone-600 mb-6 flex flex-wrap justify-center gap-4">
+                                <h3 className="text-white font-bold w-full text-center border-b border-stone-600 pb-2 mb-2">累計戰績 ({roomSettings.length})</h3>
+                                {players.map((p, idx) => (
+                                    <div key={idx} className="text-center bg-stone-900 px-4 py-2 border border-stone-700 min-w-[80px]">
+                                        <div className="text-sm text-stone-300 font-bold">{p.name}</div>
+                                        <div className={`text-xl font-black ${(gameContext?.scores?.[idx] || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            {(gameContext?.scores?.[idx] || 0) >= 0 ? '+' : ''}{gameContext?.scores?.[idx] || 0}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
                             <div className="flex justify-center space-x-4">
                                 {(!roomCode || isHost) ? (
                                     <button onClick={async () => {
                                         playCachedSound(clickSound);
-                                        if (roomCode) {
-                                            const snap = await window.db.collection("mjRooms").doc(roomCode).get();
-                                            await window.db.collection("mjRooms").doc(roomCode).update({ status: 'lobby' });
-                                        } else setGameState('menu');
-                                    }} className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white font-black border-2 border-black">再來一局</button>
+                                        // ✨ 檢查是否達到設定的遊戲長度 (完整考慮連莊與風圈輪替)
+                                        let isGameOver = false;
+                                        if (roomSettings.length === '1局' && gameContext.totalHands >= 1 && gameContext.consecutive === 0) isGameOver = true;
+                                        if (roomSettings.length === '1圈' && gameContext.wind > 0) isGameOver = true;
+                                        // 1將：當風圈回到 0 (東風) 且已經不是第一局時，代表東南西北各一圈已打完
+                                        if (roomSettings.length === '1將' && gameContext.wind === 0 && gameContext.totalHands > 1) isGameOver = true;
+
+                                        if (isGameOver) {
+                                            showToast("✅ 遊戲長度已達標！本局為最後一局，請退出房間。");
+                                            return;
+                                        }
+
+                                        // 直接進入下一局，不回大廳
+                                        startGameFromLobby(players);
+                                    }} className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white font-black border-2 border-black shadow-lg transition-transform active:scale-95">
+                                        { (() => {
+                                            let isDone = false;
+                                            if (roomSettings.length === '1局' && gameContext.totalHands >= 1 && gameContext.consecutive === 0) isDone = true;
+                                            if (roomSettings.length === '1圈' && gameContext.wind > 0) isDone = true;
+                                            if (roomSettings.length === '1將' && gameContext.wind === 0 && gameContext.totalHands > 1) isDone = true;
+                                            return isDone ? '結算完成 (遊戲結束)' : '下一局';
+                                        })() }
+                                    </button>
                                 ) : (
-                                    <div className="px-6 py-3 bg-stone-600 text-stone-300 font-black border-2 border-black">等待房主...</div>
+                                    <div className="px-6 py-3 bg-stone-600 text-stone-300 font-black border-2 border-black">等待房主開啟下一局...</div>
                                 )}
-                                <button onClick={quitAndLeaveRoom} className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-black border-2 border-black">退出</button>
+                                <button onClick={quitAndLeaveRoom} className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-black border-2 border-black shadow-lg transition-transform active:scale-95">退出結算</button>
                             </div>
                         </div>
                     </div>
