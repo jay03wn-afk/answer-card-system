@@ -961,21 +961,20 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         const baseClasses = `relative select-none transition-all duration-300 rounded ${isHighlighted ? 'ring-4 ring-amber-400 scale-105 shadow-2xl z-20' : ''}`;
 
         return (
-            <div className={`${baseClasses} ${mini ? 'w-8 h-10 sm:w-10 sm:h-13' : 'w-12 h-16 sm:w-14 sm:h-18'} shadow-xl group overflow-hidden`}>
+            <div className={`${baseClasses} ${mini ? 'w-8 h-10 sm:w-10 sm:h-[52px]' : 'w-12 h-16 sm:w-14 sm:h-[72px]'} group relative`}>
+                
+                {/* ✨ 1. 牌背層 (模擬前後立體感，向右下方偏移產生實體厚度) */}
+                <div className={`absolute top-[3px] left-[3px] sm:top-[4px] sm:left-[4px] w-full h-full ${tile.isBack ? 'bg-emerald-900' : 'bg-emerald-700'} rounded-md border-2 border-stone-800 shadow-md z-0`}></div>
 
-                {/* 1. 立體牌身與側邊基底 */}
-                <div className={`absolute inset-0 ${sideColor} rounded border-2 border-stone-800 shadow-[inset_2px_2px_4px_rgba(255,255,255,0.2),_inset_-2px_-2px_4px_rgba(0,0,0,0.4)] z-0`}></div>
+                {/* ✨ 2. 牌面層 (正面平鋪，蓋在牌背上方，並加上細微內陰影增加真實感) */}
+                <div className={`absolute top-0 left-0 w-full h-full ${tile.isBack ? 'bg-emerald-700' : faceColor} rounded-md border-2 border-stone-800 shadow-[inset_1px_1px_3px_rgba(255,255,255,0.9),_inset_-1px_-1px_3px_rgba(0,0,0,0.1)] z-10 flex items-center justify-center overflow-hidden`}>
 
-                {/* 2. 背面顏色層 (模擬竹/玉背，佔底部40%) */}
-                <div className={`absolute bottom-0 left-0 w-full h-[40%] ${sideColor === 'bg-amber-100' ? 'bg-emerald-700' : 'bg-emerald-800'} rounded-b z-0 border-t-2 border-stone-800`}></div>
-
-                {/* 3. 臉面雕刻層 (模擬凹陷效果，將臉面往內縮) */}
-                <div className={`absolute inset-[6px] ${faceColor} rounded-sm shadow-[inset_-3px_-3px_6px_rgba(0,0,0,0.1),_inset_3px_3px_6px_rgba(255,255,255,0.7)] z-10 flex items-center justify-center overflow-hidden`}>
-
-                    {/* ✨ 4. 適中雕刻字體 - 調整為合適大小，保留邊緣呼吸空間，並完美置中 */}
-                    <span className={`flex items-center justify-center w-full h-full ${mini ? 'text-[24px] sm:text-[28px]' : 'text-[40px] sm:text-[48px]'} font-black ${getTileColor(tile.type, tile.val)} drop-shadow-md leading-none pointer-events-none transform translate-y-[1px]`}>
-                        {tile.symbol}
-                    </span>
+                    {/* ✨ 3. 牌面字體 (平面置中，完美對齊) */}
+                    {!tile.isBack && (
+                        <span className={`flex items-center justify-center w-full h-full ${mini ? 'text-[24px] sm:text-[28px]' : 'text-[40px] sm:text-[48px]'} font-black ${getTileColor(tile.type, tile.val)} drop-shadow-sm leading-none pointer-events-none transform translate-y-[1px]`}>
+                            {tile.symbol}
+                        </span>
+                    )}
 
                 </div>
 
