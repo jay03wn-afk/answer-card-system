@@ -42,6 +42,16 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     const [selectedTile, setSelectedTile] = useState(null);
     const [actionTimer, setActionTimer] = useState(0);
     const [timeLeft, setTimeLeft] = useState(15); // ✨ 新增：常規回合倒數狀態
+    const [autoReadyTimer, setAutoReadyTimer] = useState(5); // ✨ 新增：結算自動準備倒數
+
+    // 判斷遊戲是否已達總局數/圈數
+    const checkIsGameOver = () => {
+        if (!gameContext || !roomSettings) return false;
+        if (roomSettings.length === '1局' && gameContext.totalHands >= 1 && gameContext.consecutive === 0) return true;
+        if (roomSettings.length === '1圈' && gameContext.wind > 0) return true;
+        if (roomSettings.length === '1將' && gameContext.wind === 0 && gameContext.totalHands > 1) return true;
+        return false;
+    };
 
     // ✨ 新增：拖曳排序狀態
     const [draggedIdx, setDraggedIdx] = useState(null);
@@ -265,6 +275,21 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     // 離開房間邏輯
     const quitAndLeaveRoom = async () => {
         playCachedSound(clickSound);
+
+        // ✨ 1. 退出前的警告提示
+        let confirmMsg = "確定要離開房間嗎？";
+        if (gameState === 'playing' && roomCode) {
+            const penalty = (roomSettings.baseBet || 50) + ((roomSettings.taiBet || 20) * 10);
+            confirmMsg = `⚠️ 警告：遊戲正在進行中！\n\n現在中途離開將被視為「逃跑」，系統將直接扣除您 ${penalty * 3} 💎 作為懲罰，並發放給其他玩家。\n\n確定要強制退出嗎？`;
+        } else if (gameState === 'lobby') {
+            confirmMsg = "確定要離開大廳嗎？";
+        }
+        
+        // 觸發原生警告視窗，點擊取消則中斷離開
+        if (!window.confirm(confirmMsg)) {
+            return; 
+        }
+
         if (roomCode && window.db) {
             try {
                 const snap = await window.db.collection("mjRooms").doc(roomCode).get();
@@ -273,16 +298,37 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                     if (gameState === 'playing') {
                         // ✨ 中途退出懲罰：直接賠三家 (底+10台)
                         const penalty = (roomSettings.baseBet || 50) + ((roomSettings.taiBet || 20) * 10);
-                        showToast(`中途退出！扣除懲罰金 ${penalty * 3} 💎`);
+                        
+                        // ✨ 2. 真的扣錢與發錢 (Firebase 批次寫入)
+                        const batch = window.db.batch();
+                        const increment = window.firebase.firestore.FieldValue.increment;
+                        
+                        // 扣除自己的鑽石
+                        const myRef = window.db.collection('users').doc(user.uid);
+                        batch.set(myRef, { mcData: { diamonds: increment(-(penalty * 3)) } }, { merge: true });
+
+                        // 發放給其他「真實玩家」 (不發給 AI)
+                        const currentPlayers = d.players || [];
+                        currentPlayers.forEach(p => {
+                            if (p.id !== user.uid && !p.id.startsWith('ai_')) {
+                                const otherRef = window.db.collection('users').doc(p.id);
+                                batch.set(otherRef, { mcData: { diamonds: increment(penalty) } }, { merge: true });
+                            }
+                        });
+                        
+                        // 提交交易
+                        await batch.commit().catch(e => console.error("扣款/發放失敗", e));
+
+                        showToast(`中途退出！已真實扣除懲罰金 ${penalty * 3} 💎`);
                         const newScores = [...(d.gameContext?.scores || [0,0,0,0])];
-                        const myIdx = (d.players || []).findIndex(pl => pl.id === user.uid);
+                        const myIdx = currentPlayers.findIndex(pl => pl.id === user.uid);
                         if(myIdx !== -1) {
                             newScores.forEach((_, i) => {
                                 if (i === myIdx) newScores[i] -= penalty * 3;
                                 else newScores[i] += penalty;
                             });
                         }
-                        const p = (d.players || []).map(pl => pl.id === user.uid ? { ...pl, isDisconnected: true } : pl);
+                        const p = currentPlayers.map(pl => pl.id === user.uid ? { ...pl, isDisconnected: true } : pl);
                         await window.db.collection("mjRooms").doc(roomCode).update({ players: p, 'gameContext.scores': newScores, status: 'summary', winner: '玩家逃跑', results: p.map(x=>({...x, penalty:0, prize:0})) });
                     } else if (gameState === 'summary') {
                         const p = (d.players || []).map(pl => pl.id === user.uid ? { ...pl, isDisconnected: true } : pl);
@@ -807,8 +853,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             // 判斷此人是否要賠錢 (自摸三家賠，放槍苦主賠)
             if (isZimo || idx === loserIdx) {
                 let pTai = baseTai;
-                // 如果贏家是莊家，或輸家是莊家，這筆帳要多算 1 台 (莊家台)
-                if (winnerIdx === 0 || idx === 0) pTai += 1; 
+                // ✨ 修復 BUG：使用正確的 gameContext.dealer 判斷莊家，而非寫死 0
+                if (winnerIdx === gameContext.dealer || idx === gameContext.dealer) pTai += 1; 
                 
                 penalty = base + (pTai * taiBet); // 底 + 台
                 totalPrize += penalty;
@@ -847,6 +893,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             details.push(`莊家連${gameContext.consecutive} (${dTai}台)`);
         }
 
+        // 清除上一局的準備狀態
+        const resetPlayersForSummary = players.map(p => ({ ...p, isReady: false, isMe: false })); 
+
         const updateData = {
             status: 'summary',
             winner: players[winnerIdx].name,
@@ -854,20 +903,36 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             isZimo,
             taiDetails: details,
             gameContext: newContext,
-            huTile: isZimo ? finalHand[finalHand.length - 1] : pendingAction.tile, // ✨ 記錄胡的是哪張牌
-            dealerIdx: gameContext.dealer // ✨ 記錄誰是莊家
+            huTile: isZimo ? finalHand[finalHand.length - 1] : pendingAction.tile, 
+            dealerIdx: gameContext.dealer,
+            players: resetPlayersForSummary
         };
 
-        // ✨ 延遲結算，先播放倒牌動畫
+        setAutoReadyTimer(5); // 進入結算前重置5秒自動準備倒數
+
+        // ✨ 真實倒牌動畫資料：傳入贏家座位、最終手牌，與放槍苦主(若有)
+        const winAnimData = { 
+            winnerIdx, 
+            name: players[winnerIdx].name, 
+            hand: finalHand,
+            isZimo,
+            loserName: !isZimo && loserIdx !== null ? players[loserIdx].name : null 
+        };
+
         if (roomCode) {
-            window.db.collection("mjRooms").doc(roomCode).update({ winAnimation: players[winnerIdx].name });
+            window.db.collection("mjRooms").doc(roomCode).update({ 
+                winAnimation: winAnimData,
+                pendingAction: null // ✨ 立即清除攔截狀態，防止計時器繼續跑導致幽靈回合或結算衝突
+            });
             setTimeout(() => {
                 window.db.collection("mjRooms").doc(roomCode).update({ ...updateData, winAnimation: null });
             }, 4000);
         } else {
-            setWinAnimation(players[winnerIdx].name);
+            setPendingAction(null);
+            setWinAnimation(winAnimData);
             setTimeout(() => {
                 setWinAnimation(null);
+                setPlayers(resetPlayersForSummary);
                 setSummaryData(updateData);
                 setGameState('summary');
             }, 4000);
@@ -879,14 +944,20 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         newContext.consecutive += 1; // 流局原莊家連莊
         newContext.totalHands += 1;
 
+        const resetPlayersForSummary = players.map(p => ({ ...p, isReady: false, isMe: false }));
+        setAutoReadyTimer(5); // 進入結算前重置5秒自動準備倒數
+
         const updateData = {
             status: 'summary',
             winner: '流局',
             results: players.map(p => ({ ...p, penalty: 0, prize: 0 })),
             gameContext: newContext,
-            dealerIdx: gameContext.dealer
+            dealerIdx: gameContext.dealer,
+            players: resetPlayersForSummary
         };
         if (roomCode) window.db.collection("mjRooms").doc(roomCode).update(updateData);
+        else setPlayers(resetPlayersForSummary);
+        
         setSummaryData(updateData);
         setGameState('summary');
     };
@@ -972,9 +1043,38 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         }
     }, [myHand, currentTurn, gameState, pendingAction, players, user?.uid]);
 
+    // ✨ 結算畫面自動倒數與全員準備偵測 (徹底解決換局當機問題)
+    useEffect(() => {
+        if (gameState === 'summary') {
+            const isGameOver = checkIsGameOver();
+            
+            // 1. 5秒自動準備倒數
+            if (!isGameOver && autoReadyTimer > 0) {
+                const timer = setTimeout(() => setAutoReadyTimer(prev => prev - 1), 1000);
+                return () => clearTimeout(timer);
+            } else if (!isGameOver && autoReadyTimer === 0) {
+                // 時間到自動觸發準備
+                const myPlayer = players.find(p => p.id === user.uid);
+                if (myPlayer && !myPlayer.isReady) {
+                    const newPlayers = players.map(p => p.id === user.uid ? { ...p, isReady: true, isMe: false } : { ...p, isMe: false });
+                    if (roomCode) window.db.collection("mjRooms").doc(roomCode).update({ players: newPlayers });
+                    else setPlayers(players.map(p => p.id === user.uid ? { ...p, isReady: true } : p));
+                }
+            }
+
+            // 2. 房主偵測「全員就緒」後，自動無縫開局
+            if ((!roomCode || isHost) && !isGameOver && players.length > 0) {
+                const allReady = players.every(p => p.isReady || p.id.startsWith('ai_') || p.isDisconnected);
+                if (allReady) {
+                    startGameFromLobby(players);
+                }
+            }
+        }
+    }, [gameState, autoReadyTimer, players, roomCode, isHost]);
+
     // ✨ 新增：常規回合的倒數計時器
     useEffect(() => {
-        if (gameState !== 'playing' || pendingAction) return;
+        if (gameState !== 'playing' || pendingAction || winAnimation) return; // ✨ 加上 winAnimation 阻斷計時
         
         setTimeLeft(roomSettings.turnTime || 20); // ✨ 配合預設 20 秒
         const timer = setInterval(() => {
@@ -998,7 +1098,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
     // AI 自動打牌與 pending 倒數
     useEffect(() => {
-        if (gameState !== 'playing') return;
+        if (gameState !== 'playing' || winAnimation) return; // ✨ 加上 winAnimation 阻斷計時，防止動畫期間 AI 亂動
 
         // ✨ 處理 pendingAction (攔截倒數與 AI 自動吃碰胡)
         if (pendingAction) {
@@ -1407,11 +1507,21 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                                 <div className="text-emerald-400 text-[10px] font-bold bg-black/50 px-2 rounded mt-1">剩 {p.hand.length} 張</div>
                                             </div>
                                             
-                                            {/* ✨ 獨立出來的麻將顆粒區，不再與頭像擠在同一個框內 */}
+                                            {/* ✨ 獨立出來的麻將顆粒區 (如果倒牌則攤開顯示真實手牌) */}
                                             <div className={`flex ${pos === 'top' ? 'flex-row' : 'flex-col'} gap-[1px] items-center justify-center`}>
-                                                {p.hand.map((_, i) => (
-                                                    <div key={i} className={`bg-emerald-700 border border-stone-900 rounded-[2px] shadow-[inset_1px_1px_2px_rgba(255,255,255,0.3)] ${pos === 'top' ? 'w-3 h-5 sm:w-4 sm:h-6' : 'w-5 h-3 sm:w-6 sm:h-4'}`}></div>
-                                                ))}
+                                                {winAnimation?.winnerIdx === pIdx ? (
+                                                    <div className={`flex ${pos === 'top' ? 'flex-row' : 'flex-col'} gap-0.5 animate-in zoom-in duration-500 shadow-[0_0_30px_rgba(251,191,36,0.8)] p-2 rounded-lg bg-amber-500/20`}>
+                                                        {winAnimation.hand.map((t, i) => (
+                                                            <div key={i} style={{ transform: pos === 'left' ? 'rotate(90deg)' : pos === 'right' ? 'rotate(-90deg)' : 'none' }}>
+                                                                <TileBlock tile={t} mini={true} isHighlighted={true} />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    p.hand.map((_, i) => (
+                                                        <div key={i} className={`bg-emerald-700 border border-stone-900 rounded-[2px] shadow-[inset_1px_1px_2px_rgba(255,255,255,0.3)] ${pos === 'top' ? 'w-3 h-5 sm:w-4 sm:h-6' : 'w-5 h-3 sm:w-6 sm:h-4'}`}></div>
+                                                    ))
+                                                )}
                                             </div>
 
                                             {p.melds && p.melds.length > 0 && (
@@ -1630,8 +1740,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 </div>
                             )}
 
-                            {/* ✨ 手牌排列 (真實插入邏輯與視覺間隙) */}
-                            <div className="flex justify-center gap-0.5 sm:gap-1 px-1 h-20 sm:h-24 items-end">
+                            {/* ✨ 手牌排列 (真實插入邏輯與發光效果) */}
+                            <div className={`flex justify-center gap-0.5 sm:gap-1 px-1 h-20 sm:h-24 items-end ${winAnimation?.winnerIdx === myIdx ? 'animate-in zoom-in duration-500 shadow-[0_-20px_50px_rgba(251,191,36,0.5)] bg-amber-500/20 rounded-t-3xl pt-4' : ''}`}>
                                 {myHand.map((tile, index) => {
                                     const isDrawnTile = currentTurn === players.findIndex(p=>p.id===user.uid) && index === myHand.length - 1;
                                     const isDragging = draggedIdx === index;
@@ -1701,13 +1811,24 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                             </div>
                         </div>
                         
-                        {/* ✨ 倒牌動畫全螢幕特效 (改為遊戲內透明層) */}
+                        {/* ✨ 倒牌與放槍特效中心提示 */}
                         {winAnimation && (
-                            <div className="absolute inset-0 z-[200] bg-black/30 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-500 pointer-events-auto">
-                                <span className="text-6xl sm:text-8xl animate-bounce mb-2 drop-shadow-[0_0_20px_rgba(251,191,36,1)]">🀄</span>
-                                <h1 className="text-3xl sm:text-5xl font-black text-amber-400 drop-shadow-[0_0_15px_rgba(251,191,36,0.8)] animate-pulse">
-                                    {winAnimation} 胡牌啦！
-                                </h1>
+                            <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[200] flex flex-col items-center justify-center animate-in zoom-in slide-in-from-bottom-10 duration-500 pointer-events-none w-full px-4">
+                                <div className={`bg-stone-900/95 border-4 rounded-full px-6 sm:px-10 py-4 shadow-[0_0_50px_rgba(251,191,36,0.8)] flex flex-col items-center gap-2 max-w-fit mx-auto ${winAnimation.isZimo ? 'border-amber-500' : 'border-red-500 shadow-[0_0_50px_rgba(239,68,68,0.8)] animate-pulse'}`}>
+                                    <div className="flex items-center gap-3 sm:gap-4">
+                                        <span className="text-4xl sm:text-5xl animate-bounce drop-shadow-[0_0_10px_rgba(251,191,36,1)] shrink-0">🀄</span>
+                                        <h1 className="text-2xl sm:text-4xl font-black drop-shadow-[0_0_10px_rgba(0,0,0,0.8)] flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-center whitespace-nowrap">
+                                            {winAnimation.isZimo ? (
+                                                <span className="text-amber-400 tracking-wider">✨ {winAnimation.name} 霸氣自摸！</span>
+                                            ) : (
+                                                <>
+                                                    <span className="text-red-400 animate-pulse">💥 {winAnimation.loserName} 放槍！</span>
+                                                    <span className="text-emerald-400 tracking-widest">{winAnimation.name} 胡牌啦！</span>
+                                                </>
+                                            )}
+                                        </h1>
+                                    </div>
+                                </div>
                             </div>
                         )}
                         
@@ -1842,53 +1963,70 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 ))}
                             </div>
 
-                            <div className="flex justify-center space-x-4">
-                                {(!roomCode || isHost) ? (
-                                    <button onClick={async () => {
-                                        playCachedSound(clickSound);
-                                        // ✨ 檢查是否達到設定的遊戲長度 (完整考慮連莊與風圈輪替)
-                                        let isGameOver = false;
-                                        if (roomSettings.length === '1局' && gameContext.totalHands >= 1 && gameContext.consecutive === 0) isGameOver = true;
-                                        if (roomSettings.length === '1圈' && gameContext.wind > 0) isGameOver = true;
-                                        // 1將：當風圈回到 0 (東風) 且已經不是第一局時，代表東南西北各一圈已打完
-                                        if (roomSettings.length === '1將' && gameContext.wind === 0 && gameContext.totalHands > 1) isGameOver = true;
-
-                                        if (isGameOver) {
-                                            showToast("✅ 遊戲長度已達標！本局為最後一局，請退出房間。");
-                                            return;
-                                        }
-
-                                        // 直接進入下一局，不回大廳
-                                        startGameFromLobby(players);
-                                    }} className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white font-black border-2 border-black shadow-lg transition-transform active:scale-95">
-                                        { (() => {
-                                            let isDone = false;
-                                            if (roomSettings.length === '1局' && gameContext.totalHands >= 1 && gameContext.consecutive === 0) isDone = true;
-                                            if (roomSettings.length === '1圈' && gameContext.wind > 0) isDone = true;
-                                            if (roomSettings.length === '1將' && gameContext.wind === 0 && gameContext.totalHands > 1) isDone = true;
-                                            return isDone ? '結算完成 (遊戲結束)' : '下一局';
-                                        })() }
-                                    </button>
-                                ) : (
-                                    <div className="px-6 py-3 bg-stone-600 text-stone-300 font-black border-2 border-black">等待房主開啟下一局...</div>
+                            <div className="flex flex-col items-center w-full mt-4">
+                                {/* ✨ 顯示大家的準備狀態 */}
+                                {!checkIsGameOver() && (
+                                    <div className="flex gap-2 sm:gap-4 mb-4 flex-wrap justify-center">
+                                        {players.filter(p => !p.id.startsWith('ai_') && !p.isDisconnected).map(p => (
+                                            <div key={p.id} className={`px-3 py-1 rounded-full border-2 text-sm font-bold flex items-center gap-1 ${p.isReady ? 'bg-emerald-900/80 border-emerald-400 text-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.5)]' : 'bg-stone-800 border-stone-500 text-stone-400'}`}>
+                                                {p.isReady ? <span className="material-symbols-outlined text-[16px]">check_circle</span> : <span className="material-symbols-outlined text-[16px] animate-spin">hourglass_empty</span>}
+                                                {p.name} {p.isReady ? '已準備' : '思考中...'}
+                                            </div>
+                                        ))}
+                                    </div>
                                 )}
-                                <button onClick={quitAndLeaveRoom} className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-black border-2 border-black shadow-lg transition-transform active:scale-95">退出結算</button>
+
+                                <div className="flex justify-center space-x-4 w-full">
+                                    {checkIsGameOver() ? (
+                                        <button onClick={() => showToast("✅ 遊戲已結束，請點擊「退出結算」離開。")} className="px-6 py-3 bg-stone-600 text-stone-300 font-black border-2 border-black shadow-md cursor-not-allowed">
+                                            結算完成 (遊戲結束)
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={() => {
+                                                playCachedSound(clickSound);
+                                                const myPlayer = players.find(p => p.id === user.uid);
+                                                if (myPlayer && !myPlayer.isReady) {
+                                                    setAutoReadyTimer(0); // 手動點擊就取消自動倒數
+                                                    const newPlayers = players.map(p => p.id === user.uid ? { ...p, isReady: true, isMe: false } : { ...p, isMe: false });
+                                                    if (roomCode) window.db.collection("mjRooms").doc(roomCode).update({ players: newPlayers });
+                                                    else setPlayers(players.map(p => p.id === user.uid ? { ...p, isReady: true } : p));
+                                                }
+                                            }} 
+                                            disabled={players.find(p => p.id === user.uid)?.isReady}
+                                            className={`px-8 py-3 font-black border-2 border-black shadow-lg transition-all active:scale-95 flex items-center gap-2 ${players.find(p => p.id === user.uid)?.isReady ? 'bg-emerald-700 text-emerald-200 cursor-not-allowed opacity-80' : 'bg-amber-500 hover:bg-amber-400 text-stone-900 animate-pulse'}`}
+                                        >
+                                            {players.find(p => p.id === user.uid)?.isReady ? '等待其他玩家...' : `準備下一局 (${autoReadyTimer}s)`}
+                                        </button>
+                                    )}
+                                    
+                                    <button onClick={quitAndLeaveRoom} className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-black border-2 border-black shadow-lg transition-transform active:scale-95">退出結算</button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* ✨ 全螢幕洗牌特效 (改為遊戲內透明層) */}
-                {isShuffling && (
-                    <div className="absolute inset-0 z-[500] bg-black/30 flex flex-col items-center justify-center pointer-events-auto rounded-lg">
-                        <div className="flex flex-wrap justify-center gap-3 max-w-sm animate-pulse">
-                            {[...Array(8)].map((_, i) => (
-                                <div key={i} className="w-10 h-14 sm:w-12 sm:h-16 bg-emerald-700 border-2 border-stone-800 rounded shadow-xl transform rotate-12 animate-bounce" style={{ animationDelay: `${i * 100}ms` }}></div>
-                            ))}
-                        </div>
-                        <h2 className="text-white text-2xl sm:text-3xl font-black mt-6 tracking-[0.5em] animate-pulse drop-shadow-md">洗牌中...</h2>
-                    </div>
-                )}
+                {/* ✨ 倒牌與放槍特效中心提示 */}
+                        {winAnimation && (
+                            <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[200] flex flex-col items-center justify-center animate-in zoom-in slide-in-from-bottom-10 duration-500 pointer-events-none w-full px-4">
+                                <div className={`bg-stone-900/95 border-4 rounded-full px-6 sm:px-10 py-4 shadow-[0_0_50px_rgba(251,191,36,0.8)] flex flex-col items-center gap-2 max-w-fit mx-auto ${winAnimation.isZimo ? 'border-amber-500' : 'border-red-500 shadow-[0_0_50px_rgba(239,68,68,0.8)] animate-pulse'}`}>
+                                    <div className="flex items-center gap-3 sm:gap-4">
+                                        <span className="text-4xl sm:text-5xl animate-bounce drop-shadow-[0_0_10px_rgba(251,191,36,1)] shrink-0">🀄</span>
+                                        <h1 className="text-2xl sm:text-4xl font-black drop-shadow-[0_0_10px_rgba(0,0,0,0.8)] flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-center whitespace-nowrap">
+                                            {winAnimation.isZimo ? (
+                                                <span className="text-amber-400 tracking-wider">✨ {winAnimation.name} 霸氣自摸！</span>
+                                            ) : (
+                                                <>
+                                                    <span className="text-red-400 animate-pulse">💥 {winAnimation.loserName} 放槍！</span>
+                                                    <span className="text-emerald-400 tracking-widest">{winAnimation.name} 胡牌啦！</span>
+                                                </>
+                                            )}
+                                        </h1>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                 {toast && (
                     <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[300] bg-stone-800 text-white px-4 py-2 rounded shadow-xl border-2 border-stone-600 font-bold animate-in slide-in-from-top-4">
