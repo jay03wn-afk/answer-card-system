@@ -481,11 +481,18 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
                     
                     if (data.status === 'lobby' && gameState !== 'lobby') {
                         setGameState('lobby');
+                        // ✨ 修復第二局不結算的 Bug：回到大廳時，所有玩家必須重置結算防呆鎖
+                        setHasProcessedPayout(false);
+                        setSummaryData(null);
                     }
 
                     if (data.status === 'playing' || data.status === 'summary') {
                         if (gameState === 'lobby' && data.status === 'playing') {
                             setGameState('playing');
+                            // ✨ 雙重保險：進入遊戲狀態時再次重置結算防呆鎖
+                            setHasProcessedPayout(false);
+                            setSummaryData(null);
+                            
                             // ✨ 多人連線開局提示誰有梅花 3
                             if (data.isFirstTurn && data.players && data.currentTurn !== undefined) {
                                 showToast(`🎲 開局！由 ${data.players[data.currentTurn].name} 拿到梅花 3 先出牌！`);
