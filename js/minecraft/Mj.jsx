@@ -78,6 +78,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     const [winAnimation, setWinAnimation] = useState(null);
     const [isShuffling, setIsShuffling] = useState(false);
     const [actionBubbles, setActionBubbles] = useState({}); // 吃碰胡文字提示
+    const [showQuitModal, setShowQuitModal] = useState(false); // ✨ 新增：自訂離開警告視窗狀態
 
     // ✨ 強化版音效播放 (加入雙重保險，徹底解決音效消失問題)
 
@@ -272,42 +273,44 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         return false;
     };
 
-    // 離開房間邏輯
-    const quitAndLeaveRoom = async () => {
-        playCachedSound(clickSound);
-
-        // ✨ 1. 退出前的警告提示
-        let confirmMsg = "確定要離開房間嗎？";
+    // ✨ F5 重新整理與關閉分頁防護
+    useEffect(() => {
         if (gameState === 'playing' && roomCode) {
-            const penalty = (roomSettings.baseBet || 50) + ((roomSettings.taiBet || 20) * 10);
-            confirmMsg = `⚠️ 警告：遊戲正在進行中！\n\n現在中途離開將被視為「逃跑」，系統將直接扣除您 ${penalty * 3} 💎 作為懲罰，並發放給其他玩家。\n\n確定要強制退出嗎？`;
-        } else if (gameState === 'lobby') {
-            confirmMsg = "確定要離開大廳嗎？";
+            const handleBeforeUnload = (e) => {
+                e.preventDefault();
+                e.returnValue = ''; // 觸發瀏覽器原生防護警告
+            };
+            window.addEventListener('beforeunload', handleBeforeUnload);
+            return () => window.removeEventListener('beforeunload', handleBeforeUnload);
         }
-        
-        // 觸發原生警告視窗，點擊取消則中斷離開
-        if (!window.confirm(confirmMsg)) {
-            return; 
-        }
+    }, [gameState, roomCode]);
 
+    // ✨ 離開房間邏輯 (改為顯示網頁內自訂視窗)
+    const quitAndLeaveRoom = () => {
+        playCachedSound(clickSound);
+        if (gameState === 'playing' || gameState === 'lobby') {
+            setShowQuitModal(true); // 開啟警告視窗
+        } else {
+            confirmQuit(); // 如果已經在結算畫面，直接離開不警告
+        }
+    };
+
+    // ✨ 真實執行退出與扣款邏輯
+    const confirmQuit = async () => {
+        setShowQuitModal(false);
         if (roomCode && window.db) {
             try {
                 const snap = await window.db.collection("mjRooms").doc(roomCode).get();
                 if (snap.exists) {
                     const d = snap.data();
                     if (gameState === 'playing') {
-                        // ✨ 中途退出懲罰：直接賠三家 (底+10台)
                         const penalty = (roomSettings.baseBet || 50) + ((roomSettings.taiBet || 20) * 10);
-                        
-                        // ✨ 2. 真的扣錢與發錢 (Firebase 批次寫入)
                         const batch = window.db.batch();
                         const increment = window.firebase.firestore.FieldValue.increment;
                         
-                        // 扣除自己的鑽石
                         const myRef = window.db.collection('users').doc(user.uid);
                         batch.set(myRef, { mcData: { diamonds: increment(-(penalty * 3)) } }, { merge: true });
 
-                        // 發放給其他「真實玩家」 (不發給 AI)
                         const currentPlayers = d.players || [];
                         currentPlayers.forEach(p => {
                             if (p.id !== user.uid && !p.id.startsWith('ai_')) {
@@ -316,10 +319,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                             }
                         });
                         
-                        // 提交交易
                         await batch.commit().catch(e => console.error("扣款/發放失敗", e));
 
-                        showToast(`中途退出！已真實扣除懲罰金 ${penalty * 3} 💎`);
+                        showToast(`逃跑懲罰！已扣除 ${penalty * 3} 💎`);
                         const newScores = [...(d.gameContext?.scores || [0,0,0,0])];
                         const myIdx = currentPlayers.findIndex(pl => pl.id === user.uid);
                         if(myIdx !== -1) {
@@ -1833,10 +1835,11 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                         )}
                         
                         {/* 聊天室 */}
-                        {showChatModal && (
-                            <div className="absolute inset-0 z-50 bg-black/50 flex justify-end">
-                                <div className="w-80 bg-stone-100 h-full flex flex-col shadow-2xl">
-                                    <div className="bg-stone-800 text-white p-3 flex justify-between items-center">
+                        {/* ✨ 聊天室 (修復層級與關閉按鈕位置) */}
+{showChatModal && (
+    <div className="absolute inset-0 z-[300] bg-black/50 flex justify-end pointer-events-auto">
+        <div className="w-80 bg-stone-100 h-full flex flex-col shadow-2xl relative">
+            <div className="bg-stone-800 text-white p-3 flex justify-between items-center">
                                         <span className="font-bold">對戰聊天室</span>
                                         <button onClick={() => setShowChatModal(false)}><span className="material-symbols-outlined">close</span></button>
                                     </div>
@@ -1850,13 +1853,17 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     </div>
                                     <form onSubmit={e => {
                                         e.preventDefault();
-                                        if(!chatText.trim() || !roomCode) return;
-                                        const roomRef = window.db.collection("mjRooms").doc(roomCode);
-                                        roomRef.get().then(snap => {
-                                            const d = snap.data();
-                                            roomRef.update({ chats: [...(d.chats || []), { senderId: user?.uid, senderName: userProfile?.displayName, text: chatText.trim(), time: Date.now() }] });
-                                            setChatText('');
-                                        });
+                                        if(!chatText.trim()) return; // ✨ 移除 !roomCode 限制，允許單機發言
+                                        if (roomCode) {
+    const roomRef = window.db.collection("mjRooms").doc(roomCode);
+    roomRef.get().then(snap => {
+        const d = snap.data();
+        roomRef.update({ chats: [...(d.chats || []), { senderId: user?.uid, senderName: userProfile?.displayName, text: chatText.trim(), time: Date.now() }] });
+    });
+}
+// ✨ 不論單機還是連線，都在本地清空輸入框並推入訊息列
+setChatMessages(prev => [...prev, { senderId: user?.uid, senderName: userProfile?.displayName, text: chatText.trim(), time: Date.now() }]);
+setChatText('');
                                     }} className="p-2 border-t flex gap-2 bg-white">
                                         <input type="text" value={chatText} onChange={e=>setChatText(e.target.value)} className="flex-grow px-2 py-1 bg-gray-100 border rounded text-sm" />
                                         <button className="bg-amber-500 text-white px-3 rounded font-bold text-sm">傳送</button>
@@ -2027,6 +2034,35 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 </div>
                             </div>
                         )}
+
+                {/* ✨ 遊戲內自訂離開房間警告視窗 */}
+                {showQuitModal && (
+                    <div className="absolute inset-0 z-[600] bg-black/80 flex flex-col items-center justify-center pointer-events-auto px-4">
+                        <div className="bg-stone-900 border-4 border-red-500 rounded-2xl w-full max-w-sm p-6 flex flex-col items-center shadow-[0_0_50px_rgba(239,68,68,0.5)] animate-in zoom-in-95 duration-200">
+                            <span className="text-6xl mb-4 animate-bounce">⚠️</span>
+                            <h2 className="text-2xl font-black text-white mb-2">確定要離開嗎？</h2>
+                            {gameState === 'playing' && roomCode ? (
+                                <p className="text-red-400 text-center font-bold mb-6">
+                                    遊戲正在進行中！<br/>現在中途離開將被視為「逃跑」<br/>
+                                    系統將直接扣除您 <span className="text-amber-400 text-2xl font-black block my-2">{(roomSettings.baseBet || 50) * 3 + (roomSettings.taiBet || 20) * 30} 💎</span>
+                                    並發放給其他玩家！
+                                </p>
+                            ) : (
+                                <p className="text-stone-300 text-center font-bold mb-6">
+                                    返回主畫面將結束目前的連線狀態。
+                                </p>
+                            )}
+                            <div className="flex w-full gap-4">
+                                <button onClick={() => setShowQuitModal(false)} className="flex-1 bg-stone-600 hover:bg-stone-500 text-white font-black py-3 rounded-lg border-2 border-stone-400 transition-transform active:scale-95">
+                                    取消
+                                </button>
+                                <button onClick={confirmQuit} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-black py-3 rounded-lg border-2 border-red-300 shadow-[0_0_15px_rgba(239,68,68,0.8)] transition-transform active:scale-95">
+                                    殘忍離開
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {toast && (
                     <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[300] bg-stone-800 text-white px-4 py-2 rounded shadow-xl border-2 border-stone-600 font-bold animate-in slide-in-from-top-4">
