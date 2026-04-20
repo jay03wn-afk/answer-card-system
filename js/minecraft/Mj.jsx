@@ -63,24 +63,109 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     const [showChatModal, setShowChatModal] = useState(false);
     const [floatingChats, setFloatingChats] = useState({});
 
-    // ✨ 完全照抄 VolleyballGame 的單純對接模式 (修復音效綁定過早的問題)
-    const playCachedSound = (url) => { if (window.playCachedSound) window.playCachedSound(url); };
+    // ✨ 新增：動畫與洗牌狀態
+    const [tingOptions, setTingOptions] = useState(null);
+    const [winAnimation, setWinAnimation] = useState(null);
+    const [isShuffling, setIsShuffling] = useState(false);
+    const [actionBubbles, setActionBubbles] = useState({}); // 吃碰胡文字提示
+
+    // ✨ 強化版音效播放 (加入雙重保險，徹底解決音效消失問題)
+
+    // ✨ 強化版音效播放 (加入雙重保險，徹底解決音效消失問題)
+    const playCachedSound = (url) => { 
+        if (window.playCachedSound) window.playCachedSound(url); 
+        // 防呆機制：若 Web Audio API 被瀏覽器阻擋，退回傳統 <audio> 強制播放
+        const fallbackAudio = new Audio(url);
+        fallbackAudio.volume = 0.8;
+        fallbackAudio.play().catch(e => {});
+    };
     const preloadFastSound = (url) => { if (window.preloadFastSound) window.preloadFastSound(url); };
 
+    // ✨ 修正：退回 1.16.5 確保音效庫絕對存在，避免 1.20 部分音效檔案 404 而消失
     const clickSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/ui/button/click.ogg';
-    const tileSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/block/wood/place1.ogg'; 
+    const tileSound = 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/stone_place_destroy.mp3'; 
     const winSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/ui/toast/challenge_complete.ogg';
     const alertSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/block/note_block/chime.ogg';
     const eatSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/player/burp.ogg';
     const anvilSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/block/anvil/use.ogg';
     const totemSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/item/totem/use.ogg';
     const passSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/villager/no1.ogg';
-    const dropSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/item/pickup.ogg'; 
+    const dropSound = 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/stone_place_destroy.mp3'; 
+    const tingSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/player/levelup.ogg';
+    const sortSound = 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/block/stone_place_destroy.mp3';
+    const shuffleSound = 'https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/mj_wash.mp3';
+    
+    const aiVillagerSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/villager/idle1.ogg';
+    const aiEndermanSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/mob/endermen/idle1.ogg';
+    const aiCreeperSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/creeper/primed.ogg';
+    const steveEatSound = 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/player/burp.ogg';
+
+    // ✨ 新增專屬小聲音播放器 (洗牌與理牌專用，音量調小不刺耳)
+    const playQuietSound = (url) => {
+        const a = new Audio(url);
+        a.volume = 0.2;
+        a.play().catch(()=>{});
+    };
+
+    // ✨ 新增：根據玩家播放專屬生物聲音
+    const playActorVoice = (idx) => {
+        const p = players[idx];
+        if (!p) return;
+        if (p.id.startsWith('ai_1')) playCachedSound(aiVillagerSound);
+        else if (p.id.startsWith('ai_2')) playCachedSound(aiEndermanSound);
+        else if (p.id.startsWith('ai_3')) playCachedSound(aiCreeperSound);
+        else playCachedSound(steveEatSound); // 真人玩家
+    };
+
+    // ✨ 新增：顯示動作氣泡 (吃碰胡提示)
+    const triggerActionBubble = (pIdx, text) => {
+        setActionBubbles(prev => ({ ...prev, [pIdx]: text }));
+        setTimeout(() => setActionBubbles(prev => ({ ...prev, [pIdx]: null })), 2000);
+    };
+
+    // ✨ 新增：全局背景音樂 (BGM) 控制
+    const bgmRef = useRef(null);
 
     useEffect(() => {
-        const sounds = [clickSound, tileSound, winSound, alertSound, eatSound, anvilSound, totemSound, passSound, dropSound];
+        const sounds = [clickSound, tileSound, winSound, alertSound, eatSound, anvilSound, totemSound, passSound, dropSound, tingSound, sortSound];
         sounds.forEach(src => preloadFastSound(src));
+        
+        // ✨ 改為休閒放鬆的 Minecraft 創造模式 BGM
+        bgmRef.current = new Audio("https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/music/game/creative/creative1.ogg");
+        bgmRef.current.loop = true;
+        bgmRef.current.volume = 0.2; // 音量微調，避免蓋過麻將的打牌音效
+
+        return () => {
+            if (bgmRef.current) {
+                bgmRef.current.pause();
+                bgmRef.current.src = "";
+            }
+        };
     }, []); 
+
+    // ✨ 監聽遊戲狀態與聽牌狀態，自動切換/播放背景音樂
+    useEffect(() => {
+        if (gameState === 'playing') {
+            // 如果場上有任何人聽牌，切換成戰鬥/刺激音樂
+            const anyTing = players.some(p => p.isTing);
+            const targetBgm = anyTing
+                ? "https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/clutterfunkVOL.mp3" 
+                : "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/music/game/creative/creative1.ogg";
+
+            if (bgmRef.current) {
+                if (bgmRef.current.src !== targetBgm) {
+                    const wasPlaying = !bgmRef.current.paused;
+                    bgmRef.current.src = targetBgm;
+                    bgmRef.current.load();
+                    if (wasPlaying) bgmRef.current.play().catch(e => console.warn(e));
+                } else if (bgmRef.current.paused) {
+                    bgmRef.current.play().catch(e => console.warn(e));
+                }
+            }
+        } else {
+            if (bgmRef.current) bgmRef.current.pause();
+        }
+    }, [gameState, players]); 
 
     // ✨ 統一還原為 Emoji，解決中字突兀的問題
     const TILE_DEFS = {
@@ -92,15 +177,42 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
     const getTileColor = (type, val) => {
         if (type === 'W') return 'text-red-600';
-        if (type === 'T') return 'text-blue-600';
-        if (type === 'S') return 'text-emerald-600';
+        if (type === 'T') return 'text-zinc-950';
+        if (type === 'S') return 'text-emerald-700';
         if (type === 'Z') {
-            if (val <= 4) return 'text-stone-800'; // 東南西北
+            if (val <= 4) return 'text-zinc-950'; // 東南西北
             if (val === 5) return 'text-red-600'; // 中
-            if (val === 6) return 'text-emerald-600'; // 發
-            if (val === 7) return 'text-blue-600'; // 白
+            if (val === 6) return 'text-emerald-700'; // 發
+            if (val === 7) return 'text-zinc-950'; // 白板
         }
-        return 'text-stone-800';
+        return 'text-zinc-950';
+    };
+
+    // ✨ 檢查是否聽牌 (回傳：打出哪張牌的ID -> 可以胡哪些牌的陣列)
+    const checkTingOptions = (handCards) => {
+        if (handCards.length % 3 !== 2) return null;
+        const options = {};
+        const uniqueHand = [];
+        const seen = new Set();
+        handCards.forEach(t => {
+            const k = `${t.type}${t.val}`;
+            if (!seen.has(k)) { seen.add(k); uniqueHand.push(t); }
+        });
+
+        const allTileTypes = [];
+        Object.entries(TILE_DEFS).forEach(([type, symbols]) => {
+            symbols.forEach((symbol, idx) => allTileTypes.push({ type, val: idx + 1, symbol }));
+        });
+
+        uniqueHand.forEach(discardCandidate => {
+            const tempHand = handCards.filter(t => t.id !== discardCandidate.id);
+            const tingTiles = [];
+            allTileTypes.forEach(testTile => {
+                if (checkHu([...tempHand, { ...testTile, id: 'test' }])) tingTiles.push(testTile);
+            });
+            if (tingTiles.length > 0) options[discardCandidate.id] = tingTiles;
+        });
+        return Object.keys(options).length > 0 ? options : null;
     };
 
     // 檢查是否可以胡牌 (基礎演算法：遞迴尋找 5搭1眼)
@@ -243,7 +355,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         const finalPlayers = roster.map((p, idx) => {
             const count = idx === nextDealerIdx ? 17 : 16;
             const hand = deck.splice(0, count);
-            return { ...p, hand: sortHand(hand), melds: [], discards: [] };
+            // ✨ 確保新局開始時，聽牌狀態與自動出牌都會重置
+            return { ...p, hand: sortHand(hand), melds: [], discards: [], isTing: false };
         });
 
         const initialGameState = {
@@ -268,10 +381,18 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             setGameState('playing');
             setMyHand(finalPlayers.find(p => p.isMe).hand);
         }
+
+        // ✨ 洗牌特效與音效 (畫面已產生，直接覆蓋在遊戲桌面上)
+        setIsShuffling(true);
+        const shuffleInterval = setInterval(() => playQuietSound(shuffleSound), 250);
+        setTimeout(() => {
+            clearInterval(shuffleInterval);
+            setIsShuffling(false);
+        }, 1500);
     };
 
     // 打牌邏輯
-    const discardTile = async (tileId) => {
+    const discardTile = async (tileId, declareTing = false, dropPos = null) => {
         if (pendingAction) return; // 攔截狀態不可打牌
         
         const myIndex = players.findIndex(p => p.id === user.uid);
@@ -281,20 +402,78 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         const newHand = myHand.filter(t => t.id !== tileId);
         
         playCachedSound(tileSound);
-        setMyHand(newHand); // ✨ 移除 sortHand，保留玩家拖拉的順序
+        setMyHand(newHand);
         setSelectedTile(null);
 
-        executeDiscard(myIndex, tileToDiscard, newHand);
+        // ✨ 如果宣告聽牌，標記狀態並發音效
+        const newPlayers = [...players];
+        if (declareTing) {
+            playCachedSound(tingSound);
+            newPlayers[myIndex] = { ...newPlayers[myIndex], isTing: true }; // 修正：確保狀態正確觸發 React 渲染
+        }
+
+        executeDiscard(myIndex, tileToDiscard, newHand, newPlayers, dropPos);
     };
 
-    const executeDiscard = async (pIndex, tileToDiscard, newHand) => {
+    const executeDiscard = async (pIndex, tileToDiscard, newHand, customPlayers = null, dropPos = null) => {
         playCachedSound(dropSound); // 播放丟入海底的聲音
-        const newPlayers = [...players];
+        const newPlayers = customPlayers ? [...customPlayers] : [...players];
         newPlayers[pIndex].hand = newHand;
         
-        // ✨ 加入 dropTime 來記錄絕對的出牌順序
-        const tileWithTime = { ...tileToDiscard, dropTime: Date.now() };
+        let finalDropX = dropPos?.x ?? (Math.random() * 80 + 10);
+        let finalDropY = dropPos?.y ?? (Math.random() * 80 + 10);
+
+        // ✨ 加入 dropTime 來記錄絕對出牌順序，並寫入初始座標與隨機旋轉角度
+        const tileWithTime = { 
+            ...tileToDiscard, 
+            dropTime: Date.now(),
+            dropX: finalDropX,
+            dropY: finalDropY,
+            dropRot: dropPos?.rot ?? (Math.random() * 60 - 30) // -30 到 30 度隨機傾斜
+        };
         newPlayers[pIndex].discards.push(tileWithTime);
+
+        // ✨ 物理互斥演算法：讓海底所有的牌互相排斥，呈現真實碰撞擠壓感
+        const allDiscards = newPlayers.flatMap(p => p.discards);
+        for (let step = 0; step < 20; step++) {
+            for (let i = 0; i < allDiscards.length; i++) {
+                for (let j = i + 1; j < allDiscards.length; j++) {
+                    let d1 = allDiscards[i];
+                    let d2 = allDiscards[j];
+                    if (d1.dropX == null || d2.dropX == null) continue;
+                    
+                    let dx = d1.dropX - d2.dropX;
+                    let dy = d1.dropY - d2.dropY;
+                    
+                    // 防呆：如果完全重疊(機率極低但可能發生)，給予微小擾動
+                    if (dx === 0 && dy === 0) { dx = Math.random()*0.1 - 0.05; dy = Math.random()*0.1 - 0.05; }
+
+                    // ✨ 升級為橢圓形碰撞箱：考量麻將牌是長方形，X軸與Y軸的排斥半徑必須不同
+                    // 這兩個數值精準對應放大後牌的實際視覺大小，確保完全不重疊
+                    let minX = 7.5; 
+                    let minY = 16.5; 
+
+                    // 橢圓形碰撞公式：小於 1 代表兩張牌重疊了
+                    let overlapRatio = (dx*dx) / (minX*minX) + (dy*dy) / (minY*minY);
+
+                    if (overlapRatio < 1 && overlapRatio > 0.001) {
+                        let pushFactor = (1 - Math.sqrt(overlapRatio)) * 0.5;
+                        d1.dropX += dx * pushFactor;
+                        d1.dropY += dy * pushFactor;
+                        d2.dropX -= dx * pushFactor;
+                        d2.dropY -= dy * pushFactor;
+                    }
+                }
+            }
+        }
+        
+        // 限制在海底框框內，避免推擠後掉出桌外
+        allDiscards.forEach(d => {
+            if (d.dropX != null) {
+                d.dropX = Math.max(5, Math.min(95, d.dropX));
+                d.dropY = Math.max(10, Math.min(90, d.dropY));
+            }
+        });
 
         const nextTurn = (pIndex + 1) % 4;
 
@@ -310,7 +489,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             
             // 檢查是否可以「吃」 (只能吃上家的牌，且字牌不能吃)
             let canChow = false;
-            if (idx === (pIndex + 1) % 4 && t.type !== 'Z') {
+            // ✨ 聽牌狀態下，底層引擎直接禁止吃牌
+            if (idx === (pIndex + 1) % 4 && t.type !== 'Z' && !p.isTing) {
                 const typeHand = p.hand.filter(ht => ht.type === t.type);
                 const hasV = (v) => typeHand.some(ht => ht.val === v);
                 if ((hasV(t.val - 2) && hasV(t.val - 1)) || 
@@ -320,7 +500,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                 }
             }
 
-            if (matchCount >= 2 || isHu || canChow) {
+            // ✨ 如果聽牌，只有可以胡的時候才算攔截 (吃碰直接光速跳過，不會空等)
+            if (isHu || (!p.isTing && matchCount >= 2) || canChow) {
                 canIntercept = true;
                 interceptors.push(idx);
             }
@@ -336,7 +517,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             updateData.pendingAction = {
                 tile: tileWithTime, 
                 from: pIndex,
-                expires: Date.now() + 20000 // ✨ 延長至 20 秒反應時間
+                expires: Date.now() + 20000, // ✨ 延長至 20 秒反應時間
+                interceptors: interceptors // ✨ 記錄誰有資格攔截，供 AI 判斷是否提早結束
             };
         } else {
             // 沒有人能攔截，直接換下家摸牌
@@ -402,14 +584,18 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         const newPlayers = [...players];
         
         if (actionType === 'hu') {
-            playCachedSound(totemSound); // 不死圖騰音效
+            playActorVoice(actorIdx);
+            setTimeout(() => playCachedSound(totemSound), 300); // 延遲圖騰音效
+            triggerActionBubble(actorIdx, "胡！");
             if (!checkHu([...currentHand, tile])) return showToast("牌型不符 (需 5搭1眼)！");
             handleWin(actorIdx, pendingAction.from);
             return;
         }
 
         if (actionType === 'pong') {
-            playCachedSound(anvilSound); // 鐵砧音效
+            playActorVoice(actorIdx);
+            setTimeout(() => playCachedSound(tileSound), 150); // 加入牌音效
+            triggerActionBubble(actorIdx, "碰！");
             const sameTiles = currentHand.filter(t => t.type === tile.type && t.val === tile.val);
             if (sameTiles.length < 2) return showToast("條件不符！");
             
@@ -432,7 +618,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         }
 
         if (actionType === 'kong') {
-            playCachedSound(anvilSound); // 鐵砧音效 (槓牌)
+            playActorVoice(actorIdx);
+            setTimeout(() => playCachedSound(tileSound), 150); // 加入牌音效
+            triggerActionBubble(actorIdx, "槓！");
             const sameTiles = currentHand.filter(t => t.type === tile.type && t.val === tile.val);
             if (sameTiles.length < 3) return showToast("條件不符！");
             
@@ -461,12 +649,16 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         }
 
         if (actionType === 'chow') {
-            playCachedSound(eatSound); // 吃東西音效
+            playActorVoice(actorIdx);
+            setTimeout(() => playCachedSound(tileSound), 150); // 加入牌音效
+            triggerActionBubble(actorIdx, "吃！");
             const used = specificTiles; 
             if (!used || used.length !== 2) return showToast("系統錯誤：未選擇吃的牌");
             
             const remainingHand = currentHand.filter(t => t.id !== used[0].id && t.id !== used[1].id);
-            const meldTiles = [...used, tile].sort((a,b)=>a.val-b.val);
+            // ✨ 將吃進來的那張牌強制放在中間
+            const sortedUsed = [...used].sort((a,b)=>a.val-b.val);
+            const meldTiles = [sortedUsed[0], tile, sortedUsed[1]];
             
             newPlayers[actorIdx].hand = remainingHand;
             newPlayers[actorIdx].melds.push({ type: 'chow', tiles: meldTiles });
@@ -661,14 +853,25 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             results,
             isZimo,
             taiDetails: details,
-            gameContext: newContext
+            gameContext: newContext,
+            huTile: isZimo ? finalHand[finalHand.length - 1] : pendingAction.tile, // ✨ 記錄胡的是哪張牌
+            dealerIdx: gameContext.dealer // ✨ 記錄誰是莊家
         };
 
+        // ✨ 延遲結算，先播放倒牌動畫
         if (roomCode) {
-            window.db.collection("mjRooms").doc(roomCode).update(updateData);
+            window.db.collection("mjRooms").doc(roomCode).update({ winAnimation: players[winnerIdx].name });
+            setTimeout(() => {
+                window.db.collection("mjRooms").doc(roomCode).update({ ...updateData, winAnimation: null });
+            }, 4000);
+        } else {
+            setWinAnimation(players[winnerIdx].name);
+            setTimeout(() => {
+                setWinAnimation(null);
+                setSummaryData(updateData);
+                setGameState('summary');
+            }, 4000);
         }
-        setSummaryData(updateData);
-        setGameState('summary');
     };
 
     const handleDrawGame = () => {
@@ -680,7 +883,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             status: 'summary',
             winner: '流局',
             results: players.map(p => ({ ...p, penalty: 0, prize: 0 })),
-            gameContext: newContext
+            gameContext: newContext,
+            dealerIdx: gameContext.dealer
         };
         if (roomCode) window.db.collection("mjRooms").doc(roomCode).update(updateData);
         setSummaryData(updateData);
@@ -731,6 +935,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
                         if (data.gameContext) setGameContext(data.gameContext);
                         if (data.roomSettings) setRoomSettings(data.roomSettings);
+                        
+                        // ✨ 同步倒牌動畫
+                        if (data.winAnimation !== undefined) setWinAnimation(data.winAnimation);
 
                         if (data.status === 'summary') {
                             setSummaryData(data);
@@ -742,6 +949,28 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             return () => unsub();
         }
     }, [gameState, roomCode, isHost, user.uid]);
+
+    // ✨ 計算聽牌提示
+    useEffect(() => {
+        const myPlayer = players.find(p => p.id === user?.uid);
+        if (gameState === 'playing' && myPlayer && myPlayer.id === players[currentTurn]?.id && !pendingAction && !myPlayer.isTing) {
+            setTingOptions(checkTingOptions(myHand));
+        } else {
+            setTingOptions(null);
+        }
+    }, [myHand, currentTurn, gameState, pendingAction, players, user?.uid]);
+
+    // ✨ 聽牌後自動摸打
+    useEffect(() => {
+        const myPlayer = players.find(p => p.id === user?.uid);
+        if (gameState === 'playing' && myPlayer?.isTing && currentTurn === players.findIndex(p=>p.id===user?.uid) && !pendingAction) {
+            const timer = setTimeout(() => {
+                if (checkHu(myHand)) handleWin(currentTurn, null);
+                else discardTile(myHand[myHand.length - 1].id);
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [myHand, currentTurn, gameState, pendingAction, players, user?.uid]);
 
     // ✨ 新增：常規回合的倒數計時器
     useEffect(() => {
@@ -775,7 +1004,17 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         if (pendingAction) {
             let aiHandled = false;
             let timeoutId;
+            let autoHuTimeout; // ✨ 新增：真人自動胡牌的計時器
             
+            // ✨ 真人聽牌自動胡牌引擎：如果有攔截資格(只能是胡)，自動幫你喊胡
+            const myIdx = players.findIndex(p => p.id === user?.uid);
+            const myPlayer = players[myIdx];
+            if (myPlayer?.isTing && pendingAction.interceptors?.includes(myIdx)) {
+                if (checkHu([...myPlayer.hand, pendingAction.tile])) {
+                    autoHuTimeout = setTimeout(() => handleIntercept('hu', null, myIdx), 800);
+                }
+            }
+
             // AI 攔截判斷 (單機或房主代管)
             if (!roomCode || isHost) {
                 const aiPlayers = players.filter(p => p.id.startsWith('ai_') && players.findIndex(x=>x.id===p.id) !== pendingAction.from);
@@ -833,6 +1072,18 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             const interval = setInterval(() => {
                 const left = Math.max(0, pendingAction.expires - Date.now());
                 setActionTimer(Math.floor(left / 1000));
+                
+                // ✨ 提早跳過邏輯：如果真人沒有動作可做，且 AI 也決定不攔截，不需苦等 20 秒
+                if (!aiHandled && (!roomCode || isHost)) {
+                    // 檢查是否有「非斷線的真人」有資格攔截
+                    const humanCanAct = pendingAction.interceptors?.some(idx => !players[idx].id.startsWith('ai_') && !players[idx].isDisconnected);
+                    if (!humanCanAct && left < 19000) { // 給 1 秒的緩衝視覺停頓
+                        clearInterval(interval);
+                        proceedNextTurnAfterPass();
+                        return;
+                    }
+                }
+
                 // 如果時間到且沒有 AI 攔截，自動過
                 if (left === 0) {
                     clearInterval(interval);
@@ -840,7 +1091,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                 }
             }, 1000);
 
-            return () => { clearInterval(interval); clearTimeout(timeoutId); };
+            return () => { clearInterval(interval); clearTimeout(timeoutId); clearTimeout(autoHuTimeout); };
         }
 
         // 處理 AI 自動打牌
@@ -899,17 +1150,18 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         if (checkHu([...myHand, t])) canHu = true;
         
         const matchingTiles = myHand.filter(ht => ht.type === t.type && ht.val === t.val);
-        if (matchingTiles.length >= 2) {
+        // ✨ 聽牌後禁止吃碰槓，只能胡牌
+        if (matchingTiles.length >= 2 && !players[myIdx]?.isTing) {
             canPong = true;
             highlightIds.push(matchingTiles[0].id, matchingTiles[1].id);
         }
-        if (matchingTiles.length >= 3) {
+        if (matchingTiles.length >= 3 && !players[myIdx]?.isTing) {
             canKong = true;
             highlightIds.push(matchingTiles[2].id);
         }
 
         // 吃牌只看上家
-        if (pendingAction.from === (myIdx + 3) % 4 && t.type !== 'Z') {
+        if (pendingAction.from === (myIdx + 3) % 4 && t.type !== 'Z' && !players[myIdx]?.isTing) {
             const typeHand = myHand.filter(ht => ht.type === t.type);
             const getTile = (v) => typeHand.find(ht => ht.val === v);
             
@@ -924,25 +1176,21 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
     // ✨ UI 輔助渲染組件 (支援 mini 縮小版與超大 Emoji)
    // ✨ 統一渲染麻將牌 - 超立體雕刻風格 (支援拖曳)
-    const TileBlock = ({ tile, mini = false, isHighlighted = false }) => {
+    const TileBlock = ({ tile, mini = false, isHighlighted = false, selected = false, onClick = undefined }) => {
         if (!tile) return null;
 
         // 定義牌面文字雕刻顏色 (模擬實體雕刻後的填色)
         const getTileColor = (type, val) => {
             if (tile.isBack) return 'text-emerald-500'; // 未開牌的綠背，不顯示字
-            if (['M', 'T', 'P'].includes(type)) return 'text-zinc-950'; // 萬筒條 (黑色雕刻)
-            if (type === 'W') { // 風牌
-                if (val === 0) return 'text-rose-600'; // 東 (紅色)
-                if (val === 1) return 'text-sky-600';  // 南 (藍色)
-                if (val === 2) return 'text-amber-600'; // 西 (黃色)
-                if (val === 3) return 'text-emerald-600'; // 北 (綠色)
+            if (type === 'W') return 'text-red-600'; // 萬
+            if (type === 'T') return 'text-zinc-950'; // 筒
+            if (type === 'S') return 'text-emerald-700'; // 條
+            if (type === 'Z') { // 字牌
+                if (val <= 4) return 'text-zinc-950'; // 東南西北
+                if (val === 5) return 'text-red-600'; // 中
+                if (val === 6) return 'text-emerald-700'; // 發
+                if (val === 7) return 'text-zinc-950'; // 白板
             }
-            if (type === 'D') { // Dragons
-                if (val === 0) return 'text-red-600'; // 紅中
-                if (val === 1) return 'text-emerald-700'; // 發財
-                return 'text-zinc-950'; // 白板
-            }
-            if (['F', 'S'].includes(type)) return 'text-rose-600'; // 花/季 (紅色)
             return 'text-zinc-950';
         };
 
@@ -958,10 +1206,11 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         // 牌面永遠是白色
         const faceColor = 'bg-stone-50';
 
-        const baseClasses = `relative select-none transition-all duration-300 rounded ${isHighlighted ? 'ring-4 ring-amber-400 scale-105 shadow-2xl z-20' : ''}`;
+        // 移除 hover:-translate-y-1，避免滑鼠在邊緣時觸發上下跳動的迴圈 (twitching)
+        const baseClasses = `relative select-none transition-all duration-300 rounded ${isHighlighted ? 'ring-4 ring-amber-400 scale-105 shadow-2xl z-20' : ''} ${selected ? 'scale-110 -translate-y-3 shadow-2xl z-30 ring-2 ring-emerald-400' : ''} ${onClick ? 'cursor-pointer' : ''}`;
 
         return (
-            <div className={`${baseClasses} ${mini ? 'w-8 h-10 sm:w-10 sm:h-[52px]' : 'w-12 h-16 sm:w-14 sm:h-[72px]'} group relative`}>
+            <div className={`${baseClasses} ${mini ? 'w-8 h-10 sm:w-10 sm:h-[52px]' : 'w-12 h-16 sm:w-14 sm:h-[72px]'} group relative`} onClick={onClick}>
                 
                 {/* ✨ 1. 牌背層 (模擬前後立體感，向右下方偏移產生實體厚度) */}
                 <div className={`absolute top-[3px] left-[3px] sm:top-[4px] sm:left-[4px] w-full h-full ${tile.isBack ? 'bg-emerald-900' : 'bg-emerald-700'} rounded-md border-2 border-stone-800 shadow-md z-0`}></div>
@@ -971,7 +1220,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
                     {/* ✨ 3. 牌面字體 (平面置中，完美對齊) */}
                     {!tile.isBack && (
-                        <span className={`flex items-center justify-center w-full h-full ${mini ? 'text-[24px] sm:text-[28px]' : 'text-[40px] sm:text-[48px]'} font-black ${getTileColor(tile.type, tile.val)} drop-shadow-sm leading-none pointer-events-none transform translate-y-[1px]`}>
+                        <span className={`flex items-center justify-center w-full h-full ${mini ? 'text-[36px] sm:text-[44px]' : 'text-[56px] sm:text-[68px]'} font-black ${getTileColor(tile.type, tile.val)} drop-shadow-sm leading-none pointer-events-none`}>
                             {tile.symbol}
                         </span>
                     )}
@@ -1146,22 +1395,35 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     
                                     // 取消內部 absolute，讓外層決定絕對位置，徹底避免跑到海底
                                     return (
-                                        <div className={`flex ${pos === 'top' ? 'flex-row' : 'flex-col'} items-center gap-2 pointer-events-auto`}>
+                                        <div className={`flex ${pos === 'top' ? 'flex-col' : pos === 'left' ? 'flex-row' : 'flex-row-reverse'} items-center gap-2 pointer-events-auto`}>
                                             {/* ✨ 對手動畫：加上發光與脈衝動畫，讓遊戲更生動 */}
                                             <div className={`flex flex-col items-center bg-stone-800/95 p-2 border-2 ${isTurn ? 'border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.8)] scale-110 animate-pulse' : 'border-stone-600'} rounded-lg transition-all duration-300`}>
                                                 <div className="w-8 h-8 sm:w-12 sm:h-12 mb-1 border-2 border-stone-500 bg-stone-700 relative overflow-hidden">
                                                     {isTurn && <div className="absolute inset-0 bg-amber-400/30 animate-pulse z-10"></div>}
                                                     <img src={avatarImg} alt={p.name} className="w-full h-full object-cover pixelated" />
+                                                    {p.isTing && <div className="absolute bottom-0 w-full bg-red-600 text-white text-[8px] sm:text-[10px] font-black text-center shadow-[0_0_10px_red]">聽牌</div>}
                                                 </div>
                                                 <span className="text-white text-[10px] sm:text-xs font-bold max-w-[80px] truncate">{p.name}</span>
                                                 <div className="text-emerald-400 text-[10px] font-bold bg-black/50 px-2 rounded mt-1">剩 {p.hand.length} 張</div>
                                             </div>
+                                            
+                                            {/* ✨ 獨立出來的麻將顆粒區，不再與頭像擠在同一個框內 */}
+                                            <div className={`flex ${pos === 'top' ? 'flex-row' : 'flex-col'} gap-[1px] items-center justify-center`}>
+                                                {p.hand.map((_, i) => (
+                                                    <div key={i} className={`bg-emerald-700 border border-stone-900 rounded-[2px] shadow-[inset_1px_1px_2px_rgba(255,255,255,0.3)] ${pos === 'top' ? 'w-3 h-5 sm:w-4 sm:h-6' : 'w-5 h-3 sm:w-6 sm:h-4'}`}></div>
+                                                ))}
+                                            </div>
 
                                             {p.melds && p.melds.length > 0 && (
-                                                <div className={`flex ${pos === 'top' ? 'flex-row' : 'flex-col'} gap-1 bg-black/40 p-1 rounded-lg border border-stone-600/50`}>
+                                                <div className={`flex ${pos === 'top' ? 'flex-row' : 'flex-col'} gap-1 bg-black/60 p-1 rounded-lg border border-stone-400 shadow-xl overflow-visible`}>
                                                     {p.melds.map((m, i) => (
-                                                        <div key={i} className="flex gap-0.5 bg-black/30 p-0.5 rounded border border-stone-700">
-                                                            {m.tiles.map((t, j) => <TileBlock key={j} tile={t} mini={true} isHidden={m.type === 'ankong' && (j === 1 || j === 2)} />)}
+                                                        <div key={i} className={`flex ${pos === 'top' ? 'flex-row' : 'flex-col'} gap-1 bg-black/30 p-1 rounded border border-stone-700`}>
+                                                            {m.tiles.map((t, j) => (
+                                                                // ✨ 左右玩家的門前牌旋轉 90 度並透過負邊距緊湊排列
+                                                                <div key={j} className={`${pos !== 'top' ? '-my-2 sm:-my-3 z-10 hover:z-20' : ''}`} style={{ transform: pos === 'left' ? 'rotate(90deg)' : pos === 'right' ? 'rotate(-90deg)' : 'none' }}>
+                                                                    <TileBlock tile={t} mini={true} isHidden={m.type === 'ankong' && (j === 1 || j === 2)} />
+                                                                </div>
+                                                            ))}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -1172,68 +1434,108 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
                                 return (
                                     <>
-                                        {/* ✨ 修復：將上方對手往下推避開資訊列，左右對手再微調往上避開手牌 */}
+                                        {/* ✨ 修復：將上方對手往上推，挪出更多海底空間 */}
                                         <div className="absolute left-1 sm:left-4 top-[35%] sm:top-[40%] -translate-y-1/2 z-10">{renderOpponent(leftIdx, 'left')}</div>
-                                        <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-10">{renderOpponent(topIdx, 'top')}</div>
+                                        <div className="absolute top-4 sm:top-6 left-1/2 -translate-x-1/2 z-10">{renderOpponent(topIdx, 'top')}</div>
                                         <div className="absolute right-1 sm:right-4 top-[35%] sm:top-[40%] -translate-y-1/2 z-10">{renderOpponent(rightIdx, 'right')}</div>
                                     </>
                                 );
                             })()}
                         </div>
 
-                        {/* ✨ 海底 (棄牌區大擴建與絕對排序) - 縮小高度並降底 Z-index 避免蓋住手牌 */}
-                        <div 
-                            className="absolute top-[48%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[65%] sm:w-[60%] max-w-2xl h-40 sm:h-56 bg-emerald-800/40 border-4 border-dashed border-emerald-900/60 flex flex-wrap content-start p-2 gap-1 sm:gap-2 overflow-y-auto custom-scrollbar shadow-inner z-0 rounded-lg"
-                            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
-                            onDrop={(e) => {
-                                e.preventDefault();
-                                if (draggedIdx !== null && currentTurn === players.findIndex(p=>p.id===user.uid) && !pendingAction) {
-                                    const tileToDiscard = myHand[draggedIdx];
-                                    if (tileToDiscard) discardTile(tileToDiscard.id);
-                                }
-                                setDraggedIdx(null);
-                                setDragOverIdx(null);
-                            }}
-                        >
-                            {players.flatMap(p => p.discards)
-                                .sort((a, b) => (a.dropTime || 0) - (b.dropTime || 0)) // ✨ 依照時間絕對排序
-                                .map((t, i, arr) => {
-                                    const isLatest = i === arr.length - 1; // 找出最新打出的一張
+                        {/* ✨ 海底與牌山視覺化系統 */}
+                        <div className="absolute top-[48%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[65%] sm:w-[60%] max-w-2xl h-48 sm:h-64 flex items-center justify-center pointer-events-none z-0">
+                            
+                            {/* ✨ 牌山：獨立在外層，確保不干擾海底 */}
+                            <div className="absolute -inset-4 sm:-inset-8 pointer-events-none opacity-40">
+                                {['top','bottom','left','right'].map(side => {
+                                    const sideTiles = Math.floor(wall.length / 4);
                                     return (
-                                        <div key={t.id + i} className={`scale-[0.55] sm:scale-75 origin-top-left -mr-5 -mb-6 sm:-mr-2 sm:-mb-4 drop-shadow-md transition-all ${isLatest ? 'animate-in zoom-in slide-in-from-top-10 fade-in duration-500 z-10 opacity-100 scale-[0.65] sm:scale-[0.85] rotate-2' : 'opacity-90'}`}>
-                                            {/* ✨ 更新：讓最新打出的一張牌有更生動的飛入與旋轉放大動畫 */}
-                                            <TileBlock tile={t} isHighlighted={isLatest && pendingAction} />
+                                        <div key={side} className={`absolute flex gap-[1px] ${side==='top'||side==='bottom'?'flex-row w-full justify-center':'flex-col h-full justify-center'} ${side==='top'?'top-0':side==='bottom'?'bottom-0':side==='left'?'left-0':'right-0'}`}>
+                                            {[...Array(Math.min(sideTiles, 18))].map((_, i) => (
+                                                <div key={i} className="w-2 h-4 sm:w-3 sm:h-5 bg-emerald-900 border border-stone-900 rounded-sm"></div>
+                                            ))}
                                         </div>
-                                    );
-                                })
-                            }
+                                    )
+                                })}
+                            </div>
+
+                            {/* ✨ 海底：內部絕對定位，允許拖拉並捕捉坐標 */}
+                            <div 
+                                className="relative w-full h-full bg-emerald-800/40 border-4 border-dashed border-emerald-900/60 shadow-inner rounded-lg pointer-events-auto"
+                                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    if (draggedIdx !== null && currentTurn === players.findIndex(p=>p.id===user.uid) && !pendingAction) {
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        // 抓取滑鼠放開的位置，並轉換成百分比 (%)
+                                        const dropX = Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100));
+                                        const dropY = Math.max(10, Math.min(90, ((e.clientY - rect.top) / rect.height) * 100));
+                                        const dropRot = Math.random() * 60 - 30; // 隨機旋轉角度
+
+                                        const tileToDiscard = myHand[draggedIdx];
+                                        // 將座標透過參數傳給出牌引擎
+                                        if (tileToDiscard) discardTile(tileToDiscard.id, false, { x: dropX, y: dropY, rot: dropRot });
+                                    }
+                                    setDraggedIdx(null);
+                                    setDragOverIdx(null);
+                                }}
+                            >
+                                {players.flatMap(p => p.discards)
+                                    .sort((a, b) => (a.dropTime || 0) - (b.dropTime || 0))
+                                    .map((t, i, arr) => {
+                                        const isLatest = i === arr.length - 1; 
+                                        // 取得當前螢幕是否為手機版，來決定縮小比例
+                                        const isMobile = window.innerWidth < 640;
+                                        // ✨ 放大海底的牌：最新的一張比較大，其他的維持合適的視覺大小
+                                        const scaleValue = isLatest ? (isMobile ? 0.65 : 0.75) : (isMobile ? 0.55 : 0.65);
+
+                                        return (
+                                            <div 
+                                                key={t.id + i} 
+                                                // ✨ 拿掉失效的 scale-[] 標籤，並拿掉負邊距，改用 transform 置中
+                                                className={`absolute transition-all duration-300 drop-shadow-md origin-center ${isLatest ? 'z-50 animate-in zoom-in slide-in-from-top-10 shadow-[0_0_20px_rgba(251,191,36,0.8)]' : 'z-10 opacity-90 hover:z-40 hover:opacity-100'}`}
+                                                style={{ 
+                                                    // 套用物理排斥引擎算出來的 X/Y 座標與旋轉
+                                                    left: `${t.dropX ?? (20 + (i % 10) * 6)}%`, 
+                                                    top: `${t.dropY ?? (20 + Math.floor(i / 10) * 15)}%`,
+                                                    // ✨ 強制使用 inline CSS 執行縮小與對齊，100% 絕對生效！
+                                                    transform: `translate(-50%, -50%) scale(${scaleValue}) rotate(${t.dropRot ?? 0}deg)`
+                                                }}
+                                            >
+                                                <TileBlock tile={t} isHighlighted={isLatest && pendingAction} />
+                                            </div>
+                                        );
+                                    })
+                                }
+                            </div>
                         </div>
 
                         {/* 攔截動作浮動面板 (碰/胡/過) */}
                         {pendingAction && myIdx !== -1 && pendingAction.from !== myIdx && !isSpectator && (
                             (canHu || canPong || canKong || chowOptions.length > 0) ? (
                                
-                                <div className="absolute top-[60%] sm:top-[65%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-[150] flex gap-2 sm:gap-4 bg-stone-900/95 p-3 sm:p-5 border-4 border-amber-500 shadow-[0_0_40px_rgba(0,0,0,0.9)] animate-in fade-in zoom-in-95 duration-200 flex-wrap justify-center items-center rounded-lg">
+                                <div className="absolute top-[60%] sm:top-[65%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-[150] flex gap-3 sm:gap-6 bg-stone-900/95 p-4 sm:p-6 border-4 border-amber-500 shadow-[0_0_60px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-200 flex-wrap justify-center items-center rounded-2xl">
                                     {/* ✨ 超清晰提示：誰打出了哪張牌 */}
-                                    <div className="absolute -top-14 left-1/2 -translate-x-1/2 text-white font-bold bg-stone-900 border-2 border-amber-400 px-4 py-2 text-sm sm:text-lg flex items-center gap-2 whitespace-nowrap shadow-lg rounded-full">
-                                        <img src={players[pendingAction.from].id.startsWith('ai_') ? AI_AVATARS[players[pendingAction.from].id] : (players[pendingAction.from].avatar || 'https://minotar.net/helm/Steve/64.png')} className="w-8 h-8 border border-stone-400 pixelated" />
-                                        【<span className="text-amber-300">{players[pendingAction.from].name}</span>】 打出了
-                                        <span className="scale-75 origin-center inline-block -mx-2 -my-4 pointer-events-none"><TileBlock tile={pendingAction.tile} /></span>
-                                        <span className="text-red-400 ml-1">({actionTimer}s)</span>
+                                    <div className="absolute -top-16 left-1/2 -translate-x-1/2 text-white font-bold bg-stone-900 border-2 border-amber-400 px-6 py-2 text-sm sm:text-lg flex items-center gap-2 whitespace-nowrap shadow-lg rounded-full">
+                                        <img src={players[pendingAction.from].id.startsWith('ai_') ? AI_AVATARS[players[pendingAction.from].id] : (players[pendingAction.from].avatar || 'https://minotar.net/helm/Steve/64.png')} className="w-10 h-10 border-2 border-stone-400 pixelated rounded-full" />
+                                        <span className="text-amber-300 text-xl">{players[pendingAction.from].name}</span> 打出了
+                                        <span className="scale-75 origin-center inline-block -mx-1 -my-4 pointer-events-none"><TileBlock tile={pendingAction.tile} /></span>
+                                        <span className="text-red-400 ml-2 animate-pulse">({actionTimer}s)</span>
                                     </div>
-                                    {canHu && <button onClick={() => handleIntercept('hu')} className="bg-red-600 text-white px-4 py-2 sm:px-6 sm:py-3 font-black text-xl sm:text-2xl border-2 border-red-300 shadow-lg hover:bg-red-500 active:scale-95">胡</button>}
-                                    {canKong && <button onClick={() => handleIntercept('kong')} className="bg-purple-600 text-white px-4 py-2 sm:px-6 sm:py-3 font-black text-xl sm:text-2xl border-2 border-purple-300 shadow-lg hover:bg-purple-500 active:scale-95">槓</button>}
-                                    {canPong && <button onClick={() => handleIntercept('pong')} className="bg-amber-600 text-white px-4 py-2 sm:px-6 sm:py-3 font-black text-xl sm:text-2xl border-2 border-amber-300 shadow-lg hover:bg-amber-500 active:scale-95">碰</button>}
+                                    {canHu && <button onClick={() => handleIntercept('hu')} className="bg-gradient-to-b from-red-500 to-red-700 text-white px-8 py-4 sm:px-10 sm:py-5 font-black text-3xl sm:text-4xl rounded-2xl shadow-[0_8px_20px_rgba(220,38,38,0.6)] hover:scale-105 active:scale-95 transition-all border-y-4 border-red-300">胡</button>}
+                                    {canKong && <button onClick={() => handleIntercept('kong')} className="bg-gradient-to-b from-purple-500 to-purple-700 text-white px-6 py-3 sm:px-8 sm:py-4 font-black text-2xl sm:text-3xl rounded-2xl shadow-[0_8px_20px_rgba(147,51,234,0.6)] hover:scale-105 active:scale-95 transition-all border-y-4 border-purple-300">槓</button>}
+                                    {canPong && <button onClick={() => handleIntercept('pong')} className="bg-gradient-to-b from-amber-500 to-amber-700 text-white px-6 py-3 sm:px-8 sm:py-4 font-black text-2xl sm:text-3xl rounded-2xl shadow-[0_8px_20px_rgba(217,119,6,0.6)] hover:scale-105 active:scale-95 transition-all border-y-4 border-amber-300">碰</button>}
                                     {chowOptions.map((opt, i) => (
-                                        <button key={i} onClick={() => handleIntercept('chow', opt.tiles)} className="bg-emerald-600 text-white px-3 py-2 sm:px-4 sm:py-3 font-black text-lg sm:text-xl border-2 border-emerald-300 shadow-lg hover:bg-emerald-500 active:scale-95 flex items-center">
+                                        <button key={i} onClick={() => handleIntercept('chow', opt.tiles)} className="bg-gradient-to-b from-emerald-500 to-emerald-700 text-white px-4 py-3 sm:px-6 sm:py-4 font-black text-2xl sm:text-3xl rounded-2xl shadow-[0_8px_20px_rgba(5,150,105,0.6)] hover:scale-105 active:scale-95 transition-all border-y-4 border-emerald-300 flex items-center">
                                             吃
-                                            <span className="flex gap-1 ml-2 pointer-events-none">
-                                                <span className={`bg-[#f4ebd0] px-1.5 sm:px-2 rounded shadow-inner text-xl sm:text-3xl border border-[#d4c3a3] ${getTileColor(opt.tiles[0].type, opt.tiles[0].val)}`}>{opt.tiles[0].symbol}</span>
-                                                <span className={`bg-[#f4ebd0] px-1.5 sm:px-2 rounded shadow-inner text-xl sm:text-3xl border border-[#d4c3a3] ${getTileColor(opt.tiles[1].type, opt.tiles[1].val)}`}>{opt.tiles[1].symbol}</span>
+                                            <span className="flex gap-1 ml-3 pointer-events-none">
+                                                <span className={`bg-[#f4ebd0] px-2 rounded shadow-inner text-2xl sm:text-4xl border-2 border-[#d4c3a3] ${getTileColor(opt.tiles[0].type, opt.tiles[0].val)}`}>{opt.tiles[0].symbol}</span>
+                                                <span className={`bg-[#f4ebd0] px-2 rounded shadow-inner text-2xl sm:text-4xl border-2 border-[#d4c3a3] ${getTileColor(opt.tiles[1].type, opt.tiles[1].val)}`}>{opt.tiles[1].symbol}</span>
                                             </span>
                                         </button>
                                     ))}
-                                    <button onClick={() => handleIntercept('pass')} className="bg-stone-500 text-white px-4 py-2 sm:px-6 sm:py-3 font-black text-xl sm:text-2xl border-2 border-stone-300 shadow-lg hover:bg-stone-400 active:scale-95">過</button>
+                                    <button onClick={() => handleIntercept('pass')} className="bg-gradient-to-b from-stone-500 to-stone-700 text-white px-6 py-3 sm:px-8 sm:py-4 font-black text-2xl sm:text-3xl rounded-2xl shadow-[0_8px_20px_rgba(120,113,108,0.6)] hover:scale-105 active:scale-95 transition-all border-y-4 border-stone-300">過</button>
                                 </div>
                             ) : (
                                 <div className="absolute top-2/3 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-stone-900/80 text-amber-400 px-4 py-2 font-bold border-2 border-stone-600 animate-pulse">
@@ -1256,7 +1558,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     {/* ✨ 新增：自動排序按鈕 */}
                                     <button 
                                         onClick={() => { 
-                                            playCachedSound(tileSound); 
+                                            playCachedSound(sortSound); 
                                             setMyHand(sortHand([...myHand])); 
                                         }} 
                                         className="bg-stone-600 hover:bg-stone-500 text-white font-black px-4 py-1 border-2 border-stone-400 shadow-md transition-transform active:scale-95"
@@ -1275,9 +1577,17 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     {players[currentTurn]?.id === user?.uid && checkHu(myHand) && (
                                         <button onClick={() => handleWin(currentTurn, null)} className="bg-red-600 hover:bg-red-500 text-white font-black px-4 py-1 border-2 border-red-300 shadow-md animate-bounce">自摸！</button>
                                     )}
+                                    
+                                    {/* ✨ 聽牌宣告按鈕 */}
+                                    {selectedTile && tingOptions && tingOptions[selectedTile] && !players[myIdx]?.isTing && (
+                                        <button onClick={() => discardTile(selectedTile, true)} className="bg-amber-500 hover:bg-amber-400 text-stone-900 font-black px-4 py-1 border-2 border-amber-200 shadow-[0_0_15px_rgba(251,191,36,0.8)] animate-pulse transition-transform active:scale-95">
+                                            聽牌並出牌
+                                        </button>
+                                    )}
+
                                     <button 
                                         onClick={() => discardTile(selectedTile)} 
-                                        disabled={!selectedTile || players[currentTurn]?.id !== user?.uid || !!pendingAction}
+                                        disabled={!selectedTile || players[currentTurn]?.id !== user?.uid || !!pendingAction || players[myIdx]?.isTing}
                                         className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black px-6 py-1 border-2 border-emerald-300 shadow-md transition-transform active:scale-95"
                                     >
                                         打出
@@ -1285,6 +1595,30 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 </div>
                             </div>
                             
+                            {/* ✨ 聽牌提示區加強版 (手牌可以聽牌時即顯示) */}
+                            {tingOptions && !players[myIdx]?.isTing && (
+                                <div className="absolute -top-24 left-1/2 -translate-x-1/2 bg-stone-900/95 border-4 border-amber-400 px-6 py-3 rounded-2xl shadow-[0_0_30px_rgba(251,191,36,0.6)] flex flex-col items-center gap-2 z-50 animate-in slide-in-from-bottom-4 pointer-events-none whitespace-nowrap w-max">
+                                    <span className="text-amber-400 font-black text-lg tracking-widest animate-pulse">✨ 你有牌可以聽了！ ✨</span>
+                                    {selectedTile && tingOptions[selectedTile] ? (
+                                        <div className="flex gap-2 items-center">
+                                            <span className="text-white font-bold">打出此牌聽：</span>
+                                            {tingOptions[selectedTile].map((t, i) => (
+                                                <span key={i} className={`text-2xl sm:text-3xl font-black bg-stone-100 px-2 py-1 rounded-lg border-2 border-stone-400 shadow-inner ${getTileColor(t.type, t.val)}`}>{t.symbol}</span>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <span className="text-stone-300 font-bold text-sm">請點擊發光的牌查看能聽什麼</span>
+                                    )}
+                                </div>
+                            )}
+                            
+                            {/* ✨ 玩家自己的聽牌狀態顯示 (位於遊戲視窗內部) */}
+                            {players[myIdx]?.isTing && (
+                                <div className="absolute -top-16 left-1/2 -translate-x-1/2 bg-red-600 border-2 border-white px-6 py-2 rounded-full shadow-[0_0_20px_rgba(220,38,38,0.8)] text-white font-black animate-pulse z-50 flex items-center gap-2 whitespace-nowrap pointer-events-none">
+                                    <span className="material-symbols-outlined">bolt</span> 聽牌狀態 (自動摸打)
+                                </div>
+                            )}
+
                             {/* 門前清 (吃碰區) */}
                             {players.find(p=>p.id===user.uid)?.melds.length > 0 && (
                                 <div className="flex gap-2 mb-2 px-2">
@@ -1309,9 +1643,17 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     return (
                                         <div 
                                             key={tile.id} 
-                                            draggable
-                                            onDragStart={(e) => { setDraggedIdx(index); e.dataTransfer.effectAllowed = 'move'; }}
-                                            onDragOver={(e) => { e.preventDefault(); if (draggedIdx !== null && draggedIdx !== index) setDragOverIdx(index); }}
+                                            draggable={!players[myIdx]?.isTing} // ✨ 聽牌後鎖定手牌不可拖拉
+                                            onDragStart={(e) => { if(players[myIdx]?.isTing) { e.preventDefault(); return; } setDraggedIdx(index); e.dataTransfer.effectAllowed = 'move'; }}
+                                            onDragOver={(e) => { 
+                                                e.preventDefault(); 
+                                                if (draggedIdx !== null && draggedIdx !== index) {
+                                                    if (dragOverIdx !== index) {
+                                                        playQuietSound(clickSound); // ✨ 牌經過時的理牌噠搭聲
+                                                        setDragOverIdx(index);
+                                                    }
+                                                } 
+                                            }}
                                             onDragLeave={() => { if(dragOverIdx === index) setDragOverIdx(null); }}
                                             
                                             onDrop={(e) => {
@@ -1330,23 +1672,44 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                                 setMyHand(newHand);
                                                 setDraggedIdx(null);
                                                 setDragOverIdx(null);
-                                            }}                                            onDragEnd={() => { setDraggedIdx(null); setDragOverIdx(null); }}
-                                            className={`transition-all duration-200 cursor-grab active:cursor-grabbing ${isDrawnTile ? 'ml-2 sm:ml-4' : ''} ${isDragging ? 'opacity-30 scale-75 -translate-y-4' : ''} ${isDragOverLeft ? 'border-l-[8px] border-l-amber-500 rounded-l-lg pl-1' : ''} ${isDragOverRight ? 'border-r-[8px] border-r-amber-500 rounded-r-lg pr-1' : ''}`}
-                                        >
-                                            <TileBlock 
-                                                tile={tile} 
-                                                selected={selectedTile === tile.id}
-                                                isHighlighted={highlightIds.includes(tile.id)}
-                                                onClick={() => {
-                                                    playCachedSound(clickSound);
+                                            }}                                            
+                                            onDragEnd={() => { setDraggedIdx(null); setDragOverIdx(null); }}
+                                            // ✨ 修正：將 onClick 改為 onPointerUp，並綁定在外層，避免拖拉事件吃掉點擊
+                                            onPointerUp={(e) => {
+                                                if (draggedIdx !== null) return; // 如果是拖拉放開，不觸發點擊
+                                                playCachedSound(clickSound);
+                                                if (selectedTile === tile.id && players[currentTurn]?.id === user?.uid && !pendingAction) {
+                                                    discardTile(tile.id);
+                                                    // ✨ 移除重複的 playCachedSound(tileSound); 避免打牌時瞬間響兩次
+                                                } else {
                                                     setSelectedTile(tile.id === selectedTile ? null : tile.id);
-                                                }}
-                                            />
+                                                }
+                                            }}
+                                            className={`transition-all duration-200 cursor-pointer hover:-translate-y-2 ${isDrawnTile ? 'ml-2 sm:ml-4' : ''} ${isDragging ? 'opacity-30 scale-75 -translate-y-4' : ''} ${isDragOverLeft ? 'border-l-[8px] border-l-amber-500 rounded-l-lg pl-1' : ''} ${isDragOverRight ? 'border-r-[8px] border-r-amber-500 rounded-r-lg pr-1' : ''}`}
+                                        >
+                                            <div className="pointer-events-none">
+                                                <TileBlock 
+                                                    tile={tile} 
+                                                    selected={selectedTile === tile.id}
+                                                    // ✨ 讓打出去可以聽牌的牌發光，引導玩家點擊
+                                                    isHighlighted={highlightIds.includes(tile.id) || (tingOptions && tingOptions[tile.id] && !players[myIdx]?.isTing)}
+                                                />
+                                            </div>
                                         </div>
                                     );
                                 })}
                             </div>
                         </div>
+                        
+                        {/* ✨ 倒牌動畫全螢幕特效 (改為遊戲內透明層) */}
+                        {winAnimation && (
+                            <div className="absolute inset-0 z-[200] bg-black/30 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-500 pointer-events-auto">
+                                <span className="text-6xl sm:text-8xl animate-bounce mb-2 drop-shadow-[0_0_20px_rgba(251,191,36,1)]">🀄</span>
+                                <h1 className="text-3xl sm:text-5xl font-black text-amber-400 drop-shadow-[0_0_15px_rgba(251,191,36,0.8)] animate-pulse">
+                                    {winAnimation} 胡牌啦！
+                                </h1>
+                            </div>
+                        )}
                         
                         {/* 聊天室 */}
                         {showChatModal && (
@@ -1415,7 +1778,19 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     return (
                                         <div key={i} className={`p-3 sm:p-4 border-2 flex flex-col xl:flex-row justify-between items-center gap-4 ${isWinner ? 'bg-amber-900/40 border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.6)]' : 'bg-stone-800/80 border-stone-600'}`}>
                                             <div className="flex flex-col items-center xl:items-start w-full xl:w-1/4 shrink-0">
-                                                <span className={`font-black text-lg sm:text-xl ${isWinner ? 'text-amber-400 animate-pulse' : 'text-white'}`}>{p.name}</span>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className={`font-black text-lg sm:text-xl ${isWinner ? 'text-amber-400 animate-pulse' : 'text-white'}`}>{p.name}</span>
+                                                    {/* ✨ 顯示莊家 */}
+                                                    {summaryData.dealerIdx === i && (
+                                                        <span className="bg-amber-600 text-white text-xs font-black px-2 py-0.5 rounded border border-amber-300 shadow-sm">莊家</span>
+                                                    )}
+                                                    {/* ✨ 顯示胡的那張牌 */}
+                                                    {isWinner && summaryData.huTile && (
+                                                        <span className="flex items-center gap-1 bg-red-900/60 text-red-200 border border-red-500 px-2 py-0.5 rounded text-sm font-bold shadow-[0_0_10px_red]">
+                                                            胡 <span className={`text-xl bg-white px-0.5 rounded shadow-inner ${getTileColor(summaryData.huTile.type, summaryData.huTile.val)}`}>{summaryData.huTile.symbol}</span>
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 {p.prize > 0 ? (
                                                     <span className="text-emerald-400 font-black text-xl bg-black/40 px-2 py-1 rounded mt-1">+ {p.prize} 💎</span>
                                                 ) : p.penalty > 0 ? (
@@ -1442,7 +1817,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                                 <div className="flex gap-0.5 sm:gap-1 flex-wrap items-center">
                                                     {p.hand && p.hand.length > 0 ? (
                                                         p.hand.map((t, tIdx) => (
-                                                            <TileBlock key={tIdx} tile={t} mini={window.innerWidth < 640} />
+                                                            <TileBlock key={tIdx} tile={t} mini={true} /> // ✨ 強制使用縮小版麻將，避免畫面擁擠
                                                         ))
                                                     ) : (
                                                         <span className="text-stone-500 font-bold text-sm">無手牌</span>
@@ -1500,6 +1875,18 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 <button onClick={quitAndLeaveRoom} className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-black border-2 border-black shadow-lg transition-transform active:scale-95">退出結算</button>
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {/* ✨ 全螢幕洗牌特效 (改為遊戲內透明層) */}
+                {isShuffling && (
+                    <div className="absolute inset-0 z-[500] bg-black/30 flex flex-col items-center justify-center pointer-events-auto rounded-lg">
+                        <div className="flex flex-wrap justify-center gap-3 max-w-sm animate-pulse">
+                            {[...Array(8)].map((_, i) => (
+                                <div key={i} className="w-10 h-14 sm:w-12 sm:h-16 bg-emerald-700 border-2 border-stone-800 rounded shadow-xl transform rotate-12 animate-bounce" style={{ animationDelay: `${i * 100}ms` }}></div>
+                            ))}
+                        </div>
+                        <h2 className="text-white text-2xl sm:text-3xl font-black mt-6 tracking-[0.5em] animate-pulse drop-shadow-md">洗牌中...</h2>
                     </div>
                 )}
 
