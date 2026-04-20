@@ -42,7 +42,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
     const [selectedTile, setSelectedTile] = useState(null);
     const [actionTimer, setActionTimer] = useState(0);
     const [timeLeft, setTimeLeft] = useState(15); // ✨ 新增：常規回合倒數狀態
-    const [autoReadyTimer, setAutoReadyTimer] = useState(5); // ✨ 新增：結算自動準備倒數
+    const [autoReadyTimer, setAutoReadyTimer] = useState(60); // ✨ 修改：結算畫面 60 秒防掛網踢人倒數
 
     // 判斷遊戲是否已達總局數/圈數
     const checkIsGameOver = () => {
@@ -306,22 +306,35 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                     if (gameState === 'playing') {
                         const penalty = (roomSettings.baseBet || 50) + ((roomSettings.taiBet || 20) * 10);
                         const batch = window.db.batch();
-                        const increment = window.firebase.firestore.FieldValue.increment;
+                        
+                        // ✨ 修正：安全取得 increment 函式，避免 window.firebase undefined 導致報錯中斷寫入
+                        const fb = typeof firebase !== 'undefined' ? firebase : window.firebase;
+                        const increment = fb.firestore.FieldValue.increment;
                         
                         const myRef = window.db.collection('users').doc(user.uid);
-                        batch.set(myRef, { mcData: { diamonds: increment(-(penalty * 3)) } }, { merge: true });
+                        // ✨ 同步扣除根目錄的 coins 與 mcData.diamonds，確保首頁籌碼能立即顯示減少
+                        batch.set(myRef, { 
+                            coins: increment(-(penalty * 3)),
+                            mcData: { diamonds: increment(-(penalty * 3)) } 
+                        }, { merge: true });
 
                         const currentPlayers = d.players || [];
                         currentPlayers.forEach(p => {
                             if (p.id !== user.uid && !p.id.startsWith('ai_')) {
                                 const otherRef = window.db.collection('users').doc(p.id);
-                                batch.set(otherRef, { mcData: { diamonds: increment(penalty) } }, { merge: true });
+                                // 依據安全規則，對其他人只能更新 mcData 內部欄位
+                                batch.set(otherRef, { 
+                                    mcData: { 
+                                        diamonds: increment(penalty),
+                                        coins: increment(penalty)
+                                    } 
+                                }, { merge: true });
                             }
                         });
                         
                         await batch.commit().catch(e => console.error("扣款/發放失敗", e));
 
-                        showToast(`逃跑懲罰！已扣除 ${penalty * 3} 💎`);
+                        showToast(`逃跑懲罰！已真實扣除 ${penalty * 3} 💎`);
                         const newScores = [...(d.gameContext?.scores || [0,0,0,0])];
                         const myIdx = currentPlayers.findIndex(pl => pl.id === user.uid);
                         if(myIdx !== -1) {
@@ -390,13 +403,20 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         deck.sort(() => Math.random() - 0.5);
 
         // 2. 建立 4 人名單
-        let roster = finalLobbyPlayers.map(p => ({ ...p, isMe: p.id === user.uid }));
-        const aiNames = ['村民 (AI)', '終界使者 (AI)', '苦力怕 (AI)'];
-        while (roster.length < 4) {
-            const aiIdx = roster.length;
-            roster.push({ id: `ai_${aiIdx}`, name: aiNames[aiIdx - 1], isMe: false });
+        let roster;
+        if (gameContext && gameContext.totalHands > 0) {
+            // ✨ 修復 BUG：第二局之後，維持原本座位與玩家，絕對不重新洗牌打亂莊家
+            roster = finalLobbyPlayers.map(p => ({ ...p, isMe: p.id === user.uid }));
+        } else {
+            // ✨ 第一局：補足 AI 並隨機分配座位
+            roster = finalLobbyPlayers.map(p => ({ ...p, isMe: p.id === user.uid }));
+            const aiNames = ['村民 (AI)', '終界使者 (AI)', '苦力怕 (AI)'];
+            while (roster.length < 4) {
+                const aiIdx = roster.length;
+                roster.push({ id: `ai_${aiIdx}`, name: aiNames[aiIdx - 1], isMe: false });
+            }
+            roster.sort(() => Math.random() - 0.5); 
         }
-        roster.sort(() => Math.random() - 0.5); // 隨機座位 (莊家為 index 0)
 
         // 3. 發牌 (莊家 17 張，閒家 16 張)
         const nextDealerIdx = gameContext ? gameContext.dealer : 0;
@@ -910,9 +930,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             players: resetPlayersForSummary
         };
 
-        setAutoReadyTimer(5); // 進入結算前重置5秒自動準備倒數
+        setAutoReadyTimer(60); // ✨ 進入結算前重置 60 秒自動準備倒數
 
-        // ✨ 真實倒牌動畫資料：傳入贏家座位、最終手牌，與放槍苦主(若有)
+        // ✨ 真實倒牌動畫資料
         const winAnimData = { 
             winnerIdx, 
             name: players[winnerIdx].name, 
@@ -922,14 +942,43 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         };
 
         if (roomCode) {
-            window.db.collection("mjRooms").doc(roomCode).update({ 
-                winAnimation: winAnimData,
-                pendingAction: null // ✨ 立即清除攔截狀態，防止計時器繼續跑導致幽靈回合或結算衝突
+            const batch = window.db.batch();
+            const fb = typeof firebase !== 'undefined' ? firebase : window.firebase;
+            const increment = fb.firestore.FieldValue.increment;
+
+            // ✨ 真實寫入：將贏家的獎金與輸家的扣款反映到資料庫 (合規的雙重扣款)
+            results.forEach((r, i) => {
+                const uid = players[i].id;
+                if (!uid.startsWith('ai_')) {
+                    const ref = window.db.collection('users').doc(uid);
+                    let changes = {};
+                    const amount = i === winnerIdx ? r.prize : -r.penalty;
+                    if (amount !== 0) {
+                        if (uid === user.uid) {
+                            // 自己可以改 root 的 coins 讓畫面馬上更新
+                            changes = { coins: increment(amount), mcData: { diamonds: increment(amount) } };
+                        } else {
+                            // 依據安全規則，對其他人只能更新 mcData 內部欄位
+                            changes = { mcData: { diamonds: increment(amount), coins: increment(amount) } };
+                        }
+                        batch.set(ref, changes, { merge: true });
+                    }
+                }
             });
+
+            // 更新房間狀態，觸發前端動畫
+            const roomRef = window.db.collection("mjRooms").doc(roomCode);
+            batch.update(roomRef, { 
+                winAnimation: winAnimData,
+                pendingAction: null // 清除攔截狀態
+            });
+            await batch.commit().catch(e => console.error("結算扣款失敗", e));
+
             setTimeout(() => {
                 window.db.collection("mjRooms").doc(roomCode).update({ ...updateData, winAnimation: null });
             }, 4000);
         } else {
+            // 單機模式
             setPendingAction(null);
             setWinAnimation(winAnimData);
             setTimeout(() => {
@@ -947,7 +996,7 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         newContext.totalHands += 1;
 
         const resetPlayersForSummary = players.map(p => ({ ...p, isReady: false, isMe: false }));
-        setAutoReadyTimer(5); // 進入結算前重置5秒自動準備倒數
+        setAutoReadyTimer(60); // ✨ 進入結算前重置 60 秒自動準備倒數
 
         const updateData = {
             status: 'summary',
@@ -981,7 +1030,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                     if (data.status === 'lobby' && gameState !== 'lobby') setGameState('lobby');
 
                     if (data.status === 'playing' || data.status === 'summary') {
-                        if (gameState === 'lobby' && data.status === 'playing') setGameState('playing');
+                        // ✨ 修復 BUG：允許從 summary (結算) 直接無縫進入下一局的 playing
+                        if ((gameState === 'lobby' || gameState === 'summary') && data.status === 'playing') setGameState('playing');
                         
                         const syncedPlayers = (data.players || []).map(p => ({ ...p, isMe: p.id === user.uid }));
                         setPlayers(syncedPlayers);
