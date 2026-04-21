@@ -15,10 +15,13 @@ function Dashboard(props) {
     const [isJumping, setIsJumping] = useState(false); // ✨ 新增：跳轉載入狀態
     const [isRefreshing, setIsRefreshing] = useState(false); // ✨ 新增：背景整理狀態
     
-    // 🚀 終極提速：加入題庫顯示數量限制，大幅降低網路下載量
-    const [visibleLimit, setVisibleLimit] = useState(10);
+    // 🚀 題庫分頁與重新整理狀態
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageInput, setPageInput] = useState('1'); // 新增：支援手動輸入分頁
     const [refreshTrigger, setRefreshTrigger] = useState(0);
-    const [hasMore, setHasMore] = useState(true);
+
+    // 確保點擊上下頁時，輸入框的數字也能跟著同步
+    useEffect(() => { setPageInput(currentPage.toString()); }, [currentPage]);
 
     const [showShareModal, setShowShareModal] = useState(null);
     const [showMoveModal, setShowMoveModal] = useState(null);
@@ -42,12 +45,13 @@ function Dashboard(props) {
     const [pendingShareCode, setPendingShareCode] = useState(() => new URLSearchParams(window.location.search).get('shareCode'));
 
     // ✨ 新增：將 [公開試題管理] 設為固定分頁，方便你隨時點選
-    const specialFolders = ['我建立的試題', '[公開試題管理]', '未分類', '任務牆'];
+    const specialFolders = ['全部', '我建立的試題', '來自匯入', '[公開試題管理]', '未分類', '任務牆'];
     const dynamicFolders = records.map(r => r.folder).filter(f => f && !specialFolders.includes(f));
     const rawUserFolders = [...(userProfile.folders || []), ...dynamicFolders].filter(f => !specialFolders.includes(f));
     const userFolders = [...specialFolders, ...Array.from(new Set(rawUserFolders))];
     
-    const [currentFolder, setCurrentFolder] = useState('我建立的試題');
+    const [currentFolder, setCurrentFolder] = useState('全部');
+    const itemsPerPage = 10;
     const [filters, setFilters] = useState({ todo: true, doing: true, done: true });
 
     // 新增：樹狀結構轉換邏輯
@@ -147,46 +151,30 @@ function Dashboard(props) {
 
     useEffect(() => {
         let isMounted = true;
-        // 🚀 移除愚蠢的 800ms 強制關閉動畫，完全信任 Firebase 的連線狀態
 
-        // 🚀 終極提速：利用 .limit() 讓 Firebase 每次只下載 15 份考卷，避開海量資料下載卡死
+        // 🚀 全域搜尋支援：取消 limit，一次載入所有清單元資料以供搜尋與分頁
         const unsubscribe = window.db.collection('users').doc(user.uid).collection('quizzes')
             .orderBy('createdAt', 'desc')
-            .limit(visibleLimit)
             .onSnapshot({ includeMetadataChanges: true }, snapshot => {
                 if (isMounted) {
-                    // ✨ 智慧判斷：如果是新用戶空快取，絕對不准提早關閉載入動畫！
                     if (snapshot.empty && snapshot.metadata.fromCache) return;
                 }
 
                 if (isMounted) {
-                    // 如果正在背景更新，且目前畫面是空的，則不准關閉 Loading
                     if (snapshot.metadata.hasPendingWrites && records.length === 0) {
                         // 繼續等待雲端回應
                     } else {
                         setLoading(false);
                     }
-
-                    if (snapshot.docs.length < visibleLimit) {
-                        setHasMore(false);
-                    } else {
-                        setHasMore(true);
-                    }
-                    
-                    // ✨ 優化：如果是本地端發出的變更，不需要重新 loading
-                    const isLocal = snapshot.metadata.hasPendingWrites;
-                    
                     
                     setTimeout(() => {
                         const newRecords = snapshot.docs.map(doc => {
                             const data = doc.data();
-                            // 🚀 核心升級：只有舊版被壓縮過的資料才需要解壓縮，新版資料直接通過，速度提升 10 倍！
                             if (typeof data.results === 'string') data.results = safeDecompress(data.results, 'object');
                             if (typeof data.userAnswers === 'string') data.userAnswers = safeDecompress(data.userAnswers, 'array');
                             return { id: doc.id, ...data };
                         });
                         
-                        // 💾 存入全域記憶體，確保下次切換回來瞬間顯示
                         window._cachedRecords = newRecords;
                         window._hasLoadedRecords = true;
                         
@@ -201,10 +189,9 @@ function Dashboard(props) {
 
         return () => {
             isMounted = false;
-            
             unsubscribe();
         };
-    }, [user, visibleLimit, refreshTrigger]);
+    }, [user, refreshTrigger]);
 
     const handleDelete = (targetQuizzes) => {
         const items = Array.isArray(targetQuizzes) ? targetQuizzes : [targetQuizzes];
@@ -524,21 +511,24 @@ function Dashboard(props) {
 
     const displayedRecords = records.filter(rec => {
         // 資料夾過濾
-        if (currentFolder === '我建立的試題') {
+        if (currentFolder === '全部') {
+            if (rec.isTask) return false;
+        } else if (currentFolder === '我建立的試題') {
             if (rec.isShared || rec.isTask) return false;
+        } else if (currentFolder === '來自匯入') {
+            if (!rec.isShared) return false;
         } else {
             // ✨ 修改：支援前綴匹配，點選父資料夾能看到子資料夾內的試卷
             const itemFolder = rec.folder || '未分類';
             if (itemFolder !== currentFolder && !itemFolder.startsWith(currentFolder + '/')) return false;
         }
         
-        // ✨ 新增搜尋過濾
+        // ✨ 新增搜尋過濾 (全域)
         if (searchQuery && !cleanQuizName(rec.testName).toLowerCase().includes(searchQuery.toLowerCase())) {
             return false;
         }
         
        const isCompleted = !!rec.results;
-        // ✨ 效能優化配套：因為前面跳過了解壓縮，這裡改用類型判斷，只要有壓縮字串就當作「進行中」
         let answeredCount = 0;
         if (Array.isArray(rec.userAnswers)) {
             answeredCount = rec.userAnswers.filter(a => a !== '').length;
@@ -554,6 +544,61 @@ function Dashboard(props) {
 
         return false;
     });
+
+    // 進行分頁切割
+    const totalPages = Math.ceil(displayedRecords.length / itemsPerPage) || 1;
+    const paginatedRecords = displayedRecords.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+    // ✨ 獨立出分頁 UI，讓上下方都可以共用
+    const renderPagination = () => {
+        if (loading || displayedRecords.length === 0) return null;
+        return (
+            <div className="flex justify-center items-center gap-2 sm:gap-4 bg-[#FCFBF7] dark:bg-stone-800 p-2 sm:p-3 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm w-fit mx-auto">
+                <button 
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 sm:px-4 py-2 font-bold rounded-xl bg-white dark:bg-stone-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-stone-800 dark:text-white"
+                >
+                    上一頁
+                </button>
+                
+                <div className="font-bold text-gray-600 dark:text-gray-300 text-sm flex items-center gap-1.5 sm:gap-2">
+                    第 
+                    <div className="relative">
+                        <input 
+                            type="number" 
+                            min="1" 
+                            max={totalPages}
+                            value={pageInput}
+                            onChange={(e) => setPageInput(e.target.value)}
+                            onBlur={(e) => {
+                                let val = parseInt(e.target.value, 10);
+                                if (isNaN(val) || val < 1) val = 1;
+                                if (val > totalPages) val = totalPages;
+                                setCurrentPage(val);
+                                setPageInput(val.toString());
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.target.blur();
+                            }}
+                            className="w-12 sm:w-16 text-center py-1 px-0.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-stone-700 text-amber-600 dark:text-amber-400 text-base sm:text-lg outline-none focus:border-amber-400 transition-colors hide-spin-button"
+                            style={{ MozAppearance: 'textfield' }} 
+                        />
+                        <style>{`.hide-spin-button::-webkit-inner-spin-button, .hide-spin-button::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }`}</style>
+                    </div>
+                    / {totalPages} 頁
+                </div>
+
+                <button 
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 sm:px-4 py-2 font-bold rounded-xl bg-white dark:bg-stone-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-stone-800 dark:text-white"
+                >
+                    下一頁
+                </button>
+            </div>
+        );
+    };
 
  // ✨ 系統重寫 5：進入試卷 (完美零死鎖、秒開、即時同步原作者更新)
   // ✨ 系統重寫 5：進入試卷 (直接從大廳抓取 Live 資料，達成毫秒級同步)
@@ -646,7 +691,6 @@ function Dashboard(props) {
                                 // ✨ 終極完成：資料已經輕量化，我們大膽加回 { source: 'server' } 實現跨裝置秒更新！
                                 window.db.collection('users').doc(user.uid).collection('quizzes')
                                     .orderBy('createdAt', 'desc')
-                                    .limit(visibleLimit)
                                     .get()
                                     .then(() => setRefreshTrigger(prev => prev + 1))
                                     .catch(e => console.error(e))
@@ -663,7 +707,7 @@ function Dashboard(props) {
                 </div>
                 <div className="relative">
                     <button 
-                        onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} 
+                        onClick={() => onStartNew(currentFolder === '全部' || currentFolder === '我建立的試題' || currentFolder === '來自匯入' ? '未分類' : currentFolder)} 
                         className={`px-6 py-2 rounded-2xl font-bold shadow-sm transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 ${tutorialStep === 2 ? 'relative z-[160] bg-amber-500 text-white ring-4 ring-amber-300 animate-pulse' : 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 hover:bg-stone-800 dark:hover:bg-gray-300'}`}
                     >
                         <span className="material-symbols-outlined text-[18px]">add</span> 新測驗
@@ -700,10 +744,10 @@ function Dashboard(props) {
                                     <div 
                                         key={sf}
                                         className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${currentFolder === sf ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md font-bold' : 'hover:bg-stone-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium'}`}
-                                        onClick={() => setCurrentFolder(sf)}
+                                        onClick={() => { setCurrentFolder(sf); setCurrentPage(1); }}
                                     >
                                         <span className="material-symbols-outlined text-[18px]">
-                                            {sf === '我建立的試題' ? 'star' : sf === '[公開試題管理]' ? 'public' : sf === '任務牆' ? 'sports_esports' : 'folder_off'}
+                                            {sf === '全部' ? 'apps' : sf === '我建立的試題' ? 'star' : sf === '來自匯入' ? 'move_to_inbox' : sf === '[公開試題管理]' ? 'public' : sf === '任務牆' ? 'sports_esports' : 'folder_off'}
                                         </span>
                                         <span className="text-sm">{sf}</span>
                                     </div>
@@ -770,7 +814,7 @@ function Dashboard(props) {
                         placeholder="在此資料夾中搜尋試題..."
                         className="flex-grow outline-none bg-transparent text-stone-800 dark:text-white text-sm font-bold min-w-0"
                         value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
+                        onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                     />
                     {searchQuery && (
                         <button onClick={() => setSearchQuery('')} className="text-gray-400 hover:text-stone-800 dark:hover:text-white ml-2 font-bold px-1"><span className="material-symbols-outlined text-[18px]">close</span></button>
@@ -814,6 +858,11 @@ function Dashboard(props) {
                 </div>
             )}
 
+           {/* 顯示在列表上方的分頁控制 */}
+            <div className="mb-4">
+                {renderPagination()}
+            </div>
+
            {loading && records.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 w-full">
                     <div className="w-16 h-16 border-4 border-stone-200 dark:border-stone-700 border-t-black dark:border-white rounded-full animate-spin mb-4"></div>
@@ -834,7 +883,7 @@ function Dashboard(props) {
                     {!searchQuery && (
                         <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto justify-center">
                             <button 
-                                onClick={() => onStartNew(currentFolder === '我建立的試題' ? '未分類' : currentFolder)} 
+                                onClick={() => onStartNew(currentFolder === '全部' || currentFolder === '我建立的試題' || currentFolder === '來自匯入' ? '未分類' : currentFolder)} 
                                 className={`flex items-center justify-center gap-1 px-8 py-3 font-black shadow-xl hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all border-2 active:shadow-none active:translate-x-1 active:translate-y-1 rounded-2xl ${tutorialStep === 2 ? 'relative z-[160] bg-amber-500 text-white border-transparent ring-4 ring-amber-300 animate-pulse' : 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 border-black dark:border-transparent'}`}
                             >
                                 <span className="material-symbols-outlined text-[20px]">add_circle</span> 建立新測驗
@@ -849,8 +898,8 @@ function Dashboard(props) {
                     )}
                 </div>
            ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6 pb-10 w-full min-w-0">
-                    {displayedRecords.map(rec => {
+                <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6 pb-4 w-full min-w-0">
+                    {paginatedRecords.map(rec => {
                         const isSelected = selectedItems.some(item => item.id === rec.id);
                         return (
                             <div 
@@ -885,6 +934,10 @@ function Dashboard(props) {
                                         )}
                                     </div>
                                     
+                                    <div className="text-xs text-gray-400 dark:text-gray-500 font-bold mb-1 mt-0.5">
+                                        建立於：{rec.createdAt?.toDate ? rec.createdAt.toDate().toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '未知時間'}
+                                    </div>
+
                                     <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                                         {rec.isTask && <span className="text-[10px] bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
                                         {rec.isShared && !rec.isTask && <span className="text-[10px] bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
@@ -939,17 +992,10 @@ function Dashboard(props) {
                 </div>
             )}
             
-            {/* 🚀 終極提速：題庫的載入更多按鈕 */}
-            {!loading && hasMore && displayedRecords.length > 0 && (
-                <div className="flex justify-center mt-6 mb-8">
-                    <button 
-                        onClick={() => setVisibleLimit(prev => prev + 15)} 
-                        className="bg-[#FCFBF7] dark:bg-stone-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 px-8 py-3 font-bold shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
-                    >
-                        <span className="material-symbols-outlined text-[20px]">download</span> 載入更多歷史考卷...
-                    </button>
-                </div>
-            )}
+            {/* 顯示在列表下方的分頁控制 */}
+            <div className="mt-2 mb-8">
+                {renderPagination()}
+            </div>
 
             {showShareModal && (
                 <div className="fixed inset-0 bg-stone-800 bg-opacity-60 flex items-center justify-center z-50 p-4">
