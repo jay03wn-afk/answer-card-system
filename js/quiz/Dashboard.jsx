@@ -948,6 +948,11 @@ function Dashboard(props) {
                                 <div className={`flex flex-col gap-2 min-w-0 w-full ${batchMode ? 'pr-8' : ''}`}>
                                     <div className="font-bold text-sm sm:text-base dark:text-white leading-relaxed min-w-0 w-full relative inline-block">
                                         {renderTestName(rec.testName, !!rec.results, rec.taskType)}
+{rec.subtitle && (
+    <div className="text-xs sm:text-sm text-stone-500 dark:text-stone-400 mt-1 font-bold truncate w-full">
+        {rec.subtitle}
+    </div>
+)}
                                         {/* ✨ 新增：偵測到答案更新且重新算分時，顯示閃爍提醒 */}
                                         {rec.hasAnswerUpdate && (
                                             <span className="absolute -top-3 -right-2 sm:-right-4 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse shadow-md border border-white dark:border-gray-800 z-10 pointer-events-none flex items-center gap-0.5">
