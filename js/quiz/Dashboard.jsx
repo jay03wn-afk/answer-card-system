@@ -40,7 +40,7 @@ function Dashboard(props) {
     const [searchQuery, setSearchQuery] = useState('');
 
     // 新增：控制資料夾目錄展開與樹狀結構
-    const [isFolderTreeOpen, setIsFolderTreeOpen] = useState(true);
+    const [isFolderTreeOpen, setIsFolderTreeOpen] = useState(false);
     const [expandedFolders, setExpandedFolders] = useState({});
     const [pendingShareCode, setPendingShareCode] = useState(() => new URLSearchParams(window.location.search).get('shareCode'));
 
@@ -553,16 +553,16 @@ function Dashboard(props) {
     const renderPagination = () => {
         if (loading || displayedRecords.length === 0) return null;
         return (
-            <div className="flex justify-center items-center gap-2 sm:gap-4 bg-[#FCFBF7] dark:bg-stone-800 p-2 sm:p-3 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm w-fit mx-auto">
+            <div className="flex justify-between items-center w-full px-1">
                 <button 
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={currentPage === 1}
-                    className="px-3 sm:px-4 py-2 font-bold rounded-xl bg-white dark:bg-stone-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-stone-800 dark:text-white"
+                    className="flex items-center gap-1 px-3 py-1.5 font-bold rounded-lg bg-white dark:bg-stone-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-stone-800 dark:text-white text-sm shadow-sm"
                 >
-                    上一頁
+                    <span className="material-symbols-outlined text-[16px]">chevron_left</span> 上一頁
                 </button>
                 
-                <div className="font-bold text-gray-600 dark:text-gray-300 text-sm flex items-center gap-1.5 sm:gap-2">
+                <div className="font-bold text-gray-500 dark:text-gray-400 text-sm flex items-center gap-1.5">
                     第 
                     <div className="relative">
                         <input 
@@ -581,7 +581,7 @@ function Dashboard(props) {
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') e.target.blur();
                             }}
-                            className="w-12 sm:w-16 text-center py-1 px-0.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-stone-700 text-amber-600 dark:text-amber-400 text-base sm:text-lg outline-none focus:border-amber-400 transition-colors hide-spin-button"
+                            className="w-10 sm:w-12 text-center py-0.5 px-0 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-stone-700 text-amber-600 dark:text-amber-400 text-sm outline-none focus:border-amber-400 transition-colors hide-spin-button"
                             style={{ MozAppearance: 'textfield' }} 
                         />
                         <style>{`.hide-spin-button::-webkit-inner-spin-button, .hide-spin-button::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }`}</style>
@@ -592,9 +592,9 @@ function Dashboard(props) {
                 <button 
                     onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                     disabled={currentPage === totalPages}
-                    className="px-3 sm:px-4 py-2 font-bold rounded-xl bg-white dark:bg-stone-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-stone-800 dark:text-white"
+                    className="flex items-center gap-1 px-3 py-1.5 font-bold rounded-lg bg-white dark:bg-stone-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-stone-800 dark:text-white text-sm shadow-sm"
                 >
-                    下一頁
+                    下一頁 <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                 </button>
             </div>
         );
