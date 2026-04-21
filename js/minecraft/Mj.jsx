@@ -312,22 +312,19 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                         const increment = fb.firestore.FieldValue.increment;
                         
                         const myRef = window.db.collection('users').doc(user.uid);
-                        // ✨ 同步扣除根目錄的 coins 與 mcData.diamonds，確保首頁籌碼能立即顯示減少
+                        // ✨ 改用 set + merge: true，避免玩家資料庫沒有 mcData 時導致整個寫入崩潰
                         batch.set(myRef, { 
                             coins: increment(-(penalty * 3)),
-                            mcData: { diamonds: increment(-(penalty * 3)) } 
+                            mcData: { diamonds: increment(-(penalty * 3)) }
                         }, { merge: true });
 
                         const currentPlayers = d.players || [];
                         currentPlayers.forEach(p => {
                             if (p.id !== user.uid && !p.id.startsWith('ai_')) {
                                 const otherRef = window.db.collection('users').doc(p.id);
-                                // 依據安全規則，對其他人只能更新 mcData 內部欄位
                                 batch.set(otherRef, { 
-                                    mcData: { 
-                                        diamonds: increment(penalty),
-                                        coins: increment(penalty)
-                                    } 
+                                    coins: increment(penalty),
+                                    mcData: { diamonds: increment(penalty) }
                                 }, { merge: true });
                             }
                         });
@@ -501,9 +498,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         };
         newPlayers[pIndex].discards.push(tileWithTime);
 
-        // ✨ 物理互斥演算法：讓海底所有的牌互相排斥，呈現真實碰撞擠壓感
+        // ✨ 物理互斥演算法：大幅降低迭代次數 (20 -> 3)，優化海底效能解決卡頓，並維持互斥碰撞效果
         const allDiscards = newPlayers.flatMap(p => p.discards);
-        for (let step = 0; step < 20; step++) {
+        for (let step = 0; step < 3; step++) {
             for (let i = 0; i < allDiscards.length; i++) {
                 for (let j = i + 1; j < allDiscards.length; j++) {
                     let d1 = allDiscards[i];
@@ -941,44 +938,48 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
             loserName: !isZimo && loserIdx !== null ? players[loserIdx].name : null 
         };
 
-        if (roomCode) {
-            const batch = window.db.batch();
-            const fb = typeof firebase !== 'undefined' ? firebase : window.firebase;
-            const increment = fb.firestore.FieldValue.increment;
+        // ✨ 真實寫入引擎：不論單機或連線，只要有輸贏都實際結算到 Firebase
+        const batch = window.db.batch();
+        const fb = typeof firebase !== 'undefined' ? firebase : window.firebase;
+        const increment = fb.firestore.FieldValue.increment;
+        let hasMoneyChange = false;
 
-            // ✨ 真實寫入：將贏家的獎金與輸家的扣款反映到資料庫 (合規的雙重扣款)
-            results.forEach((r, i) => {
-                const uid = players[i].id;
-                if (!uid.startsWith('ai_')) {
-                    const ref = window.db.collection('users').doc(uid);
-                    let changes = {};
-                    const amount = i === winnerIdx ? r.prize : -r.penalty;
-                    if (amount !== 0) {
-                        if (uid === user.uid) {
-                            // 自己可以改 root 的 coins 讓畫面馬上更新
-                            changes = { coins: increment(amount), mcData: { diamonds: increment(amount) } };
-                        } else {
-                            // 依據安全規則，對其他人只能更新 mcData 內部欄位
-                            changes = { mcData: { diamonds: increment(amount), coins: increment(amount) } };
-                        }
-                        batch.set(ref, changes, { merge: true });
-                    }
+        results.forEach((r, i) => {
+            const uid = players[i].id;
+            // 只對真實玩家扣款/加錢 (過濾掉 ai_ 開頭的機器人)
+            if (!uid.startsWith('ai_')) {
+                const ref = window.db.collection('users').doc(uid);
+                const amount = i === winnerIdx ? r.prize : -r.penalty;
+                if (amount !== 0) {
+                    // ✨ 關鍵修正：使用 set 與 merge: true，完美避開缺乏 mcData 物件導致的報錯崩潰！
+                    batch.set(ref, { 
+                        coins: increment(amount), 
+                        mcData: { diamonds: increment(amount) } 
+                    }, { merge: true });
+                    hasMoneyChange = true;
                 }
-            });
+            }
+        });
 
-            // 更新房間狀態，觸發前端動畫
+        if (roomCode) {
+            // 連線模式：更新房間狀態，觸發前端動畫
             const roomRef = window.db.collection("mjRooms").doc(roomCode);
             batch.update(roomRef, { 
                 winAnimation: winAnimData,
                 pendingAction: null // 清除攔截狀態
             });
-            await batch.commit().catch(e => console.error("結算扣款失敗", e));
+            
+            await batch.commit().catch(e => console.error("連線結算失敗", e));
 
             setTimeout(() => {
                 window.db.collection("mjRooms").doc(roomCode).update({ ...updateData, winAnimation: null });
             }, 4000);
         } else {
-            // 單機模式
+            // 單機模式：只提交金錢變更，然後直接跑動畫
+            if (hasMoneyChange) {
+                await batch.commit().catch(e => console.error("單機結算失敗", e));
+            }
+            
             setPendingAction(null);
             setWinAnimation(winAnimData);
             setTimeout(() => {
@@ -1643,33 +1644,37 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     setDragOverIdx(null);
                                 }}
                             >
-                                {players.flatMap(p => p.discards)
-                                    .sort((a, b) => (a.dropTime || 0) - (b.dropTime || 0))
-                                    .map((t, i, arr) => {
-                                        const isLatest = i === arr.length - 1; 
-                                        // 取得當前螢幕是否為手機版，來決定縮小比例
-                                        const isMobile = window.innerWidth < 640;
+                                {(() => {
+                                    // ✨ 效能優化 1：將陣列運算與手機版判斷提出迴圈，避免每張牌都重複計算
+                                    const allDiscards = players.flatMap(p => p.discards).sort((a, b) => (a.dropTime || 0) - (b.dropTime || 0));
+                                    const isMobile = window.innerWidth < 640;
+                                    
+                                    return allDiscards.map((t, i) => {
+                                        const isLatest = i === allDiscards.length - 1; 
                                         // ✨ 放大海底的牌：最新的一張比較大，其他的維持合適的視覺大小
                                         const scaleValue = isLatest ? (isMobile ? 0.65 : 0.75) : (isMobile ? 0.55 : 0.65);
 
                                         return (
                                             <div 
                                                 key={t.id + i} 
-                                                // ✨ 拿掉失效的 scale-[] 標籤，並拿掉負邊距，改用 transform 置中
-                                                className={`absolute transition-all duration-300 drop-shadow-md origin-center ${isLatest ? 'z-50 animate-in zoom-in slide-in-from-top-10 shadow-[0_0_20px_rgba(251,191,36,0.8)]' : 'z-10 opacity-90 hover:z-40 hover:opacity-100'}`}
+                                                // ✨ 效能優化 2：移除舊牌的 transition-all 與 drop-shadow-md (超級吃效能的元凶)
+                                                // 讓舊牌變成靜態渲染，只有最新的那張牌才有動畫與光暈，徹底解決越疊越卡的問題
+                                                className={`absolute origin-center ${isLatest ? 'transition-all duration-300 z-50 animate-in zoom-in slide-in-from-top-10 drop-shadow-lg shadow-[0_0_20px_rgba(251,191,36,0.8)]' : 'z-10 opacity-90 shadow-sm'} hover:z-40 hover:opacity-100`}
                                                 style={{ 
                                                     // 套用物理排斥引擎算出來的 X/Y 座標與旋轉
                                                     left: `${t.dropX ?? (20 + (i % 10) * 6)}%`, 
                                                     top: `${t.dropY ?? (20 + Math.floor(i / 10) * 15)}%`,
                                                     // ✨ 強制使用 inline CSS 執行縮小與對齊，100% 絕對生效！
-                                                    transform: `translate(-50%, -50%) scale(${scaleValue}) rotate(${t.dropRot ?? 0}deg)`
+                                                    transform: `translate(-50%, -50%) scale(${scaleValue}) rotate(${t.dropRot ?? 0}deg)`,
+                                                    // ✨ 效能優化 3：開啟 GPU 硬體加速提示，降低重繪負擔
+                                                    willChange: isLatest ? 'transform, opacity' : 'auto'
                                                 }}
                                             >
                                                 <TileBlock tile={t} isHighlighted={isLatest && pendingAction} />
                                             </div>
                                         );
-                                    })
-                                }
+                                    });
+                                })()}
                             </div>
                         </div>
 
