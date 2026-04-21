@@ -86,6 +86,7 @@ window.useQuizState = function(props) {
     }, [props.tutorialStep, step, quizId]);
 
     const [testName, setTestName] = useState(initialRecord.testName ? initialRecord.testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim() : '');
+    const [subtitle, setSubtitle] = useState(initialRecord.subtitle || ''); // ✨ 新增副標題狀態
     const [numQuestions, setNumQuestions] = useState(initialRecord.numQuestions || 50);
     const [maxScore, setMaxScore] = useState(initialRecord.maxScore || 100);
     const [roundScore, setRoundScore] = useState(initialRecord.roundScore !== false);
@@ -547,6 +548,7 @@ window.useQuizState = function(props) {
         
         const stateToSave = { 
             testName: testName || '未命名', 
+            subtitle: subtitle || '', 
             numQuestions: Number(numQuestions) || 1, 
             maxScore: Number(maxScore) || 100, 
             roundScore, 
@@ -1194,6 +1196,7 @@ ${difficultyInstruction}
 
         const updates = {};
         if (finalTestName !== (oldData.testName || '')) updates.testName = finalTestName || '未命名測驗';
+        if (subtitle !== (oldData.subtitle || '')) updates.subtitle = subtitle || '';
         if (taskType !== oldData.taskType) updates.taskType = taskType;
         if (examYear !== oldData.examYear) updates.examYear = examYear;
         if (examSubject !== oldData.examSubject) updates.examSubject = examSubject;
@@ -1995,6 +1998,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                 }
 
                 setTestName(data.testName || '');
+                setSubtitle(data.subtitle || '');
                 setNumQuestions(data.numQuestions || 50);
                 setTaskType(data.taskType || 'normal');
                 setExamYear(data.examYear || '');
@@ -2024,7 +2028,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
     return {
         lastExtractValRef,
         showHelp, setShowHelp, isAdmin, isQuizLoading, backgroundUpdateReady, latestContent,
-        quizId, setQuizId, step, setStep, testName, setTestName, numQuestions, setNumQuestions,
+        quizId, setQuizId, step, setStep, testName, setTestName, subtitle, setSubtitle, numQuestions, setNumQuestions,
         maxScore, setMaxScore, roundScore, setRoundScore, taskType, setTaskType, examYear, setExamYear,
         examSubject, setExamSubject, examTag, setExamTag, examRange, setExamRange, usedSubjects, usedTags,
         userAnswers, setUserAnswers, starred, setStarred, notes, setNotes, peekedAnswers, setPeekedAnswers,
