@@ -82,7 +82,7 @@ function QuizApp(props) {
     const {
         lastExtractValRef,
         showHelp, setShowHelp, isAdmin, isQuizLoading, backgroundUpdateReady, latestContent,
-        quizId, setQuizId, step, setStep, testName, setTestName, numQuestions, setNumQuestions,
+        quizId, setQuizId, step, setStep, testName, setTestName, subtitle, setSubtitle, numQuestions, setNumQuestions,
         maxScore, setMaxScore, roundScore, setRoundScore, taskType, setTaskType, examYear, setExamYear,
         examSubject, setExamSubject, examTag, setExamTag, examRange, setExamRange, usedSubjects, usedTags,
         userAnswers, setUserAnswers, starred, setStarred, notes, setNotes, peekedAnswers, setPeekedAnswers,
@@ -188,9 +188,18 @@ function QuizApp(props) {
                 <input 
                     type="text" 
                     placeholder="請輸入測驗名稱..." 
-                    className="w-full mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none focus:border-black dark:focus:border-white text-sm" 
+                    className="w-full mb-4 p-3 border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none focus:border-black dark:focus:border-white text-sm" 
                     value={testName} 
                     onChange={e => setTestName(e.target.value)} 
+                />
+                
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">副標題 (選填)</label>
+                <input 
+                    type="text" 
+                    placeholder="例如：112學年度期中考、某某老師命題" 
+                    className="w-full mb-6 p-3 border border-gray-300 dark:border-gray-600 bg-[#FCFBF7] dark:bg-gray-700 text-stone-800 dark:text-white rounded-2xl outline-none focus:border-black dark:focus:border-white text-sm" 
+                    value={subtitle || ''} 
+                    onChange={e => setSubtitle(e.target.value)} 
                 />
                 
                 {/* ✨ 任務牆屬性與標籤設定 (編輯模式) */}
@@ -1247,7 +1256,10 @@ function QuizApp(props) {
                     {tutorialStep === 0 && <button onClick={onBackToDashboard} className="mr-3 text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold text-sm whitespace-nowrap px-4 py-2 bg-stone-50 dark:bg-stone-700/50 border border-stone-200 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-600 rounded-xl transition-colors shrink-0">← 返回</button>}
                     <div className="overflow-hidden flex-grow flex flex-col justify-center min-w-0">
                         <div className="flex items-center space-x-2">
-    <h2 className="font-bold truncate text-base dark:text-white">{renderTestName(testName, false)}</h2>
+    <div className="flex flex-col">
+                                    <h2 className="font-bold truncate text-base dark:text-white leading-tight">{renderTestName(testName, false)}</h2>
+                                    {subtitle && <span className="text-xs text-stone-500 dark:text-stone-400 font-bold truncate">{subtitle}</span>}
+                                </div>
     {hasTimer && (
                                 <span className={`font-mono font-bold px-1.5 py-0.5 rounded-2xl border ${isTimeUp ? 'bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border-red-200 dark:border-red-700 animate-pulse' : 'bg-stone-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600'} text-xs shrink-0`}>
                                     {isTimeUp ? '時間到' : `⏱ ${formatTime(displayTime)}`}
@@ -1685,7 +1697,7 @@ function QuizApp(props) {
 <span className="flex items-center gap-1">{results ? <><span className="material-symbols-outlined text-[18px]">lightbulb</span> 試題詳解</> : <><span className="material-symbols-outlined text-[18px]">lock</span> 此題已看過答案並鎖定</>}</span>                                                        <span className="bg-[#FCFBF7] dark:bg-stone-800 px-2 py-0.5 rounded border border-amber-200 ml-auto text-stone-800 dark:text-white">標準答案: {currentCorrectAns || '未設定'}</span>
                                                     </div>
                                                     {currentExp ? (
-                                                        <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(currentExp) }} />
+                                                        <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml((currentExp || '').replace(/<br\s*\/?>/gi, '\n')) }} />
                                                     ) : (
                                                         <p className="text-gray-500 italic mb-2 font-bold">此題無提供詳解。</p>
                                                     )}
@@ -2255,8 +2267,8 @@ function QuizApp(props) {
                         </h3>
                         {explanationModalItem.content && (
                             <div className="p-4 bg-gray-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-sm text-gray-800 dark:text-gray-200 mb-4" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                <h4 className="font-bold text-gray-500 mb-2 border-b border-stone-200 dark:border-stone-700 pb-1">官方詳解</h4>
-                                {explanationModalItem.content}
+                               <h4 className="font-bold text-emerald-600 dark:text-emerald-400 mb-2 border-b border-emerald-200 dark:border-stone-700 pb-1">官方詳解</h4>
+                                <div className="whitespace-pre-wrap preview-rich-text !p-0 !bg-transparent !border-none" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml((explanationModalItem.content || '').replace(/<br\s*\/?>/gi, '\n')) }} />
                             </div>
                         )}
                         {explanationModalItem.note && (
@@ -2521,7 +2533,7 @@ if (step === 'grading') return (
                                                 </span>
                                             </div>
                                             {currentExp ? (
-                                                <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(currentExp) }} />
+                                                <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml((currentExp || '').replace(/<br\s*\/?>/gi, '\n')) }} />
                                             ) : (
                                                 <p className="text-gray-500 italic font-bold">此題無提供詳解。</p>
                                             )}
@@ -3259,8 +3271,8 @@ if (step === 'grading') return (
                         </h3>
                         {explanationModalItem.content && (
                             <div className="p-4 bg-gray-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-sm text-gray-800 dark:text-gray-200 mb-4" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                <h4 className="font-bold text-gray-500 mb-2 border-b border-stone-200 dark:border-stone-700 pb-1">官方詳解</h4>
-                                {explanationModalItem.content}
+                               <h4 className="font-bold text-emerald-600 dark:text-emerald-400 mb-2 border-b border-emerald-200 dark:border-stone-700 pb-1">官方詳解</h4>
+                                <div className="whitespace-pre-wrap preview-rich-text !p-0 !bg-transparent !border-none" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml((explanationModalItem.content || '').replace(/<br\s*\/?>/gi, '\n')) }} />
                             </div>
                         )}
                         {explanationModalItem.note && (
