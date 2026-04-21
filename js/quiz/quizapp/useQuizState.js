@@ -20,6 +20,30 @@ window.useQuizState = function(props) {
     // ✨ 修正：如果已經有成績 (results)，直接進入 results 畫面，避免出現未完成狀態
     const [step, setStep] = useState(initialRecord.forceStep || (initialRecord.id ? (initialRecord.results ? 'results' : 'answering') : 'setup'));
 
+    // ✨ 核心修復：背景自動同步原作者更新。確保就算繞過主頁直接 F5 整理，也能拿到原作者最新修改的內容
+    useEffect(() => {
+        if (initialRecord.isShared && initialRecord.originalOwner && initialRecord.originalQuizId && currentUser && quizId) {
+            const syncSharedQuiz = async () => {
+                try {
+                    const origDoc = await window.db.collection('users').doc(initialRecord.originalOwner).collection('quizContents').doc(initialRecord.originalQuizId).get();
+                    if (origDoc.exists) {
+                        const origData = origDoc.data();
+                        const myDocRef = window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId);
+                        const myDoc = await myDocRef.get();
+                        
+                        // 比對內容，如果有差異就強制更新本地端
+                        if (myDoc.exists && JSON.stringify(origData.questions) !== JSON.stringify(myDoc.data().questions)) {
+                            await myDocRef.update({ questions: origData.questions });
+                            setBackgroundUpdateReady(true); // 觸發畫面上的「發現新版本」提示
+                            setLatestContent(origData.questions);
+                        }
+                    }
+                } catch(e) { console.warn("背景同步更新失敗", e); }
+            };
+            syncSharedQuiz();
+        }
+    }, [initialRecord.isShared, initialRecord.originalOwner, initialRecord.originalQuizId, currentUser, quizId]);
+
     // ✨ 沉浸式教學：動態從「專屬公開文件」抓取教學試卷 (完美解決跨帳號權限問題)
     useEffect(() => {
         if (props.tutorialStep === 3 && step === 'setup' && !quizId) {
