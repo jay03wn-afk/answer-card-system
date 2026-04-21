@@ -8,12 +8,34 @@ const {
 } = window;
 
 function Dashboard(props) {
-    const { user, userProfile, onStartNew, onContinueQuiz, showAlert, showConfirm, showPrompt, tutorialStep } = props;
+    // 將原本的 onContinueQuiz 重新命名，讓我們可以中途攔截它
+    const { user, userProfile, onStartNew, onContinueQuiz: originalOnContinueQuiz, showAlert, showConfirm, showPrompt, tutorialStep } = props;
     const [showHelp, setShowHelp] = useState(false); // ✨ 新增：教學模式開關
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isJumping, setIsJumping] = useState(false); // ✨ 新增：跳轉載入狀態
     const [isRefreshing, setIsRefreshing] = useState(false); // ✨ 新增：背景整理狀態
+
+    // ✨ 核心修復：攔截開啟試卷的動作。如果是匯入/分享的試卷，進入前先去原作者那裡抓最新的題目覆蓋本地，保證永遠同步！
+    const onContinueQuiz = async (record) => {
+        if (record.isShared && record.originalOwner && record.originalQuizId) {
+            setIsJumping(true); // 顯示載入中動畫掩飾同步時間
+            try {
+                // 抓取原作者的最新版本
+                const origDoc = await window.db.collection('users').doc(record.originalOwner).collection('quizContents').doc(record.originalQuizId).get();
+                if (origDoc.exists) {
+                    // 將最新題目覆蓋到自己的本地端
+                    await window.db.collection('users').doc(user.uid).collection('quizContents').doc(record.id).set({
+                        questions: origDoc.data().questions
+                    }, { merge: true });
+                }
+            } catch(e) { 
+                console.warn("同步原作者更新失敗", e); 
+            }
+            setIsJumping(false);
+        }
+        originalOnContinueQuiz(record); // 呼叫原始的跳轉函數進入作答
+    };
     
     // 🚀 題庫分頁與重新整理狀態
     const [currentPage, setCurrentPage] = useState(1);
