@@ -81,6 +81,13 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [showShareModal, setShowShareModal] = useState(false);
     const [shareContent, setShareContent] = useState('');
 
+    // ✨ 新增：討論區與回饋相關狀態
+    const [comments, setComments] = useState([]);
+    const [newComment, setNewComment] = useState('');
+    const [replyTo, setReplyTo] = useState(null);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+    const [feedbackText, setFeedbackText] = useState('');
+
    useEffect(() => {
         let unsubQA = () => {};
         let unsubRecords = () => {};
@@ -133,6 +140,102 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         fetchQA();
         return () => { unsubQA(); unsubRecords(); };
     }, [user, isAdmin, targetQaId, qaLimit, refreshTrigger]);
+
+    // ✨ 新增：獨立監聽目前 activeQA 的討論區留言
+    useEffect(() => {
+        if (!activeQA) return;
+        const unsubComments = window.db.collection('fastQA').doc(activeQA.id).collection('comments')
+            .orderBy('createdAt', 'asc')
+            .onSnapshot(snap => {
+                setComments(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            });
+        return () => unsubComments();
+    }, [activeQA?.id]);
+
+    // ✨ 新增：處理發布留言
+    const handlePostComment = async () => {
+        if (!newComment.trim() || !user) return;
+        try {
+            const commentData = {
+                text: newComment,
+                creatorUid: user.uid,
+                creatorName: user.displayName || user.email?.split('@')[0] || '匿名玩家',
+                likes: [],
+                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            if (replyTo) {
+                commentData.replyToId = replyTo.id;
+                commentData.replyToName = replyTo.name;
+                commentData.replyToUid = replyTo.uid;
+            }
+
+            await window.db.collection('fastQA').doc(activeQA.id).collection('comments').add(commentData);
+            
+            // 🔔 發送通知給出題者 (如果不是自己，且不是回覆出題者本人)
+            if (activeQA.creatorUid && activeQA.creatorUid !== user.uid && (!replyTo || replyTo.uid !== activeQA.creatorUid)) {
+                window.db.collection('users').doc(activeQA.creatorUid).collection('mailbox').add({
+                    title: '試題討論區新留言',
+                    content: `玩家 ${user.displayName || '匿名'} 在您的快問快答留言：\n\n${newComment}`,
+                    isRead: false,
+                    rewardDiamonds: 0,
+                    isClaimed: false,
+                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+
+            // 🔔 發送通知給被回覆者 (如果是回覆別人，且不是回覆自己)
+            if (replyTo && replyTo.uid && replyTo.uid !== user.uid) {
+                window.db.collection('users').doc(replyTo.uid).collection('mailbox').add({
+                    title: '討論區回覆通知',
+                    content: `玩家 ${user.displayName || '匿名'} 在快問快答回覆了您：\n\n${newComment}`,
+                    isRead: false,
+                    rewardDiamonds: 0,
+                    isClaimed: false,
+                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+
+            setNewComment('');
+            setReplyTo(null);
+        } catch (e) {
+            showAlert("留言發布失敗：" + e.message);
+        }
+    };
+
+    // ✨ 新增：處理留言按讚
+    const handleLikeComment = async (commentId, currentLikes) => {
+        if (!user) return showAlert("請先登入才能按讚！");
+        const hasLiked = currentLikes.includes(user.uid);
+        const newLikes = hasLiked ? currentLikes.filter(uid => uid !== user.uid) : [...currentLikes, user.uid];
+        try {
+            await window.db.collection('fastQA').doc(activeQA.id).collection('comments').doc(commentId).update({
+                likes: newLikes
+            });
+        } catch (e) {
+            console.error("按讚失敗", e);
+        }
+    };
+
+    // ✨ 新增：送出回饋 (修復原本 window.showPrompt 找不到的 Bug)
+    const handleSendFeedback = async () => {
+        if (!feedbackText.trim() || !user || !activeQA.creatorUid) return;
+        try {
+            await window.db.collection('users').doc(activeQA.creatorUid).collection('mailbox').add({
+                title: '試題回饋與揪錯通知',
+                content: `玩家 ${user.displayName || '匿名'} 對您的快問快答「${activeQA.question.replace(/<[^>]+>/g, '').substring(0,15)}...」發送了回饋：\n\n${feedbackText}`,
+                isRead: false,
+                rewardDiamonds: 0,
+                isClaimed: false,
+                createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+            setShowFeedbackModal(false);
+            setFeedbackText('');
+            showAlert("回饋已成功發送給作者！");
+        } catch (e) {
+            showAlert("回饋發送失敗：" + e.message);
+        }
+    };
 
     const handleAddQA = async () => {
         if (!question || !explanation || (isAdmin && customReward < 1)) return showAlert('請填寫完整題目與詳解！');
@@ -783,22 +886,72 @@ D. 第四個選項`}
                                         <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap preview-rich-text leading-relaxed" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(activeQA.explanation) }}></div>
                                     </div>
                                     {activeQA.creatorUid && activeQA.creatorUid !== user?.uid && (
-                                        <button onClick={() => {
-                                            window.showPrompt("請輸入要給作者的回饋或揪錯：", "", (msg) => {
-                                                if(!msg) return;
-                                                window.db.collection('users').doc(activeQA.creatorUid).collection('mailbox').add({
-                                                    title: '試題回饋通知',
-                                                    content: `玩家 ${user?.displayName || '匿名'} 對您的快問快答「${activeQA.question.replace(/<[^>]+>/g, '').substring(0,10)}...」發送了回饋：\n\n${msg}`,
-                                                    isRead: false,
-                                                    rewardDiamonds: 0,
-                                                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                                                });
-                                                showAlert("回饋已發送給作者！");
-                                            });
-                                        }} className="mt-4 w-full bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 font-bold py-3 rounded-2xl text-sm flex justify-center items-center gap-2 hover:bg-stone-50 dark:hover:bg-stone-700 transition-colors shadow-sm">
+                                        <button onClick={() => setShowFeedbackModal(true)} className="mt-4 w-full bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 font-bold py-3 rounded-2xl text-sm flex justify-center items-center gap-2 hover:bg-stone-50 dark:hover:bg-stone-700 transition-colors shadow-sm">
                                             <span className="material-symbols-outlined text-[18px]">feedback</span> 傳送試題回饋給作者
                                         </button>
                                     )}
+
+                                    {/* ✨ 新增：討論區區塊 */}
+                                    <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-200 dark:border-stone-700">
+                                        <h4 className="font-black mb-4 text-lg text-stone-800 dark:text-white flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-indigo-500">forum</span> 討論區 ({comments.length})
+                                        </h4>
+                                        
+                                        {/* 留言列表 */}
+                                        <div className="space-y-4 mb-6 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                                            {comments.length === 0 ? (
+                                                <p className="text-center text-gray-400 dark:text-gray-500 font-bold py-4">目前還沒有留言，來搶頭香吧！</p>
+                                            ) : (
+                                                comments.map(c => (
+                                                    <div key={c.id} className="bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 p-4 rounded-2xl shadow-sm">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-black text-sm text-stone-800 dark:text-gray-200">{c.creatorName}</span>
+                                                                {c.creatorUid === activeQA.creatorUid && <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded font-bold">作者</span>}
+                                                            </div>
+                                                            <span className="text-xs text-gray-400">{c.createdAt?.toDate ? c.createdAt.toDate().toLocaleString('zh-TW', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '剛剛'}</span>
+                                                        </div>
+                                                        {c.replyToName && (
+                                                            <div className="text-xs bg-gray-50 dark:bg-stone-700/50 text-gray-500 dark:text-gray-400 p-1.5 rounded mb-2 inline-block border border-gray-100 dark:border-stone-600">
+                                                                回覆 @{c.replyToName}
+                                                            </div>
+                                                        )}
+                                                        <p className="text-sm text-stone-700 dark:text-gray-300 whitespace-pre-wrap">{c.text}</p>
+                                                        <div className="flex justify-end gap-4 mt-2">
+                                                            <button onClick={() => setReplyTo({ id: c.id, name: c.creatorName, uid: c.creatorUid })} className="text-xs text-gray-500 hover:text-indigo-500 font-bold flex items-center gap-1 transition-colors">
+                                                                <span className="material-symbols-outlined text-[14px]">reply</span> 回覆
+                                                            </button>
+                                                            <button onClick={() => handleLikeComment(c.id, c.likes || [])} className={`text-xs font-bold flex items-center gap-1 transition-colors ${(c.likes || []).includes(user?.uid) ? 'text-rose-500' : 'text-gray-500 hover:text-rose-500'}`}>
+                                                                <span className="material-symbols-outlined text-[14px]">{(c.likes || []).includes(user?.uid) ? 'favorite' : 'favorite_border'}</span> {(c.likes || []).length > 0 ? (c.likes || []).length : '讚'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+
+                                        {/* 發布留言輸入框 */}
+                                        <div className="bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-3 rounded-2xl">
+                                            {replyTo && (
+                                                <div className="flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs px-3 py-1.5 rounded-lg mb-2 font-bold">
+                                                    <span>正在回覆 @{replyTo.name}</span>
+                                                    <button onClick={() => setReplyTo(null)} className="hover:text-indigo-900 dark:hover:text-white"><span className="material-symbols-outlined text-[14px]">close</span></button>
+                                                </div>
+                                            )}
+                                            <div className="flex gap-2">
+                                                <textarea 
+                                                    value={newComment}
+                                                    onChange={(e) => setNewComment(e.target.value)}
+                                                    placeholder="分享你的解題思路或疑問..."
+                                                    className="flex-1 bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2 text-sm outline-none resize-none focus:border-indigo-400 dark:focus:border-indigo-500 transition-colors dark:text-white min-h-[44px]"
+                                                    rows="1"
+                                                />
+                                                <button onClick={handlePostComment} disabled={!newComment.trim()} className="bg-indigo-500 text-white px-4 rounded-xl font-bold hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0 flex items-center justify-center">
+                                                    <span className="material-symbols-outlined text-[20px]">send</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </>
                             ) : (
                                 <div className="p-8 bg-stone-50 dark:bg-stone-800 border-2 border-dashed border-gray-300 dark:border-stone-600 text-center rounded-2xl">
@@ -814,6 +967,29 @@ D. 第四個選項`}
                 </div>
             )}
             </>
+            )}
+
+            {/* ✨ 新增：回饋作者專用的 Modal */}
+            {showFeedbackModal && (
+                <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-md rounded-3xl shadow-2xl animate-fade-in border border-stone-200 dark:border-stone-700">
+                        <h3 className="font-black text-stone-800 dark:text-white mb-4 flex justify-between items-center text-lg border-b border-stone-200 dark:border-stone-700 pb-3">
+                            <span className="flex items-center gap-2"><span className="material-symbols-outlined text-[22px] text-amber-500">rate_review</span> 回饋作者或揪錯</span>
+                            <button onClick={() => setShowFeedbackModal(false)} className="text-stone-400 hover:text-stone-600 dark:hover:text-white transition-colors"><span className="material-symbols-outlined text-[20px]">close</span></button>
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3 font-bold">作者將會收到您的訊息與通知，如果有發現題目錯誤或有建議，請在這裡告訴作者！</p>
+                        <textarea 
+                            value={feedbackText} 
+                            onChange={(e) => setFeedbackText(e.target.value)}
+                            placeholder="例如：題目敘述有誤，答案應該是..."
+                            className="w-full h-32 p-4 text-sm border-2 border-stone-200 dark:border-stone-600 rounded-xl mb-4 outline-none resize-none bg-white dark:bg-stone-900 text-stone-700 dark:text-gray-300 focus:border-amber-400 transition-colors" 
+                            autoFocus
+                        />
+                        <button onClick={handleSendFeedback} disabled={!feedbackText.trim()} className="w-full bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 font-black py-3 rounded-xl text-base transition-transform active:scale-95 shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <span className="material-symbols-outlined text-[20px]">send</span> 確定送出
+                        </button>
+                    </div>
+                </div>
             )}
 
             {showShareModal && (

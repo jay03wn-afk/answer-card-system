@@ -6,6 +6,135 @@ const {
     ContentEditableEditor, AnswerGridInput, SpecificAnswerGridInput, HelpTooltip, 
     safeDecompress, processQuestionContent, extractSpecificContent, extractSpecificExplanation 
 } = window;
+
+function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
+    const [folder, setFolder] = useState(initialData?.folder || '未分類');
+    const [newFolder, setNewFolder] = useState('');
+    const [qText, setQText] = useState(initialData?.qText || '');
+    const [qHtml] = useState(initialData?.qHtml || ''); 
+    const [qImage, setQImage] = useState(initialData?.qImage || null);
+    const [nText, setNText] = useState(initialData?.nText || '');
+    const [nImage, setNImage] = useState(initialData?.nImage || null);
+    const [isSaving, setIsSaving] = useState(false);
+    
+    // ✨ 新增：用來顯示建立新資料夾的視窗
+    const [showNewFolderInput, setShowNewFolderInput] = useState(false);
+
+    const handleSave = async () => {
+        const finalFolder = (showNewFolderInput && newFolder.trim() ? newFolder.trim() : folder) || '未分類';
+        setIsSaving(true);
+        await onSave({ folder: finalFolder, qText: qText.trim(), qHtml, qImage, nText: nText.trim(), nImage });
+        setIsSaving(false);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-stone-800 bg-opacity-70 flex items-center justify-center z-[200] p-4">
+            <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-lg rounded-2xl shadow-2xl transform transition-all max-h-[90dvh] overflow-y-auto custom-scrollbar border-t-4 border-amber-500 dark:border-amber-600">
+                <h3 className="font-black text-xl mb-4 flex justify-between items-center dark:text-white border-b border-stone-200 dark:border-stone-700 pb-2">
+                    <span>{title}</span>
+                    <button onClick={onClose} className="text-gray-400 hover:text-red-500 font-bold transition-colors flex items-center"><span className="material-symbols-outlined">close</span></button>
+                </h3>
+                
+                <div className="mb-4">
+                    <div className="flex justify-between items-center mb-2">
+                        <label className="text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">folder</span> 選擇收錄資料夾</label>
+                        <button 
+                            onClick={() => {
+                                setShowNewFolderInput(!showNewFolderInput);
+                                if (!showNewFolderInput) setNewFolder(folder === '未分類' ? '' : folder + '/');
+                            }} 
+                            className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1"
+                        >
+                            <span className="material-symbols-outlined text-[14px]">create_new_folder</span> 
+                            {showNewFolderInput ? '取消新增' : '建立新資料夾'}
+                        </button>
+                    </div>
+
+                    {showNewFolderInput ? (
+                        <div className="animate-fade-in bg-amber-50 dark:bg-stone-900 p-3 rounded-2xl border border-amber-200 dark:border-stone-700">
+                            <label className="block text-xs font-bold text-amber-800 dark:text-amber-400 mb-1">輸入新資料夾路徑 (可用 / 分隔層級)</label>
+                            <input 
+                                type="text" 
+                                placeholder="例如: 藥理學/抗生素" 
+                                value={newFolder} 
+                                onChange={e => setNewFolder(e.target.value)} 
+                                autoFocus
+                                className="w-full p-2 border-2 border-amber-300 dark:border-stone-600 focus:border-amber-500 bg-white dark:bg-stone-700 text-stone-800 dark:text-white rounded-xl outline-none text-sm font-bold shadow-inner" 
+                            />
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-1 w-full border border-stone-200 dark:border-stone-700 rounded-2xl p-2 bg-[#FCFBF7] dark:bg-stone-900 shadow-inner max-h-[160px] overflow-y-auto custom-scrollbar">
+                            <div 
+                                className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${folder === '未分類' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-800' : 'hover:bg-stone-100 dark:hover:bg-gray-700 text-stone-700 dark:text-gray-300 font-medium'}`}
+                                onClick={() => setFolder('未分類')}
+                            >
+                                <span className="w-[20px]"></span>
+                                <span className="material-symbols-outlined text-[18px] text-gray-400">folder_off</span>
+                                <span className="text-sm">未分類</span>
+                            </div>
+                            
+                            {/* ✨ 判斷是否有傳入外部的 renderFolderTree，有的話就使用樹狀結構 */}
+                            {initialData?.renderFolderTree && initialData?.folderTree ? (
+                                initialData.renderFolderTree(initialData.folderTree, 0, folder, setFolder)
+                            ) : (
+                                /* 💡 保底機制：如果沒有傳入樹狀函數 (例如舊版相容)，則顯示一般選單 */
+                                initialData?.userFolders && initialData.userFolders.filter(f => f !== '未分類').map(f => (
+                                    <div 
+                                        key={f}
+                                        className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${folder === f ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-800' : 'hover:bg-stone-100 dark:hover:bg-gray-700 text-stone-700 dark:text-gray-300 font-medium'}`}
+                                        onClick={() => setFolder(f)}
+                                    >
+                                        <span className="w-[20px]"></span>
+                                        <span className={`material-symbols-outlined text-[18px] ${folder === f ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500'}`}>folder</span>
+                                        <span className="text-sm truncate">{f}</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {qHtml ? (
+                    <div className="mb-4">
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">description</span> 題目內容 (系統自動擷取，原稿保護中不可編輯)</label>
+                        <div className="border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-stone-900 p-3 max-h-48 overflow-y-auto custom-scrollbar rounded-2xl shadow-inner">
+                            <style dangerouslySetInnerHTML={{__html: `
+                                .modal-rich-text { word-break: break-word; white-space: pre-wrap; font-size: 0.875rem; line-height: 1.6; }
+                                .modal-rich-text * { color: inherit !important; background-color: transparent !important; }
+                                .modal-rich-text img {
+                                    display: block !important;
+                                    max-width: 100% !important;
+                                    height: auto !important;
+                                    margin: 10px 0 !important;
+                                    background-color: #FCFBF7 !important;
+                                    opacity: 1 !important;
+                                    visibility: visible !important;
+                                    border-radius: 4px;
+                                }
+                                .modal-rich-text canvas {
+                                    background-color: #FCFBF7 !important;
+                                }
+                            `}} />
+                            <div className="modal-rich-text text-stone-800 dark:text-white font-medium" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(qHtml) }} />
+                        </div>
+                    </div>
+                ) : (
+                    <RichInput label={<span className="flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">description</span> 題目內容</span>} text={qText} setText={setQText} image={qImage} setImage={setQImage} maxLength={300} showAlert={showAlert} />
+                )}
+                
+                <RichInput label={<span className="flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">lightbulb</span> 我的筆記 / 詳解</span>} text={nText} setText={setNText} image={nImage} setImage={setNImage} maxLength={300} showAlert={showAlert} />
+                
+                <div className="flex justify-end space-x-3 mt-6 border-t border-gray-100 dark:border-stone-700 pt-4">
+                    <button onClick={onClose} className="bg-stone-50 dark:bg-gray-700 text-gray-600 dark:text-gray-200 px-6 py-2 rounded-2xl font-bold text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors">取消</button>
+                    <button onClick={handleSave} disabled={isSaving} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-8 py-2 rounded-2xl font-black text-sm hover:bg-stone-800 dark:hover:bg-gray-300 transition-colors shadow-md flex items-center gap-1">
+                        {isSaving ? '儲存中...' : <><span className="material-symbols-outlined text-[18px]">save</span> 儲存</>}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContinueQuiz }) {
     const [wrongItems, setWrongItems] = useState([]);
     const [customFolders, setCustomFolders] = useState([]);
