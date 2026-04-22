@@ -160,15 +160,18 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
       });
 
       if (!foundMyData && user.email) {
-        progressRef.doc(user.uid).set({
-          nickname: user.displayName || user.email.split('@')[0],
-          tasks: [],
-          prompts: [],
-          totalPoints: 0,
-          updatedAt: Date.now()
-        }, { merge: true });
+        progressRef.doc(user.uid).get().then(doc => {
+          if (!doc.exists) {
+            progressRef.doc(user.uid).set({
+              nickname: user.displayName || user.email.split('@')[0],
+              tasks: [],
+              prompts: [],
+              totalPoints: 0,
+              updatedAt: Date.now()
+            });
+          }
+        }).catch(err => console.error("初始化檢查失敗:", err));
       }
-
       users.sort((a, b) => b.totalPoints - a.totalPoints);
       setAllUsersData(users);
     });
