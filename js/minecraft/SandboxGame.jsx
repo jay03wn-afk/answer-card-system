@@ -941,8 +941,8 @@ const { useState, useEffect, useRef } = React;;
     });
 
     return (
-<div className="fixed inset-0 z-[80] bg-stone-800 bg-opacity-90 flex flex-col items-center p-2 sm:p-4 animate-in fade-in select-none overflow-y-auto overflow-x-hidden custom-scrollbar">
-    <div className="p-2 border-4 border-gray-600 rounded-2xl w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row my-auto h-auto min-h-[90dvh] md:h-[90dvh] shrink-0" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>
+<div className="fixed inset-0 z-[80] bg-[#111111] bg-opacity-95 flex flex-col items-center p-2 sm:p-4 animate-in fade-in select-none overflow-y-auto overflow-x-hidden custom-scrollbar font-mono">
+    <div className="p-2 border-4 border-[#555555] border-r-[#111111] border-b-[#111111] w-full max-w-7xl relative shadow-2xl flex flex-col md:flex-row my-auto h-auto min-h-[90dvh] md:h-[90dvh] shrink-0" style={{ backgroundColor: DIMENSIONS[currentDimension].bg }}>
                 
                 {showQuitConfirm && (
                     <div className="fixed inset-0 bg-stone-800 bg-opacity-75 flex items-center justify-center z-[100]">
@@ -1325,7 +1325,7 @@ const { useState, useEffect, useRef } = React;;
                     </div>
                 </div>
 
-<div className="w-full h-auto md:h-full md:w-1/4 bg-[#333] p-2 md:p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-stone-700 shrink-0 relative">
+<div className="w-full h-auto md:h-full md:w-1/4 bg-[#2d2d2d] p-2 md:p-3 flex flex-col border-t-4 md:border-t-0 md:border-l-4 border-[#111111] shrink-0 relative">
                     <h3 className="text-amber-400 font-bold border-b-2 border-gray-600 pb-2 mb-2 shrink-0 flex justify-between items-center">
                         <span>💰 方塊商店</span>
                         <span className="text-sm bg-stone-800 bg-opacity-50 px-2 py-1 rounded border border-gray-600 truncate">💎 {mcData.diamonds}</span>

@@ -774,29 +774,29 @@ function Poke({ user, userProfile, showAlert, onQuit }) {
     };
 
     return (
-        <div className="fixed inset-0 z-[200] bg-stone-900 bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-[200] bg-[#111111] bg-opacity-95 flex flex-col items-center justify-center p-2 sm:p-4 animate-in fade-in font-mono">
             <div className="w-full max-w-5xl flex justify-between items-center mb-4">
-                <h1 className="text-2xl font-black text-white tracking-wide drop-shadow-md flex items-center">
-                    <span className="material-symbols-outlined mr-2 text-amber-400">style</span> 
+                <h1 className="text-2xl font-black text-[#ffaa00] tracking-wide drop-shadow-md flex items-center">
+                    <span className="material-symbols-outlined mr-2 text-[#55ff55]">style</span> 
                     史蒂夫大老二
                 </h1>
                 <button 
                     onClick={quitAndLeaveRoom}
-                    className="bg-[#c6c6c6] hover:bg-red-500 hover:text-white text-[#373737] border-2 border-white border-r-[#555] border-b-[#555] px-3 py-1 font-bold transition-colors flex items-center"
+                    className="bg-[#555555] hover:bg-[#ff5555] hover:text-white text-[#e0e0e0] border-4 border-[#777777] border-r-[#222222] border-b-[#222222] active:border-t-[#222222] active:border-l-[#222222] active:border-r-[#777777] active:border-b-[#777777] px-3 py-1 font-bold transition-colors flex items-center"
                 >
                     <span className="material-symbols-outlined mr-1 text-sm">close</span> 關閉
                 </button>
             </div>
 
-            <div className="bg-[#c6c6c6] border-2 sm:border-4 border-white border-r-[#555] border-b-[#555] p-1 sm:p-6 w-full max-w-5xl shadow-2xl flex flex-col flex-grow relative overflow-hidden max-h-[100dvh]">
+            <div className="bg-[#3c3c3c] border-4 border-[#555555] border-r-[#111111] border-b-[#111111] p-1 sm:p-6 w-full max-w-5xl shadow-2xl flex flex-col flex-grow relative overflow-hidden max-h-[100dvh]">
                 
                 {gameState === 'menu' && (
-                    <div className="flex flex-col items-center justify-center flex-grow space-y-4">
-                        <span className="material-symbols-outlined text-8xl text-[#555] drop-shadow-md mb-4">videogame_asset</span>
-                        <button onClick={() => { handlePlaySound(); startSinglePlayer(); }} className="w-64 py-3 flex justify-center items-center bg-[#8b8b8b] hover:bg-[#a0a0a0] text-[#373737] border-4 border-white border-r-[#555] border-b-[#555] text-xl font-black transition-transform active:scale-95 shadow-lg">
+                    <div className="flex flex-col items-center justify-center flex-grow space-y-4 bg-[#1e1e1e] shadow-inner">
+                        <span className="material-symbols-outlined text-8xl text-[#777777] drop-shadow-md mb-4">videogame_asset</span>
+                        <button onClick={() => { handlePlaySound(); startSinglePlayer(); }} className="w-64 py-3 flex justify-center items-center bg-[#555555] hover:bg-[#666666] text-[#e0e0e0] border-4 border-[#777777] border-r-[#222222] border-b-[#222222] active:border-t-[#222222] active:border-l-[#222222] active:border-r-[#777777] active:border-b-[#777777] text-xl font-black shadow-lg">
                             <span className="material-symbols-outlined mr-2">computer</span> 單人訓練 (打 AI)
                         </button>
-                        <button onClick={() => { handlePlaySound(); setGameState('multiplayer_setup'); }} className="w-64 py-3 flex justify-center items-center bg-amber-500 hover:bg-amber-400 text-[#373737] border-4 border-white border-r-[#555] border-b-[#555] text-xl font-black transition-transform active:scale-95 shadow-lg">
+                        <button onClick={() => { handlePlaySound(); setGameState('multiplayer_setup'); }} className="w-64 py-3 flex justify-center items-center bg-[#2d2d2d] hover:bg-[#4a4a4a] text-[#55ff55] border-4 border-[#555555] border-r-[#111111] border-b-[#111111] active:border-t-[#111111] active:border-l-[#111111] active:border-r-[#555555] active:border-b-[#555555] text-xl font-black shadow-lg">
                             <span className="material-symbols-outlined mr-2">wifi</span> 多人連線對戰
                         </button>
                     </div>

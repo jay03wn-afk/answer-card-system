@@ -897,8 +897,8 @@ else if (rand < 0.6) state.obstacles.push({ type: 'cobweb', x: LOG_W, y: state.g
     };
 
     return (
-        <div className="fixed inset-0 z-[80] bg-stone-800 bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4">
-            <div className="bg-stone-800 p-2 border-4 border-gray-600 rounded-2xl w-full max-w-4xl relative shadow-2xl">
+        <div className="fixed inset-0 z-[80] bg-[#111111] bg-opacity-95 flex flex-col items-center justify-center p-2 sm:p-4 font-mono">
+            <div className="bg-[#3c3c3c] p-2 border-4 border-[#555555] border-r-[#111111] border-b-[#111111] w-full max-w-4xl relative shadow-2xl">
                 <div className="flex justify-between text-white font-bold mb-2 font-mono px-2 text-xl">
                     <span className="flex items-center space-x-4">
                         <span className="text-emerald-400">🏃 {distance} m</span>

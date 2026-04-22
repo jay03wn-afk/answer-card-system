@@ -220,39 +220,39 @@ const { useState, useEffect, useRef } = React;;
     };
 
     return (
-        <div className="fixed inset-0 z-[80] bg-stone-800 bg-opacity-90 flex items-center justify-center p-2 sm:p-4 animate-in fade-in">
-            <div className="bg-[#5c5c5c] border-4 border-[#2d2d2d] rounded-2xl max-w-4xl w-full relative shadow-2xl flex flex-col md:flex-row h-[500px]">
+        <div className="fixed inset-0 z-[80] bg-gray-950 bg-opacity-90 flex items-center justify-center p-2 sm:p-4 animate-in fade-in font-mono">
+            <div className="bg-gray-900 border-2 border-emerald-500/50 rounded-xl max-w-4xl w-full relative shadow-[0_0_30px_rgba(16,185,129,0.3)] flex flex-col md:flex-row h-[500px]">
                 
                 {/* ✨ 管理員專屬編輯按鈕 */}
                 {isAdmin && (
-                    <button onClick={() => setShowAdminModal(true)} className="absolute -top-4 right-10 bg-amber-600 text-white px-3 py-1 border-2 border-white font-bold hover:bg-amber-500 z-10 shadow-lg text-sm rounded">
+                    <button onClick={() => setShowAdminModal(true)} className="absolute -top-4 right-10 bg-amber-600 text-white px-3 py-1 border border-amber-400 font-bold hover:bg-amber-500 z-10 shadow-[0_0_10px_rgba(251,191,36,0.5)] text-sm rounded">
                         ⚙️ 編輯獎池
                     </button>
                 )}
-                <button onClick={handleQuit} className="absolute -top-4 -right-4 bg-red-600 text-white w-10 h-10 border-2 border-white font-black hover:bg-red-500 z-10 transition-colors">✖</button>
+                <button onClick={handleQuit} className="absolute -top-4 -right-4 bg-gray-800 text-gray-400 w-10 h-10 border border-gray-600 font-black hover:text-red-400 hover:border-red-500 hover:shadow-[0_0_10px_rgba(239,68,68,0.5)] z-10 transition-all rounded-full">✖</button>
                 
-                <div className="w-full md:w-3/5 p-6 flex flex-col items-center justify-center relative border-b md:border-b-0 md:border-r-4 border-[#2d2d2d]">
-                    <h2 className="text-2xl font-black text-white mb-2 drop-shadow-md flex flex-wrap items-center gap-2">
+                <div className="w-full md:w-3/5 p-6 flex flex-col items-center justify-center relative border-b md:border-b-0 md:border-r border-emerald-500/30">
+                    <h2 className="text-2xl font-black text-emerald-400 mb-2 drop-shadow-[0_0_5px_rgba(52,211,153,0.6)] flex flex-wrap items-center gap-2">
                         ⛏️ 礦坑尋寶 
-                        <span className="text-sm font-normal text-amber-300 bg-stone-800 bg-opacity-40 px-2 py-1 rounded">擁有: {mcData.diamonds} 💎</span>
-                        <span className="text-sm font-normal text-emerald-300 bg-stone-800 bg-opacity-40 px-2 py-1 rounded">挖礦券: {mcData.miningTickets || 0} 張</span>
+                        <span className="text-sm font-normal text-cyan-300 bg-gray-950 border border-cyan-800/50 shadow-[inset_0_0_5px_rgba(0,0,0,0.8)] px-2 py-1 rounded drop-shadow-[0_0_5px_rgba(34,211,238,0.4)]">擁有: {mcData.diamonds} 💎</span>
+                        <span className="text-sm font-normal text-amber-300 bg-gray-950 border border-amber-800/50 shadow-[inset_0_0_5px_rgba(0,0,0,0.8)] px-2 py-1 rounded drop-shadow-[0_0_5px_rgba(251,191,36,0.4)]">挖礦券: {mcData.miningTickets || 0} 張</span>
                     </h2>
-                    <p className="text-gray-300 font-bold mb-6 text-sm">每次開挖優先消耗 1 張挖礦券，否則消耗 50 💎，有機會挖中神級裝備或實體大獎！</p>
+                    <p className="text-gray-400 font-bold mb-6 text-sm">每次開挖優先消耗 1 張挖礦券，否則消耗 50 💎，有機會挖中神級裝備或實體大獎！</p>
 
                     {gameState === 'idle' ? (
                         <div className="flex-grow flex flex-col items-center justify-center w-full">
-                            <button onClick={handleStart} className="mc-btn px-6 py-4 text-xl sm:text-2xl animate-bounce flex flex-col items-center mb-4">
+                            <button onClick={handleStart} className="bg-emerald-600/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.4)] hover:shadow-[0_0_25px_rgba(52,211,153,0.6)] px-6 py-4 text-xl sm:text-2xl animate-pulse flex flex-col items-center mb-4 transition-all rounded">
                                 <span>開始挖礦</span>
-                                <span className="text-sm mt-1 font-bold">
+                                <span className="text-sm mt-1 font-bold text-emerald-200/70">
                                     {((mcData.miningTickets || 0) > 0) ? "🎫 消耗 1 張挖礦券" : <span className="flex items-center">消耗 50 <McImg src={imgDiamond} className="w-4 h-4 ml-1 inline pixelated"/></span>}
                                 </span>
                             </button>
-                            <button onClick={() => setShowProbModal(true)} className="text-amber-300 font-bold underline hover:text-amber-200">
+                            <button onClick={() => setShowProbModal(true)} className="text-amber-400/80 font-bold hover:text-amber-300 drop-shadow-[0_0_5px_rgba(251,191,36,0.3)]">
                                 🎁 查看獎池與機率
                             </button>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-3 gap-2 w-full max-w-[300px] aspect-square bg-[#3a3a3a] p-2 border-4 border-[#1a1a1a]">
+                        <div className="grid grid-cols-3 gap-2 w-full max-w-[300px] aspect-square bg-gray-950 p-2 border border-emerald-500/30 shadow-[inset_0_0_15px_rgba(0,0,0,0.8)] rounded-md">
                             {board.map((block, i) => (
                                 <button 
                                     key={i} 

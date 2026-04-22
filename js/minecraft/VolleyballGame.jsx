@@ -832,7 +832,7 @@ const { useState, useEffect, useRef } = React;
     };
 
     return (
-        <div className="fixed inset-0 z-[80] bg-stone-800 bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 touch-none">
+        <div className="fixed inset-0 z-[80] bg-[#111111] bg-opacity-90 flex flex-col items-center justify-center p-2 sm:p-4 touch-none font-mono">
             
             {showSettings && (
                <div className="absolute inset-0 bg-stone-800 bg-opacity-80 z-[100] flex items-center justify-center pointer-events-auto p-4">
@@ -909,21 +909,21 @@ const { useState, useEffect, useRef } = React;
                </div>
             )}
 
-            <div className="bg-[#c6c6c6] p-3 border-4 border-white border-r-[#555] border-b-[#555] w-full max-w-6xl relative shadow-2xl flex flex-col items-center pointer-events-auto">
-               <div className="w-full flex justify-between items-center text-[#373737] font-bold mb-2 font-mono px-2 text-lg sm:text-xl">
-                    <span className="text-emerald-800 bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white px-2 py-1 shadow-inner">史蒂夫: {score.player}</span>
-                    <span className="text-[#373737] text-sm hidden sm:inline bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white px-2 py-1 shadow-inner">
+            <div className="bg-[#3c3c3c] p-3 border-4 border-[#555555] border-r-[#111111] border-b-[#111111] w-full max-w-6xl relative shadow-2xl flex flex-col items-center pointer-events-auto">
+               <div className="w-full flex justify-between items-center text-[#e0e0e0] font-bold mb-2 font-mono px-2 text-lg sm:text-xl">
+                    <span className="text-[#55ff55] bg-[#1e1e1e] border-2 border-[#111111] border-r-[#555555] border-b-[#555555] px-2 py-1 shadow-inner">史蒂夫: {score.player}</span>
+                    <span className="text-[#aaaaaa] text-sm hidden sm:inline bg-[#1e1e1e] border-2 border-[#111111] border-r-[#555555] border-b-[#555555] px-2 py-1 shadow-inner">
                         {gameMode === 'ranked' ? `🔥 第 ${gameRef.current?.currentSet || 1}/3 局` : '先得 10 分者獲勝'}
                     </span>
                     <div className="flex gap-2 sm:gap-4 items-center">
-                        <span className="text-rose-900 bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white px-2 py-1 shadow-inner">村民: {score.opponent}</span>
+                        <span className="text-[#ff5555] bg-[#1e1e1e] border-2 border-[#111111] border-r-[#555555] border-b-[#555555] px-2 py-1 shadow-inner">村民: {score.opponent}</span>
                         {gameState === 'playing' && (
-                            <button onClick={togglePause} className="bg-[#8b8b8b] hover:bg-[#a0a0a0] border-2 border-white border-r-[#555] border-b-[#555] px-2 py-1 active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white transition-colors text-sm">
+                            <button onClick={togglePause} className="bg-[#555555] hover:bg-[#666666] border-2 border-[#777777] border-r-[#222222] border-b-[#222222] px-2 py-1 active:border-t-[#222222] active:border-l-[#222222] active:border-r-[#777777] active:border-b-[#777777] transition-colors text-sm">
                                 {isPaused ? '▶️' : '⏸️'}
                             </button>
                         )}
-                        <button onClick={() => setShowSettings(true)} className="bg-[#8b8b8b] hover:bg-[#a0a0a0] border-2 border-white border-r-[#555] border-b-[#555] px-2 py-1 active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white transition-colors text-sm">⚙️</button>
-                        <button onClick={onQuit} className="bg-[#8b8b8b] hover:bg-[#a0a0a0] border-2 border-white border-r-[#555] border-b-[#555] px-2 py-1 active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white transition-colors text-sm text-red-700 font-black">✖</button>
+                        <button onClick={() => setShowSettings(true)} className="bg-[#555555] hover:bg-[#666666] border-2 border-[#777777] border-r-[#222222] border-b-[#222222] px-2 py-1 active:border-t-[#222222] active:border-l-[#222222] active:border-r-[#777777] active:border-b-[#777777] transition-colors text-sm">⚙️</button>
+                        <button onClick={onQuit} className="bg-[#555555] hover:bg-[#ff5555] border-2 border-[#777777] border-r-[#222222] border-b-[#222222] px-2 py-1 active:border-t-[#222222] active:border-l-[#222222] active:border-r-[#777777] active:border-b-[#777777] transition-colors text-sm text-[#ffffff] font-black">✖</button>
                     </div>
                 </div>
 

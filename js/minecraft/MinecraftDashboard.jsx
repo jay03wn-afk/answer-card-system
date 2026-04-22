@@ -11,6 +11,7 @@ const { useState, useEffect, useRef } = React;
     const [showVolleyball, setShowVolleyball] = useState(false);
     const [showPoke, setShowPoke] = useState(false);
     const [showMj, setShowMj] = useState(false); // ✨ 新增麻將狀態
+    const [showGameList, setShowGameList] = useState(false); // ✨ 新增遊戲清單狀態
     
     // ✨ 新增：村民狀態與終界儲物箱狀態
     const [showEnderChest, setShowEnderChest] = useState(false);
@@ -274,7 +275,7 @@ const { useState, useEffect, useRef } = React;
     const ownedPets = storeItems.filter(i => (mcData.pets || []).includes(i.id));
 
     return (
-        <div className="mc-bg h-full overflow-y-auto custom-scrollbar p-4 relative">
+        <div className="bg-[#1e1e1e] h-full overflow-y-auto custom-scrollbar p-4 relative text-[#e0e0e0] font-mono">
             
             {showMiniGame && (
         <MinecartGame 
@@ -319,44 +320,29 @@ const { useState, useEffect, useRef } = React;
                 />
             )}
 
-            <div className="max-w-5xl mx-auto mc-ui p-6 flex flex-col space-y-6 bg-opacity-90 dark:bg-opacity-80">
+            <div className="max-w-5xl mx-auto p-6 flex flex-col space-y-6 bg-[#3c3c3c] border-4 border-[#555555] border-r-[#111111] border-b-[#111111] shadow-2xl font-mono">
                 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
     <div>
-        <h1 className="text-2xl font-black mb-2 text-gray-800 dark:text-gray-100 tracking-wide drop-shadow-md">⛏️ 史蒂夫的養成天地</h1>
-        <p className="text-sm font-bold text-gray-600 dark:text-gray-300">完成測驗或遊玩小遊戲來獲取鑽石！</p>
+        <h1 className="text-2xl font-black mb-2 text-[#ffaa00] tracking-wide drop-shadow-md">⛏️ 史蒂夫的養成天地</h1>
+        <p className="text-sm font-bold text-[#aaaaaa]">完成測驗或遊玩小遊戲來獲取鑽石！</p>
     </div>
 
     <div className="flex flex-wrap gap-2 md:mx-4">
-        <button onClick={() => setShowSandbox(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-emerald-800 font-bold transition-colors whitespace-nowrap shadow-md">
-            🏗️ 蓋房子
+        <button onClick={() => setShowGameList(true)} className="bg-[#555555] hover:bg-[#666666] text-[#e0e0e0] text-sm sm:text-base px-4 py-2 border-4 border-[#777777] border-r-[#222222] border-b-[#222222] font-bold transition-colors shadow-md flex items-center active:border-t-[#222222] active:border-l-[#222222] active:border-r-[#777777] active:border-b-[#777777]">
+            🎮 遊樂場 (遊戲清單)
         </button>
-        <button onClick={() => setShowMiningGame(true)} className="bg-amber-600 hover:bg-amber-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-amber-800 font-bold transition-colors whitespace-nowrap shadow-md">
-            ⛏️ 挖礦
-        </button>
-        <button onClick={() => setShowMiniGame(true)} className="bg-amber-600 hover:bg-amber-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-amber-800 font-bold transition-colors whitespace-nowrap shadow-md">
-                        🛻 礦車探險
-                    </button>
-                    <button onClick={() => setShowVolleyball(true)} className="bg-stone-600 hover:bg-rose-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-stone-600800 font-bold transition-colors whitespace-nowrap shadow-md">
-                        🏐 史萊姆排球
-                    </button>
-                    <button onClick={() => setShowPoke(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-indigo-800 font-bold transition-colors shadow-md flex items-center">
-                        <span className="material-symbols-outlined text-[14px] mr-1">style</span>大老二
-                    </button>
-                    <button onClick={() => setShowMj(true)} className="bg-red-600 hover:bg-red-500 text-white text-[10px] sm:text-xs px-3 py-1.5 border-2 border-red-800 font-bold transition-colors shadow-md flex items-center">
-                        <span className="material-symbols-outlined text-[14px] mr-1">grid_view</span>麻將
-                    </button>
-                </div>
+    </div>
 
-                <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-2 w-full md:w-auto text-[#373737] shadow-lg shrink-0">
+                <div className="bg-[#2d2d2d] border-4 border-[#111111] border-r-[#555555] border-b-[#555555] p-2 w-full md:w-auto text-[#e0e0e0] shrink-0">
                         <div className="flex justify-around md:justify-start md:space-x-8 text-sm items-center font-bold">
-                            <div className="text-center bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white px-3 py-1">
-                                <p className="text-emerald-800 font-black text-lg">Lv. {mcData.level}</p>
-                                <p className="text-[10px] text-[#373737]">EXP: {mcData.exp}/{expToNextLevel}</p>
+                            <div className="text-center bg-[#1e1e1e] border-2 border-[#111111] border-r-[#555555] border-b-[#555555] px-3 py-1">
+                                <p className="text-[#55ff55] font-black text-lg drop-shadow-md">Lv. {mcData.level}</p>
+                                <p className="text-[10px] text-[#aaaaaa]">EXP: {mcData.exp}/{expToNextLevel}</p>
                             </div>
-                            <div className="space-y-1 bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white px-3 py-1">
-                                <p className="flex items-center text-[#373737]"><McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mr-1 pixelated" /> {mcData.diamonds}</p>
-                                <p className="flex items-center text-[#373737]"><span className="text-lg mr-1 leading-none">🍖</span> {mcData.hunger}/10</p>
+                            <div className="space-y-1 bg-[#1e1e1e] border-2 border-[#111111] border-r-[#555555] border-b-[#555555] px-3 py-1">
+                                <p className="flex items-center text-[#55ffff] drop-shadow-md"><McImg src={imgDiamond} fallback="💎" className="w-4 h-4 mr-1 pixelated" /> {mcData.diamonds}</p>
+                                <p className="flex items-center text-[#ffaa00] drop-shadow-md"><span className="text-lg mr-1 leading-none">🍖</span> {mcData.hunger}/10</p>
                             </div>
                         </div>
                     </div>
@@ -367,16 +353,16 @@ const { useState, useEffect, useRef } = React;
                     {/* 左側：你的家 & 排行榜 */}
                     <div className="space-y-4 md:space-y-6 lg:col-span-1 flex flex-col">
                         {/* 🏡 你的家 */}
-                        <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 shadow-xl shrink-0">
-                            <h2 className="border-b-2 border-[#555] pb-2 mb-3 font-bold text-[#373737] text-lg flex justify-between items-center">
-                             <span>🏡 你的家</span>
+                        <div className="bg-[#3c3c3c] border-4 border-[#555555] border-r-[#111111] border-b-[#111111] p-3 shadow-lg shrink-0">
+                            <h2 className="border-b-2 border-[#111111] pb-2 mb-3 font-bold text-[#ffaa00] text-lg flex justify-between items-center drop-shadow-md">
+                                <span>🏡 你的家</span>
                             </h2>
-                            <div className="p-4 bg-[#8b8b8b] border-2 border-[#555] border-r-white border-b-white mb-3 h-32 sm:h-40 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
-                                <McImg src={imgSteve} fallback="🧍‍♂️" className="w-12 h-12 sm:w-16 sm:h-16 pixelated shadow-lg border-2 border-[#373737] mb-2" />
+                            <div className="p-4 bg-[#1e1e1e] border-4 border-[#111111] border-r-[#555555] border-b-[#555555] mb-3 h-32 sm:h-40 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
+                                <McImg src={imgSteve} fallback="🧍‍♂️" className="w-12 h-12 sm:w-16 sm:h-16 pixelated shadow-lg border-2 border-[#111111] mb-2" />
                                 
                                 <div className="flex flex-wrap justify-center gap-1 max-w-full z-10">
-                                    {Array.from({ length: mcData.cats || 0 }).map((_, i) => <span key={`cat-${i}`} title="斑點貓" className="text-xl">🐱</span>)}
-                                    {ownedPets.map((p, i) => <span key={`pet-${i}`} title={p.name} className="text-xl">{p.icon}</span>)}
+                                    {Array.from({ length: mcData.cats || 0 }).map((_, i) => <span key={`cat-${i}`} title="斑點貓" className="text-xl drop-shadow-md">🐱</span>)}
+                                    {ownedPets.map((p, i) => <span key={`pet-${i}`} title={p.name} className="text-xl drop-shadow-md">{p.icon}</span>)}
                                 </div>
                                 <div className="absolute bottom-2 flex flex-wrap justify-center gap-2 max-w-full px-2">
                                     {ownedItems.slice(-4).map(item => (
@@ -387,7 +373,7 @@ const { useState, useEffect, useRef } = React;
                             <button 
                                 onClick={handleCheckIn} 
                                 disabled={isCheckedIn}
-                                className={`w-full py-2 flex justify-center items-center mb-2 font-black border-2 transition-colors ${isCheckedIn ? 'bg-[#555555] text-[#aaaaaa] border-[#444444] cursor-not-allowed' : 'bg-[#8b8b8b] hover:bg-[#a0a0a0] text-[#373737] border-white border-r-[#555] border-b-[#555] active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white'}`}
+                                className={`w-full py-2 flex justify-center items-center mb-2 font-black border-4 transition-colors ${isCheckedIn ? 'bg-[#2d2d2d] text-[#777777] border-[#111111] border-r-[#3c3c3c] border-b-[#3c3c3c] cursor-not-allowed' : 'bg-[#555555] hover:bg-[#666666] text-[#e0e0e0] border-[#777777] border-r-[#222222] border-b-[#222222] active:border-t-[#222222] active:border-l-[#222222] active:border-r-[#777777] active:border-b-[#777777]'}`}
                             >
                                 {isCheckedIn ? (
                                     "✅ 今日已簽到"
@@ -398,24 +384,24 @@ const { useState, useEffect, useRef } = React;
                             <button onClick={() => {
                                 playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/block/enderchest/open.ogg');
                                 setShowEnderChest(true);
-                            }} className="w-full py-2 flex justify-center items-center bg-[#5c4033] hover:bg-[#6b4c3a] text-white font-bold border-2 border-[#8b5a2b] border-r-[#3e2723] border-b-[#3e2723] shadow-md transition-colors active:border-t-[#3e2723] active:border-l-[#3e2723] active:border-r-[#8b5a2b] active:border-b-[#8b5a2b]">
+                            }} className="w-full py-2 flex justify-center items-center bg-[#240d3a] hover:bg-[#341852] text-[#e3a8ff] font-bold border-4 border-[#4a2673] border-r-[#150524] border-b-[#150524] shadow-md transition-colors active:border-t-[#150524] active:border-l-[#150524] active:border-r-[#4a2673] active:border-b-[#4a2673]">
                                 🔮 終界儲物箱 ({Object.values(mcData.packs || {}).reduce((a, b) => a + b, 0)})
                             </button>
                         </div>
 
                         {/* 🏆 排行榜 */}
-                        <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 shadow-xl flex flex-col flex-grow min-h-[200px]">
-                            <h2 className="border-b-2 border-[#555] pb-2 mb-3 font-bold text-[#373737] text-lg">🏆 好友等級排行榜</h2>
+                        <div className="bg-[#3c3c3c] border-4 border-[#555555] border-r-[#111111] border-b-[#111111] p-3 shadow-lg flex flex-col flex-grow min-h-[200px]">
+                            <h2 className="border-b-2 border-[#111111] pb-2 mb-3 font-bold text-[#ffaa00] text-lg drop-shadow-md">🏆 好友等級排行榜</h2>
                             <div className="space-y-2 overflow-y-auto max-h-[12rem] lg:max-h-[16rem] custom-scrollbar pr-2 flex-grow">
                                 {leaderboard.map((lb, idx) => (
-                                    <div key={idx} className={`flex justify-between items-center p-2 border-2 ${lb.isMe ? 'bg-[#8b8b8b] border-[#555] border-r-white border-b-white text-white shadow-inner' : 'bg-[#a0a0a0] border-transparent text-[#373737]'} transition-colors`}>
+                                    <div key={idx} className={`flex justify-between items-center p-2 border-2 ${lb.isMe ? 'bg-[#2d2d2d] border-[#111111] border-r-[#555555] border-b-[#555555] text-[#55ff55]' : 'bg-[#4a4a4a] border-transparent text-[#cccccc]'} transition-colors`}>
                                         <div className="flex items-center space-x-2 sm:space-x-3">
-                                            <span className="font-bold w-5 sm:w-6 text-center text-sm sm:text-lg">{idx === 0 ? '👑' : idx + 1}</span>
+                                            <span className={`font-bold w-5 sm:w-6 text-center text-sm sm:text-lg ${idx === 0 ? 'drop-shadow-md' : ''}`}>{idx === 0 ? '👑' : idx + 1}</span>
                                             <span className="truncate max-w-[80px] sm:max-w-[100px] text-xs sm:text-sm font-bold">{lb.name}</span>
                                         </div>
                                         <div className="text-right flex items-center space-x-2 sm:space-x-3">
-                                            <span className="text-emerald-800 font-black text-xs sm:text-sm">Lv.{lb.level}</span>
-                                            <span className="text-xs font-bold flex items-center w-10 sm:w-12 justify-end"><McImg src={imgDiamond} fallback="💎" className="w-3 h-3 mr-1 pixelated" /> {lb.diamonds}</span>
+                                            <span className={`font-black text-xs sm:text-sm ${lb.isMe ? 'text-[#55ff55]' : 'text-[#aaaaaa]'}`}>Lv.{lb.level}</span>
+                                            <span className={`text-xs font-bold flex items-center w-10 sm:w-12 justify-end ${lb.isMe ? 'text-[#55ffff]' : 'text-[#aaaaaa]'}`}><McImg src={imgDiamond} fallback="💎" className="w-3 h-3 mr-1 pixelated" /> {lb.diamonds}</span>
                                         </div>
                                     </div>
                                 ))}
@@ -424,10 +410,10 @@ const { useState, useEffect, useRef } = React;
                     </div>
 
                     {/* 右側：村民商賈 */}
-                    <div className="bg-[#c6c6c6] border-4 border-white border-r-[#555] border-b-[#555] p-3 sm:p-4 lg:col-span-2 flex flex-col shadow-xl min-h-[400px]">
-                        <h2 className="border-b-2 border-[#555] pb-2 mb-3 font-bold text-[#373737] text-lg">🛒 村民商賈</h2>
+                    <div className="bg-[#3c3c3c] border-4 border-[#555555] border-r-[#111111] border-b-[#111111] p-3 sm:p-4 lg:col-span-2 flex flex-col shadow-lg min-h-[400px]">
+                        <h2 className="border-b-2 border-[#111111] pb-2 mb-3 font-bold text-[#ffaa00] text-lg drop-shadow-md">🛒 村民商賈</h2>
                         
-                        <div className="flex items-center space-x-4 mb-4 bg-[#8b8b8b] p-3 border-2 border-[#555] border-r-white border-b-white shadow-inner shrink-0">
+                        <div className="flex items-center space-x-4 mb-4 bg-[#1e1e1e] p-3 border-4 border-[#111111] border-r-[#555555] border-b-[#555555] shadow-inner shrink-0">
                             <button 
                                 className={`shrink-0 transition-transform duration-200 focus:outline-none active:scale-90 ${villagerAnim === 'yes' ? 'translate-y-2' : villagerAnim === 'no' ? '-translate-x-2' : villagerAnim === 'idle' ? 'scale-110' : ''}`}
                                 onClick={(e) => {
@@ -439,18 +425,18 @@ const { useState, useEffect, useRef } = React;
                                     setTimeout(() => setVillagerAnim(""), 200); 
                                 }}
                             >
-                                <McImg src="https://minotar.net/helm/Villager/64.png" fallback="🧑‍🌾" className="w-12 h-12 sm:w-16 sm:h-16 pixelated border-2 border-[#373737] drop-shadow-lg cursor-pointer hover:brightness-110" />
+                                <McImg src="https://minotar.net/helm/Villager/64.png" fallback="🧑‍🌾" className="w-12 h-12 sm:w-16 sm:h-16 pixelated border-2 border-[#111111] drop-shadow-md cursor-pointer hover:brightness-110" />
                             </button>
-                            <div className="relative bg-[#FCFBF7] text-[#373737] p-3 flex-1 shadow-md font-bold text-xs sm:text-sm border-2 border-[#373737] pixelated-border">
-                                <div className="absolute top-1/2 -left-[10px] transform -translate-y-1/2 w-0 h-0 border-t-8 border-t-transparent border-r-[10px] border-r-[#FCFBF7] border-b-8 border-b-transparent z-10"></div>
-                                <div className="absolute top-1/2 -left-[13px] transform -translate-y-1/2 w-0 h-0 border-t-[9px] border-t-transparent border-r-[12px] border-r-[#373737] border-b-[9px] border-b-transparent"></div>
+                            <div className="relative bg-[#2d2d2d] text-[#e0e0e0] p-3 flex-1 shadow-md font-bold text-xs sm:text-sm border-2 border-[#111111]">
+                                <div className="absolute top-1/2 -left-[10px] transform -translate-y-1/2 w-0 h-0 border-t-8 border-t-transparent border-r-[10px] border-r-[#2d2d2d] border-b-8 border-b-transparent z-10"></div>
+                                <div className="absolute top-1/2 -left-[13px] transform -translate-y-1/2 w-0 h-0 border-t-[9px] border-t-transparent border-r-[12px] border-r-[#111111] border-b-[9px] border-b-transparent"></div>
                                 {villagerSpeech}
                             </div>
                         </div>
 
                         <div className="flex flex-wrap gap-2 mb-3 shrink-0">
                             {STORE_CATEGORIES.map(cat => (
-                                <button key={cat} onClick={() => setStoreCat(cat)} className={`px-2 py-1 text-[10px] sm:text-xs font-bold border-2 active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white ${storeCat === cat ? 'bg-[#555] border-[#373737] border-r-[#8b8b8b] border-b-[#8b8b8b] text-white shadow-inner' : 'bg-[#8b8b8b] border-white border-r-[#555] border-b-[#555] text-[#373737] hover:bg-[#a0a0a0]'}`}>
+                                <button key={cat} onClick={() => setStoreCat(cat)} className={`px-2 py-1 text-[10px] sm:text-xs font-bold border-4 active:border-t-[#111111] active:border-l-[#111111] active:border-r-[#555555] active:border-b-[#555555] ${storeCat === cat ? 'bg-[#2d2d2d] border-[#111111] border-r-[#555555] border-b-[#555555] text-[#55ff55]' : 'bg-[#555555] hover:bg-[#666666] border-[#777777] border-r-[#222222] border-b-[#222222] text-[#e0e0e0]'}`}>
                                     {cat}
                                 </button>
                             ))}
@@ -458,12 +444,12 @@ const { useState, useEffect, useRef } = React;
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 overflow-y-auto custom-scrollbar pr-2 flex-grow pb-2">
                             {storeItems.filter(item => !item.hide && (storeCat === '全部' || item.cat === storeCat)).map((item) => (
-                                <button key={item.id} onClick={() => handleBuy(item)} className="bg-[#8b8b8b] hover:bg-[#a0a0a0] border-2 border-white border-r-[#555] border-b-[#555] py-2 px-2 sm:px-3 flex justify-between items-center active:border-t-[#555] active:border-l-[#555] active:border-r-white active:border-b-white transition-all">
-                                    <span className="flex items-center text-xs sm:text-sm truncate pr-2 text-[#373737] font-bold">
-                                        <McImg src={item.img} fallback={item.icon} className="w-5 h-5 sm:w-6 sm:h-6 mr-2 pixelated shrink-0"/> 
+                                <button key={item.id} onClick={() => handleBuy(item)} className="bg-[#555555] hover:bg-[#666666] border-4 border-[#777777] border-r-[#222222] border-b-[#222222] py-2 px-2 sm:px-3 flex justify-between items-center active:border-t-[#222222] active:border-l-[#222222] active:border-r-[#777777] active:border-b-[#777777] transition-colors">
+                                    <span className="flex items-center text-xs sm:text-sm truncate pr-2 text-[#e0e0e0] font-bold">
+                                        <McImg src={item.img} fallback={item.icon} className="w-5 h-5 sm:w-6 sm:h-6 mr-2 pixelated shrink-0 drop-shadow-md"/> 
                                         {item.name}
                                     </span>
-                                    <span className="text-emerald-900 flex items-center text-[10px] sm:text-xs font-black shrink-0 bg-[#c6c6c6] px-1.5 py-0.5 border border-[#555]">
+                                    <span className="text-[#55ffff] flex items-center text-[10px] sm:text-xs font-black shrink-0 bg-[#2d2d2d] px-1.5 py-0.5 border-2 border-[#111111] border-r-[#555555] border-b-[#555555]">
                                         {item.cost} <McImg src={imgDiamond} fallback="💎" className="w-3 h-3 sm:w-4 sm:h-4 ml-1 pixelated"/>
                                     </span>
                                 </button>
@@ -506,6 +492,38 @@ const { useState, useEffect, useRef } = React;
                         <div className="mt-5 flex justify-center">
                             <button onClick={() => setOpenedPackResult(null)} className="bg-amber-700600 hover:bg-amber-700500 text-white px-8 py-3 font-black text-lg border-2 border-black shadow-lg transition-transform active:scale-95">
                                 收下獎勵 (已存入沙盒)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ✨ 遊戲清單 Modal */}
+            {showGameList && (
+                <div className="fixed inset-0 z-[150] bg-[#111111] bg-opacity-80 flex flex-col items-center justify-center p-4">
+                    <div className="bg-[#3c3c3c] border-4 border-[#555555] border-r-[#111111] border-b-[#111111] p-6 w-full max-w-2xl shadow-2xl flex flex-col">
+                        <div className="flex justify-between items-center mb-6 border-b-2 border-[#111111] pb-2">
+                            <h3 className="text-[#ffaa00] font-black text-xl flex items-center drop-shadow-md">🎮 史蒂夫的遊樂場</h3>
+                            <button onClick={() => setShowGameList(false)} className="text-[#ff5555] hover:text-[#ffaaaa] font-bold text-lg">✖ 關閉</button>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                            <button onClick={() => { setShowGameList(false); setShowSandbox(true); }} className="bg-[#2d2d2d] hover:bg-[#4a4a4a] text-[#55ff55] py-4 border-4 border-[#555555] border-r-[#111111] border-b-[#111111] font-bold transition-colors shadow-md flex flex-col items-center active:border-t-[#111111] active:border-l-[#111111] active:border-r-[#555555] active:border-b-[#555555]">
+                                <span className="text-2xl mb-1">🏗️</span> 蓋房子
+                            </button>
+                            <button onClick={() => { setShowGameList(false); setShowMiningGame(true); }} className="bg-[#2d2d2d] hover:bg-[#4a4a4a] text-[#ffaa00] py-4 border-4 border-[#555555] border-r-[#111111] border-b-[#111111] font-bold transition-colors shadow-md flex flex-col items-center active:border-t-[#111111] active:border-l-[#111111] active:border-r-[#555555] active:border-b-[#555555]">
+                                <span className="text-2xl mb-1">⛏️</span> 挖礦
+                            </button>
+                            <button onClick={() => { setShowGameList(false); setShowMiniGame(true); }} className="bg-[#2d2d2d] hover:bg-[#4a4a4a] text-[#ffaa00] py-4 border-4 border-[#555555] border-r-[#111111] border-b-[#111111] font-bold transition-colors shadow-md flex flex-col items-center active:border-t-[#111111] active:border-l-[#111111] active:border-r-[#555555] active:border-b-[#555555]">
+                                <span className="text-2xl mb-1">🛻</span> 礦車探險
+                            </button>
+                            <button onClick={() => { setShowGameList(false); setShowVolleyball(true); }} className="bg-[#2d2d2d] hover:bg-[#4a4a4a] text-[#55ffff] py-4 border-4 border-[#555555] border-r-[#111111] border-b-[#111111] font-bold transition-colors shadow-md flex flex-col items-center active:border-t-[#111111] active:border-l-[#111111] active:border-r-[#555555] active:border-b-[#555555]">
+                                <span className="text-2xl mb-1">🏐</span> 史萊姆排球
+                            </button>
+                            <button onClick={() => { setShowGameList(false); setShowPoke(true); }} className="bg-[#2d2d2d] hover:bg-[#4a4a4a] text-[#ff55ff] py-4 border-4 border-[#555555] border-r-[#111111] border-b-[#111111] font-bold transition-colors shadow-md flex flex-col items-center active:border-t-[#111111] active:border-l-[#111111] active:border-r-[#555555] active:border-b-[#555555]">
+                                <span className="text-2xl mb-1">🃏</span> 大老二
+                            </button>
+                            <button onClick={() => { setShowGameList(false); setShowMj(true); }} className="bg-[#2d2d2d] hover:bg-[#4a4a4a] text-[#ff5555] py-4 border-4 border-[#555555] border-r-[#111111] border-b-[#111111] font-bold transition-colors shadow-md flex flex-col items-center active:border-t-[#111111] active:border-l-[#111111] active:border-r-[#555555] active:border-b-[#555555]">
+                                <span className="text-2xl mb-1">🀄</span> 麻將
                             </button>
                         </div>
                     </div>
