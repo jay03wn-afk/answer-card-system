@@ -332,13 +332,32 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         if (!p) return;
         if (p.id.startsWith('ai_1')) playCachedSound(aiVillagerSound);
         else if (p.id.startsWith('ai_2')) playCachedSound(aiEndermanSound);
-        else if (p.id.startsWith('ai_3')) playCachedSound(aiCreeperSound);
+        // 修復苦力怕沒聲音的問題，換成響亮的音效
+        else if (p.id.startsWith('ai_3')) playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/entity/creeper/hurt1.ogg');
         else playCachedSound(steveEatSound); 
     };
 
-    const triggerActionBubble = (pIdx, text) => {
+    const triggerActionBubble = (pIdx, type) => {
+        const p = players[pIdx];
+        if (!p) return;
+        let text = type;
+        if (p.id.startsWith('ai_')) {
+            const isVillager = p.id.startsWith('ai_1');
+            const isEnderman = p.id.startsWith('ai_2');
+            if (type === '吃') {
+                text = isVillager ? "哼！這張我要了！(吃)" : isEnderman ? "這塊磚...是我的。(吃)" : "嘶嘶...好吃！(吃)";
+            } else if (type === '碰') {
+                text = isVillager ? "哈！碰！" : isEnderman ? "拿來吧你！(碰)" : "嘶...碰碰！";
+            } else if (type === '槓') {
+                text = isVillager ? "大賺一筆！槓！" : isEnderman ? "加倍奉還。(槓)" : "要爆炸啦！(槓)";
+            } else if (type === '胡') {
+                text = isVillager ? "發財啦！胡了！" : isEnderman ? "遊戲結束。胡。" : "BOOM！胡牌！";
+            } else if (type === '被吃碰') {
+                 text = isVillager ? "哎呀！我的牌！" : isEnderman ? "你竟敢拿我的牌..." : "嘶...可惡！";
+            }
+        }
         setActionBubbles(prev => ({ ...prev, [pIdx]: text }));
-        setTimeout(() => setActionBubbles(prev => ({ ...prev, [pIdx]: null })), 2000);
+        setTimeout(() => setActionBubbles(prev => ({ ...prev, [pIdx]: null })), 2500);
     };
 
     const bgmRef = useRef(null);
@@ -743,8 +762,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
         
         if (actionType === 'hu') {
             playActorVoice(actorIdx);
-            setTimeout(() => playCachedSound(totemSound), 300); 
-            triggerActionBubble(actorIdx, "胡！");
+            playCachedSound(totemSound); // 移除 setTimeout 延遲
+            triggerActionBubble(actorIdx, "胡");
+            triggerActionBubble(pendingAction.from, "被吃碰");
             if (!checkHu([...currentHand, tile])) return showToast("牌型不符 (需 5搭1眼)！");
             handleWin(actorIdx, pendingAction.from);
             return;
@@ -752,8 +772,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
         if (actionType === 'pong') {
             playActorVoice(actorIdx);
-            setTimeout(() => playCachedSound(tileSound), 150); 
-            triggerActionBubble(actorIdx, "碰！");
+            playCachedSound(tileSound); // 移除 setTimeout 延遲
+            triggerActionBubble(actorIdx, "碰");
+            triggerActionBubble(pendingAction.from, "被吃碰");
             const sameTiles = currentHand.filter(t => t.type === tile.type && t.val === tile.val);
             if (sameTiles.length < 2) return showToast("條件不符！");
             
@@ -776,8 +797,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
         if (actionType === 'kong') {
             playActorVoice(actorIdx);
-            setTimeout(() => playCachedSound(tileSound), 150); 
-            triggerActionBubble(actorIdx, "槓！");
+            playCachedSound(tileSound); // 移除 setTimeout 延遲
+            triggerActionBubble(actorIdx, "槓");
+            triggerActionBubble(pendingAction.from, "被吃碰");
             const sameTiles = currentHand.filter(t => t.type === tile.type && t.val === tile.val);
             if (sameTiles.length < 3) return showToast("條件不符！");
             
@@ -806,8 +828,9 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
 
         if (actionType === 'chow') {
             playActorVoice(actorIdx);
-            setTimeout(() => playCachedSound(tileSound), 150); 
-            triggerActionBubble(actorIdx, "吃！");
+            playCachedSound(tileSound); // 移除 setTimeout 延遲
+            triggerActionBubble(actorIdx, "吃");
+            triggerActionBubble(pendingAction.from, "被吃碰");
             const used = specificTiles; 
             if (!used || used.length !== 2) return showToast("系統錯誤：未選擇吃的牌");
             
@@ -1235,7 +1258,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                     if (aiHandled) break;
                     const aiIdx = players.findIndex(p => p.id === ai.id);
                     if (checkHu([...ai.hand, t])) {
-                        aiHandled = true; timeoutId = setTimeout(() => handleIntercept('hu', null, aiIdx), 1000); break;
+                        // 加快胡牌反應速度 (1000ms -> 300ms)
+                        aiHandled = true; timeoutId = setTimeout(() => handleIntercept('hu', null, aiIdx), 300); break;
                     }
                 }
 
@@ -1252,7 +1276,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 const newScore = getHandScore(handAfterPong) + 10;
                                 // 🌟 核心防護：只有當碰牌能讓牌型總分增加時，才去碰！絕不破壞既有牌型！
                                 if (newScore >= baseScore) {
-                                    aiHandled = true; timeoutId = setTimeout(() => handleIntercept('pong', null, aiIdx), 800); break;
+                                    // 加快碰牌反應速度 (800ms -> 500ms)
+                                    aiHandled = true; timeoutId = setTimeout(() => handleIntercept('pong', null, aiIdx), 500); break;
                                 }
                             }
                         }
@@ -1291,7 +1316,8 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                 }
 
                                 if (bestChow) {
-                                    aiHandled = true; timeoutId = setTimeout(() => handleIntercept('chow', bestChow, aiIdx), 1200); break;
+                                    // 加快吃牌反應速度 (1200ms -> 600ms)
+                                    aiHandled = true; timeoutId = setTimeout(() => handleIntercept('chow', bestChow, aiIdx), 600); break;
                                 }
                             }
                         }
@@ -1613,7 +1639,13 @@ function Mj({ user, userProfile, showAlert, onQuit }) {
                                     const avatarImg = p.id.startsWith('ai_') ? AI_AVATARS[p.id] : (p.avatar || 'https://minotar.net/helm/Steve/64.png');
                                     
                                     return (
-                                        <div className={`flex ${pos === 'top' ? 'flex-col' : pos === 'left' ? 'flex-row' : 'flex-row-reverse'} items-center gap-2 pointer-events-auto`}>
+                                        <div className={`flex ${pos === 'top' ? 'flex-col' : pos === 'left' ? 'flex-row' : 'flex-row-reverse'} items-center gap-2 pointer-events-auto relative`}>
+                                            {/* AI 對話氣泡渲染 */}
+                                            {actionBubbles[pIdx] && (
+                                                <div className={`absolute z-[300] bg-white text-stone-900 font-black px-3 py-1.5 rounded-xl shadow-2xl border-4 border-stone-800 whitespace-nowrap animate-bounce ${pos === 'top' ? 'top-[80px] left-1/2 -translate-x-1/2' : pos === 'left' ? 'top-[-40px] left-0' : 'top-[-40px] right-0'}`}>
+                                                    {actionBubbles[pIdx]}
+                                                </div>
+                                            )}
                                             <div className={`flex flex-col items-center bg-stone-800/95 p-2 border-2 ${isTurn ? 'border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.8)] scale-110 animate-pulse' : 'border-stone-600'} rounded-lg transition-all duration-300`}>
                                                 <div className="w-8 h-8 sm:w-12 sm:h-12 mb-1 border-2 border-stone-500 bg-stone-700 relative overflow-hidden">
                                                     {isTurn && <div className="absolute inset-0 bg-amber-400/30 animate-pulse z-10"></div>}

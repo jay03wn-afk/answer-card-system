@@ -20,6 +20,62 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
     // ✨ 新增：用來顯示建立新資料夾的視窗
     const [showNewFolderInput, setShowNewFolderInput] = useState(false);
 
+    // ✨ 新增：計算錯題本編輯視窗的樹狀結構
+    const [expandedFolders, setExpandedFolders] = useState({});
+    const folderTree = React.useMemo(() => {
+        const tree = {};
+        const userFolders = initialData?.userFolders || [];
+        userFolders.forEach(f => {
+            if (f === '全部' || f === '未分類') return;
+            const parts = f.split('/');
+            let curr = tree;
+            let currentPath = '';
+            parts.forEach((p, i) => {
+                currentPath = currentPath ? currentPath + '/' + p : p;
+                if (!curr[p]) curr[p] = { name: p, path: currentPath, children: {} };
+                curr = curr[p].children;
+            });
+        });
+        return tree;
+    }, [initialData?.userFolders]);
+
+    const renderLocalTree = (nodes, level = 0) => {
+        return Object.values(nodes).sort((a, b) => a.name.localeCompare(b.name)).map(node => {
+            const hasChildren = Object.keys(node.children).length > 0;
+            const isExpanded = expandedFolders[node.path];
+            const isSelected = folder === node.path;
+
+            return (
+                <div key={node.path} className="flex flex-col w-full">
+                    <div 
+                        className={`flex items-center gap-1 py-1.5 pr-3 rounded-xl cursor-pointer transition-colors ${isSelected ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-800' : 'hover:bg-stone-100 dark:hover:bg-gray-700 text-stone-700 dark:text-gray-300 font-medium'}`}
+                        style={{ paddingLeft: `${level * 1.2 + 0.75}rem` }}
+                        onClick={() => setFolder(node.path)}
+                    >
+                        {hasChildren ? (
+                            <span 
+                                className="material-symbols-outlined text-[18px] cursor-pointer text-gray-400 hover:text-amber-500 transition-transform"
+                                style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                                onClick={(e) => { e.stopPropagation(); setExpandedFolders(p => ({...p, [node.path]: !p[node.path]})); }}
+                            >
+                                chevron_right
+                            </span>
+                        ) : (
+                            <span className="w-[18px]"></span> 
+                        )}
+                        <span className={`material-symbols-outlined text-[18px] mr-1 ${isSelected ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500'}`}>{hasChildren && isExpanded ? 'folder_open' : 'folder'}</span>
+                        <span className="text-sm truncate">{node.name}</span>
+                    </div>
+                    {hasChildren && isExpanded && (
+                        <div className="flex flex-col w-full mt-0.5 gap-0.5 border-l-2 border-stone-200 dark:border-stone-700 ml-4 pl-1">
+                            {renderLocalTree(node.children, level + 1)}
+                        </div>
+                    )}
+                </div>
+            );
+        });
+    };
+
     const handleSave = async () => {
         const finalFolder = (showNewFolderInput && newFolder.trim() ? newFolder.trim() : folder) || '未分類';
         setIsSaving(true);
@@ -73,23 +129,8 @@ function WrongBookModal({ title, initialData, onClose, onSave, showAlert }) {
                                 <span className="text-sm">未分類</span>
                             </div>
                             
-                            {/* ✨ 判斷是否有傳入外部的 renderFolderTree，有的話就使用樹狀結構 */}
-                            {initialData?.renderFolderTree && initialData?.folderTree ? (
-                                initialData.renderFolderTree(initialData.folderTree, 0, folder, setFolder)
-                            ) : (
-                                /* 💡 保底機制：如果沒有傳入樹狀函數 (例如舊版相容)，則顯示一般選單 */
-                                initialData?.userFolders && initialData.userFolders.filter(f => f !== '未分類').map(f => (
-                                    <div 
-                                        key={f}
-                                        className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${folder === f ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-800' : 'hover:bg-stone-100 dark:hover:bg-gray-700 text-stone-700 dark:text-gray-300 font-medium'}`}
-                                        onClick={() => setFolder(f)}
-                                    >
-                                        <span className="w-[20px]"></span>
-                                        <span className={`material-symbols-outlined text-[18px] ${folder === f ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500'}`}>folder</span>
-                                        <span className="text-sm truncate">{f}</span>
-                                    </div>
-                                ))
-                            )}
+                            {/* ✨ 替換為本地的樹狀結構渲染 */}
+                            {renderLocalTree(folderTree)}
                         </div>
                     )}
                 </div>
@@ -158,8 +199,8 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
     const [batchMode, setBatchMode] = useState(false); // 批次選取模式
     const [selectedItems, setSelectedItems] = useState([]); // 被打勾的錯題
     
-    // ✨ 新增：控制資料夾目錄與題目展開的狀態
-    const [isFolderTreeOpen, setIsFolderTreeOpen] = useState(true); // 資料夾目錄是否展開
+    // ✨ 修改：預設目錄為收合 (false)
+    const [isFolderTreeOpen, setIsFolderTreeOpen] = useState(false); // 資料夾目錄是否展開
     const [expandedQuestions, setExpandedQuestions] = useState({}); // 個別題目是否展開
 
     useEffect(() => {
@@ -223,9 +264,11 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
             const isSelected = currentFolder === node.path;
 
             return (
-                <div key={node.path} className="flex flex-col w-full">
+                // ✨ 修改：加入 min-w-max 允許容器隨著文字寬度展開，不換行
+                <div key={node.path} className="flex flex-col min-w-max">
                     <div 
-                        className={`flex items-center gap-1 px-3 py-1.5 rounded-xl cursor-pointer transition-colors ${isSelected ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md font-bold' : 'hover:bg-stone-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium'}`}
+                        // ✨ 修改：加入 whitespace-nowrap 強制不換行
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded-xl cursor-pointer transition-colors whitespace-nowrap ${isSelected ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md font-bold' : 'hover:bg-stone-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium'}`}
                         style={{ marginLeft: `${level * 1.2}rem` }}
                         onClick={() => setCurrentFolder(node.path)}
                     >
@@ -245,6 +288,58 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     {hasChildren && isExpanded && (
                         <div className="flex flex-col w-full mt-0.5 gap-0.5 border-l-2 border-stone-200 dark:border-stone-700 ml-4 pl-1">
                             {renderTree(node.children, 0)}
+                        </div>
+                    )}
+                </div>
+            );
+        });
+    };
+
+    // ✨ 新增：錯題本移動專用的樹狀結構渲染函數
+    const [expandedMoveFolders, setExpandedMoveFolders] = useState({});
+    const renderMoveTree = (nodes, level = 0) => {
+        return Object.values(nodes).sort((a, b) => a.name.localeCompare(b.name)).map(node => {
+            const hasChildren = Object.keys(node.children).length > 0;
+            const isExpanded = expandedMoveFolders[node.path];
+
+            return (
+                <div key={node.path} className="flex flex-col w-full">
+                    <div 
+                        className="w-full text-left py-2 pr-3 rounded-xl font-bold text-sm text-stone-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-700 dark:hover:text-indigo-300 transition-all flex items-center group active:scale-[0.98] cursor-pointer"
+                        style={{ paddingLeft: `${level * 1.2 + 0.75}rem` }}
+                        onClick={async () => {
+                            const targetFolder = node.path;
+                            const batch = window.db.batch();
+                            moveItemTarget.forEach(id => {
+                                const ref = window.db.collection('users').doc(user.uid).collection('wrongBook').doc(id);
+                                batch.update(ref, { folder: targetFolder });
+                            });
+                            await batch.commit();
+                            setMoveItemTarget(null);
+                            if (batchMode) setSelectedItems([]); 
+                            setLocalToast(`[成功] 已將 ${moveItemTarget.length} 題移動至 ${targetFolder}`);
+                            setTimeout(() => setLocalToast(null), 2000);
+                        }}
+                    >
+                        {hasChildren ? (
+                            <span 
+                                className="material-symbols-outlined text-[18px] mr-1 text-gray-400 hover:text-indigo-500 cursor-pointer transition-transform"
+                                style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                                onClick={(e) => { e.stopPropagation(); setExpandedMoveFolders(p => ({...p, [node.path]: !p[node.path]})); }}
+                            >
+                                chevron_right
+                            </span>
+                        ) : (
+                            <span className="w-[18px] mr-1"></span>
+                        )}
+                        <span className="material-symbols-outlined text-[18px] mr-2 text-gray-400 group-hover:text-indigo-500 transition-colors">
+                            {hasChildren && isExpanded ? 'folder_open' : 'folder'}
+                        </span>
+                        <span className="truncate">{node.name}</span>
+                    </div>
+                    {hasChildren && isExpanded && (
+                        <div className="flex flex-col w-full mt-0.5 gap-0.5 border-l-2 border-stone-100 dark:border-stone-700 ml-4 pl-1">
+                            {renderMoveTree(node.children, level + 1)}
                         </div>
                     )}
                 </div>
@@ -542,9 +637,10 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                     
                     {/* ✨ 內容區域 (依照狀態顯示/隱藏) */}
                     {isFolderTreeOpen && (
-                        <div className="flex flex-col gap-1 p-3 max-h-[250px] overflow-y-auto custom-scrollbar shadow-inner">
+                        /* ✨ 修改：加入 overflow-x-auto 支援水平捲動 */
+                        <div className="flex flex-col gap-1 p-3 max-h-[250px] overflow-y-auto overflow-x-auto custom-scrollbar shadow-inner">
                             <div 
-                                className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${currentFolder === '全部' ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md font-bold' : 'hover:bg-stone-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium'}`}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors whitespace-nowrap ${currentFolder === '全部' ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md font-bold' : 'hover:bg-stone-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium'}`}
                                 onClick={() => setCurrentFolder('全部')}
                             >
                                 <span className="material-symbols-outlined text-[18px]">search</span>
@@ -553,7 +649,7 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                             {renderTree(folderTree)}
                             {folders.includes('未分類') && (
                                 <div 
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors mt-1 border-t border-stone-200 dark:border-stone-700 pt-2 ${currentFolder === '未分類' ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md font-bold' : 'hover:bg-stone-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium'}`}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors mt-1 border-t border-stone-200 dark:border-stone-700 pt-2 whitespace-nowrap ${currentFolder === '未分類' ? 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 shadow-md font-bold' : 'hover:bg-stone-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium'}`}
                                     onClick={() => setCurrentFolder('未分類')}
                                 >
                                     <span className="material-symbols-outlined text-[18px]">folder_off</span>
@@ -929,28 +1025,27 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                         </p>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar border-2 border-stone-100 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-900 p-2 space-y-1">
-                            {folders.filter(f => f !== '全部').map(f => (
-                                <button 
-                                    key={f}
-                                    onClick={async () => {
-                                        const targetFolder = f;
-                                        const batch = window.db.batch();
-                                        moveItemTarget.forEach(id => {
-                                            const ref = window.db.collection('users').doc(user.uid).collection('wrongBook').doc(id);
-                                            batch.update(ref, { folder: targetFolder });
-                                        });
-                                        await batch.commit();
-                                        setMoveItemTarget(null);
-                                        if (batchMode) setSelectedItems([]); // 批次移動完後自動清空打勾
-                                        setLocalToast(`[成功] 已將 ${moveItemTarget.length} 題移動至 ${targetFolder}`);
-                                        setTimeout(() => setLocalToast(null), 2000);
-                                    }}
-                                    className="w-full text-left px-4 py-3 rounded-xl font-bold text-sm text-stone-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-700 dark:hover:text-indigo-300 transition-all flex items-center gap-3 group active:scale-[0.98]"
-                                >
-                                    <span className="material-symbols-outlined text-gray-400 group-hover:text-indigo-500 transition-colors">folder</span>
-                                    {f}
-                                </button>
-                            ))}
+                            <button 
+                                onClick={async () => {
+                                    const targetFolder = '未分類';
+                                    const batch = window.db.batch();
+                                    moveItemTarget.forEach(id => {
+                                        const ref = window.db.collection('users').doc(user.uid).collection('wrongBook').doc(id);
+                                        batch.update(ref, { folder: targetFolder });
+                                    });
+                                    await batch.commit();
+                                    setMoveItemTarget(null);
+                                    if (batchMode) setSelectedItems([]); 
+                                    setLocalToast(`[成功] 已將 ${moveItemTarget.length} 題移動至 ${targetFolder}`);
+                                    setTimeout(() => setLocalToast(null), 2000);
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-xl font-bold text-sm text-stone-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-700 dark:hover:text-indigo-300 transition-all flex items-center gap-2 group active:scale-[0.98]"
+                            >
+                                <span className="material-symbols-outlined text-[18px] mr-2 text-gray-400 group-hover:text-indigo-500 transition-colors">folder_off</span>
+                                未分類
+                            </button>
+                            {/* ✨ 替換為樹狀結構渲染 */}
+                            {renderMoveTree(folderTree)}
                         </div>
                     </div>
                 </div>

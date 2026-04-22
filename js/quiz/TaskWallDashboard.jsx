@@ -1543,16 +1543,16 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
 
                     {/* ✨ 新增：任務牆的「載入更多」按鈕 */}
                     <div className="flex justify-center mt-8 pt-4">
-                        <button 
-                            onClick={() => setTaskLimit(prev => prev + 5)} 
-                            className="bg-[#FCFBF7] dark:bg-stone-800 border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 px-8 py-3 font-bold shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-all active:scale-95 flex items-center justify-center gap-2 rounded-2xl"
-                        >
-                            <span className="material-symbols-outlined text-[20px]">arrow_downward</span> 載入更早的任務...
-                        </button>
-                    </div>
+                        <button 
+                            onClick={() => setTaskLimit(prev => prev + 5)} 
+                            className="bg-[#FCFBF7] dark:bg-stone-800 border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 px-8 py-3 font-bold shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-all active:scale-95 flex items-center justify-center gap-2 rounded-2xl"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">arrow_downward</span> 載入更早的任務...
+                        </button>
+                    </div>
 
-                </div>
-            )}
+                </div>
+            )}
 
             {/* ✨ 新增：跳轉試卷時的載入 Modal */}
             {isJumping && (
@@ -1565,7 +1565,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 </div>
             )}
 
-        </div>
-    );
+        </div>
+    );
 }
 window.TaskWallDashboard = TaskWallDashboard;

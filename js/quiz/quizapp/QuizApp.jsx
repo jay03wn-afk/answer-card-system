@@ -114,7 +114,7 @@ function QuizApp(props) {
         handleStartTest, handleRetake, handleStartWrongRetest, handleWrongRetestPeek, handleSaveEdit, handleBackFromEdit, handleAnswerSelect,
         executePeek, handlePeek, toggleStar, handleGrade, handleManualRegrade, handleSubmitClick,
         handleSendSuggestion, handleUploadComment, handleResetProgress, handleAddToWrongBook,
-        shareScoreToFriend, scrollToQuestion, handleRichTextClick, toggleSection, handleProcessAiFile, handleGenerateAI
+        shareScoreToFriend, scrollToQuestion, handleRichTextClick, toggleSection, handleProcessAiFile, handleGenerateAI, quizHistory
     } = window.useQuizState(props);
 
     // ✨ 新增：自動捲動避開遮罩重疊，並加入「自由作答」放行機制
@@ -181,7 +181,14 @@ function QuizApp(props) {
         <div className="flex flex-col min-h-[100dvh] items-center p-4 relative py-10 overflow-y-auto bg-stone-50 dark:bg-stone-900 transition-colors custom-scrollbar">
             {UpdateNotification}
             <button onClick={handleBackFromEdit} className="absolute top-6 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-10 transition-colors">← 返回</button>
-<div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 shadow-2xl rounded-3xl w-full max-w-6xl 2xl:max-w-[1400px] border border-stone-200 dark:border-stone-700 mt-6 transition-colors">                <h2 className="font-black mb-6 text-2xl text-stone-800 dark:text-stone-100 border-b border-stone-200 dark:border-stone-700 pb-4 flex items-center gap-2"><span className="material-symbols-outlined text-[28px]">settings</span> 編輯試題設定</h2>
+<div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 shadow-2xl rounded-3xl w-full max-w-6xl 2xl:max-w-[1400px] border border-stone-200 dark:border-stone-700 mt-6 transition-colors">
+                <div className="flex justify-between items-center mb-6 border-b border-stone-200 dark:border-stone-700 pb-4">
+                    <h2 className="font-black text-2xl text-stone-800 dark:text-stone-100 flex items-center gap-2"><span className="material-symbols-outlined text-[28px]">settings</span> 編輯試題設定</h2>
+                    <button onClick={handleResetProgress} className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-4 py-2 rounded-xl font-bold hover:bg-red-100 dark:hover:bg-red-800 border border-red-200 dark:border-red-800 text-sm flex items-center transition-colors shadow-sm">
+                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        刪除此試卷
+                    </button>
+                </div>
                 
                {/* 新增：測驗名稱編輯區塊 */}
                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗名稱</label>
@@ -1235,8 +1242,9 @@ function QuizApp(props) {
     );
 
     if (step === 'answering') return (
-        <div className="flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors" onClick={handleRichTextClick}>
+        <div className="flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors relative" onClick={handleRichTextClick}>
             {UpdateNotification}
+            {tutorialStep === 0 && <button onClick={onBackToDashboard} className="absolute top-4 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-50 transition-colors">← 返回列表</button>}
             
             {/* ✨ 全域注入：確保所有作答區 (包含傳統雙視窗) 的圖片都有指標樣式與放大動畫 */}
             <style dangerouslySetInnerHTML={{__html: `
@@ -1251,9 +1259,8 @@ function QuizApp(props) {
             `}} />
 
            {/* ✨ 修正：解除 z-index 封印，讓教學模式的高亮特效可以突破黑暗遮罩 */}
-            <div className={`bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 transition-colors w-full mb-2 ${tutorialStep > 0 ? '' : 'z-10'}`}>
+            <div className={`bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 transition-colors w-full mb-2 mt-6 ${tutorialStep > 0 ? '' : 'z-10'}`}>
                 <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
-                    {tutorialStep === 0 && <button onClick={onBackToDashboard} className="mr-3 text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold text-sm whitespace-nowrap px-4 py-2 bg-stone-50 dark:bg-stone-700/50 border border-stone-200 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-600 rounded-xl transition-colors shrink-0">← 返回</button>}
                     <div className="overflow-hidden flex-grow flex flex-col justify-center min-w-0">
                         <div className="flex items-center space-x-2">
     <div className="flex flex-col">
@@ -1305,14 +1312,7 @@ function QuizApp(props) {
                         設定選單
                     </button>
                     
-                    {tutorialStep === 0 && (
-                        <button onClick={handleResetProgress} className="bg-gray-50 dark:bg-gray-700 text-red-400 dark:text-red-400 px-4 py-2 rounded-full font-bold hover:bg-red-50 dark:hover:bg-gray-600 hover:text-red-600 dark:hover:text-red-300 border border-transparent hover:border-red-100 dark:hover:border-gray-500 text-sm hidden md:flex items-center transition-colors shadow-sm">
-                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                            刪除
-                        </button>
-                    )}
-                    
-                   {!isShared && !isTask && tutorialStep === 0 && (
+                    {!isShared && !isTask && tutorialStep === 0 && (
                         <button 
                             onClick={(e) => {
                                 e.preventDefault();
@@ -1340,7 +1340,7 @@ function QuizApp(props) {
                                 });
                             }
                         }} 
-                        className="text-sm font-bold bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-300 px-4 py-2 rounded-full border border-stone-200 dark:border-stone-600 hover:bg-stone-200 dark:hover:bg-stone-600 whitespace-nowrap transition-all active:scale-95 flex items-center shadow-sm"
+                        className="hidden sm:flex text-sm font-bold bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-300 px-4 py-2 rounded-full border border-stone-200 dark:border-stone-600 hover:bg-stone-200 dark:hover:bg-stone-600 whitespace-nowrap transition-all active:scale-95 items-center shadow-sm"
                     >
                         <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
                         手動存檔
@@ -1360,8 +1360,8 @@ function QuizApp(props) {
             </div>
             
           {viewMode === 'interactive' ? (
-                /* ✨ 修改：沉浸式作答介面 - 將大背景改為深石色 (降低刺眼感)，襯托前方的象牙白卡片 */
-                <div className="flex-grow flex flex-col w-full bg-stone-200 dark:bg-stone-950 transition-colors mt-2 overflow-hidden relative rounded-2xl shadow-inner">
+                /* ✨ 修改：沉浸式作答介面 - 將大背景改為深石色 (降低刺眼感)，襯托前方的象牙白卡片，並加入細微漸層提升質感 */
+                <div className="flex-grow flex flex-col w-full bg-gradient-to-br from-stone-200 to-stone-300 dark:from-stone-900 dark:to-stone-950 transition-colors mt-2 overflow-hidden relative rounded-2xl shadow-inner border border-stone-300 dark:border-stone-800">
                     {/* ✨ 重新視覺設計：沉浸式作答與富文本自適應 (質感透明化) */}
 <style dangerouslySetInnerHTML={{__html: `
     .preview-rich-text {
@@ -1407,17 +1407,17 @@ function QuizApp(props) {
                     ) : (
                         <div className="flex-grow flex flex-col h-full max-w-5xl xl:max-w-[1400px] mx-auto w-full relative px-4">
                             {/* 頂部導覽列 */}
-                            <div className="bg-[#FCFBF7] dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700 p-3 sm:p-4 flex justify-between items-center shadow-sm z-20 overflow-x-auto custom-scrollbar">
-                                <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                            <div className="bg-[#FCFBF7] dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700 p-2 sm:p-4 flex flex-nowrap justify-between items-center shadow-sm z-20 gap-2 overflow-hidden shrink-0">
+                                <div className="flex items-center gap-2 shrink-0">
                                     <button 
                                         onClick={() => setShowQuestionGrid(!showQuestionGrid)}
-                                        className="font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 px-2 sm:px-3 py-1.5 rounded transition-colors flex items-center gap-2"
+                                        className="font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 px-2 sm:px-3 py-1.5 rounded transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap text-sm sm:text-base"
                                     >
-                                        <span className="whitespace-nowrap">第 {currentInteractiveIndex + 1} / {parsedInteractiveQuestions.length} 題</span>
-                                        <span className="text-xs hidden sm:inline">{showQuestionGrid ? '▲ 收起' : '▼ 展開列表'}</span>
+                                        <span>第 {currentInteractiveIndex + 1}/{parsedInteractiveQuestions.length} 題</span>
+                                        <span className="text-xs hidden sm:inline">{showQuestionGrid ? '▲' : '▼'}</span>
                                     </button>
                                     
-                                    {/* ✨ 進階狀態顯示：偷看題數與正確率 */}
+                                    {/* ✨ 進階狀態顯示：偷看題數與正確率 (手機隱藏) */}
                                     {(() => {
                                         const peekedIndices = peekedAnswers ? peekedAnswers.map((p, i) => p ? i : -1).filter(i => i !== -1) : [];
                                         if (peekedIndices.length === 0) return null;
@@ -1437,30 +1437,30 @@ function QuizApp(props) {
                                         const accuracy = Math.round((correctPeeked / peekedIndices.length) * 100);
                                         
                                         return (
-                                            <div className="hidden lg:flex items-center gap-3 ml-2 px-3 py-1.5 bg-stone-100 dark:bg-stone-700/50 rounded-xl border border-stone-200 dark:border-stone-600 text-xs font-bold shrink-0 shadow-inner">
-                                                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><span className="material-symbols-outlined text-[16px]">lock_open</span> 已對答: {peekedIndices.length}</span>
-                                                <span className="text-emerald-600 dark:text-emerald-400">正確: {correctPeeked}</span>
-                                                <span className="text-rose-500 dark:text-rose-400">錯誤: {peekedIndices.length - correctPeeked}</span>
-                                                <span className="bg-stone-800 text-white dark:bg-stone-900 px-2 py-0.5 rounded shadow-sm">{accuracy}%</span>
+                                            <div className="hidden lg:flex items-center gap-2 px-2 py-1 bg-stone-100 dark:bg-stone-700/50 rounded-lg border border-stone-200 dark:border-stone-600 text-xs font-bold shrink-0 shadow-inner">
+                                                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><span className="material-symbols-outlined text-[14px]">lock_open</span>已看:{peekedIndices.length}</span>
+                                                <span className="text-emerald-600 dark:text-emerald-400">對:{correctPeeked}</span>
+                                                <span className="text-rose-500 dark:text-rose-400">錯:{peekedIndices.length - correctPeeked}</span>
+                                                <span className="bg-stone-800 text-white dark:bg-stone-900 px-1 py-0.5 rounded shadow-sm">{accuracy}%</span>
                                             </div>
                                         );
                                     })()}
 
-                                    {/* ✨ 新增：文字大小調整控制器 */}
-                                    <div className="flex items-center bg-stone-50 dark:bg-gray-700 rounded border border-stone-200 dark:border-gray-600">
-                                        <button onClick={() => setImmersiveTextSize(prev => Math.max(0.6, prev - 0.2))} className="px-2 sm:px-3 py-1 text-gray-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-600 font-black transition-colors">A-</button>
+                                    {/* ✨ 新增：文字大小調整控制器 (手機隱藏) */}
+                                    <div className="hidden sm:flex items-center bg-stone-50 dark:bg-gray-700 rounded border border-stone-200 dark:border-gray-600 shrink-0">
+                                        <button onClick={() => setImmersiveTextSize(prev => Math.max(0.6, prev - 0.2))} className="px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-600 font-black transition-colors">A-</button>
                                         <span className="px-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-x border-stone-200 dark:border-gray-600 whitespace-nowrap">{Math.round(immersiveTextSize * 100)}%</span>
-                                        <button onClick={() => setImmersiveTextSize(prev => Math.min(3.0, prev + 0.2))} className="px-2 sm:px-3 py-1 text-gray-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-600 font-black transition-colors">A+</button>
+                                        <button onClick={() => setImmersiveTextSize(prev => Math.min(3.0, prev + 0.2))} className="px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-600 font-black transition-colors">A+</button>
                                     </div>
                                 </div>
-                                <div className="flex gap-2 shrink-0 ml-4">
+                                <div className="flex gap-1 sm:gap-2 shrink-0">
                                     <button
                                         disabled={currentInteractiveIndex === 0}
                                         onClick={() => {
                                             setCurrentInteractiveIndex(prev => Math.max(0, prev - 1));
                                             setShowQuestionGrid(false);
                                         }}
-                                        className="bg-stone-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-1.5 font-bold disabled:opacity-30 transition-colors"
+                                        className="bg-stone-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 sm:px-4 py-1.5 font-bold disabled:opacity-30 transition-colors rounded-lg sm:rounded-xl border border-stone-200 dark:border-stone-600 text-sm whitespace-nowrap shrink-0"
                                     >
                                         上一題
                                     </button>
@@ -1470,7 +1470,7 @@ function QuizApp(props) {
                                             setCurrentInteractiveIndex(prev => Math.min(parsedInteractiveQuestions.length - 1, prev + 1));
                                             setShowQuestionGrid(false);
                                         }}
-                                        className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-4 py-1.5 font-bold disabled:opacity-30 transition-colors shadow-sm"
+                                        className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-2 sm:px-4 py-1.5 font-bold disabled:opacity-30 transition-colors shadow-sm rounded-lg sm:rounded-xl text-sm whitespace-nowrap shrink-0"
                                     >
                                         下一題
                                     </button>
@@ -1483,11 +1483,11 @@ function QuizApp(props) {
                                     {['Q', 'SQ', 'ASQ'].map(targetType => {
                                         const typeQuestions = parsedInteractiveQuestions.filter(q => q.type === targetType);
                                         if (typeQuestions.length === 0) return null;
-                                        const typeLabel = targetType === 'Q' ? '<span className="material-symbols-outlined text-[18px] mr-1 align-bottom text-amber-500">radio_button_checked</span> 選擇題' : targetType === 'SQ' ? '🟢 簡答題' : '🟣 問答題';
-                                        
                                         return (
                                             <div key={targetType} className="mb-4 last:mb-0">
-                                                <h4 className="text-sm font-black text-gray-600 dark:text-gray-300 mb-2 border-b dark:border-gray-600 pb-1">{typeLabel}</h4>
+                                                <h4 className="text-sm font-black text-gray-600 dark:text-gray-300 mb-2 border-b dark:border-gray-600 pb-1 flex items-center gap-1">
+                                                    {targetType === 'Q' ? <><span className="material-symbols-outlined text-[18px] text-amber-500">radio_button_checked</span> 選擇題</> : targetType === 'SQ' ? '🟢 簡答題' : '🟣 問答題'}
+                                                </h4>
                                                 <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3">
                                                     {typeQuestions.map((q) => {
                                                         const actualIdx = q.globalIndex; // ✨ 改用全域索引
@@ -1565,13 +1565,14 @@ function QuizApp(props) {
                                 const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number);
 
                                return (
-                                <div key={actualIdx} className={`bg-[#FCFBF7] dark:bg-stone-800 border shadow-2xl rounded-3xl p-6 sm:p-8 mb-10 transition-all ${isPeeked ? 'border-amber-400 dark:border-amber-600' : 'border-stone-200 dark:border-stone-700'}`}>
-                                    <div className="flex justify-between items-start mb-5 border-b border-stone-200 dark:border-stone-700 pb-4">
-                                        <div className="flex items-center space-x-3">
+                                <div key={actualIdx} className={`backdrop-blur-xl bg-white/90 dark:bg-stone-800/90 border shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-3xl p-4 sm:p-8 mb-10 transition-all ${isPeeked ? 'border-amber-400 dark:border-amber-600 ring-2 ring-amber-400/20' : 'border-stone-200/80 dark:border-stone-700/80'}`}>
+                                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-5 border-b border-stone-200 dark:border-stone-700 pb-4">
+                                        <div className="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start">
                                             <span className={`text-2xl font-black ${q.type === 'Q' ? 'text-amber-600 dark:text-amber-500' : q.type === 'SQ' ? 'text-cyan-600 dark:text-cyan-400' : 'text-amber-700600 dark:text-amber-700400'}`}>
                                                 第 {q.type === 'Q' ? q.number : `${q.type}.${q.number}`} 題
                                                 {itemData && <span className="ml-2 text-sm font-bold opacity-70">({(itemData.earnedPoints || 0).toFixed(1).replace(/\.0$/, '')} / {(itemData.maxPoints || 0).toFixed(1).replace(/\.0$/, '')})</span>}
                                             </span>
+                                            <div className="flex items-center">
                                                     <button onClick={() => toggleStar(actualIdx)} className={`text-xl focus:outline-none transition-colors ${isStarred ? 'text-amber-500' : 'text-gray-300 dark:text-gray-600'} hover:scale-110`} title="標記星號">★</button>
                                                     <button onClick={() => {
                                                         const tempDiv = document.createElement('div');
@@ -1594,20 +1595,21 @@ function QuizApp(props) {
                                                         <span className="material-symbols-outlined text-[20px]">content_copy</span>
                                                     </button>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    {itemData && <span className={`text-xs px-2 py-1 font-bold border ${itemData.isCorrect ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{itemData.isCorrect ? '✅ 答對' : '❌ 錯誤'}</span>}
-                                                    <span className="text-sm font-bold bg-stone-50 dark:bg-gray-700 px-3 py-1 text-gray-600 dark:text-gray-300 border border-stone-200 dark:border-gray-600">
-                                                        作答: {currentAns || '未答'}
-                                                    </span>
-                                                </div>
                                             </div>
+                                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                                                {itemData && <span className={`text-xs px-2 py-1 font-bold border ${itemData.isCorrect ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{itemData.isCorrect ? '✅ 答對' : '❌ 錯誤'}</span>}
+                                                <span className="text-sm font-bold bg-stone-50 dark:bg-gray-700 px-3 py-1 text-gray-600 dark:text-gray-300 border border-stone-200 dark:border-gray-600 flex-grow sm:flex-grow-0 text-center">
+                                                    作答: {currentAns || '未答'}
+                                                </span>
+                                            </div>
+                                        </div>
                                             
                                             {/* ✨ 修復：將發光白底移到外層容器，避免被富文本的強制透明吃掉 */}
                                             <div className={`transition-all ${tutorialStep === 6 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] bg-white dark:bg-stone-800 p-5 -mx-4 rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.15)] ring-2 ring-amber-400 mb-4' : 'mb-4'}`}>
                                                 <div className="text-gray-800 dark:text-gray-200 leading-relaxed preview-rich-text !border-none !p-0 !bg-transparent" dangerouslySetInnerHTML={{ __html: q.mainText }} />
                                             </div>
 
-                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
+                                            <div className="flex flex-col gap-3">
                                                 {q.type === 'Q' ? ['A', 'B', 'C', 'D'].map(opt => {
                                                     const hasCustomContent = !!q.options[opt];
                                                     const isSelected = currentAns === opt;
@@ -1637,7 +1639,7 @@ function QuizApp(props) {
                                                                         setEliminatedOptions(prev => ({ ...prev, [elimKey]: !prev[elimKey] }));
                                                                         if (!isEliminated && isSelected) handleAnswerSelect(actualIdx, opt);
                                                                     }}
-                                                                    className={`w-10 flex items-center justify-center border-2 transition-colors rounded-2xl shrink-0 ${isEliminated ? 'bg-stone-100 border-gray-300 text-gray-600 dark:bg-gray-700' : 'bg-[#FCFBF7] border-stone-200 text-gray-300 hover:text-gray-500 dark:bg-stone-800'}`}
+                                                                    className={`w-10 sm:w-12 flex items-center justify-center border-2 transition-colors rounded-2xl shrink-0 ${isEliminated ? 'bg-stone-100 border-gray-300 text-gray-600 dark:bg-gray-700' : 'bg-[#FCFBF7] border-stone-200 text-gray-300 hover:text-gray-500 dark:bg-stone-800'}`}
                                                                 >
                                                                     {isEliminated ? '↺' : '✕'}
                                                                 </button>
@@ -1670,20 +1672,20 @@ function QuizApp(props) {
                                                             newAns[actualIdx] = e.target.value;
                                                             setUserAnswers(newAns);
                                                         }}
-                                                        className={`w-full p-4 h-40 text-base border-2 outline-none bg-[#FCFBF7] dark:bg-stone-800 dark:text-white shadow-inner transition-colors focus:ring-4 ${q.type === 'SQ' ? 'border-cyan-500 ring-cyan-200' : 'border-amber-700500 ring-amber-700200'} resize-none custom-scrollbar`}
+                                                        className={`w-full p-4 h-40 text-base border-2 outline-none bg-[#FCFBF7] dark:bg-stone-800 dark:text-white shadow-inner transition-colors focus:ring-4 rounded-xl ${q.type === 'SQ' ? 'border-cyan-500 ring-cyan-200' : 'border-amber-700500 ring-amber-700200'} resize-none custom-scrollbar`}
                                                         placeholder={`請輸入${q.type === 'SQ' ? '簡答' : '問答'}答案...`}
                                                     />
                                                 )}
                                             </div>
                                             
                                             {canPeek && !isPeeked && !results && (
-                                                <div className="mt-4 flex justify-end">
+                                                <div className="mt-6 flex justify-end">
                                                     <button 
                                                         onClick={() => {
                                                             if (tutorialStep === 7 && actualIdx === 0 && !quizSettings.askBeforePeek) setTutorialStep(8);
                                                             handlePeek(actualIdx);
                                                         }} 
-                                                        className={`text-sm font-bold px-5 py-2 transition-colors border flex items-center gap-1.5 rounded-full shadow-sm ${tutorialStep === 7 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.5)]' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 hover:bg-amber-200 border-amber-200'}`}
+                                                        className={`text-sm font-bold px-5 py-2.5 transition-colors border flex items-center gap-1.5 rounded-full shadow-sm ${tutorialStep === 7 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.5)]' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 hover:bg-amber-200 border-amber-200'}`}
                                                     >
                                                         <span className="material-symbols-outlined text-[18px]">key</span>
                                                         偷看答案
@@ -1692,16 +1694,16 @@ function QuizApp(props) {
                                             )}
 
                                             {(isPeeked || results) && (
-                                                <div className="mt-4 p-4 bg-amber-50 dark:bg-stone-900 border border-amber-200 dark:border-amber-800 text-sm">
-                                                    <div className="font-bold text-amber-700 dark:text-amber-400 mb-2 pb-2 border-b border-amber-200 flex items-center gap-2">
-<span className="flex items-center gap-1">{results ? <><span className="material-symbols-outlined text-[18px]">lightbulb</span> 試題詳解</> : <><span className="material-symbols-outlined text-[18px]">lock</span> 此題已看過答案並鎖定</>}</span>                                                        <span className="bg-[#FCFBF7] dark:bg-stone-800 px-2 py-0.5 rounded border border-amber-200 ml-auto text-stone-800 dark:text-white">標準答案: {currentCorrectAns || '未設定'}</span>
+                                                <div className="mt-6 p-4 sm:p-5 bg-amber-50 dark:bg-stone-900 border border-amber-200 dark:border-amber-800 text-sm rounded-2xl">
+                                                    <div className="font-bold text-amber-700 dark:text-amber-400 mb-3 pb-3 border-b border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+<span className="flex items-center gap-1">{results ? <><span className="material-symbols-outlined text-[18px]">lightbulb</span> 試題詳解</> : <><span className="material-symbols-outlined text-[18px]">lock</span> 此題已看過答案並鎖定</>}</span>                                                        <span className="bg-[#FCFBF7] dark:bg-stone-800 px-3 py-1 rounded border border-amber-200 text-stone-800 dark:text-white">標準答案: {currentCorrectAns || '未設定'}</span>
                                                     </div>
                                                     {currentExp ? (
                                                         <div className="preview-rich-text !bg-transparent !p-0 !border-none text-gray-800 dark:text-gray-200 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml((currentExp || '').replace(/<br\s*\/?>/gi, '\n')) }} />
                                                     ) : (
                                                         <p className="text-gray-500 italic mb-2 font-bold">此題無提供詳解。</p>
                                                     )}
-                                                    <div className="mt-3 pt-3 border-t border-amber-200 flex justify-end">
+                                                    <div className="mt-4 pt-4 border-t border-amber-200 flex justify-end">
                                                         <button 
                                                             disabled={loadingWrongBookNum === q.number}
                                                             onClick={(e) => { 
@@ -1712,7 +1714,7 @@ function QuizApp(props) {
                                                                     correctAns: currentCorrectAns || '無'
                                                                 }); 
                                                             }} 
-                                                            className={`text-xs bg-[#FCFBF7] dark:bg-stone-800 text-red-600 px-3 py-1.5 font-bold rounded-2xl border border-red-200 hover:bg-red-50 transition-colors shadow-sm ${loadingWrongBookNum === q.number ? 'opacity-50 cursor-wait' : ''}`}
+                                                            className={`text-xs sm:text-sm bg-[#FCFBF7] dark:bg-stone-800 text-red-600 px-4 py-2 font-bold rounded-full border border-red-200 hover:bg-red-50 transition-colors shadow-sm ${loadingWrongBookNum === q.number ? 'opacity-50 cursor-wait' : ''}`}
                                                         >
 {loadingWrongBookNum === q.number ? <><span className="material-symbols-outlined text-[16px] mr-1 animate-spin">autorenew</span>處理中...</> : <><span className="material-symbols-outlined text-[16px] mr-1">bookmark_add</span>收錄錯題</>}                                                        </button>
                                                     </div>
@@ -1722,7 +1724,7 @@ function QuizApp(props) {
                                             <div className="mt-6 border-t border-gray-100 dark:border-stone-700 pt-4">
                                                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">📝 我的筆記 (自動儲存)</label>
                                                 <textarea 
-                                                    className="w-full p-3 border border-stone-200 dark:border-gray-600 rounded bg-gray-50 dark:bg-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:text-gray-200 custom-scrollbar resize-none h-24"
+                                                    className="w-full p-4 border border-stone-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:text-gray-200 custom-scrollbar resize-none h-24 transition-all"
                                                     placeholder="在此輸入這題的重點筆記..."
                                                     value={(notes && notes[actualIdx]) || ''}
                                                     onChange={(e) => {
@@ -2549,10 +2551,11 @@ if (step === 'grading') return (
     }
 
     if (step === 'results') return (
-        <div className="flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors" onClick={handleRichTextClick}>
+        <div className="flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors relative" onClick={handleRichTextClick}>
             {UpdateNotification}
+            {tutorialStep === 0 && <button onClick={onBackToDashboard} className="absolute top-4 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-50 transition-colors">← 返回列表</button>}
             {/* ✨ 頂部導覽列：全面升級質感 SVG 圖示 */}
-            <div className="bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 z-10 transition-colors w-full">
+            <div className="bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 z-10 transition-colors w-full mt-6">
                 <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
                     <h2 className="font-bold truncate text-base pr-4 dark:text-white flex items-center gap-2 min-w-0">
                         {renderTestName(testName, true)} <span className="shrink-0">- 測驗結果</span>
@@ -2565,32 +2568,22 @@ if (step === 'grading') return (
                         設定
                     </button>
 
-                    {!isShared && !isTask && !/\[#(op|m?nm?st)\]/i.test(testName) && (
-                        <button onClick={async () => {
-                            const generateShareText = (code) => {
-                                const link = `${window.location.origin}/?shareCode=${code}`;
-                                return `🔥 快來挑戰我的試卷！\n📝 試卷名稱：${testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}\n\n👇 點擊下方連結，立即將試卷自動加入你的題庫：\n${link}`;
-                            };
-                            if (shortCode) {
-                                navigator.clipboard.writeText(generateShareText(shortCode));
-                                showAlert(`✅ 已複製邀請連結與文案！快去貼給朋友吧！`);
-                            } else {
-                                const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-                                try {
-                                    const cleanQuizData = { testName, numQuestions, questionFileUrl, correctAnswersInput, publishAnswers: publishAnswersToggle, hasTimer, timeLimit, hasSeparatedContent: true };
-                                    const contentData = { questionText: window.jzCompress(questionText), questionHtml, explanationHtml };
-                                    await window.db.collection('shareCodes').doc(newCode).set({ ownerId: currentUser.uid, quizId: quizId, quizData: cleanQuizData, contentData: contentData, createdAt: window.firebase.firestore.FieldValue.serverTimestamp() });
-                                    await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({ shortCode: newCode });
-                                    setShortCode(newCode);
-                                    navigator.clipboard.writeText(generateShareText(newCode));
-                                    showAlert(`✅ 測驗代碼已生成！\n已複製邀請連結與文案！快去貼給朋友吧！`);
-                                } catch (e) { showAlert('生成代碼失敗：' + e.message); }
-                            }
-                        }} className="text-sm font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-4 py-2 rounded-full border border-amber-200 dark:border-amber-700/50 hover:bg-amber-100 dark:hover:bg-amber-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
-                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg> 複製連結
-                        </button>
-                    )}
-                    
+                    <button onClick={() => {
+                        const showHistory = document.getElementById('history-modal');
+                        if (showHistory) showHistory.classList.remove('hidden');
+                        else showAlert('目前沒有作答紀錄喔！');
+                    }} className="text-sm font-bold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-4 py-2 rounded-full border border-indigo-200 dark:border-indigo-700/50 hover:bg-indigo-100 dark:hover:bg-indigo-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
+                        <span className="material-symbols-outlined text-[18px] mr-1">history</span> 作答紀錄
+                    </button>
+
+                    <button onClick={handleRetake} className="text-sm font-bold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-4 py-2 rounded-full border border-emerald-200 dark:border-emerald-700/50 hover:bg-emerald-100 dark:hover:bg-emerald-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
+                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> 再做一次
+                    </button>
+
+                    <button onClick={handleStartWrongRetest} className="text-sm font-bold bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 px-4 py-2 rounded-full border border-cyan-200 dark:border-cyan-700/50 hover:bg-cyan-100 dark:hover:bg-cyan-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
+                        <span className="material-symbols-outlined text-[16px] mr-1.5">replay</span> 錯題重測
+                    </button>
+
                     {!isShared && !isTask && tutorialStep === 0 && (
                         <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setStep('edit'); }} className="text-sm font-bold bg-stone-50 dark:bg-stone-700 text-stone-700 dark:text-stone-300 px-4 py-2 rounded-full border border-stone-200 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-600 whitespace-nowrap transition-colors active:scale-95 flex items-center shadow-sm">
                             <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg> 編輯試題
@@ -2602,32 +2595,31 @@ if (step === 'grading') return (
                             <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg> 修正建議
                         </button>
                     )}
-                    
-                    <button onClick={handleRetake} className="text-sm font-bold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-4 py-2 rounded-full border border-emerald-200 dark:border-emerald-700/50 hover:bg-emerald-100 dark:hover:bg-emerald-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
-                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> 再做一次
-                    </button>
 
-                    <button onClick={handleStartWrongRetest} className="text-sm font-bold bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 px-4 py-2 rounded-full border border-cyan-200 dark:border-cyan-700/50 hover:bg-cyan-100 dark:hover:bg-cyan-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
-                        <span className="material-symbols-outlined text-[16px] mr-1.5">replay</span> 錯題重測
-                    </button>
-
-                    {(questionFileUrl || questionText || questionHtml) && previewOpen && (
-                        <button onClick={() => setLayoutMode(prev => prev === 'horizontal' ? 'vertical' : 'horizontal')} className="bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-3 py-2 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-xs hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
-                        </button>
-                    )}
-
-                    {(questionFileUrl || questionText || questionHtml) && (
-                        <button onClick={() => setPreviewOpen(!previewOpen)} className="bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-3 py-2 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-xs hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                        </button>
-                    )}
-                    
-                    <button onClick={() => setShowShareScoreModal(true)} className="text-sm font-bold bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 px-4 py-2 rounded-full border border-rose-200 dark:border-rose-700/50 hover:bg-rose-100 dark:hover:bg-rose-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
+                    <button onClick={async () => {
+                        let currentCode = shortCode;
+                        if (!isShared && !isTask && !/\[#(op|m?nm?st)\]/i.test(testName) && !currentCode) {
+                            currentCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                            try {
+                                const cleanQuizData = { testName, numQuestions, questionFileUrl, correctAnswersInput, publishAnswers: publishAnswersToggle, hasTimer, timeLimit, hasSeparatedContent: true };
+                                const contentData = { questionText: window.jzCompress(questionText), questionHtml, explanationHtml };
+                                await window.db.collection('shareCodes').doc(currentCode).set({ ownerId: currentUser.uid, quizId: quizId, quizData: cleanQuizData, contentData: contentData, createdAt: window.firebase.firestore.FieldValue.serverTimestamp() });
+                                await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({ shortCode: currentCode });
+                                setShortCode(currentCode);
+                            } catch (e) {
+                                return showAlert('生成代碼失敗：' + e.message);
+                            }
+                        }
+                        
+                        const link = `${window.location.origin}/?shareCode=${currentCode || initialRecord.shortCode || ''}`;
+                        const shareText = `🔥 快來挑戰我的試卷！\n📝 試卷名稱：${testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}\n🔑 試卷代碼：${currentCode || initialRecord.shortCode || '公開任務無需代碼'}\n\n👇 點擊下方連結，立即將試卷自動加入你的題庫：\n${link}`;
+                        navigator.clipboard.writeText(shareText);
+                        
+                        setShowShareScoreModal(true);
+                    }} className="text-sm font-bold bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 px-4 py-2 rounded-full border border-rose-200 dark:border-rose-700/50 hover:bg-rose-100 dark:hover:bg-rose-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
                         <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
-                        炫耀分享
+                        分享與複製連結
                     </button>
-                    {tutorialStep === 0 && <button onClick={onBackToDashboard} className="text-sm font-bold bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-4 py-2 rounded-full hover:bg-stone-700 dark:hover:bg-white whitespace-nowrap transition-colors shadow-sm">返回列表</button>}
                 </div>
             </div>
             
@@ -2757,6 +2749,72 @@ if (step === 'grading') return (
                                     <span key={i} className={`px-1.5 py-0.5 text-xs font-bold border rounded ${s >= 60 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'}`}>{s} 分</span>
                                 )) : <span className="text-xs text-gray-500">尚無其他挑戰者成績</span>}
                             </div>
+                        </div>
+                    )}
+
+                    {/* ✨ 新增：AI 錯題分析按鈕 (成績面板下方) */}
+                    {results && results.data && results.data.some(d => !d.isCorrect) && canSeeAnswers && (
+                        <div className="px-4 py-3 border-b border-stone-200 dark:border-stone-700 bg-indigo-50/50 dark:bg-indigo-900/10 shrink-0 flex justify-between items-center flex-wrap gap-3">
+                            <div className="flex flex-col">
+                                <span className="text-sm font-bold text-indigo-700 dark:text-indigo-400 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">psychology</span> AI 錯題弱點分析</span>
+                                <span className="text-xs text-indigo-500 dark:text-indigo-300">自動歸納您這份試卷的錯誤觀念，並補充考點筆記 (100💎)</span>
+                            </div>
+                            <button 
+                                onClick={async () => {
+                                    const currentDiamonds = userProfile?.mcData?.diamonds || 0;
+                                    if (currentDiamonds < 100) return showAlert(`💎 鑽石不足！使用 AI 分析需要 100 顆鑽石，您目前只有 ${currentDiamonds} 顆。`);
+                                    
+                                    const wrongQuestions = results.data.filter(d => !d.isCorrect);
+                                    if (wrongQuestions.length === 0) return showAlert('您沒有錯題，不需要分析！');
+
+                                    if (window.setGlobalToast) {
+                                        window.setGlobalToast({ status: 'loading', message: '⏳ AI 正在深度分析您的錯題，請稍候...' });
+                                    }
+
+                                    try {
+                                        let promptData = "以下是該名學生在測驗中答錯的題目與選項，請分析其共同弱點，指出錯誤觀念，並補充該知識點的核心常考細節。\n\n";
+                                        wrongQuestions.forEach(wq => {
+                                            const actualIdx = wq.number - 1;
+                                            const q = parsedInteractiveQuestions.find(x => x.globalIndex === actualIdx);
+                                            if (q) {
+                                                promptData += `【第 ${wq.number} 題】\n題目：${q.mainText}\n學生錯答：${wq.userAns}\n正確答案：${wq.correctAns}\n\n`;
+                                            }
+                                        });
+
+                                        promptData += "請使用繁體中文，格式請用條列式或段落，語氣要像專業且鼓勵人的家教老師。請勿使用 markdown code block，直接輸出純文本。";
+
+                                        const res = await fetch('/api/gemini', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ prompt: promptData })
+                                        });
+                                        
+                                        const data = await res.json();
+                                        if (data.result && data.result.startsWith('❌')) throw new Error(data.result);
+
+                                        // 扣除鑽石
+                                        await window.db.collection('users').doc(currentUser.uid).update({
+                                            'mcData.diamonds': (currentDiamonds - 100)
+                                        });
+
+                                        // 將結果存入筆記，方便使用者查看
+                                        const analysisText = data.result.trim();
+                                        setExplanationModalItem({
+                                            number: 'AI 分析報告',
+                                            content: `<div class="p-4 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-900 leading-relaxed">${analysisText}</div>`,
+                                            note: ''
+                                        });
+
+                                        if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: '✅ 分析完成！已為您扣除 100 鑽石。' });
+
+                                    } catch (e) {
+                                        if (window.setGlobalToast) window.setGlobalToast({ status: 'error', message: '❌ 分析失敗 (未扣除鑽石)：' + e.message });
+                                    }
+                                }}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center gap-1 active:scale-95"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">auto_awesome</span> 開始分析
+                            </button>
                         </div>
                     )}
 
@@ -3026,21 +3084,47 @@ if (step === 'grading') return (
 
             {showShareScoreModal && (
                 <div className="fixed inset-0 bg-stone-800 bg-opacity-60 flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-sm rounded-3xl shadow-xl">
-                        <h3 className="font-black text-lg mb-4 dark:text-white flex items-center">
-                            <svg className="w-5 h-5 mr-2 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
-                            選擇要炫耀並分享的好友
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-sm rounded-[2rem] shadow-xl border border-stone-200 dark:border-stone-700">
+                        <h3 className="font-black text-lg mb-4 dark:text-white flex items-center justify-between">
+                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[20px] text-rose-500">share</span> 分享與炫耀</span>
+                            <button onClick={() => setShowShareScoreModal(false)} className="text-gray-400 hover:text-stone-800 dark:hover:text-white">✕</button>
                         </h3>
-                        <div className="max-h-60 overflow-y-auto mb-4 border border-stone-200 dark:border-stone-700 rounded-xl custom-scrollbar bg-white dark:bg-stone-900">
-                            {(userProfile.friends || []).length === 0 ? <p className="p-4 text-sm text-gray-400 text-center font-bold">目前還沒有好友喔</p> : null}
+
+                        <div className="mb-6 bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-4 rounded-2xl shadow-inner">
+                            <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">測驗代碼</p>
+                            <div className="flex flex-col gap-2">
+                                <div className="flex justify-between items-center bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 px-3 py-2 rounded-xl">
+                                    <span className="font-mono text-xl font-black text-amber-600 dark:text-amber-400 tracking-widest">{shortCode || initialRecord.shortCode || '公開任務免代碼'}</span>
+                                    {shortCode || initialRecord.shortCode ? (
+                                        <button onClick={() => {
+                                            navigator.clipboard.writeText(shortCode || initialRecord.shortCode);
+                                            showAlert(`✅ 已複製代碼：${shortCode || initialRecord.shortCode}`);
+                                        }} className="text-xs font-bold bg-stone-800 text-white dark:bg-stone-100 dark:text-stone-800 px-3 py-1.5 rounded-lg hover:bg-stone-700 transition-colors">
+                                            複製
+                                        </button>
+                                    ) : null}
+                                </div>
+                                <button onClick={() => {
+                                    const link = `${window.location.origin}/?shareCode=${shortCode || initialRecord.shortCode || ''}`;
+                                    const shareText = `🔥 快來挑戰我的試卷！\n📝 試卷名稱：${testName.replace(/\[#(op|m?nm?st)\]/gi, '').trim()}\n🔑 試卷代碼：${shortCode || initialRecord.shortCode || '公開任務無需代碼'}\n\n👇 點擊下方連結，立即將試卷自動加入你的題庫：\n${link}`;
+                                    navigator.clipboard.writeText(shareText);
+                                    showAlert(`✅ 已複製邀請連結與文案！快去貼給朋友吧！`);
+                                }} className="w-full text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 py-2 rounded-xl border border-amber-200 dark:border-amber-800 hover:bg-amber-200 transition-colors flex items-center justify-center gap-1">
+                                    <span className="material-symbols-outlined text-[16px]">link</span> 複製邀請連結與文案
+                                </button>
+                            </div>
+                        </div>
+
+                        <h4 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 px-1">直接傳送給好友</h4>
+                        <div className="max-h-40 overflow-y-auto border border-stone-200 dark:border-stone-700 rounded-xl custom-scrollbar bg-white dark:bg-stone-900 shadow-inner">
+                            {(userProfile.friends || []).length === 0 ? <p className="p-4 text-xs text-gray-400 text-center font-bold">目前還沒有好友喔</p> : null}
                             {(userProfile.friends || []).map(f => (
-                                <button key={f.uid} onClick={() => shareScoreToFriend(f)} className="w-full text-left p-3 hover:bg-amber-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-800 font-bold text-sm transition-colors dark:text-white last:border-b-0 flex justify-between items-center">
+                                <button key={f.uid} onClick={() => shareScoreToFriend(f)} className="w-full text-left p-3 hover:bg-stone-50 dark:hover:bg-stone-800 border-b border-gray-100 dark:border-gray-800 font-bold text-sm transition-colors dark:text-white last:border-b-0 flex justify-between items-center group">
                                     <span>{f.name} <span className="text-gray-400 dark:text-gray-500 font-normal ml-2">{f.email}</span></span>
-                                    <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                                    <span className="material-symbols-outlined text-gray-300 group-hover:text-amber-500 transition-colors text-[18px]">send</span>
                                 </button>
                             ))}
                         </div>
-                        <button onClick={() => setShowShareScoreModal(false)} className="w-full bg-stone-100 dark:bg-gray-700 text-stone-800 dark:text-white p-3 font-bold rounded-full hover:bg-stone-200 dark:hover:bg-gray-600 transition-colors">取消</button>
                     </div>
                 </div>
             )}
@@ -3287,6 +3371,34 @@ if (step === 'grading') return (
                     </div>
                 </div>
             )}
+
+            {/* ✨ 歷史紀錄 Modal */}
+            <div id="history-modal" className="fixed inset-0 bg-stone-800/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4 hidden" onClick={() => document.getElementById('history-modal').classList.add('hidden')}>
+                <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-sm rounded-3xl shadow-xl border border-stone-200 dark:border-stone-700 max-h-[80vh] overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
+                    <h3 className="font-black text-lg mb-4 dark:text-white flex items-center justify-between">
+                        <span className="flex items-center gap-2"><span className="material-symbols-outlined text-indigo-500">history</span> 歷史作答紀錄</span>
+                        <button onClick={() => document.getElementById('history-modal').classList.add('hidden')} className="text-gray-400 hover:text-stone-800 dark:hover:text-white transition-colors">✕</button>
+                    </h3>
+                    <div className="space-y-3">
+                        {!(quizHistory && quizHistory.length > 0) ? (
+                            <p className="text-gray-500 dark:text-gray-400 text-sm font-bold text-center py-4">目前沒有歷史紀錄喔！<br/>按下「再做一次」並交卷後才會產生。</p>
+                        ) : (
+                            [...quizHistory].reverse().map((h, i) => (
+                                <div key={i} className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-4 rounded-2xl shadow-sm flex flex-col gap-2">
+                                    <div className="flex justify-between items-center border-b border-stone-100 dark:border-stone-800 pb-2">
+                                        <span className="text-xs font-bold text-gray-400">{new Date(h.date).toLocaleString('zh-TW')}</span>
+                                        <span className="text-xs font-bold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-800">第 {quizHistory.length - i} 次挑戰</span>
+                                    </div>
+                                    <div className="flex justify-between items-end">
+                                        <span className="text-sm font-bold text-stone-600 dark:text-stone-300">答對：{h.correctCount}/{h.total} 題</span>
+                                        <span className={`text-xl font-black ${h.score >= 60 ? 'text-emerald-500' : 'text-red-500'}`}>{h.score} 分</span>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

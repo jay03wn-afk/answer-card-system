@@ -72,7 +72,16 @@ function Dashboard(props) {
     const rawUserFolders = [...(userProfile.folders || []), ...dynamicFolders].filter(f => !specialFolders.includes(f));
     const userFolders = [...specialFolders, ...Array.from(new Set(rawUserFolders))];
     
-    const [currentFolder, setCurrentFolder] = useState('全部');
+    // ✨ 優化：從 sessionStorage 讀取上次停留的資料夾，達到記憶效果
+    const [currentFolder, setCurrentFolder] = useState(() => {
+        return sessionStorage.getItem('dashboard_last_folder') || '全部';
+    });
+
+    // ✨ 優化：當 currentFolder 改變時，存入 sessionStorage
+    useEffect(() => {
+        sessionStorage.setItem('dashboard_last_folder', currentFolder);
+    }, [currentFolder]);
+
     const itemsPerPage = 10;
     const [filters, setFilters] = useState({ todo: true, doing: true, done: true });
 
@@ -130,6 +139,57 @@ function Dashboard(props) {
         });
     };
 
+    // ✨ 新增：題庫移動視卷專用的樹狀結構渲染函數
+    const [expandedMoveFolders, setExpandedMoveFolders] = useState({});
+    const renderMoveTree = (nodes, level = 0) => {
+        return Object.values(nodes).sort((a, b) => a.name.localeCompare(b.name)).map(node => {
+            const hasChildren = Object.keys(node.children).length > 0;
+            const isExpanded = expandedMoveFolders[node.path];
+
+            return (
+                <div key={node.path} className="flex flex-col w-full">
+                    <div 
+                        className="w-full text-left py-2 pr-3 rounded-xl font-bold text-sm text-stone-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-700 dark:hover:text-indigo-300 transition-all flex items-center group active:scale-[0.98] cursor-pointer"
+                        style={{ paddingLeft: `${level * 1.2 + 0.75}rem` }}
+                        onClick={async () => {
+                            const targetFolder = node.path;
+                            let itemsToMove = batchMode ? selectedItems : [showMoveModal];
+                            const batch = window.db.batch();
+                            itemsToMove.forEach(item => {
+                                const ref = window.db.collection('users').doc(user.uid).collection('quizzes').doc(item.id);
+                                batch.update(ref, { folder: targetFolder });
+                            });
+                            await batch.commit();
+                            setShowMoveModal(null);
+                            if (batchMode) setSelectedItems([]);
+                            showAlert(`[成功] 已將 ${itemsToMove.length} 份試卷移動至 ${targetFolder}`);
+                        }}
+                    >
+                        {hasChildren ? (
+                            <span 
+                                className="material-symbols-outlined text-[18px] mr-1 text-gray-400 hover:text-indigo-500 cursor-pointer transition-transform"
+                                style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                                onClick={(e) => { e.stopPropagation(); setExpandedMoveFolders(p => ({...p, [node.path]: !p[node.path]})); }}
+                            >
+                                chevron_right
+                            </span>
+                        ) : (
+                            <span className="w-[18px] mr-1"></span>
+                        )}
+                        <span className="material-symbols-outlined text-[18px] mr-2 text-gray-400 group-hover:text-indigo-500 transition-colors">
+                            {hasChildren && isExpanded ? 'folder_open' : 'folder'}
+                        </span>
+                        <span className="truncate">{node.name}</span>
+                    </div>
+                    {hasChildren && isExpanded && (
+                        <div className="flex flex-col w-full mt-0.5 gap-0.5 border-l-2 border-stone-100 dark:border-stone-700 ml-4 pl-1">
+                            {renderMoveTree(node.children, level + 1)}
+                        </div>
+                    )}
+                </div>
+            );
+        });
+    };
     // 新增：移動試卷視窗專用的樹狀渲染 (包含展開/收合與點擊移動)
     const renderFolderSelectTree = (nodes, level = 0) => {
         return Object.values(nodes).sort((a, b) => a.name.localeCompare(b.name)).map(node => {
@@ -254,7 +314,10 @@ function Dashboard(props) {
         if (!cleanName) return showAlert('[錯誤] 名稱不可為空白');
         const finalPath = parentFolder ? `${parentFolder}/${cleanName}` : cleanName;
 
-        if (!userFolders.includes(finalPath)) {
+        // ✨ 修改：改為檢查 userProfile.folders 或預設空陣列，因為 userFolders 包含特殊資料夾，直接從源頭檢查比較保險
+        const existingFolders = userProfile?.folders || [];
+
+        if (!existingFolders.includes(finalPath)) {
             window.db.collection('users').doc(user.uid).set({
                 folders: window.firebase.firestore.FieldValue.arrayUnion(finalPath)
             }, { merge: true }).then(() => {
@@ -920,7 +983,7 @@ function Dashboard(props) {
                     )}
                 </div>
            ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6 pb-4 w-full min-w-0">
+                <div className="flex flex-col gap-3 pb-4 w-full min-w-0">
                     {paginatedRecords.map(rec => {
                         const isSelected = selectedItems.some(item => item.id === rec.id);
                         return (
@@ -932,87 +995,87 @@ function Dashboard(props) {
                                         else setSelectedItems(prev => [...prev, rec]);
                                     }
                                 }}
-                                className={`bg-[#FCFBF7] dark:bg-stone-800 border-2 ${isSelected ? 'border-indigo-500 bg-indigo-50/30 dark:bg-indigo-900/20' : 'border-stone-200 dark:border-stone-700'} p-5 rounded-2xl shadow-sm ${!batchMode ? 'hover:shadow-xl hover:-translate-y-1' : 'cursor-pointer hover:border-indigo-300'} transition-all flex flex-col w-full min-w-0 relative group`}
+                                className={`bg-[#FCFBF7] dark:bg-stone-800 border-2 ${isSelected ? 'border-indigo-500 bg-indigo-50/30 dark:bg-indigo-900/20' : 'border-stone-200 dark:border-stone-700'} p-3 sm:p-4 rounded-[1.25rem] shadow-sm ${!batchMode ? 'hover:shadow-md hover:-translate-y-[1px]' : 'cursor-pointer hover:border-indigo-300'} transition-all flex flex-col sm:flex-row sm:items-center justify-between w-full min-w-0 relative group gap-3`}
                             >
                                 
                                 {/* 批次核取方塊 */}
                                 {batchMode && (
-                                    <div className="absolute top-4 right-4 z-20">
-                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300 dark:border-gray-500 bg-white dark:bg-stone-800'}`}>
-                                            {isSelected && <span className="material-symbols-outlined text-white text-[16px] font-black">check</span>}
+                                    <div className="absolute top-3 right-3 sm:relative sm:top-0 sm:right-0 sm:mr-2 z-20 shrink-0">
+                                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300 dark:border-gray-500 bg-white dark:bg-stone-800'}`}>
+                                            {isSelected && <span className="material-symbols-outlined text-white text-[14px] font-black">check</span>}
                                         </div>
                                     </div>
                                 )}
 
-                                {/* 上半部：標題與狀態資訊 */}
-                                <div className={`flex flex-col gap-2 min-w-0 w-full ${batchMode ? 'pr-8' : ''}`}>
-                                    <div className="font-bold text-sm sm:text-base dark:text-white leading-relaxed min-w-0 w-full relative inline-block">
-                                        {renderTestName(rec.testName, !!rec.results, rec.taskType)}
-{rec.subtitle && (
-    <div className="text-xs sm:text-sm text-stone-500 dark:text-stone-400 mt-1 font-bold truncate w-full">
-        {rec.subtitle}
-    </div>
-)}
-                                        {/* ✨ 新增：偵測到答案更新且重新算分時，顯示閃爍提醒 */}
-                                        {rec.hasAnswerUpdate && (
-                                            <span className="absolute -top-3 -right-2 sm:-right-4 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse shadow-md border border-white dark:border-gray-800 z-10 pointer-events-none flex items-center gap-0.5">
-                                                <span className="material-symbols-outlined text-[12px]">error</span> 答案已更正
-                                            </span>
-                                        )}
+                                {/* 左側：標題、副標籤與狀態 */}
+                                <div className={`flex flex-col gap-1 min-w-0 w-full sm:w-auto flex-grow ${batchMode ? 'pr-8 sm:pr-0' : ''}`}>
+                                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                        <div className="font-bold text-sm sm:text-base dark:text-white truncate max-w-full inline-block relative pr-4">
+                                            {renderTestName(rec.testName, !!rec.results, rec.taskType)}
+                                            {/* ✨ 新增：偵測到答案更新且重新算分時，顯示閃爍紅點 */}
+                                            {rec.hasAnswerUpdate && (
+                                                <span className="absolute top-0 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-md border border-white dark:border-stone-800" title="答案已更正"></span>
+                                            )}
+                                        </div>
                                     </div>
                                     
-                                    <div className="text-xs text-gray-400 dark:text-gray-500 font-bold mb-1 mt-0.5">
-                                        建立於：{rec.createdAt?.toDate ? rec.createdAt.toDate().toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '未知時間'}
-                                    </div>
-
-                                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                                        {rec.isTask && <span className="text-[10px] bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">任務</span>}
-                                        {rec.isShared && !rec.isTask && <span className="text-[10px] bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 whitespace-nowrap shrink-0">分享</span>}
-                                        {rec.hasTimer && <span className="text-[10px] bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-700 px-1.5 py-0.5 font-bold whitespace-nowrap shrink-0 flex items-center gap-0.5"><span className="material-symbols-outlined text-[12px]">timer</span> {rec.timeLimit}m</span>}
-                                    </div>
-                                    
-                                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
-                                        <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap shrink-0">{rec.numQuestions}题</span>
+                                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 font-bold shrink-0">
+                                        <span className="truncate max-w-[120px] sm:max-w-xs">{rec.subtitle || (rec.createdAt?.toDate ? rec.createdAt.toDate().toLocaleDateString('zh-TW') : '未知')}</span>
+                                        <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
+                                        <span className="shrink-0">{rec.numQuestions}題</span>
+                                        
+                                        {/* 標籤小圖示 (手機版只留圖案，電腦版顯示文字) */}
+                                        {rec.isTask && <span className="bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1 py-0.5 rounded flex items-center gap-0.5" title="任務"><span className="material-symbols-outlined text-[12px]">sports_esports</span><span className="hidden sm:inline">任務</span></span>}
+                                        {rec.isShared && !rec.isTask && <span className="bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 px-1 py-0.5 rounded flex items-center gap-0.5" title="分享"><span className="material-symbols-outlined text-[12px]">share</span><span className="hidden sm:inline">分享</span></span>}
+                                        {rec.hasTimer && <span className="bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 px-1 py-0.5 rounded flex items-center gap-0.5" title={`${rec.timeLimit}分鐘`}><span className="material-symbols-outlined text-[12px]">timer</span><span className="hidden sm:inline">{rec.timeLimit}m</span></span>}
+                                        
+                                        <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
+                                        
+                                        {/* 狀態顯示 */}
                                         {rec.results ? (
-                                            <span className="text-emerald-600 dark:text-emerald-400 font-bold whitespace-nowrap shrink-0 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">check_circle</span> {rec.results.score} 分</span>
+                                            <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5"><span className="material-symbols-outlined text-[14px]">check_circle</span> {rec.results.score} 分</span>
                                         ) : (Array.isArray(rec.userAnswers) ? rec.userAnswers.filter(a=>a).length > 0 : typeof rec.userAnswers === 'string' && rec.userAnswers.length > 10) ? (
-                                            <span className="text-amber-500 dark:text-amber-400 font-bold flex items-center gap-1 flex-wrap">
-                                                <span className="material-symbols-outlined text-[16px]">edit_note</span> 進行中
-                                                {rec.hasTimer && rec.timeRemaining !== undefined && (
-                                                    <span className="text-red-500 inline-block whitespace-nowrap shrink-0">(剩 {Math.max(1, Math.ceil(rec.timeRemaining / 60))}m)</span>
-                                                )}
+                                            <span className="text-amber-500 dark:text-amber-400 flex items-center gap-0.5">
+                                                <span className="material-symbols-outlined text-[14px]">edit_note</span> 進行中
                                             </span>
                                         ) : (
-                                            <span className="text-gray-400 font-bold whitespace-nowrap shrink-0 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">hourglass_empty</span> 未作答</span>
+                                            <span className="text-gray-400 flex items-center gap-0.5"><span className="material-symbols-outlined text-[14px]">hourglass_empty</span> 未作答</span>
                                         )}
                                     </div>
                                 </div>
 
-                                {/* 下半部：操作按鈕 (手機版分開兩排：上排四個小按鈕 Grid 均分，下排一個滿版進入大按鈕) */}
-                                <div className="mt-3 pt-3 border-t border-gray-100 dark:border-stone-700 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 w-full min-w-0">
+                                {/* 右側：操作按鈕 (空間足夠時顯示文字) */}
+                                <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-between sm:justify-end mt-1 sm:mt-0 border-t border-gray-100 dark:border-stone-700 sm:border-0 pt-2 sm:pt-0">
                                     
-                                    {/* 輔助按鈕群組：手機版使用 CSS Grid 強制四等分，絕不超出邊界 */}
-                                    <div className="grid grid-cols-4 sm:flex sm:flex-wrap items-center gap-1 sm:gap-3 w-full sm:w-auto text-center shrink-0">
-                                        <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); handleDelete(rec); }} className="text-xs text-gray-500 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis flex items-center justify-center gap-0.5"><span className="material-symbols-outlined text-[14px]">delete</span>刪除</button>
-                                        <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); setShowMoveModal(rec); }} className="text-xs text-emerald-600 dark:text-emerald-400 disabled:opacity-30 disabled:cursor-not-allowed font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis flex items-center justify-center gap-0.5"><span className="material-symbols-outlined text-[14px]">snippet_folder</span>移動</button>
-                                       {!(rec.isTask || /\[#(op|m?nm?st)\]/i.test(rec.testName || '')) ? (
-                                            <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); setShowShareModal(rec); }} className="text-xs text-amber-500 dark:text-amber-400 disabled:opacity-30 disabled:cursor-not-allowed font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap overflow-hidden text-ellipsis flex items-center justify-center gap-0.5"><span className="material-symbols-outlined text-[14px]">share</span>分享</button>
-                                        ) : <div />}
-                                        {/* ✨ 放寬權限：如果是出題者本人，就算發布成任務也允許編輯 (修復 currentUser 導致的當機) */}
-                                        {!rec.isShared && (!rec.isTask || !rec.creatorUid || rec.creatorUid === user.uid) ? (
-                                            <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); handleEditQuiz(rec); }} className="text-xs text-amber-600 dark:text-amber-400 font-bold transition-colors py-1.5 sm:py-0 whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed overflow-hidden text-ellipsis relative flex items-center justify-center gap-0.5">
-                                                <span className="material-symbols-outlined text-[14px]">edit_document</span>編輯
-                                                {rec.hasNewSuggestion && <span className="absolute top-1 right-0 sm:-top-1 sm:-right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); handleDelete(rec); }} className="h-8 w-8 md:w-auto md:px-3 flex items-center justify-center rounded-full md:rounded-xl bg-stone-100 dark:bg-stone-700 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors gap-1" title="刪除">
+                                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                                            <span className="text-xs font-bold hidden md:inline">刪除</span>
+                                        </button>
+                                        <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); setShowMoveModal(rec); }} className="h-8 w-8 md:w-auto md:px-3 flex items-center justify-center rounded-full md:rounded-xl bg-stone-100 dark:bg-stone-700 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors gap-1" title="移動">
+                                            <span className="material-symbols-outlined text-[16px]">snippet_folder</span>
+                                            <span className="text-xs font-bold hidden md:inline">移動</span>
+                                        </button>
+                                       {!(rec.isTask || /\[#(op|m?nm?st)\]/i.test(rec.testName || '')) && (
+                                            <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); setShowShareModal(rec); }} className="h-8 w-8 md:w-auto md:px-3 flex items-center justify-center rounded-full md:rounded-xl bg-stone-100 dark:bg-stone-700 text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors gap-1" title="分享">
+                                                <span className="material-symbols-outlined text-[16px]">share</span>
+                                                <span className="text-xs font-bold hidden md:inline">分享</span>
                                             </button>
-                                        ) : <div />}
+                                        )}
+                                        {!rec.isShared && (!rec.isTask || !rec.creatorUid || rec.creatorUid === user.uid) && (
+                                            <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); handleEditQuiz(rec); }} className="relative h-8 w-8 md:w-auto md:px-3 flex items-center justify-center rounded-full md:rounded-xl bg-stone-100 dark:bg-stone-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors gap-1" title="編輯">
+                                                <span className="material-symbols-outlined text-[16px]">edit_document</span>
+                                                <span className="text-xs font-bold hidden md:inline">編輯</span>
+                                                {rec.hasNewSuggestion && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border border-white dark:border-stone-800"></span>}
+                                            </button>
+                                        )}
                                     </div>
                                     
-                                    {/* 進入/查看按鈕 */}
-                                    <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); handleEnterQuiz(rec); }} className="bg-stone-50 dark:bg-gray-700 px-4 py-2.5 sm:py-1.5 rounded-2xl font-bold border border-stone-200 dark:border-gray-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-stone-100 hover:text-stone-800 dark:text-white text-sm transition-colors w-full sm:w-auto text-center shrink-0 flex items-center justify-center gap-1">
-                                        {rec.results ? <><span className="material-symbols-outlined text-sm">bar_chart</span> 查看</> : <><span className="material-symbols-outlined text-sm">login</span> 進入</>}
+                                    {/* 進入大按鈕 */}
+                                    <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); handleEnterQuiz(rec); }} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-4 py-1.5 rounded-full font-bold shadow-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-stone-700 dark:hover:bg-white text-xs sm:text-sm transition-colors shrink-0 flex items-center justify-center gap-1 min-w-[70px]">
+                                        {rec.results ? '查看' : '進入'} <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                                     </button>
                                 </div>
-
                             </div>
                         );
                     })}
@@ -1081,16 +1144,15 @@ function Dashboard(props) {
                         </h3>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar border-2 border-stone-100 dark:border-stone-700 rounded-xl bg-white dark:bg-stone-900 p-2 space-y-1">
-                            {userFolders.filter(f => f !== '我建立的試題' && f !== '[公開試題管理]' && f !== '任務牆').map(f => (
-                                <button 
-                                    key={f}
-                                    onClick={() => moveQuizToFolder(showMoveModal, f)}
-                                    className="w-full text-left px-4 py-3 rounded-xl font-bold text-sm text-stone-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-700 dark:hover:text-indigo-300 transition-all flex items-center gap-3 group active:scale-[0.98]"
-                                >
-                                    <span className="material-symbols-outlined text-gray-400 group-hover:text-indigo-500 transition-colors">folder</span>
-                                    {f}
-                                </button>
-                            ))}
+                            <button 
+                                onClick={() => moveQuizToFolder(showMoveModal, '未分類')}
+                                className="w-full text-left px-3 py-2 rounded-xl font-bold text-sm text-stone-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-700 dark:hover:text-indigo-300 transition-all flex items-center gap-2 group active:scale-[0.98]"
+                            >
+                                <span className="material-symbols-outlined text-[18px] mr-2 text-gray-400 group-hover:text-indigo-500 transition-colors">folder_off</span>
+                                未分類
+                            </button>
+                            {/* ✨ 替換為樹狀結構渲染 */}
+                            {renderFolderSelectTree(folderTree)}
                         </div>
                     </div>
                 </div>
@@ -1124,9 +1186,13 @@ function Dashboard(props) {
                                 className="w-full p-3 border-2 border-gray-200 dark:border-stone-600 bg-white dark:bg-stone-700 rounded-xl outline-none font-bold text-stone-800 dark:text-white focus:border-indigo-400 transition-colors cursor-pointer"
                             >
                                 <option value="">📁 (無) 建立為主資料夾</option>
-                                {userFolders.filter(f => !specialFolders.includes(f)).map(f => (
-                                    <option key={f} value={f}>↳ {f}</option>
-                                ))}
+                                {/* ✨ 自動計算資料夾深度，產生視覺化階層縮排 */}
+                                {userFolders.filter(f => !specialFolders.includes(f)).sort().map(f => {
+                                    const depth = f.split('/').length - 1;
+                                    const indent = '\u00A0\u00A0\u00A0\u00A0'.repeat(depth);
+                                    const name = f.split('/').pop();
+                                    return <option key={f} value={f}>{indent}{depth > 0 ? '↳ ' : '📁 '}{name}</option>;
+                                })}
                             </select>
                         </div>
 

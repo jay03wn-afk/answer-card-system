@@ -20,6 +20,9 @@ window.useQuizState = function(props) {
     // ✨ 修正：如果已經有成績 (results)，直接進入 results 畫面，避免出現未完成狀態
     const [step, setStep] = useState(initialRecord.forceStep || (initialRecord.id ? (initialRecord.results ? 'results' : 'answering') : 'setup'));
 
+    // ✨ 新增：用來記錄歷史成績的狀態 (補上這行就不會報錯了)
+    const [quizHistory, setQuizHistory] = useState(initialRecord.history || []);
+
     // ✨ 核心修復：背景自動同步原作者更新。確保就算繞過主頁直接 F5 整理，也能拿到原作者最新修改的內容
     useEffect(() => {
         if (initialRecord.isShared && initialRecord.originalOwner && initialRecord.originalQuizId && currentUser && quizId) {
@@ -1154,6 +1157,7 @@ ${difficultyInstruction}
                 results: window.firebase.firestore.FieldValue.delete(),
                 history: window.firebase.firestore.FieldValue.arrayUnion(historyEntry)
             }).then(() => {
+                setQuizHistory(prev => [...prev, historyEntry]);
                 setUserAnswers(initialAnswers);
                 setStarred(initialStarred);
                 setNotes(initialNotes); 
@@ -1717,15 +1721,8 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
             return;
         }
 
-        if (isShared || isTask || testName.includes('[#op]') || parsedQuestionTypes.some(t => t !== 'Q')) {
-            showConfirm(`${warnMsg}確定要交卷嗎？\n系統將為您執行自動結算並顯示結果！`, executeSubmission);
-        } else {
-            if (unansweredCount > 0) {
-                showConfirm(`${warnMsg}確定要交卷對答案嗎？`, () => setStep('grading'));
-            } else {
-                setStep('grading');
-            }
-        }
+        // ✨ 修改：移除手動輸入解答的步驟 (grading step)，一律直接進入系統自動結算
+        showConfirm(`${warnMsg}確定要交卷並查看結果嗎？`, executeSubmission);
     };
 
     const handleSendSuggestion = () => {
@@ -2060,6 +2057,6 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         handleStartTest, handleRetake, handleStartWrongRetest, handleWrongRetestPeek, handleSaveEdit, handleBackFromEdit, handleAnswerSelect,
         executePeek, handlePeek, toggleStar, handleGrade, handleManualRegrade, handleSubmitClick,
         handleSendSuggestion, handleUploadComment, handleResetProgress, handleAddToWrongBook,
-        shareScoreToFriend, scrollToQuestion, handleRichTextClick, toggleSection, handleProcessAiFile, handleGenerateAI
+        shareScoreToFriend, scrollToQuestion, handleRichTextClick, toggleSection, handleProcessAiFile, handleGenerateAI, quizHistory
     };
 };
