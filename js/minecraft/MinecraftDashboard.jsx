@@ -22,7 +22,6 @@ const { useState, useEffect, useRef } = React;
     // ✨ 新增：歷史顏色調色盤與當前工具狀態
     const [recentColors, setRecentColors] = useState(['#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff']);
     const [currentTool, setCurrentTool] = useState('pen');
-    const [showEnderChest, setShowEnderChest] = useState(false);
 
     // ✨ 新增：村民狀態與終界儲物箱狀態
     const [showEnderChest, setShowEnderChest] = useState(false);
