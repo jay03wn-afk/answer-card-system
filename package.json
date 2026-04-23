@@ -1,7 +1,7 @@
 {
   "name": "jjay-online-test",
   "scripts": {
-    "build": "babel js --out-dir js_dist --extensions \".jsx,.js\" --copy-files && sed -i 's/\\.jsx/.js/g' index.html && sed -i 's/type=\"text\\/babel\"//g' index.html"
+    "build": "babel js --out-dir js_dist --extensions \".jsx,.js\" --copy-files && rm -rf js && mv js_dist js && sed -i 's/\\.jsx/.js/g' index.html && sed -i 's/type=\"text\\/babel\"//g' index.html"
   },
   "devDependencies": {
     "@babel/cli": "^7.23.0",
