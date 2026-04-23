@@ -1,0 +1,17 @@
+{
+  "name": "jjay-online-test",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "babel js --out-dir js --extensions \".jsx,.js\""
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.23.0",
+    "@babel/core": "^7.23.0",
+    "@babel/preset-react": "^7.23.0"
+  },
+  "babel": {
+    "presets": [
+      "@babel/preset-react"
+    ]
+  }
+}
