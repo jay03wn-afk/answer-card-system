@@ -55,7 +55,35 @@ creeper: new Image(), cobweb: new Image(), minecart: new Image(),        netherr
     };
 
     useEffect(() => {
-        images.current.steve.src = "https://minotar.net/helm/Steve/64.png";
+        const generateSkinDataUrl = (pixelsArray) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 16;
+            canvas.height = 16;
+            const ctx = canvas.getContext('2d');
+            pixelsArray.forEach((color, i) => {
+                const x = i % 16;
+                const y = Math.floor(i / 16);
+                if (color !== 'transparent') {
+                    ctx.fillStyle = color;
+                    ctx.fillRect(x, y, 1, 1);
+                }
+            });
+            return canvas.toDataURL();
+        };
+
+        const getEquippedSkinImg = () => {
+            if (!mcData.equippedSkin) return "https://minotar.net/helm/Steve/64.png";
+            if (typeof mcData.equippedSkin === 'string' && mcData.equippedSkin.startsWith('skin_')) {
+                if(mcData.equippedSkin === 'skin_ninja') return 'https://minotar.net/helm/Ninja/64.png';
+                if(mcData.equippedSkin === 'skin_knight') return 'https://minotar.net/helm/Knight/64.png';
+            }
+            if (Array.isArray(mcData.equippedSkin)) {
+                return generateSkinDataUrl(mcData.equippedSkin);
+            }
+            return "https://minotar.net/helm/Steve/64.png";
+        };
+
+        images.current.steve.src = getEquippedSkinImg();
         images.current.stone.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/stone.png";
         images.current.diamond.src = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item/diamond.png";
         images.current.zombie.src = "https://minotar.net/helm/MHF_Zombie/64.png";

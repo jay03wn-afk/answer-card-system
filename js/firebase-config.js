@@ -14,9 +14,16 @@ const db = firebase.firestore();
 // 1. 解決 404 Listen/channel 網路連線錯誤 (改用「自動偵測長輪詢」完美避開衝突)
 db.settings({ experimentalAutoDetectLongPolling: true });
 // 2. 解決每次跳回來都要重新加載的問題 (開啟本地快取，達到秒開且背景同步新資料)
-// 移除 synchronizeTabs 以避免新裝置初次載入時發生 Failed to obtain primary lease 錯誤
-db.enablePersistence().catch((err) => {
-    console.warn("本地快取啟動失敗: ", err);
+// ✨ 加回 synchronizeTabs: true 來支援多分頁同步與快取，避免切換頁面重新載入
+db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+    if (err.code === 'failed-precondition') {
+        // 多個分頁開啟時的正常現象，攔截錯誤避免系統崩潰
+        console.warn("多個分頁開啟中，只有主分頁能啟用完整本地快取。");
+    } else if (err.code === 'unimplemented') {
+        console.warn("當前瀏覽器環境不支援本地快取功能。");
+    } else {
+        console.warn("本地快取啟動失敗: ", err);
+    }
 });
 
 const storage = firebase.storage(); // ✨ 新增這行
