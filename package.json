@@ -7,15 +7,13 @@
   "devDependencies": {
     "@babel/cli": "^7.23.0",
     "@babel/core": "^7.23.0",
-    "@babel/preset-react": "^7.23.0",
-    "@babel/plugin-transform-block-scoping": "^7.23.0"
+    "@babel/preset-env": "^7.23.0",
+    "@babel/preset-react": "^7.23.0"
   },
   "babel": {
     "presets": [
+      "@babel/preset-env",
       "@babel/preset-react"
-    ],
-    "plugins": [
-      "@babel/plugin-transform-block-scoping"
     ]
   }
 }
