@@ -13,6 +13,17 @@ const { useState, useEffect, useRef } = React;
     const [showMj, setShowMj] = useState(false); // ✨ 新增麻將狀態
     const [showGameList, setShowGameList] = useState(false); // ✨ 新增遊戲清單狀態
     
+    // ✨ 新增：衣櫃與皮膚編輯器狀態
+    const [showWardrobe, setShowWardrobe] = useState(false);
+    const [showSkinEditor, setShowSkinEditor] = useState(false);
+    const [drawingColor, setDrawingColor] = useState('#000000');
+    // ✨ 預設背景改為白色
+    const [pixels, setPixels] = useState(Array(256).fill('#ffffff'));
+    // ✨ 新增：歷史顏色調色盤與當前工具狀態
+    const [recentColors, setRecentColors] = useState(['#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff']);
+    const [currentTool, setCurrentTool] = useState('pen');
+    const [showEnderChest, setShowEnderChest] = useState(false);
+
     // ✨ 新增：村民狀態與終界儲物箱狀態
     const [showEnderChest, setShowEnderChest] = useState(false);
     const [villagerSpeech, setVillagerSpeech] = useState("哼嗯... 看看這些好東西！");
@@ -41,7 +52,11 @@ const { useState, useEffect, useRef } = React;
         miningTickets: safeNum(rawMcData.miningTickets, 0),
         items: rawMcData.items || [],
         lastCheckIn: rawMcData.lastCheckIn || null,
-        packs: rawMcData.packs || {}
+        packs: rawMcData.packs || {},
+        drawingPapers: safeNum(rawMcData.drawingPapers, 0),
+        customSkins: rawMcData.customSkins || [],
+        ownedSkins: rawMcData.ownedSkins || [],
+        equippedSkin: rawMcData.equippedSkin || null
     };
     
     const todayTW = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -52,6 +67,34 @@ const { useState, useEffect, useRef } = React;
     const mcBase = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/item";
     const imgDiamond = `${mcBase}/diamond.png`;
     const imgSteve = "https://minotar.net/helm/Steve/64.png";
+
+    // ✨ 將 16x16 陣列轉換為圖片 DataURL
+    const generateSkinDataUrl = (pixelsArray) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 16;
+        canvas.height = 16;
+        const ctx = canvas.getContext('2d');
+        pixelsArray.forEach((color, i) => {
+            const x = i % 16;
+            const y = Math.floor(i / 16);
+            if (color !== 'transparent') {
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, 1, 1);
+            }
+        });
+        return canvas.toDataURL();
+    };
+
+    // ✨ 取得目前裝備的皮膚圖示
+    const getEquippedSkinImg = () => {
+        if (!mcData.equippedSkin) return imgSteve;
+        if (typeof mcData.equippedSkin === 'string' && mcData.equippedSkin.startsWith('skin_')) {
+            const found = storeItems.find(i => i.id === mcData.equippedSkin);
+            return found ? found.img : imgSteve;
+        }
+        return generateSkinDataUrl(mcData.equippedSkin);
+    };
+    const currentSkinImg = getEquippedSkinImg();
 
     // ✨ 更新：加入武器、不死圖騰與分類
     const storeItems = [
@@ -65,6 +108,9 @@ const { useState, useEffect, useRef } = React;
         { id: 'iron_sword', name: '鐵劍 (礦車擋2次怪)', cat: '裝備道具', type: 'weapon', cost: 25, durability: 2, img: `${mcBase}/iron_sword.png`, icon: '🗡️' },
         { id: 'diamond_sword', name: '鑽石劍 (礦車擋3次怪)', cat: '裝備道具', type: 'weapon', cost: 60, durability: 3, img: `${mcBase}/diamond_sword.png`, icon: '🗡️' },
         { id: 'totem', name: '不死圖騰 (礦車免死1次)', cat: '裝備道具', type: 'magic', cost: 40, img: `${mcBase}/totem_of_undying.png`, icon: '🗿' },
+        { id: 'drawing_paper', name: '繪圖紙 (自訂皮膚)', cat: '裝備道具', type: 'drawing_paper', cost: 1000, img: `${mcBase}/paper.png`, icon: '📝' },
+        { id: 'skin_ninja', name: '忍者皮膚', cat: '裝備道具', type: 'skin', cost: 500, img: 'https://minotar.net/helm/Ninja/64.png', icon: '🥷' },
+        { id: 'skin_knight', name: '騎士皮膚', cat: '裝備道具', type: 'skin', cost: 500, img: 'https://minotar.net/helm/Knight/64.png', icon: '🛡️' },
 
         { id: 'pack_basic', name: '村莊木箱 (隨機方塊)', cat: '盲盒禮包', type: 'pack', cost: 100, img: 'https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg', icon: '📦' },
         { id: 'pack_rare', name: '廢棄礦井箱 (進階方塊)', cat: '盲盒禮包', type: 'pack', cost: 300, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/barrel_side.png', icon: '🎁' },
@@ -193,6 +239,15 @@ const { useState, useEffect, useRef } = React;
             }
             updates.hasTotem = true;
             showAlert(`🗿 購買成功！【不死圖騰】已自動裝備，將在礦車遊戲中為你擋下一次致命傷害！`);
+        } else if (item.type === 'drawing_paper') {
+            updates.drawingPapers = mcData.drawingPapers + 1;
+            showAlert(`📝 購買成功！獲得 1 張【繪圖紙】，快去衣櫃繪製專屬皮膚吧！`);
+        } else if (item.type === 'skin') {
+            if (mcData.ownedSkins.includes(item.id)) {
+                return showAlert(`❌ 你已經擁有【${item.name}】了！`);
+            }
+            updates.ownedSkins = [...mcData.ownedSkins, item.id];
+            showAlert(`👕 購買成功！【${item.name}】已放入衣櫃！`);
         }
 
         playVillagerSound('yes');
@@ -273,6 +328,52 @@ const { useState, useEffect, useRef } = React;
     };
     const ownedItems = storeItems.filter(i => (mcData.items || []).includes(i.id) || (i.id === 'diamond_sword' && (mcData.items || []).includes('鑽石劍')));
     const ownedPets = storeItems.filter(i => (mcData.pets || []).includes(i.id));
+
+    // ✨ 新增：繪圖工具功能 (自動儲存顏色 與 油漆桶演算法)
+    const updateDrawingColor = (color) => {
+        setDrawingColor(color);
+        if (color !== 'transparent') {
+            setRecentColors(prev => {
+                const newColors = prev.filter(c => c !== color);
+                return [color, ...newColors].slice(0, 7); // 儲存最近 7 個顏色
+            });
+        }
+    };
+
+    const handlePixelAction = (idx) => {
+        if (currentTool === 'pen') {
+            const newPixels = [...pixels];
+            newPixels[idx] = drawingColor;
+            setPixels(newPixels);
+        } else if (currentTool === 'fill') {
+            const targetColor = pixels[idx];
+            if (targetColor === drawingColor) return;
+            const newPixels = [...pixels];
+            
+            // BFS 油漆桶擴散演算法
+            newPixels[idx] = drawingColor;
+            const queue = [idx];
+            while (queue.length > 0) {
+                const curr = queue.shift();
+                const x = curr % 16;
+                const y = Math.floor(curr / 16);
+                
+                if (x > 0 && newPixels[curr - 1] === targetColor) {
+                    newPixels[curr - 1] = drawingColor; queue.push(curr - 1);
+                }
+                if (x < 15 && newPixels[curr + 1] === targetColor) {
+                    newPixels[curr + 1] = drawingColor; queue.push(curr + 1);
+                }
+                if (y > 0 && newPixels[curr - 16] === targetColor) {
+                    newPixels[curr - 16] = drawingColor; queue.push(curr - 16);
+                }
+                if (y < 15 && newPixels[curr + 16] === targetColor) {
+                    newPixels[curr + 16] = drawingColor; queue.push(curr + 16);
+                }
+            }
+            setPixels(newPixels);
+        }
+    };
 
     return (
         <div className="bg-[#1e1e1e] h-full overflow-y-auto custom-scrollbar p-4 relative text-[#e0e0e0] font-mono">
@@ -358,7 +459,7 @@ const { useState, useEffect, useRef } = React;
                                 <span>🏡 你的家</span>
                             </h2>
                             <div className="p-4 bg-[#1e1e1e] border-4 border-[#111111] border-r-[#555555] border-b-[#555555] mb-3 h-32 sm:h-40 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
-                                <McImg src={imgSteve} fallback="🧍‍♂️" className="w-12 h-12 sm:w-16 sm:h-16 pixelated shadow-lg border-2 border-[#111111] mb-2" />
+                                <McImg src={currentSkinImg} fallback="🧍‍♂️" className="w-12 h-12 sm:w-16 sm:h-16 pixelated shadow-lg border-2 border-[#111111] mb-2" />
                                 
                                 <div className="flex flex-wrap justify-center gap-1 max-w-full z-10">
                                     {Array.from({ length: mcData.cats || 0 }).map((_, i) => <span key={`cat-${i}`} title="斑點貓" className="text-xl drop-shadow-md">🐱</span>)}
@@ -384,8 +485,11 @@ const { useState, useEffect, useRef } = React;
                             <button onClick={() => {
                                 playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/block/enderchest/open.ogg');
                                 setShowEnderChest(true);
-                            }} className="w-full py-2 flex justify-center items-center bg-[#240d3a] hover:bg-[#341852] text-[#e3a8ff] font-bold border-4 border-[#4a2673] border-r-[#150524] border-b-[#150524] shadow-md transition-colors active:border-t-[#150524] active:border-l-[#150524] active:border-r-[#4a2673] active:border-b-[#4a2673]">
+                            }} className="w-full py-2 flex justify-center items-center bg-[#240d3a] hover:bg-[#341852] text-[#e3a8ff] font-bold border-4 border-[#4a2673] border-r-[#150524] border-b-[#150524] shadow-md transition-colors mb-2 active:border-t-[#150524] active:border-l-[#150524] active:border-r-[#4a2673] active:border-b-[#4a2673]">
                                 🔮 終界儲物箱 ({Object.values(mcData.packs || {}).reduce((a, b) => a + b, 0)})
+                            </button>
+                            <button onClick={() => setShowWardrobe(true)} className="w-full py-2 flex justify-center items-center bg-[#1d5c2d] hover:bg-[#277a3d] text-[#a8ffba] font-bold border-4 border-[#33874c] border-r-[#0f3017] border-b-[#0f3017] shadow-md transition-colors active:border-t-[#0f3017] active:border-l-[#0f3017] active:border-r-[#33874c] active:border-b-[#33874c]">
+                                👕 我的衣櫃 (皮膚)
                             </button>
                         </div>
 
@@ -565,6 +669,142 @@ const { useState, useEffect, useRef } = React;
                                 })
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ✨ 衣櫃 Modal */}
+            {showWardrobe && (
+                <div className="fixed inset-0 z-[160] bg-stone-900 bg-opacity-90 flex flex-col items-center justify-center p-4">
+                    <div className="bg-[#3c3c3c] border-4 border-[#555555] border-r-[#111111] border-b-[#111111] p-4 w-full max-w-lg shadow-2xl flex flex-col h-[70dvh]">
+                        <div className="flex justify-between items-center mb-4 border-b-2 border-[#111111] pb-2">
+                            <h3 className="text-[#55ff55] font-bold text-lg">👕 我的衣櫃</h3>
+                            <button onClick={() => setShowWardrobe(false)} className="text-red-400 hover:text-red-300 font-bold">✖ 關閉</button>
+                        </div>
+                        
+                        <div className="flex justify-between items-center bg-[#2d2d2d] p-3 border-2 border-[#111111] mb-4">
+                            <span className="text-[#e0e0e0] font-bold">目前裝備:</span>
+                            <div className="flex items-center">
+                                <McImg src={currentSkinImg} className="w-10 h-10 pixelated mr-3"/>
+                                <button onClick={() => updateMcData({ equippedSkin: null }, true)} className="bg-[#ff5555] text-white px-3 py-1 font-bold border-2 border-[#111111]">卸除</button>
+                            </div>
+                        </div>
+
+                        <div className="flex-grow overflow-y-auto custom-scrollbar grid grid-cols-3 gap-3">
+                            <div className="bg-[#4a4a4a] border-2 border-[#111111] p-2 flex flex-col items-center justify-between shadow-inner">
+                                <span className="text-[#ffaa00] font-bold text-xs mb-1">繪圖紙 x{mcData.drawingPapers}</span>
+                                <span className="text-3xl mb-1">📝</span>
+                                <button onClick={() => {
+                                    if(mcData.drawingPapers > 0) {
+                                        setShowWardrobe(false);
+                                        setShowSkinEditor(true);
+                                        setPixels(Array(256).fill('#ffffff')); // ✨ 開啟時預設為全白畫布
+                                    } else {
+                                        showAlert("你沒有繪圖紙喔！請到村民商賈購買。");
+                                    }
+                                }} className="bg-[#555555] text-white px-2 py-1 text-xs font-bold border-2 border-[#111111] hover:bg-[#666666]">開始繪製</button>
+                            </div>
+
+                            {mcData.ownedSkins.map((skinId, idx) => {
+                                const s = storeItems.find(i => i.id === skinId);
+                                if(!s) return null;
+                                return (
+                                    <div key={idx} className="bg-[#2d2d2d] border-2 border-[#111111] p-2 flex flex-col items-center justify-between">
+                                        <span className="text-white font-bold text-xs mb-1 truncate w-full text-center">{s.name}</span>
+                                        <McImg src={s.img} className="w-10 h-10 pixelated mb-1"/>
+                                        <button onClick={() => updateMcData({ equippedSkin: s.id }, true)} className="bg-[#55ff55] text-black px-2 py-1 text-xs font-bold border-2 border-[#111111] hover:bg-[#77ff77]">裝備</button>
+                                    </div>
+                                );
+                            })}
+
+                            {mcData.customSkins.map((skinObj, idx) => {
+                                // ✨ 讀取時把包裝好的 data 解開
+                                const skinPixels = Array.isArray(skinObj) ? skinObj : skinObj.data;
+                                return (
+                                <div key={`custom-${idx}`} className="bg-[#2d2d2d] border-2 border-[#111111] p-2 flex flex-col items-center justify-between">
+                                    <span className="text-white font-bold text-xs mb-1">自訂皮膚 {idx+1}</span>
+                                    <img src={generateSkinDataUrl(skinPixels)} className="w-10 h-10 pixelated mb-1 border border-[#555555]" />
+                                    <button onClick={() => updateMcData({ equippedSkin: skinPixels }, true)} className="bg-[#55ff55] text-black px-2 py-1 text-xs font-bold border-2 border-[#111111] hover:bg-[#77ff77]">裝備</button>
+                                </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ✨ 皮膚編輯器 Modal */}
+            {showSkinEditor && (
+                <div className="fixed inset-0 z-[170] bg-stone-900 flex flex-col items-center justify-center p-2">
+                    <div className="bg-[#3c3c3c] border-4 border-[#555555] border-r-[#111111] border-b-[#111111] p-4 w-full max-w-sm flex flex-col">
+                        <div className="flex justify-between items-center mb-2">
+                            <h3 className="text-[#ffaa00] font-bold">🎨 繪製皮膚 (消耗1張繪圖紙)</h3>
+                            <button onClick={() => setShowSkinEditor(false)} className="text-[#ff5555] font-bold">放棄</button>
+                        </div>
+                        
+                        {/* ✨ 工具與顏色選擇區 */}
+                        <div className="flex flex-col mb-3 bg-[#2d2d2d] border-2 border-[#111111] p-2 gap-2">
+                            <div className="flex justify-between items-center">
+                                <div className="flex gap-2">
+                                    <button onClick={() => setCurrentTool('pen')} className={`px-3 py-1 font-bold text-xs border-2 ${currentTool === 'pen' ? 'bg-[#55ff55] text-black border-[#111111]' : 'bg-[#555555] text-white border-[#111111] hover:bg-[#666666]'}`}>✏️ 畫筆</button>
+                                    <button onClick={() => setCurrentTool('fill')} className={`px-3 py-1 font-bold text-xs border-2 ${currentTool === 'fill' ? 'bg-[#55ff55] text-black border-[#111111]' : 'bg-[#555555] text-white border-[#111111] hover:bg-[#666666]'}`}>🪣 填色</button>
+                                    <button onClick={() => updateDrawingColor('transparent')} className={`px-3 py-1 font-bold text-xs border-2 ${drawingColor === 'transparent' ? 'bg-[#ffaa00] text-black border-[#111111]' : 'bg-[#555555] text-white border-[#111111] hover:bg-[#666666]'}`}>🧽 橡皮擦</button>
+                                </div>
+                                <input type="color" value={drawingColor === 'transparent' ? '#ffffff' : drawingColor} onChange={(e) => updateDrawingColor(e.target.value)} className="w-8 h-8 p-0 border-2 border-[#111111] cursor-pointer" />
+                            </div>
+                            
+                            {/* ✨ 歷史顏色調色盤 */}
+                            <div className="flex gap-1 items-center">
+                                <span className="text-xs text-gray-400 font-bold mr-1">歷史:</span>
+                                {recentColors.map((col, idx) => (
+                                    <button 
+                                        key={idx} 
+                                        onClick={() => updateDrawingColor(col)} 
+                                        style={{ backgroundColor: col === 'transparent' ? '#333' : col }} 
+                                        className={`w-6 h-6 border-2 cursor-pointer hover:scale-110 transition-transform ${drawingColor === col ? 'border-white' : 'border-[#111111]'}`}
+                                    ></button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="bg-[#87CEEB] p-1 border-4 border-[#111111] mb-4 aspect-square flex flex-wrap" 
+                             style={{ touchAction: 'none' }}
+                             onTouchMove={(e) => {
+                                if (currentTool !== 'pen') return; // 油漆桶模式不支援拖曳連續觸發
+                                const touch = e.touches[0];
+                                const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                                if (el && el.dataset.idx) {
+                                    const newPixels = [...pixels];
+                                    newPixels[el.dataset.idx] = drawingColor;
+                                    setPixels(newPixels);
+                                }
+                             }}>
+                            {pixels.map((col, i) => (
+                                <div key={i} data-idx={i} 
+                                     onPointerDown={() => handlePixelAction(i)}
+                                     onPointerEnter={(e) => {
+                                         if(e.buttons === 1 && currentTool === 'pen') {
+                                             const newPixels = [...pixels];
+                                             newPixels[i] = drawingColor;
+                                             setPixels(newPixels);
+                                         }
+                                     }}
+                                     style={{ backgroundColor: col === 'transparent' ? 'rgba(0,0,0,0.1)' : col }} 
+                                     className="w-[6.25%] h-[6.25%] border-[0.5px] border-black/10 select-none cursor-pointer">
+                                </div>
+                            ))}
+                        </div>
+
+                        <button onClick={() => {
+                            const newCustomSkins = [...mcData.customSkins, { data: pixels }];
+                            updateMcData({ 
+                                drawingPapers: mcData.drawingPapers - 1,
+                                customSkins: newCustomSkins,
+                                equippedSkin: pixels
+                            }, true);
+                            showAlert("✨ 皮膚繪製完成並已自動裝備！");
+                            setShowSkinEditor(false);
+                        }} className="bg-[#55ff55] hover:bg-[#44cc44] text-black font-black py-3 border-4 border-[#111111] w-full text-lg shadow-lg active:scale-95">💾 儲存並裝備皮膚</button>
                     </div>
                 </div>
             )}
