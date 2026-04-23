@@ -84,18 +84,7 @@ const { useState, useEffect, useRef } = React;
         return canvas.toDataURL();
     };
 
-    // ✨ 取得目前裝備的皮膚圖示
-    const getEquippedSkinImg = () => {
-        if (!mcData.equippedSkin) return imgSteve;
-        if (typeof mcData.equippedSkin === 'string' && mcData.equippedSkin.startsWith('skin_')) {
-            const found = storeItems.find(i => i.id === mcData.equippedSkin);
-            return found ? found.img : imgSteve;
-        }
-        return generateSkinDataUrl(mcData.equippedSkin);
-    };
-    const currentSkinImg = getEquippedSkinImg();
-
-    // ✨ 更新：加入武器、不死圖騰與分類
+    // ✨ 更新：加入武器、不死圖騰與分類 (必須在皮膚圖示讀取前宣告)
     const storeItems = [
         { id: 'apple', name: '蘋果 (+3 飽食)', cat: '食物藥水', type: 'food', cost: 10, value: 3, img: `${mcBase}/apple.png`, icon: '🍎' },
         { id: 'bread', name: '麵包 (+5 飽食)', cat: '食物藥水', type: 'food', cost: 15, value: 5, img: `${mcBase}/bread.png`, icon: '🍞' },
@@ -117,6 +106,17 @@ const { useState, useEffect, useRef } = React;
         { id: 'pack_legendary', name: '終界寶箱 (極稀有方塊)', cat: '盲盒禮包', type: 'pack', cost: 1000, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/respawn_anchor_top.png', icon: '🌟' },
         { id: 'pack_checkin', name: '每日簽到箱 (普通方塊)', cat: '盲盒禮包', type: 'pack', cost: 0, img: 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/beehive_side.png', icon: '🛢️', hide: true }
     ];
+
+    // ✨ 取得目前裝備的皮膚圖示
+    const getEquippedSkinImg = () => {
+        if (!mcData.equippedSkin) return imgSteve;
+        if (typeof mcData.equippedSkin === 'string' && mcData.equippedSkin.startsWith('skin_')) {
+            const found = storeItems.find(i => i.id === mcData.equippedSkin);
+            return found ? found.img : imgSteve;
+        }
+        return generateSkinDataUrl(mcData.equippedSkin);
+    };
+    const currentSkinImg = getEquippedSkinImg();
 
     useEffect(() => {
         const fetchLeaderboard = async () => {
