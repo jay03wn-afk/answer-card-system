@@ -1,3 +1,9 @@
 {
-  "outputDirectory": "."
+  "outputDirectory": ".",
+  "rewrites": [
+    {
+      "source": "/js/:path*",
+      "destination": "/js_dist/:path*"
+    }
+  ]
 }
