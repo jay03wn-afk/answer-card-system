@@ -1,33 +1,40 @@
 const { useState, useEffect, useRef } = React;
 
-function MinecraftDashboard({ user, userProfile, showAlert }) {
+  function MinecraftDashboard({ user, userProfile, showAlert }) {
     const preloadFastSound = window.preloadFastSound;
     const playCachedSound = window.playCachedSound;
     const McImg = window.McImg;
-    const [leaderboard, setLeaderboard] = useState([]);
+   const [leaderboard, setLeaderboard] = useState([]);
     const [showMiniGame, setShowMiniGame] = useState(false);
     const [showMiningGame, setShowMiningGame] = useState(false); 
     const [showSandbox, setShowSandbox] = useState(false);
     const [showVolleyball, setShowVolleyball] = useState(false);
     const [showPoke, setShowPoke] = useState(false);
-    const [showMj, setShowMj] = useState(false); 
-    const [showGameList, setShowGameList] = useState(false); 
+    const [showMj, setShowMj] = useState(false); // ✨ 新增麻將狀態
+    const [showGameList, setShowGameList] = useState(false); // ✨ 新增遊戲清單狀態
     
-    // ✨ 衣櫃與皮膚編輯器狀態
+    // ✨ 新增：衣櫃與皮膚編輯器狀態
     const [showWardrobe, setShowWardrobe] = useState(false);
     const [showSkinEditor, setShowSkinEditor] = useState(false);
     const [drawingColor, setDrawingColor] = useState('#000000');
+    // ✨ 預設背景改為白色
     const [pixels, setPixels] = useState(Array(256).fill('#ffffff'));
+    // ✨ 新增：歷史顏色調色盤與當前工具狀態
     const [recentColors, setRecentColors] = useState(['#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff']);
     const [currentTool, setCurrentTool] = useState('pen');
     const [showEnderChest, setShowEnderChest] = useState(false);
+
+    // ✨ 新增：村民狀態與終界儲物箱狀態
+    const [showEnderChest, setShowEnderChest] = useState(false);
     const [villagerSpeech, setVillagerSpeech] = useState("哼嗯... 看看這些好東西！");
     const [villagerAnim, setVillagerAnim] = useState("");
-    const [openedPackResult, setOpenedPackResult] = useState(null); 
+    const [openedPackResult, setOpenedPackResult] = useState(null); // ✨ 新增：記錄開箱結果的狀態
     
+    // ✨ 新增：商店分類標籤狀態
     const [storeCat, setStoreCat] = useState('全部');
     const STORE_CATEGORIES = ['全部', '食物藥水', '裝備道具', '盲盒禮包'];
 
+    // ✨ 修正：確保 mcData 的數值不為 NaN
     const rawMcData = userProfile.mcData || {};
     const safeNum = (val, def) => {
         const num = Number(val);
@@ -61,6 +68,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     const imgDiamond = `${mcBase}/diamond.png`;
     const imgSteve = "https://minotar.net/helm/Steve/64.png";
 
+    // ✨ 將 16x16 陣列轉換為圖片 DataURL
     const generateSkinDataUrl = (pixelsArray) => {
         const canvas = document.createElement('canvas');
         canvas.width = 16;
@@ -77,6 +85,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         return canvas.toDataURL();
     };
 
+    // ✨ 取得目前裝備的皮膚圖示
     const getEquippedSkinImg = () => {
         if (!mcData.equippedSkin) return imgSteve;
         if (typeof mcData.equippedSkin === 'string' && mcData.equippedSkin.startsWith('skin_')) {
@@ -87,6 +96,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     };
     const currentSkinImg = getEquippedSkinImg();
 
+    // ✨ 更新：加入武器、不死圖騰與分類
     const storeItems = [
         { id: 'apple', name: '蘋果 (+3 飽食)', cat: '食物藥水', type: 'food', cost: 10, value: 3, img: `${mcBase}/apple.png`, icon: '🍎' },
         { id: 'bread', name: '麵包 (+5 飽食)', cat: '食物藥水', type: 'food', cost: 15, value: 5, img: `${mcBase}/bread.png`, icon: '🍞' },
@@ -144,6 +154,8 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
     }, [userProfile.friends, mcData]);
 
     const updateMcData = (updates, silent = false) => {
+        // ✨ 改用 Firestore 的「點標記法」進行局部更新
+        // 這樣結算鑽石時，就不會把舊的裝備狀態又覆蓋回資料庫了
         const dbUpdates = {};
         for (const key in updates) {
             dbUpdates[`mcData.${key}`] = updates[key];
@@ -162,6 +174,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         let newHunger = mcData.hunger - 2; 
         if (newHunger < 0) newHunger = 0;
 
+        // ✨ 簽到時發放一個每日簽到箱
         const newPacks = { ...(mcData.packs || {}) };
         newPacks['pack_checkin'] = (newPacks['pack_checkin'] || 0) + 1;
 
@@ -250,7 +263,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
             updateMcData({ diamonds: mcData.diamonds + earnedDiamonds }, true); 
         }
     };
-
+    // ✨ 村民語音處理 (修正：換成最穩定有效的 1.16.5 官方路徑)
     const playVillagerSound = (type) => {
         const urls = {
             idle: [
@@ -274,6 +287,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         }
     };
 
+    // ✨ 終界儲物箱開禮包邏輯
     const handleOpenPack = (packId) => {
         if (!mcData.packs || !mcData.packs[packId] || mcData.packs[packId] <= 0) return;
         
@@ -282,6 +296,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
 
        let min, max, pools;
         
+        // ✨ 定義「常見方塊池」：放入大量泥土、石頭、木材來稀釋高級方塊，讓鑽石等高級方塊變得更稀有
         const commonPool = ['dirt', 'dirt', 'dirt', 'stone', 'stone', 'stone', 'cobblestone', 'cobblestone', 'sand', 'gravel', 'oak_log', 'oak_planks', 'oak_planks'];
         
         if (packId === 'pack_basic') { min = 50; max = 100; pools = [...commonPool]; }
@@ -291,6 +306,8 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         else { min = 20; max = 20; pools = ['dirt', 'stone', 'cobblestone', 'sand', 'gravel', 'oak_planks']; }
         const totalAmount = Math.floor(Math.random() * (max - min + 1)) + min;
         const newInv = { ...mcData.inventory };
+        
+        let resultText = `🎉 碰！打開了 ${packData.name}！\n\n獲得了總計 ${totalAmount} 個方塊 (隨機分配)：\n`;
         
         const gained = {};
         for (let i = 0; i < totalAmount; i++) {
@@ -305,14 +322,14 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         updateMcData({ packs: newPacks, inventory: newInv }, true);
         playCachedSound('https://raw.githubusercontent.com/jay03wn-afk/SOURCES/main/open.mp3');
         
+        // ✨ 觸發豪華開箱動畫視窗，並自動關閉背景的儲物箱
         setShowEnderChest(false); 
         setOpenedPackResult({ packName: packData.name, totalAmount, gained });
     };
-
     const ownedItems = storeItems.filter(i => (mcData.items || []).includes(i.id) || (i.id === 'diamond_sword' && (mcData.items || []).includes('鑽石劍')));
     const ownedPets = storeItems.filter(i => (mcData.pets || []).includes(i.id));
 
-    // ✨ 繪圖工具功能 (自動儲存顏色 與 油漆桶演算法)
+    // ✨ 新增：繪圖工具功能 (自動儲存顏色 與 油漆桶演算法)
     const updateDrawingColor = (color) => {
         setDrawingColor(color);
         if (color !== 'transparent') {
@@ -362,16 +379,16 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
         <div className="bg-[#1e1e1e] h-full overflow-y-auto custom-scrollbar p-4 relative text-[#e0e0e0] font-mono">
             
             {showMiniGame && (
-                <MinecartGame 
-                    user={user}
-                    userProfile={userProfile}
-                    mcData={mcData}
-                    updateMcData={updateMcData}
-                    showAlert={showAlert}
-                    onGameOver={handleMiniGameOver} 
-                    onQuit={() => setShowMiniGame(false)} 
-                />
-            )}
+        <MinecartGame 
+            user={user}
+            userProfile={userProfile}
+            mcData={mcData}
+            updateMcData={updateMcData}
+            showAlert={showAlert}
+            onGameOver={handleMiniGameOver} 
+            onQuit={() => setShowMiniGame(false)} 
+        />
+    )}
 
             {showMiningGame && (
                 <MiningGame 
@@ -382,16 +399,15 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                     onQuit={() => setShowMiningGame(false)}
                 />
             )}
-            
             {showSandbox && (
                 <SandboxGame 
-                    user={user}
-                    userProfile={userProfile}
+                  user={user}
+                 userProfile={userProfile}
                     mcData={mcData}
-                    updateMcData={updateMcData}
+                 updateMcData={updateMcData}
                     showAlert={showAlert}
                     onQuit={() => setShowSandbox(false)}
-                />
+             />
             )}
             
             {showVolleyball && (
@@ -408,18 +424,18 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
             <div className="max-w-5xl mx-auto p-6 flex flex-col space-y-6 bg-[#3c3c3c] border-4 border-[#555555] border-r-[#111111] border-b-[#111111] shadow-2xl font-mono">
                 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
-                    <div>
-                        <h1 className="text-2xl font-black mb-2 text-[#ffaa00] tracking-wide drop-shadow-md">⛏️ 史蒂夫的養成天地</h1>
-                        <p className="text-sm font-bold text-[#aaaaaa]">完成測驗或遊玩小遊戲來獲取鑽石！</p>
-                    </div>
+    <div>
+        <h1 className="text-2xl font-black mb-2 text-[#ffaa00] tracking-wide drop-shadow-md">⛏️ 史蒂夫的養成天地</h1>
+        <p className="text-sm font-bold text-[#aaaaaa]">完成測驗或遊玩小遊戲來獲取鑽石！</p>
+    </div>
 
-                    <div className="flex flex-wrap gap-2 md:mx-4">
-                        <button onClick={() => setShowGameList(true)} className="bg-[#555555] hover:bg-[#666666] text-[#e0e0e0] text-sm sm:text-base px-4 py-2 border-4 border-[#777777] border-r-[#222222] border-b-[#222222] font-bold transition-colors shadow-md flex items-center active:border-t-[#222222] active:border-l-[#222222] active:border-r-[#777777] active:border-b-[#777777]">
-                            🎮 遊樂場 (遊戲清單)
-                        </button>
-                    </div>
+    <div className="flex flex-wrap gap-2 md:mx-4">
+        <button onClick={() => setShowGameList(true)} className="bg-[#555555] hover:bg-[#666666] text-[#e0e0e0] text-sm sm:text-base px-4 py-2 border-4 border-[#777777] border-r-[#222222] border-b-[#222222] font-bold transition-colors shadow-md flex items-center active:border-t-[#222222] active:border-l-[#222222] active:border-r-[#777777] active:border-b-[#777777]">
+            🎮 遊樂場 (遊戲清單)
+        </button>
+    </div>
 
-                    <div className="bg-[#2d2d2d] border-4 border-[#111111] border-r-[#555555] border-b-[#555555] p-2 w-full md:w-auto text-[#e0e0e0] shrink-0">
+                <div className="bg-[#2d2d2d] border-4 border-[#111111] border-r-[#555555] border-b-[#555555] p-2 w-full md:w-auto text-[#e0e0e0] shrink-0">
                         <div className="flex justify-around md:justify-start md:space-x-8 text-sm items-center font-bold">
                             <div className="text-center bg-[#1e1e1e] border-2 border-[#111111] border-r-[#555555] border-b-[#555555] px-3 py-1">
                                 <p className="text-[#55ff55] font-black text-lg drop-shadow-md">Lv. {mcData.level}</p>
@@ -544,10 +560,11 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                             ))}
                         </div>
                     </div>
+
                 </div>
             </div>
 
-            {/* ✨ 開啟禮包結果豪華 Modal */}
+           {/* ✨ 開啟禮包結果豪華 Modal */}
             {openedPackResult && (
                 <div className="fixed inset-0 z-[250] bg-stone-800 bg-opacity-85 flex flex-col items-center justify-center p-4 animate-in fade-in">
                     <div className="bg-[#10002b] border-4 border-amber-700800 p-4 sm:p-6 w-full max-w-2xl shadow-2xl flex flex-col relative rounded-sm">
@@ -559,6 +576,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                         
                         <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar p-3 bg-stone-800 bg-opacity-50 border-2 border-amber-700900 shadow-inner">
                             {Object.entries(openedPackResult.gained).map(([blockId, count]) => {
+                                // 方塊圖庫查找表
                                 const lookup = {
                                     dirt: { name: '泥土', img: 'block/dirt.png' }, stone: { name: '石頭', img: 'block/stone.png' }, cobblestone: { name: '鵝卵石', img: 'block/cobblestone.png' }, sand: { name: '沙子', img: 'block/sand.png' }, gravel: { name: '礫石', img: 'block/gravel.png' }, oak_log: { name: '橡木原木', img: 'block/oak_log.png' }, oak_planks: { name: '橡木木板', img: 'block/oak_planks.png' }, glass: { name: '玻璃', img: 'block/glass.png' }, bricks: { name: '磚塊', img: 'block/bricks.png' }, iron_block: { name: '鐵磚', img: 'block/iron_block.png' }, chest_block: { name: '儲物箱', img: 'https://i.postimg.cc/bwPx54VC/Minecraft-Chest.jpg', abs: true }, oak_door: { name: '橡木門', img: 'item/oak_door.png' }, gold_block: { name: '金磚', img: 'block/gold_block.png' }, obsidian: { name: '黑曜石', img: 'block/obsidian.png' }, netherrack: { name: '地獄石', img: 'block/netherrack.png' }, glowstone: { name: '螢光石', img: 'block/glowstone.png' }, magma_block: { name: '岩漿塊', img: 'block/magma.png' }, diamond_block: { name: '鑽石磚', img: 'block/diamond_block.png' }, emerald_block: { name: '綠寶石磚', img: 'block/emerald_block.png' }, end_stone: { name: '末地石', img: 'block/end_stone.png' }, purpur_block: { name: '紫珀塊', img: 'block/purpur_block.png' }
                                 };
@@ -623,6 +641,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                         <div className="flex justify-between items-center mb-4 border-b-2 border-amber-700500 pb-2">
                             <h3 className="text-amber-700300 font-bold text-lg flex items-center"><McImg src="https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20/assets/minecraft/textures/block/ender_chest_front.png" className="w-6 h-6 mr-2 pixelated"/> 終界儲物箱 (我的禮包)</h3>
                             <button onClick={() => {
+                                // ✨ 終界儲物箱專屬關閉音效
                                 playCachedSound('https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.16.5/assets/minecraft/sounds/block/enderchest/close.ogg');
                                 setShowEnderChest(false);
                             }} className="text-red-400 hover:text-red-300 font-bold">✖ 關閉</button>
@@ -679,7 +698,7 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                                     if(mcData.drawingPapers > 0) {
                                         setShowWardrobe(false);
                                         setShowSkinEditor(true);
-                                        setPixels(Array(256).fill('#ffffff')); // ✨ 預設白畫布
+                                        setPixels(Array(256).fill('#ffffff')); // ✨ 開啟時預設為全白畫布
                                     } else {
                                         showAlert("你沒有繪圖紙喔！請到村民商賈購買。");
                                     }
@@ -699,7 +718,8 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                             })}
 
                             {mcData.customSkins.map((skinObj, idx) => {
-                                const skinPixels = Array.isArray(skinObj) ? skinObj : (skinObj.data || Array(256).fill('#ffffff'));
+                                // ✨ 讀取時把包裝好的 data 解開
+                                const skinPixels = Array.isArray(skinObj) ? skinObj : skinObj.data;
                                 return (
                                 <div key={`custom-${idx}`} className="bg-[#2d2d2d] border-2 border-[#111111] p-2 flex flex-col items-center justify-between">
                                     <span className="text-white font-bold text-xs mb-1">自訂皮膚 {idx+1}</span>
@@ -750,13 +770,12 @@ function MinecraftDashboard({ user, userProfile, showAlert }) {
                         <div className="bg-[#87CEEB] p-1 border-4 border-[#111111] mb-4 aspect-square flex flex-wrap" 
                              style={{ touchAction: 'none' }}
                              onTouchMove={(e) => {
-                                if (currentTool !== 'pen') return;
+                                if (currentTool !== 'pen') return; // 油漆桶模式不支援拖曳連續觸發
                                 const touch = e.touches[0];
                                 const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                                if (el && el.dataset.idx !== undefined) {
-                                    const idx = parseInt(el.dataset.idx, 10);
+                                if (el && el.dataset.idx) {
                                     const newPixels = [...pixels];
-                                    newPixels[idx] = drawingColor;
+                                    newPixels[el.dataset.idx] = drawingColor;
                                     setPixels(newPixels);
                                 }
                              }}>
