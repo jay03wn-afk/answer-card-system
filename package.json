@@ -1,8 +1,7 @@
 {
   "name": "jjay-online-test",
-  "version": "1.0.0",
   "scripts": {
-    "build": "babel js --out-dir js --extensions \".jsx,.js\""
+    "build": "babel js --out-dir js_dist --extensions \".jsx,.js\" --copy-files && node -e \"const fs=require('fs'); let h=fs.readFileSync('index.html','utf8'); h=h.replace(/\\.jsx/g, '.js').replace(/type=\\\"text\\/babel\\\"/g, '').replace(/<script src=\\\"https:\\/\\/cdnjs\\.cloudflare\\.com\\/ajax\\/libs\\/babel-standalone[^\"]+\\\"><\\/script>/g, ''); fs.writeFileSync('index.html', h);\""
   },
   "devDependencies": {
     "@babel/cli": "^7.23.0",
@@ -11,11 +10,7 @@
     "@babel/plugin-transform-block-scoping": "^7.23.0"
   },
   "babel": {
-    "presets": [
-      "@babel/preset-react"
-    ],
-    "plugins": [
-      "@babel/plugin-transform-block-scoping"
-    ]
+    "presets": ["@babel/preset-react"],
+    "plugins": ["@babel/plugin-transform-block-scoping"]
   }
 }
