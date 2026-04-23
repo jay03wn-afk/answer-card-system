@@ -2,17 +2,15 @@
   "name": "jjay-online-test",
   "version": "1.0.0",
   "scripts": {
-    "build": "babel js --out-dir js --extensions \".jsx,.js\""
+    "build": "node -e \"const fs=require('fs'),path=require('path');function w(d){if(!fs.existsSync(d))return;fs.readdirSync(d).forEach(f=>{let p=path.join(d,f);fs.statSync(p).isDirectory()?w(p):(p.endsWith('.js')||p.endsWith('.jsx'))&&fs.writeFileSync(p,fs.readFileSync(p,'utf8').split('const {').join('var {'))})}w('js');\" && babel js --out-dir js --extensions \".jsx,.js\""
   },
   "devDependencies": {
     "@babel/cli": "^7.23.0",
     "@babel/core": "^7.23.0",
-    "@babel/preset-env": "^7.23.0",
     "@babel/preset-react": "^7.23.0"
   },
   "babel": {
     "presets": [
-      "@babel/preset-env",
       "@babel/preset-react"
     ]
   }
