@@ -16,6 +16,9 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
     const [expandedPromptSubj, setExpandedPromptSubj] = useState({});
     const [promptSettings, setPromptSettings] = useState({});
     const [expandedSettings, setExpandedSettings] = useState({}); // 控制各卡片設定收合
+    const [showShop, setShowShop] = useState(false); // 新增：顯示商店
+    const [editingShopPrompt, setEditingShopPrompt] = useState(null); // 新增：管理員編輯商店 Prompt 狀態
+    const [shopPromptForm, setShopPromptForm] = useState({ title: '', subjectId: 's1', isQuiz: false, content: '', note: '', price: 0 }); // 新增：商店表單
 
     const DEFAULT_WEIGHTS = useMemo(() => ({
         s1: [{ label: '藥理學', val: 50 }, { label: '藥物化學', val: 50 }],
@@ -149,8 +152,9 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
     const handleCopyPrompt = (prompt) => {
         let text = prompt.content;
         if (prompt.isQuiz) {
-            const settings = promptSettings[prompt.id] || { num: 10, range: '', weights: DEFAULT_WEIGHTS[prompt.subjectId] };
-            let header = `# 題數與佔比\n請根據 [${settings.range || '指定'}] 範圍中的文字、圖表與藥物結構描述，\n出「${settings.num}題」單選題（四選一，A/B/C/D）。\n`;
+            const settings = promptSettings[prompt.id] || { num: 10, range: '', type: '選擇題（四選一，A/B/C/D）', weights: DEFAULT_WEIGHTS[prompt.subjectId] };
+            const qType = settings.type || '選擇題（四選一，A/B/C/D）';
+            let header = `# 題數與佔比\n請根據 [${settings.range || '指定'}] 範圍中的文字、圖表與藥物結構描述，\n出「${settings.num}題」${qType}。\n【重要規定】：請務必嚴格按照以下科目的順序來編排出題，絕對不要打亂順序。\n`;
             settings.weights.forEach(w => {
                 header += `- ${w.val}%為「（${w.label}）」試題。\n`;
             });
@@ -158,6 +162,48 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
         }
         navigator.clipboard.writeText(text);
         if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: '已複製 Prompt！' });
+    };
+
+    // 新增：處理購買 Prompt
+    const handlePurchaseClick = (shopItem) => {
+        showConfirm(`確定要花費 ${shopItem.price} 鑽石購買「${shopItem.title}」嗎？\n(注意：購買後，只要管理員更新此 Prompt，您的版本也會同步更新！)`, async () => {
+            // 先確認使用者是否有足夠鑽石
+            try {
+                const userDoc = await window.db.collection('users').doc(user.uid).get();
+                const diamonds = userDoc.data()?.mcData?.diamonds || 0;
+                if (diamonds < shopItem.price) {
+                    if (window.setGlobalToast) window.setGlobalToast({ status: 'error', message: '鑽石不足，無法購買！' });
+                    return;
+                }
+                // 扣款寫入
+                await window.db.collection('users').doc(user.uid).set({
+                    mcData: { diamonds: diamonds - shopItem.price }
+                }, { merge: true });
+                
+                // 傳遞到後端邏輯購買
+                if (examFeatures.buyShopPrompt) {
+                    await examFeatures.buyShopPrompt(shopItem);
+                } else {
+                    if (window.setGlobalToast) window.setGlobalToast({ status: 'error', message: '後端購買邏輯遺失，請重新整理頁面。' });
+                }
+            } catch (err) {
+                console.error("購買失敗", err);
+                if (window.setGlobalToast) window.setGlobalToast({ status: 'error', message: '購買失敗，請稍後再試。' });
+            }
+        });
+    };
+
+    // 新增：管理員儲存商店 Prompt
+    const handleSaveShopPrompt = () => {
+        if (!shopPromptForm.title.trim() || !shopPromptForm.content.trim()) {
+            if (window.setGlobalToast) window.setGlobalToast({ status: 'error', message: '標題與內容不能為空！' });
+            return;
+        }
+        if (examFeatures.adminSaveShopPrompt) {
+            examFeatures.adminSaveShopPrompt(shopPromptForm);
+        }
+        setEditingShopPrompt(null);
+        setShopPromptForm({ title: '', subjectId: 's1', isQuiz: false, content: '', note: '', price: 0 });
     };
 
     // === AI 口訣區狀態 ===
@@ -307,6 +353,13 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                     </div>
                     <div className="flex gap-2">
                         <button 
+                            onClick={() => setShowShop(!showShop)} 
+                            className={`px-3 py-2 rounded-lg text-sm font-bold flex items-center transition-colors ${showShop ? 'bg-amber-500 text-white shadow-sm' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200'}`}
+                        >
+                            <span className="material-symbols-outlined text-[18px] mr-1">storefront</span>
+                            {showShop ? '返回我的 Prompt' : '公開 Prompt 商店'}
+                        </button>
+                        <button 
                             onClick={handleImportPrompt} 
                             className="bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-gray-300 px-3 py-2 rounded-lg text-sm font-bold flex items-center hover:bg-stone-200"
                         >
@@ -323,7 +376,87 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                     </div>
                 </div>
 
-                {isAddingPrompt && (
+                {showShop && (
+                    <div className="mb-4 bg-amber-50 dark:bg-stone-800 border border-amber-200 dark:border-stone-700 rounded-xl p-4 shadow-sm animate-fade-in">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-black text-amber-800 dark:text-amber-400 flex items-center gap-2"><span className="material-symbols-outlined">storefront</span> 公開 Prompt 商店</h3>
+                            {user?.email === 'jay03wn@gmail.com' && (
+                                <button onClick={() => { setEditingShopPrompt('new'); setShopPromptForm({ title: '', subjectId: 's1', isQuiz: false, content: '', note: '', price: 0 }); }} className="bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-amber-700 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[16px]">add</span> 發布商品
+                                </button>
+                            )}
+                        </div>
+
+                        {editingShopPrompt && user?.email === 'jay03wn@gmail.com' && (
+                            <div className="bg-white dark:bg-stone-900 p-4 rounded-xl border border-amber-300 dark:border-stone-600 mb-4 space-y-3 shadow-inner">
+                                <div className="flex items-center gap-2 mb-2 font-bold text-amber-800 dark:text-amber-400">
+                                    <span className="material-symbols-outlined text-[20px]">{editingShopPrompt === 'new' ? 'add_circle' : 'edit'}</span>
+                                    <span>{editingShopPrompt === 'new' ? '新增上架 Prompt' : '編輯上架 Prompt'}</span>
+                                </div>
+                                <div className="flex gap-2 flex-wrap">
+                                    <input type="text" placeholder="Prompt 標題" className="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-amber-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none focus:border-amber-500" value={shopPromptForm.title} onChange={e => setShopPromptForm({...shopPromptForm, title: e.target.value})} />
+                                    <select className="px-3 py-2 rounded-lg border border-amber-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={shopPromptForm.subjectId} onChange={e => setShopPromptForm({...shopPromptForm, subjectId: e.target.value})}>
+                                        {examFeatures.EXAM_DATA.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                                    </select>
+                                    <div className="flex items-center gap-2 bg-amber-100 dark:bg-stone-800 px-3 py-2 rounded-lg border border-amber-200 dark:border-stone-600">
+                                        <span className="material-symbols-outlined text-[18px] text-amber-600 dark:text-amber-400">diamond</span>
+                                        <input type="number" min="0" placeholder="價格" className="w-16 bg-transparent outline-none dark:text-white font-bold" value={shopPromptForm.price} onChange={e => setShopPromptForm({...shopPromptForm, price: parseInt(e.target.value) || 0})} />
+                                    </div>
+                                </div>
+                                <label className="flex items-center gap-2 text-sm font-bold text-amber-800 dark:text-amber-300 cursor-pointer">
+                                    <input type="checkbox" checked={shopPromptForm.isQuiz} onChange={e => setShopPromptForm({...shopPromptForm, isQuiz: e.target.checked})} className="w-4 h-4 accent-amber-500" />
+                                    這是一份「出題」類型的 Prompt (支援自訂題數與佔比)
+                                </label>
+                                <input type="text" placeholder="備註或商品描述 (選填)" className="w-full px-3 py-2 rounded-lg border border-amber-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none text-sm" value={shopPromptForm.note} onChange={e => setShopPromptForm({...shopPromptForm, note: e.target.value})} />
+                                <textarea placeholder="請輸入 Prompt 內容..." className="w-full h-32 px-3 py-2 rounded-lg border border-amber-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none resize-none custom-scrollbar" value={shopPromptForm.content} onChange={e => setShopPromptForm({...shopPromptForm, content: e.target.value})}></textarea>
+                                <div className="flex justify-end gap-2">
+                                    <button onClick={() => setEditingShopPrompt(null)} className="px-4 py-2 font-bold text-gray-500 hover:text-gray-700 dark:text-gray-400">取消</button>
+                                    <button onClick={handleSaveShopPrompt} className="bg-amber-600 text-white px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-amber-700 transition-colors">儲存上架</button>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {examFeatures.shopPrompts && examFeatures.shopPrompts.length > 0 ? (
+                                examFeatures.shopPrompts.map(shopItem => {
+                                    const isBought = (examFeatures.myPrompts || []).some(p => p.originalShopId === shopItem.id || (p.isBought && p.id.includes('bought_') && p.title === shopItem.title));
+                                    return (
+                                        <div key={shopItem.id} className="border-2 border-amber-200 dark:border-stone-600 bg-white dark:bg-stone-900 rounded-xl p-4 flex flex-col shadow-sm relative group">
+                                            <div className="flex justify-between items-start mb-1">
+                                                <h4 className="font-bold text-stone-800 dark:text-white text-lg">{shopItem.title}</h4>
+                                                {user?.email === 'jay03wn@gmail.com' && (
+                                                    <button onClick={() => { setEditingShopPrompt(shopItem.id); setShopPromptForm(shopItem); }} className="text-gray-400 hover:text-amber-600"><span className="material-symbols-outlined text-[18px]">edit</span></button>
+                                                )}
+                                            </div>
+                                            <span className="text-xs text-amber-600 dark:text-amber-400 font-bold mb-2 inline-block bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded border border-amber-100 dark:border-stone-700 self-start">
+                                                {examFeatures.EXAM_DATA.find(s => s.id === shopItem.subjectId)?.title || '通用'} {shopItem.isQuiz && '· 出題版'}
+                                            </span>
+                                            {shopItem.note && <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 flex-grow">{shopItem.note}</p>}
+                                            
+                                            <div className="mt-auto pt-3 border-t border-amber-50 dark:border-stone-800 flex justify-between items-center">
+                                                <div className="flex items-center gap-1 font-black text-amber-500">
+                                                    <span className="material-symbols-outlined text-[18px]">diamond</span> {shopItem.price || 0}
+                                                </div>
+                                                <button 
+                                                    onClick={() => handlePurchaseClick(shopItem)} 
+                                                    disabled={isBought}
+                                                    className={`px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-1 ${isBought ? 'bg-gray-200 text-gray-500 dark:bg-stone-700 dark:text-gray-400' : 'bg-amber-500 hover:bg-amber-600 text-white'}`}
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">{isBought ? 'check_circle' : 'shopping_cart'}</span>
+                                                    {isBought ? '已擁有' : '購買匯入'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div className="col-span-full text-center py-6 text-gray-400 font-bold text-sm">商店目前沒有商品上架。</div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {!showShop && isAddingPrompt && (
                     <div id="edit-prompt-area" className="bg-cyan-50 dark:bg-stone-900 p-4 rounded-xl border border-cyan-200 dark:border-stone-700 mb-4 space-y-3">
                         <div className="flex items-center gap-2 mb-2">
                             <span className="material-symbols-outlined text-cyan-600">{editingPrompt ? 'edit' : 'add_circle'}</span>
@@ -373,20 +506,32 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                                 {isExpanded && (
                                     <div className="p-3 bg-white dark:bg-stone-900 border-t border-cyan-100 dark:border-stone-700 grid grid-cols-1 md:grid-cols-2 gap-3">
                                         {subjPrompts.map(prompt => {
-                                            const settings = promptSettings[prompt.id] || { num: 10, range: '', weights: JSON.parse(JSON.stringify(DEFAULT_WEIGHTS[prompt.subjectId])) };
+                                            const settings = promptSettings[prompt.id] || { num: 10, range: '', type: '選擇題（四選一，A/B/C/D）', weights: JSON.parse(JSON.stringify(DEFAULT_WEIGHTS[prompt.subjectId])) };
                                             const isSetExpanded = expandedSettings[prompt.id];
+                                            
+                                            // 實現「隨管理者更新而更新」的邏輯
+                                            let displayPrompt = prompt;
+                                            if (prompt.isBought && prompt.id) {
+                                                const shopVersion = examFeatures.shopPrompts?.find(sp => sp.id === prompt.id.replace('bought_', '').split('_')[0] || sp.title === prompt.title);
+                                                if (shopVersion) displayPrompt = { ...prompt, content: shopVersion.content, note: shopVersion.note };
+                                            }
+
                                             return (
                                                 <div key={prompt.id} className="border border-gray-200 dark:border-stone-700 rounded-xl p-4 bg-[#FCFBF7] dark:bg-stone-800 flex flex-col shadow-sm relative group">
                                                     <div className="flex justify-between items-start mb-1 pr-1">
-                                                        <h3 className="font-bold text-stone-800 dark:text-white text-lg">{prompt.title}</h3>
+                                                        <div className="flex flex-col gap-1">
+                                                            <h3 className="font-bold text-stone-800 dark:text-white text-lg leading-tight">{displayPrompt.title}</h3>
+                                                            {displayPrompt.isBought && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-black border border-amber-300 self-start">商店同步版</span>}
+                                                        </div>
                                                         <div className="flex gap-2">
-                                                            <button onClick={() => handleSharePrompt(prompt)} className="text-stone-400 hover:text-cyan-500" title="分享"><span className="material-symbols-outlined text-[20px]">share</span></button>
-                                                            <button onClick={() => handleEditStart(prompt)} className="text-stone-400 hover:text-cyan-500" title="編輯與刪除"><span className="material-symbols-outlined text-[20px]">edit</span></button>
+                                                            <button onClick={() => handleSharePrompt(displayPrompt)} className="text-stone-400 hover:text-cyan-500" title="分享"><span className="material-symbols-outlined text-[20px]">share</span></button>
+                                                            {!displayPrompt.isBought && <button onClick={() => handleEditStart(prompt)} className="text-stone-400 hover:text-cyan-500" title="編輯與刪除"><span className="material-symbols-outlined text-[20px]">edit</span></button>}
+                                                            {displayPrompt.isBought && <button onClick={() => handleDeletePrompt(prompt.id)} className="text-red-300 hover:text-red-500" title="刪除此購買的 Prompt"><span className="material-symbols-outlined text-[20px]">delete</span></button>}
                                                         </div>
                                                     </div>
-                                                    {prompt.note && <p className="text-xs text-stone-500 dark:text-gray-400 mb-2">{prompt.note}</p>}
+                                                    {displayPrompt.note && <p className="text-xs text-stone-500 dark:text-gray-400 mb-2">{displayPrompt.note}</p>}
                                                     
-                                                    {prompt.isQuiz && (
+                                                    {displayPrompt.isQuiz && (
                                                         <div className="mt-2 mb-3 border border-amber-100 dark:border-stone-700 rounded-lg overflow-hidden">
                                                             <button 
                                                                 onClick={() => setExpandedSettings(prev => ({...prev, [prompt.id]: !isSetExpanded}))}
@@ -399,6 +544,13 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                                                             {isSetExpanded && (
                                                                 <div className="p-3 space-y-3 bg-white dark:bg-stone-800">
                                                                     <div className="flex gap-2">
+                                                                        <div className="flex-[1.5]">
+                                                                            <label className="text-[10px] text-stone-400 block mb-1">題型選擇</label>
+                                                                            <select className="w-full px-2 py-1 text-sm rounded border border-amber-300 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={settings.type || '選擇題（四選一，A/B/C/D）'} onChange={e => setPromptSettings(prev => ({...prev, [prompt.id]: {...settings, type: e.target.value}}))}>
+                                                                                <option value="選擇題（四選一，A/B/C/D）">選擇題</option>
+                                                                                <option value="問答題與申論題">問答題</option>
+                                                                            </select>
+                                                                        </div>
                                                                         <div className="flex-1">
                                                                             <label className="text-[10px] text-stone-400 block mb-1">題數</label>
                                                                             <input type="number" min="1" className="w-full px-2 py-1 text-sm rounded border border-amber-300 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={settings.num} onChange={e => setPromptSettings(prev => ({...prev, [prompt.id]: {...settings, num: e.target.value}}))} />
@@ -437,7 +589,7 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                                                             )}
                                                         </div>
                                                     )}
-                                                    <button onClick={() => handleCopyPrompt(prompt)} className="mt-auto w-full py-2 bg-cyan-100 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:hover:bg-cyan-900/60 text-cyan-800 dark:text-cyan-300 font-bold rounded-lg transition-colors flex items-center justify-center gap-2 text-sm">
+                                                    <button onClick={() => handleCopyPrompt(displayPrompt)} className="mt-auto w-full py-2 bg-cyan-100 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:hover:bg-cyan-900/60 text-cyan-800 dark:text-cyan-300 font-bold rounded-lg transition-colors flex items-center justify-center gap-2 text-sm">
                                                         <span className="material-symbols-outlined text-[18px]">content_copy</span> 複製 Prompt
                                                     </button>
                                                 </div>

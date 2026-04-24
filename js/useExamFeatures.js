@@ -99,19 +99,6 @@ const EXAM_DATA = [
         ]
       }
     ]
-  },
-  {
-    id: "other",
-    title: "其他科目",
-    categories: [
-      {
-        id: "other_c1",
-        title: "自訂科目",
-        parts: ["其他"],
-        chapterWeights: [100],
-        chapters: ["自訂範圍"]
-      }
-    ]
   }
 ];
 
@@ -141,6 +128,7 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
   const [allUsersData, setAllUsersData] = useState([]);
   const [studyLogs, setStudyLogs] = useState([]);
   const [myPrompts, setMyPrompts] = useState([]);
+  const [shopPrompts, setShopPrompts] = useState([]); // 新增：公開 Prompt 商店狀態
 
   useEffect(() => {
     if (!user || !db) return;
@@ -182,9 +170,17 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
       setStudyLogs(logsData);
     });
 
+    // 監聽公開商店的 Prompts (隨管理員更新而自動更新)
+    const shopRef = db.collection('shopPrompts');
+    const unsubscribeShop = shopRef.onSnapshot((snapshot) => {
+      const shopData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setShopPrompts(shopData);
+    });
+
     return () => {
       unsubscribeProgress();
       unsubscribeLogs();
+      unsubscribeShop();
     };
   }, [user, db, appId]);
 
@@ -327,6 +323,57 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
       .catch(err => console.error("刪除軌跡失敗:", err));
   }, [user, db]);
 
+  // === 新增：管理員上架或更新公開 Prompt ===
+  const adminSaveShopPrompt = useCallback(async (promptData) => {
+    if (!user || !db || user.email !== 'jay03wn@gmail.com') {
+      alert("權限不足，僅限管理員操作。");
+      return;
+    }
+    try {
+      const docRef = promptData.id 
+        ? db.collection('shopPrompts').doc(promptData.id) 
+        : db.collection('shopPrompts').doc();
+      await docRef.set({
+        ...promptData,
+        updatedAt: Date.now(),
+        author: 'admin'
+      }, { merge: true });
+      alert("Prompt 上架/更新成功！");
+    } catch (error) {
+      console.error("管理員上架失敗:", error);
+    }
+  }, [user, db]);
+
+  // === 新增：購買公開 Prompt 並匯入 ===
+  const buyShopPrompt = useCallback(async (shopPrompt) => {
+    if (!user || !db) return;
+    // 扣款邏輯可在此擴充，目前為直接匯入
+    const newPrompt = {
+      ...shopPrompt,
+      id: 'bought_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9), // 賦予本地獨立ID
+      isBought: true
+    };
+    const updatedPrompts = [...myPrompts, newPrompt];
+    setMyPrompts(updatedPrompts);
+    
+    try {
+      await db.collection('artifacts').doc(appId).collection('userProgress').doc(user.uid).set({
+        prompts: updatedPrompts,
+        updatedAt: Date.now()
+      }, { merge: true });
+      alert("購買成功！已匯入至您的 Prompt 區。");
+    } catch (error) {
+      console.error("購買匯入失敗:", error);
+    }
+  }, [user, db, myPrompts, appId]);
+
+  // === 新增：生成出題 Prompt (支援題型選擇與按照科目順序) ===
+  const generateQuizPrompt = useCallback((selectedSubjects, questionType = '選擇題') => {
+    // selectedSubjects 請傳入科目名稱的陣列，例如 ["藥理學", "生藥學"]
+    const subjectNames = selectedSubjects.join("、");
+    return `請幫我出一份國考測驗卷。\n【題型要求】：${questionType}\n【測驗範圍包含以下科目】：${subjectNames}。\n【重要規定】：請務必嚴格按照上述科目的順序來編排出題，絕對不要打亂科目的順序。`;
+  }, []);
+
 // === 新增：呼叫後端 Vercel API 想口訣的功能 ===
     const generateAIMnemonic = async (topic) => {
         try {
@@ -351,8 +398,8 @@ function useExamFeatures(db, user, appId = 'exam-tracker-v2') {
   return {
     EXAM_DATA, GLOBAL_TOTAL_POINTS,generateAIMnemonic,
     myTasks, allUsersData, studyLogs, myTotalPoints, overallProgress,
-    myPrompts,
-    calculatePoints, toggleTask, markTasksDone, savePrompts, sharePrompt, fetchSharedPrompt, addStudyLog, deleteStudyLog, generateAIMnemonic
+    myPrompts, shopPrompts,
+    calculatePoints, toggleTask, markTasksDone, savePrompts, sharePrompt, fetchSharedPrompt, addStudyLog, deleteStudyLog, generateAIMnemonic, adminSaveShopPrompt, buyShopPrompt, generateQuizPrompt
   
   };
 }
