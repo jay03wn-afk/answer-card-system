@@ -2771,25 +2771,39 @@ if (step === 'grading') return (
                                         window.setGlobalToast({ status: 'loading', message: '⏳ AI 正在深度分析您的錯題，請稍候...' });
                                     }
 
-                                    try {
-                                        let promptData = "以下是該名學生在測驗中答錯的題目與選項，請分析其共同弱點，指出錯誤觀念，並補充該知識點的核心常考細節。\n\n";
-                                        wrongQuestions.forEach(wq => {
+                                   try {
+                                        let promptData = "以下是該名學生在測驗中答錯的題目，請深入分析其共同弱點、指出錯誤觀念，並詳細補充該知識點的核心常考細節。\n\n";
+                                        
+                                        // 限制最多送出 15 題給 AI，避免送出過多資料導致 Vercel Serverless 執行超時 (500 Error)
+                                        const limitedWrongQuestions = wrongQuestions.slice(0, 15);
+                                        
+                                        limitedWrongQuestions.forEach(wq => {
                                             const actualIdx = wq.number - 1;
                                             const q = parsedInteractiveQuestions.find(x => x.globalIndex === actualIdx);
                                             if (q) {
-                                                // 清理 HTML 標籤，避免混淆 AI
-                                                const cleanMainText = q.mainText.replace(/<[^>]*>?/gm, '');
+                                                // 將富文本轉為純文字，去除 HTML 標籤，大幅減輕 AI 閱讀負擔與解析錯誤
+                                                let cleanMainText = q.mainText.replace(/<[^>]+>/g, '').trim();
+                                                
                                                 promptData += `【第 ${wq.number} 題】\n題目：${cleanMainText}\n學生錯答：${wq.userAns}\n正確答案：${wq.correctAns}\n\n`;
                                             }
                                         });
 
-                                        promptData += "請使用繁體中文，格式請用條列式或段落，語氣要像專業且鼓勵人的家教老師。請勿使用 markdown code block，直接輸出純文本。";
+                                        if (wrongQuestions.length > 15) {
+                                            promptData += `(備註：該學生總共錯了 ${wrongQuestions.length} 題，但為了避免系統超時，請針對上述 15 題最具代表性的錯題進行深度分析即可。)\n\n`;
+                                        }
+
+                                        // 移除字數限制，讓 AI 盡情發揮詳細解析
+                                        promptData += "請使用繁體中文，格式請用條列式或段落，語氣要像專業且鼓勵人的家教老師。請直接輸出純文本，絕對不要包含任何 markdown code block (例如 ```)。";
 
                                         const res = await fetch('/api/gemini', {
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify({ prompt: promptData })
                                         });
+                                        
+                                        if (!res.ok) {
+                                            throw new Error(`伺服器無回應 (錯誤碼: ${res.status})，可能是 AI 思考時間過長導致超時，請稍後再試！`);
+                                        }
                                         
                                         const data = await res.json();
                                         if (data.result && data.result.startsWith('❌')) throw new Error(data.result);
