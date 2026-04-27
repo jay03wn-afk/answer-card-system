@@ -2801,11 +2801,23 @@ if (step === 'grading') return (
                                             body: JSON.stringify({ prompt: promptData })
                                         });
                                         
+                                        // ✨ 解決 JSON 解析錯誤：先將回應讀成純文字，避免伺服器回傳 HTML 或純文字錯誤時直接崩潰
+                                        const responseText = await res.text();
+                                        
                                         if (!res.ok) {
-                                            throw new Error(`伺服器無回應 (錯誤碼: ${res.status})，可能是 AI 思考時間過長導致超時，請稍後再試！`);
+                                            console.error("API 錯誤回應:", responseText);
+                                            throw new Error(`伺服器超時或過載 (錯誤碼: ${res.status})，請稍後再試！`);
                                         }
                                         
-                                        const data = await res.json();
+                                        let data;
+                                        try {
+                                            // 嘗試將純文字解析為 JSON
+                                            data = JSON.parse(responseText);
+                                        } catch (parseError) {
+                                            console.error("API 回傳了非 JSON 格式的內容:", responseText);
+                                            throw new Error("伺服器回應異常，這通常是因為 AI 思考過久導致 Vercel 強制中斷連線，請稍後再試！");
+                                        }
+                                        
                                         if (data.result && data.result.startsWith('❌')) throw new Error(data.result);
 
                                         // 扣除鑽石
