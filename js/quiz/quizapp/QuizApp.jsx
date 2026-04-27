@@ -2777,7 +2777,9 @@ if (step === 'grading') return (
                                             const actualIdx = wq.number - 1;
                                             const q = parsedInteractiveQuestions.find(x => x.globalIndex === actualIdx);
                                             if (q) {
-                                                promptData += `【第 ${wq.number} 題】\n題目：${q.mainText}\n學生錯答：${wq.userAns}\n正確答案：${wq.correctAns}\n\n`;
+                                                // 清理 HTML 標籤，避免混淆 AI
+                                                const cleanMainText = q.mainText.replace(/<[^>]*>?/gm, '');
+                                                promptData += `【第 ${wq.number} 題】\n題目：${cleanMainText}\n學生錯答：${wq.userAns}\n正確答案：${wq.correctAns}\n\n`;
                                             }
                                         });
 

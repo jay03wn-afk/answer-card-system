@@ -108,6 +108,14 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                     unsubQA = window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).onSnapshot({ includeMetadataChanges: true }, snapshot => {
                         const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         const now = new Date().getTime();
+                        
+                        // ✨ 修復：自動刪除過期的題目
+                        qas.forEach(q => {
+                            if (q.endTime && q.endTime <= now) {
+                                window.db.collection('fastQA').doc(q.id).delete().catch(e => console.error("自動刪除過期題目失敗:", e));
+                            }
+                        });
+
                         const validQas = isAdmin ? qas : qas.filter(q => !q.endTime || q.endTime > now);
                         setQaList(validQas);
                         
