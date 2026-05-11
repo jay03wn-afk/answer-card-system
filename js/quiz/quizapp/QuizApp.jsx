@@ -1246,8 +1246,9 @@ function QuizApp(props) {
             {UpdateNotification}
             {tutorialStep === 0 && <button onClick={onBackToDashboard} className="absolute top-4 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-50 transition-colors">← 返回列表</button>}
             
-            {/* ✨ 全域注入：確保所有作答區 (包含傳統雙視窗) 的圖片都有指標樣式與放大動畫 */}
+            {/* ✨ 全域注入：確保所有作答區 (包含傳統雙視窗) 的圖片都有指標樣式與放大動畫，以及題庫標籤顯示控制 */}
             <style dangerouslySetInnerHTML={{__html: `
+                .qlib-question-tags { display: ${quizSettings?.showTags ? 'inline-block' : 'none'} !important; }
                 .preview-rich-text img, .preview-rich-text canvas {
                     cursor: zoom-in !important;
                     transition: opacity 0.2s, transform 0.2s !important;
@@ -2254,7 +2255,21 @@ function QuizApp(props) {
                             </div>
                         </div>
 
-                        <button onClick={() => setShowSettingsModal(false)} className="w-full mt-8 bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 py-3 rounded-full font-black text-sm hover:bg-stone-700 dark:hover:bg-white shadow-md transition-all active:scale-95">完成設定</button>
+                        {/* 新增：題庫標籤顯示開關 */}
+                        <div className="mt-6 flex justify-between items-center bg-stone-50 dark:bg-stone-800 p-4 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-sm">
+                            <div>
+                                <div className="font-bold text-stone-800 dark:text-stone-200 text-sm">顯示題目來源與標籤</div>
+                                <div className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-1">作答時是否顯示此題的標籤與難度</div>
+                            </div>
+                            <button 
+                                onClick={() => setQuizSettings(prev => ({...prev, showTags: !prev.showTags}))} 
+                                className={`w-12 h-6 rounded-full transition-colors relative ${quizSettings?.showTags ? 'bg-amber-500' : 'bg-gray-300 dark:bg-stone-600'}`}
+                            >
+                                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${quizSettings?.showTags ? 'translate-x-7' : 'translate-x-1'}`} />
+                            </button>
+                        </div>
+
+                        <button onClick={() => setShowSettingsModal(false)} className="w-full mt-6 bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 py-3 rounded-full font-black text-sm hover:bg-stone-700 dark:hover:bg-white shadow-md transition-all active:scale-95">完成設定</button>
                     </div>
                 </div>
             )}
@@ -2381,6 +2396,7 @@ if (step === 'grading') return (
 
         return (
             <div className="flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors" onClick={handleRichTextClick}>
+                <style dangerouslySetInnerHTML={{__html: `.qlib-question-tags { display: ${quizSettings?.showTags ? 'inline-block' : 'none'} !important; }`}} />
                 <div className="bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex justify-between items-center rounded-2xl shrink-0 z-10 transition-colors w-full mb-4">
                     <div className="flex items-center space-x-2">
                         <button onClick={() => setStep('results')} className="text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 font-bold mr-2">
@@ -2553,6 +2569,7 @@ if (step === 'grading') return (
     if (step === 'results') return (
         <div className="flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors relative" onClick={handleRichTextClick}>
             {UpdateNotification}
+            <style dangerouslySetInnerHTML={{__html: `.qlib-question-tags { display: ${quizSettings?.showTags ? 'inline-block' : 'none'} !important; }`}} />
             {tutorialStep === 0 && <button onClick={onBackToDashboard} className="absolute top-4 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-50 transition-colors">← 返回列表</button>}
             {/* ✨ 頂部導覽列：全面升級質感 SVG 圖示 */}
             <div className="bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 z-10 transition-colors w-full mt-6">
@@ -3368,7 +3385,21 @@ if (step === 'grading') return (
                             </div>
                         </div>
 
-                        <button onClick={() => setShowSettingsModal(false)} className="w-full mt-8 bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 py-3 rounded-full font-black text-sm hover:bg-stone-700 dark:hover:bg-white shadow-md transition-all active:scale-95">完成設定</button>
+                        {/* 新增：題庫標籤顯示開關 */}
+                        <div className="mt-6 flex justify-between items-center bg-stone-50 dark:bg-stone-800 p-4 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-sm">
+                            <div>
+                                <div className="font-bold text-stone-800 dark:text-stone-200 text-sm">顯示題目來源與標籤</div>
+                                <div className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-1">作答時是否顯示此題的標籤與難度</div>
+                            </div>
+                            <button 
+                                onClick={() => setQuizSettings(prev => ({...prev, showTags: !prev.showTags}))} 
+                                className={`w-12 h-6 rounded-full transition-colors relative ${quizSettings?.showTags ? 'bg-amber-500' : 'bg-gray-300 dark:bg-stone-600'}`}
+                            >
+                                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${quizSettings?.showTags ? 'translate-x-7' : 'translate-x-1'}`} />
+                            </button>
+                        </div>
+
+                        <button onClick={() => setShowSettingsModal(false)} className="w-full mt-6 bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 py-3 rounded-full font-black text-sm hover:bg-stone-700 dark:hover:bg-white shadow-md transition-all active:scale-95">完成設定</button>
                     </div>
                 </div>
             )}

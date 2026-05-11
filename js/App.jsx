@@ -1,5 +1,5 @@
 // 從全域 (window) 拿回我們已經搬出去的四個大頁面
-const { Dashboard, QuizApp, TaskWallDashboard, WrongBookDashboard, ShopDashboard } = window;
+const { Dashboard, QuizApp, TaskWallDashboard, WrongBookDashboard, ShopDashboard, QlibDashboard } = window;
 
 // ==========================================
 // ✨ 國考戰況與 AI 口訣專屬 UI 介面
@@ -12,13 +12,13 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
     // === 常用 Prompt 區狀態 ===
     const [isAddingPrompt, setIsAddingPrompt] = useState(false);
     const [editingPrompt, setEditingPrompt] = useState(null); // 用於編輯模式
-    const [newPrompt, setNewPrompt] = useState({ title: '', subjectId: 's1', isQuiz: false, content: '', note: '' });
+    const [newPrompt, setNewPrompt] = useState({ title: '', subjectId: 's1', isQuiz: false, isQlib: false, qlibTags: '', content: '', note: '' });
     const [expandedPromptSubj, setExpandedPromptSubj] = useState({});
     const [promptSettings, setPromptSettings] = useState({});
     const [expandedSettings, setExpandedSettings] = useState({}); // 控制各卡片設定收合
     const [showShop, setShowShop] = useState(false); // 新增：顯示商店
     const [editingShopPrompt, setEditingShopPrompt] = useState(null); // 新增：管理員編輯商店 Prompt 狀態
-    const [shopPromptForm, setShopPromptForm] = useState({ title: '', subjectId: 's1', isQuiz: false, content: '', note: '', price: 0 }); // 新增：商店表單
+    const [shopPromptForm, setShopPromptForm] = useState({ title: '', subjectId: 's1', isQuiz: false, isQlib: false, qlibTags: '', content: '', note: '', price: 0 }); // 新增：商店表單
 
     const DEFAULT_WEIGHTS = useMemo(() => ({
         s1: [{ label: '藥理學', val: 50 }, { label: '藥物化學', val: 50 }],
@@ -89,7 +89,7 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
         examFeatures.savePrompts(updated);
         setIsAddingPrompt(false);
         setEditingPrompt(null);
-        setNewPrompt({ title: '', subjectId: 's1', isQuiz: false, content: '', note: '' });
+        setNewPrompt({ title: '', subjectId: 's1', isQuiz: false, isQlib: false, qlibTags: '', content: '', note: '' });
         if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: editingPrompt ? '編輯成功！' : '新增成功！' });
     };
 
@@ -151,15 +151,30 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
 
     const handleCopyPrompt = (prompt) => {
         let text = prompt.content;
+        let fullHeader = '';
+
         if (prompt.isQuiz) {
             const settings = promptSettings[prompt.id] || { num: 10, range: '', type: '選擇題（四選一，A/B/C/D）', weights: DEFAULT_WEIGHTS[prompt.subjectId] };
+            
+            // ✨ 1. 處理題庫標籤：如果有勾選且有輸入內容 (從個別的設定 settings 讀取)
+            if (settings.isQlib && settings.qlibTags) {
+                // 自動把逗號或空格切開，並防呆加上 #
+                const tags = settings.qlibTags.split(/[,，\s]+/).filter(t => t.trim() !== '').map(t => `#${t.replace(/^#/, '').trim()}`).join(' ');
+                if (tags) {
+                    fullHeader += `給定標籤:${tags}\n\n`;
+                }
+            }
+
+            // 2. 處理出題參數
             const qType = settings.type || '選擇題（四選一，A/B/C/D）';
-            let header = `# 題數與佔比\n請根據 [${settings.range || '指定'}] 範圍中的文字、圖表與藥物結構描述，\n出「${settings.num}題」${qType}。\n【重要規定】：請務必嚴格按照以下科目的順序來編排出題，絕對不要打亂順序。\n`;
+            fullHeader += `# 題數與佔比\n請根據 [${settings.range || '指定'}] 範圍中的文字、圖表與藥物結構描述，\n出「${settings.num}題」${qType}。\n【重要規定】：請務必嚴格按照以下科目的順序來編排出題，絕對不要打亂順序。\n`;
             settings.weights.forEach(w => {
-                header += `- ${w.val}%為「（${w.label}）」試題。\n`;
+                fullHeader += `- ${w.val}%為「（${w.label}）」試題。\n`;
             });
-            text = header + text;
+            fullHeader += '\n'; // 加上換行區隔
         }
+
+        text = fullHeader + text;
         navigator.clipboard.writeText(text);
         if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: '已複製 Prompt！' });
     };
@@ -203,7 +218,7 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
             examFeatures.adminSaveShopPrompt(shopPromptForm);
         }
         setEditingShopPrompt(null);
-        setShopPromptForm({ title: '', subjectId: 's1', isQuiz: false, content: '', note: '', price: 0 });
+        setShopPromptForm({ title: '', subjectId: 's1', isQuiz: false, isQlib: false, qlibTags: '', content: '', note: '', price: 0 });
     };
 
     // === AI 口訣區狀態 ===
@@ -556,11 +571,34 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                                                                             <input type="number" min="1" className="w-full px-2 py-1 text-sm rounded border border-amber-300 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={settings.num} onChange={e => setPromptSettings(prev => ({...prev, [prompt.id]: {...settings, num: e.target.value}}))} />
                                                                         </div>
                                                                         <div className="flex-[2]">
-                                                                            <label className="text-[10px] text-stone-400 block mb-1">範圍 (例如 Ch1-5)</label>
-                                                                            <input type="text" className="w-full px-2 py-1 text-sm rounded border border-amber-300 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={settings.range} onChange={e => setPromptSettings(prev => ({...prev, [prompt.id]: {...settings, range: e.target.value}}))} />
+                                                                                <label className="text-[10px] text-stone-400 block mb-1">範圍 (例如 Ch1-5)</label>
+                                                                                <input type="text" className="w-full px-2 py-1 text-sm rounded border border-amber-300 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={settings.range} onChange={e => setPromptSettings(prev => ({...prev, [prompt.id]: {...settings, range: e.target.value}}))} />
+                                                                            </div>
                                                                         </div>
-                                                                    </div>
-                                                                    <div className="space-y-2 pt-2 border-t border-amber-50">
+                                                                        
+                                                                        {/* ✨ 新增：題庫標籤設定區塊 */}
+                                                                        <div className="flex flex-col gap-2 pt-3 mt-1 border-t border-amber-50 dark:border-stone-700">
+                                                                            <label className="flex items-center gap-2 text-xs font-bold text-amber-700 dark:text-amber-400 cursor-pointer">
+                                                                                <input 
+                                                                                    type="checkbox" 
+                                                                                    checked={settings.isQlib || false} 
+                                                                                    onChange={e => setPromptSettings(prev => ({...prev, [prompt.id]: {...settings, isQlib: e.target.checked}}))} 
+                                                                                    className="w-3.5 h-3.5 accent-amber-500" 
+                                                                                />
+                                                                                [題庫系統專用] 預先指定抽題標籤
+                                                                            </label>
+                                                                            {settings.isQlib && (
+                                                                                <input 
+                                                                                    type="text" 
+                                                                                    placeholder="請輸入標籤 (例如: 抗癌 藥理)" 
+                                                                                    className="w-full px-2 py-1.5 text-sm rounded border border-amber-300 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none focus:border-amber-500 transition-colors" 
+                                                                                    value={settings.qlibTags || ''} 
+                                                                                    onChange={e => setPromptSettings(prev => ({...prev, [prompt.id]: {...settings, qlibTags: e.target.value}}))} 
+                                                                                />
+                                                                            )}
+                                                                        </div>
+
+                                                                        <div className="space-y-2 pt-3 mt-1 border-t border-amber-50 dark:border-stone-700">
                                                                         {settings.weights.map((w, idx) => (
                                                                             <div key={idx} className="flex flex-col gap-1">
                                                                                 <div className="flex justify-between items-center text-[10px] font-bold text-amber-700 dark:text-amber-500">
@@ -1543,6 +1581,7 @@ if (docs.length > 50) {
                 <div className="flex-1 overflow-y-auto py-4 flex flex-col custom-scrollbar space-y-1">
                     <button onClick={() => handleTabClick('newspaper')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'newspaper' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">newspaper</span> JJay日報</button>
                     <button onClick={() => handleTabClick('dashboard')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'dashboard' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">library_books</span> 我的題庫</button>
+                    <button onClick={() => handleTabClick('qlib')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'qlib' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">source</span> 題庫系統</button>
                     <button onClick={() => handleTabClick('taskwall')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'taskwall' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">task_alt</span> 任務牆</button>
                     <button onClick={() => handleTabClick('wrongbook')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'wrongbook' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">menu_book</span> 錯題整理</button>
                     <button onClick={() => handleTabClick('social')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'social' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">forum</span> 社群交流</button>
@@ -2017,6 +2056,7 @@ if (docs.length > 50) {
             {activeTab !== 'activeQuiz' ? (
                 <div className="flex-grow pt-4 md:pt-6 overflow-hidden flex flex-col bg-gray-50 dark:bg-stone-900 transition-colors">
                     {activeTab === 'newspaper' && <NewspaperDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}                    {activeTab === 'dashboard' && <Dashboard user={user} userProfile={userProfile} onStartNew={(folderName) => { setActiveQuizRecord({ folder: folderName }); setActiveTab('activeQuiz'); if(tutorialStep===2) setTutorialStep(3); }} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} tutorialStep={tutorialStep} setTutorialStep={setTutorialStep} />}
+                    {activeTab === 'qlib' && <QlibDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     {activeTab === 'taskwall' && <TaskWallDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     
                     {/* 更新：傳入 onContinueQuiz，實現跳轉功能 */}
