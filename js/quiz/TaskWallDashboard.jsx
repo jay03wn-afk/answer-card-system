@@ -1019,7 +1019,7 @@ D. 第四個選項`}
 }
 
 function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
-    const isAdmin = user && user.email === 'jay03wn@gmail.com'; // ✨ 新增：判斷管理員
+    const isAdmin = user && (user.email === 'jay03wn@gmail.com' || user.email === 'u112003111@gap.kmu.edu.tw'); // ✨ 新增：判斷管理員
     const [isJumping, setIsJumping] = useState(false); // ✨ 新增：跳轉載入狀態
   const [tasks, setTasks] = useState({});
   const [officialTasks, setOfficialTasks] = useState({});
