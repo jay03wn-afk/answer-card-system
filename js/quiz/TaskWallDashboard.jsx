@@ -20,7 +20,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [showParseHelp, setShowParseHelp] = useState(false); 
     const [isFastQAExpanded, setIsFastQAExpanded] = useState(true); // ✨ 新增：收合狀態 
     
-    const isAdmin = user && user.email === 'jay03wn@gmail.com';
+    const isAdmin = user && (user.email === 'jay03wn@gmail.com' || user.email === 'u112003111@gap.kmu.edu.tw');
             const [myFriendsUids, setMyFriendsUids] = useState([]);
 
             useEffect(() => {
