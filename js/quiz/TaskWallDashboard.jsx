@@ -8,58 +8,7 @@ const {
 } = window;
 
 // ✨ 業界最強 Ketcher 化學繪圖編輯器組件 (供快問快答使用，確保全檔只有這一個！)
-const KetcherEditorModal = React.memo(({ initialSmiles, onSave, onClose }) => {
-    const { useRef, useState } = React;
-    const iframeRef = useRef(null);
-    const [isSaving, setIsSaving] = useState(false);
 
-    const handleIframeLoad = () => {
-        try {
-            const ketcher = iframeRef.current.contentWindow.ketcher;
-            if (ketcher && initialSmiles) ketcher.setMolecule(initialSmiles);
-        } catch (e) { console.warn("無法載入初始結構", e); }
-    };
-
-    const handleAutoSave = async () => {
-        setIsSaving(true);
-        try {
-            const ketcher = iframeRef.current.contentWindow.ketcher;
-            if (ketcher) {
-                const smiles = await ketcher.getSmiles();
-                if (!smiles || smiles.trim() === '') alert("畫布是空的喔！請繪製結構後再儲存。");
-                else onSave(smiles);
-            } else alert("繪圖板尚未載入完成！");
-        } catch (error) {
-            console.error("儲存失敗", error);
-            alert("儲存失敗，請確保畫布內的結構正確無誤。");
-        }
-        setIsSaving(false);
-    };
-
-    return (
-        <div className="fixed inset-0 z-[250] bg-stone-900/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-fade-in">
-            <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-6xl h-[95vh] rounded-3xl flex flex-col shadow-2xl border border-stone-200 dark:border-stone-700 overflow-hidden">
-                <div className="p-4 border-b border-stone-200 dark:border-stone-700 flex justify-between items-center bg-white dark:bg-stone-900 shrink-0">
-                    <h3 className="font-black text-xl text-stone-800 dark:text-white flex items-center gap-2">
-                        <span className="material-symbols-outlined text-emerald-500">draw</span> 專業化學繪圖 (Ketcher)
-                    </h3>
-                    <button onClick={onClose} className="text-gray-400 hover:text-red-500 transition-colors"><span className="material-symbols-outlined">close</span></button>
-                </div>
-                <div className="flex-1 bg-white dark:bg-stone-800 overflow-hidden relative">
-                    <iframe ref={iframeRef} onLoad={handleIframeLoad} src="/ketcher/index.html" className="w-full h-full border-0" title="Ketcher Editor"></iframe>
-                </div>
-                <div className="p-4 border-t border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 shrink-0 flex justify-end items-center gap-3">
-                    <div className="text-sm font-bold text-gray-400 mr-auto hidden sm:block">💡 提示：畫完後直接點擊右方儲存按鈕即可將結構轉碼插入！</div>
-                    <button onClick={onClose} className="px-6 py-2.5 font-bold text-gray-500 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-xl transition-colors">取消</button>
-                    <button onClick={handleAutoSave} disabled={isSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2.5 rounded-xl font-black shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
-                        {isSaving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[20px]">save</span>}
-                        {isSaving ? '處理中...' : '插入結構代碼'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-});
 
 function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRequireLogin }) {
     const { useState, useEffect } = React;
@@ -358,8 +307,9 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         setIsExportingCloud(false);
     };
 
-    const handleKetcherSave = (smiles) => {
-        const formatted = `<<:${smiles}:>>`;
+   const handleKetcherSave = (imgBase64) => {
+        // 直接將高畫質圖片轉換成 HTML 的 img 標籤插入題目或選項中
+        const formatted = `<img src="${imgBase64}" style="max-height:120px; border-radius:8px; vertical-align:middle; margin:4px; display:inline-block;" alt="結構圖"/>`;
         if(ketcherTarget === 'q') setQuestion(prev => prev + formatted);
         else if(ketcherTarget === 'exp') setExplanation(prev => prev + formatted);
         else {
@@ -743,9 +693,8 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     return (
         <div className={`border border-rose-200 bg-[#FCFBF7] dark:bg-stone-900 p-6 shadow-xl relative rounded-3xl w-full transition-all duration-300 ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
             
-            {showKetcherModal && (
-                <KetcherEditorModal 
-                    initialSmiles=""
+          {showKetcherModal && window.JayChemDrawModal && (
+                <window.JayChemDrawModal 
                     onSave={handleKetcherSave}
                     onClose={() => setShowKetcherModal(false)}
                 />

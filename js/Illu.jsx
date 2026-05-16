@@ -568,89 +568,6 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
         reader.readAsDataURL(file);
     };
 
-   // ✨ 新增：業界最強 Ketcher 化學繪圖編輯器組件 (支援 API 隱藏擷取)
-    const KetcherEditorModal = React.memo(({ initialSmiles, onSave, onClose }) => {
-        const { useRef, useState } = React;
-        const iframeRef = useRef(null);
-        const [isSaving, setIsSaving] = useState(false);
-
-        const handleIframeLoad = () => {
-            try {
-                // 💡 如果是編輯已有的結構，自動從 API 灌入畫布！
-                const ketcher = iframeRef.current.contentWindow.ketcher;
-                if (ketcher && initialSmiles) {
-                    ketcher.setMolecule(initialSmiles);
-                }
-            } catch (e) {
-                console.warn("無法載入初始結構", e);
-            }
-        };
-
-        const handleAutoSave = async () => {
-            setIsSaving(true);
-            try {
-                const ketcher = iframeRef.current.contentWindow.ketcher;
-                if (ketcher) {
-                    // 💡 透過 API 直接從畫板偷出 SMILES，使用者完全無感！
-                    const smiles = await ketcher.getSmiles();
-                    if (!smiles || smiles.trim() === '') {
-                        alert("畫布是空的喔！請繪製結構後再儲存。");
-                    } else {
-                        onSave(smiles);
-                    }
-                } else {
-                    alert("繪圖板尚未載入完成！");
-                }
-            } catch (error) {
-                console.error("儲存失敗", error);
-                alert("儲存失敗，請確保畫布內的結構正確無誤。");
-            }
-            setIsSaving(false);
-        };
-
-        return (
-            <div className="fixed inset-0 z-[200] bg-stone-900/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-fade-in">
-                <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-6xl h-[95vh] rounded-3xl flex flex-col shadow-2xl border border-stone-200 dark:border-stone-700 overflow-hidden">
-                    
-                    <div className="p-4 border-b border-stone-200 dark:border-stone-700 flex justify-between items-center bg-white dark:bg-stone-900 shrink-0">
-                        <h3 className="font-black text-xl text-stone-800 dark:text-white flex items-center gap-2">
-                            <span className="material-symbols-outlined text-emerald-500">draw</span> 專業化學繪圖 (Ketcher)
-                        </h3>
-                        <button onClick={onClose} className="text-gray-400 hover:text-red-500 transition-colors"><span className="material-symbols-outlined">close</span></button>
-                    </div>
-
-                    <div className="flex-1 bg-white dark:bg-stone-800 overflow-hidden relative">
-                        <iframe 
-                            ref={iframeRef}
-                            onLoad={handleIframeLoad}
-                            src="/ketcher/index.html" 
-                            className="w-full h-full border-0"
-                            title="Ketcher Editor"
-                        ></iframe>
-                    </div>
-
-                    <div className="p-4 border-t border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 shrink-0 flex justify-end items-center gap-3">
-                        <div className="text-sm font-bold text-gray-400 mr-auto hidden sm:block">
-                            💡 提示：畫完後不需操作畫布內的存檔，直接點擊右方綠色按鈕即可！
-                        </div>
-                        <button onClick={onClose} className="px-6 py-2.5 font-bold text-gray-500 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-xl transition-colors">取消</button>
-                        <button 
-                            onClick={handleAutoSave} 
-                            disabled={isSaving}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2.5 rounded-xl font-black shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:active:scale-100"
-                        >
-                            {isSaving ? (
-                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            ) : (
-                                <span className="material-symbols-outlined text-[20px]">save</span>
-                            )}
-                            {isSaving ? '處理中...' : '一鍵儲存結構'}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    });
 
     // ✨ 新增：獨立出產題邏輯，供一般測驗與無限模式共用，並實作選項不重複機制
     const createSingleQuestionData = (drug, globalPool, allowedTypes) => {
@@ -1980,12 +1897,12 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
                 </div>
             )}
 
-            {/* ✨ 新增：化學結構繪圖 Modal */}
+            {/* ✨ 新增：客製化化學結構繪圖 Modal (JayChemDraw) */}
             {showDrawingModal && (
-                <KetcherEditorModal 
-                    initialSmiles={editingDrug?.customSmiles || ''}
-                    onSave={(smiles) => {
-                        setEditingDrug(prev => ({ ...prev, customSmiles: smiles }));
+                <JayChemDrawModal 
+                    onSave={(imgBase64) => {
+                        // 畫完直接存成圖片，並清空原本的 SMILES 避免衝突
+                        setEditingDrug(prev => ({ ...prev, customImg: imgBase64, customSmiles: null }));
                         setShowDrawingModal(false);
                     }}
                     onClose={() => setShowDrawingModal(false)}
