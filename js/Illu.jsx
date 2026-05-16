@@ -13,7 +13,7 @@ const DrugCard = React.memo(({ drug, onSelect, onAddFolder, onRemoveFromFolder, 
             )}
 
             {/* 非比較模式下才顯示操作按鈕 */}
-            {!isCompareMode && (
+            {!isCompareMode && isAdmin && (
                 <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                     {isMyFolder ? (
                         <button onClick={(e) => { e.stopPropagation(); onRemoveFromFolder(drug.id); }} className="w-6 h-6 flex items-center justify-center bg-rose-50 dark:bg-rose-900/50 backdrop-blur rounded-full text-rose-500 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-900 shadow-sm border border-rose-200 dark:border-rose-800 transition-colors" title="從資料夾移除">
@@ -44,6 +44,203 @@ const DrugCard = React.memo(({ drug, onSelect, onAddFolder, onRemoveFromFolder, 
     );
 });
 
+// ✨ 新增：獨立於主組件之外，防止重新渲染時狀態重置的心智圖遞迴元件 (支援左右雙向展開)
+const MindMapNode = React.memo(({ node, level = 0, onNodeClick, dir = 'right' }) => {
+    const { useState } = React;
+    const [isOpen, setIsOpen] = useState(level === 0); // 💡 預設收合：只有最中央的「藥物心智圖」預設展開
+    const isLeaf = !!node.drug;
+    const isLeft = dir === 'left';
+
+    // 💡 根節點 (level 0) 專屬渲染：將子節點對半切分至左右兩側
+    if (level === 0) {
+        const mid = Math.ceil(node.children.length / 2);
+        const leftChildren = node.children.slice(0, mid);
+        const rightChildren = node.children.slice(mid);
+
+        const renderTree = (children, treeDir) => {
+            if (!isOpen || children.length === 0) return null;
+            const isTreeLeft = treeDir === 'left';
+            return (
+                <div className={`flex items-center ${isTreeLeft ? 'flex-row-reverse' : ''}`}>
+                    <div className="w-8 h-[2px] bg-stone-300 dark:bg-stone-600 shrink-0 transition-opacity"></div>
+                    <div className={`flex flex-col animate-fade-in-up ${isTreeLeft ? 'items-end' : ''}`} style={{ animationDuration: '0.2s' }}>
+                        {children.map((child, idx) => {
+                            const isFirst = idx === 0;
+                            const isLast = idx === children.length - 1;
+                            const isOnly = children.length === 1;
+                            return (
+                                <div key={idx} className={`relative flex items-center ${isTreeLeft ? 'flex-row-reverse' : ''}`}>
+                                    {!isOnly && (
+                                        <div className={`absolute ${isTreeLeft ? 'right-0' : 'left-0'} w-[2px] bg-stone-300 dark:bg-stone-600 ${
+                                            isFirst ? 'top-1/2 bottom-0' :
+                                            isLast ? 'top-0 bottom-1/2' :
+                                            'top-0 bottom-0'
+                                        }`}></div>
+                                    )}
+                                    <div className="w-8 h-[2px] bg-stone-300 dark:bg-stone-600 shrink-0"></div>
+                                    <div className="py-2">
+                                        <MindMapNode node={child} level={1} onNodeClick={onNodeClick} dir={treeDir} />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        return (
+            <div className="flex items-center justify-center">
+                {/* 左側分支 */}
+                {renderTree(leftChildren, 'left')}
+                
+                {/* 中心節點 */}
+                <div 
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="px-6 py-3 rounded-2xl font-black border-4 whitespace-nowrap cursor-pointer transition-all flex items-center gap-2 z-10 shadow-lg active:scale-95 bg-rose-500 border-rose-600 text-white text-xl mx-2"
+                >
+                    <span className="material-symbols-outlined text-[24px]">account_tree</span>
+                    {node.name}
+                    <span className="text-xs ml-1 opacity-80 bg-black/20 px-2 py-0.5 rounded-full">
+                        {node.children.length}
+                    </span>
+                </div>
+
+                {/* 右側分支 */}
+                {renderTree(rightChildren, 'right')}
+            </div>
+        );
+    }
+
+    // 💡 標準節點 (level > 0) 渲染
+    return (
+        <div className={`flex items-center ${isLeft ? 'flex-row-reverse' : ''}`}>
+            <div 
+                onClick={() => {
+                    if (isLeaf) onNodeClick(node.drug);
+                    else setIsOpen(!isOpen);
+                }}
+                className={`px-4 py-2 rounded-xl font-bold border-2 whitespace-nowrap cursor-pointer transition-all flex items-center gap-2 z-10 shadow-sm active:scale-95 ${
+                    isLeaf ? 'bg-white dark:bg-stone-800 border-emerald-400 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-stone-700' : 
+                    level === 1 ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-400 text-amber-800 dark:text-amber-300' :
+                    level === 2 ? 'bg-cyan-50 dark:bg-cyan-900/30 border-cyan-300 text-cyan-800 dark:text-cyan-300' :
+                    'bg-stone-100 dark:bg-stone-700 border-stone-300 dark:border-stone-500 text-stone-700 dark:text-stone-300'
+                }`}
+            >
+                {isLeaf && <span className="material-symbols-outlined text-[16px]">science</span>}
+                {node.name}
+                {!isLeaf && (
+                    <span className="text-[11px] ml-1 opacity-80 bg-black/10 dark:bg-white/10 px-1.5 py-0.5 rounded-full">
+                        {node.children.length}
+                    </span>
+                )}
+            </div>
+            
+            {/* 橫向連接線 */}
+            {!isLeaf && isOpen && node.children.length > 0 && (
+                <div className="w-8 h-[2px] bg-stone-300 dark:bg-stone-600 shrink-0 transition-opacity"></div>
+            )}
+            
+            {/* 子節點區塊 */}
+            {!isLeaf && isOpen && node.children.length > 0 && (
+                <div className={`flex flex-col animate-fade-in-up ${isLeft ? 'items-end' : ''}`} style={{ animationDuration: '0.2s' }}>
+                    {node.children.map((child, idx) => {
+                        const isFirst = idx === 0;
+                        const isLast = idx === node.children.length - 1;
+                        const isOnly = node.children.length === 1;
+                        return (
+                            <div key={idx} className={`relative flex items-center ${isLeft ? 'flex-row-reverse' : ''}`}>
+                                {/* 垂直連線 */}
+                                {!isOnly && (
+                                    <div className={`absolute ${isLeft ? 'right-0' : 'left-0'} w-[2px] bg-stone-300 dark:bg-stone-600 ${
+                                        isFirst ? 'top-1/2 bottom-0' :
+                                        isLast ? 'top-0 bottom-1/2' :
+                                        'top-0 bottom-0'
+                                    }`}></div>
+                                )}
+                                {/* 進入子節點的水平線 */}
+                                <div className="w-8 h-[2px] bg-stone-300 dark:bg-stone-600 shrink-0"></div>
+                                <div className="py-2">
+                                    <MindMapNode node={child} level={level + 1} onNodeClick={onNodeClick} dir={dir} />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+});
+
+// ✨ 新增：處理滑鼠滾輪縮放與按住拖拉平移的智慧畫布元件 (移到最外層防止重繪)
+const MindMapViewer = React.memo(({ data, onNodeClick }) => {
+    const { useState } = React;
+    const [scale, setScale] = useState(0.9);
+    const [position, setPosition] = useState({ x: 0, y: 0 }); // 透過內部 flex 讓畫布預設置中
+    const [isDragging, setIsDragging] = useState(false);
+    const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+
+    const handleWheel = (e) => {
+        e.preventDefault();
+        const zoomFactor = 1.1;
+        if (e.deltaY < 0) {
+            setScale(s => Math.min(s * zoomFactor, 3));
+        } else {
+            setScale(s => Math.max(s / zoomFactor, 0.3));
+        }
+    };
+
+    const handleMouseDown = (e) => {
+        if (e.target.closest('button') || e.target.closest('.cursor-pointer')) return;
+        setIsDragging(true);
+        setStartPos({ x: e.clientX - position.x, y: e.clientY - position.y });
+    };
+
+    const handleMouseMove = (e) => {
+        if (!isDragging) return;
+        setPosition({ x: e.clientX - startPos.x, y: e.clientY - startPos.y });
+    };
+
+    return (
+        <div 
+            className="flex-1 relative overflow-hidden bg-stone-50 dark:bg-stone-900/40 select-none cursor-grab active:cursor-grabbing"
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={() => setIsDragging(false)}
+            onMouseLeave={() => setIsDragging(false)}
+        >
+            {/* 右下角縮放控制按鈕列 */}
+            <div className="absolute bottom-6 right-6 z-30 flex items-center gap-2 bg-white/90 dark:bg-stone-800/90 p-2 rounded-2xl border border-stone-200 dark:border-stone-700 backdrop-blur-sm shadow-lg">
+                <button onClick={() => setScale(s => Math.min(s * 1.2, 3))} className="w-10 h-10 rounded-xl bg-white dark:bg-stone-700 border border-stone-200 dark:border-stone-600 flex items-center justify-center font-black text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-600 transition-colors shadow-sm" title="放大">
+                    <span className="material-symbols-outlined">zoom_in</span>
+                </button>
+                <button onClick={() => setScale(s => Math.max(s / 1.2, 0.3))} className="w-10 h-10 rounded-xl bg-white dark:bg-stone-700 border border-stone-200 dark:border-stone-600 flex items-center justify-center font-black text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-600 transition-colors shadow-sm" title="縮小">
+                    <span className="material-symbols-outlined">zoom_out</span>
+                </button>
+                <button onClick={() => { setScale(0.9); setPosition({ x: 0, y: 0 }); }} className="w-10 h-10 rounded-xl bg-white dark:bg-stone-700 border border-stone-200 dark:border-stone-600 flex items-center justify-center font-black text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-600 transition-colors shadow-sm" title="重設視角">
+                    <span className="material-symbols-outlined">restart_alt</span>
+                </button>
+            </div>
+
+            {/* 背景點狀工程格線 */}
+            <div className="absolute inset-0 bg-[radial-gradient(#e5e7eb_1.5px,transparent_1.5px)] dark:bg-[radial-gradient(#374151_1.5px,transparent_1.5px)] [background-size:24px_24px] pointer-events-none"></div>
+
+            {/* 💡 修正跳動與排版問題：透過外層的 flex items-center justify-center 提供穩定的初始對齊基準 */}
+            <div 
+                className="absolute transform-gpu transition-transform duration-75 ease-out origin-top-left"
+                style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transformOrigin: '0 0' }}
+            >
+                <div className="flex items-center justify-center min-w-[80vw] min-h-[70vh] p-16">
+                    <div className="inline-block p-6 bg-white/60 dark:bg-stone-800/60 rounded-3xl backdrop-blur-md border border-white/40 dark:border-stone-700/40 shadow-xl pointer-events-auto">
+                        <MindMapNode node={data} level={0} onNodeClick={onNodeClick} />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+});
+
 window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, showConfirm, showPrompt, onContinueQuiz }) {
     const { useState, useEffect, useMemo } = React;
     const { parseSmilesToHtml } = window;
@@ -53,11 +250,14 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
     // --- 資料狀態 ---
     const [globalDrugs, setGlobalDrugs] = useState([]);
     const [userFolders, setUserFolders] = useState([]);
+    const [unitGroups, setUnitGroups] = useState([]); // ✨ 新增：單元大資料夾(群組)資料
 
     // --- UI 狀態 ---
     const [activeMainTab, setActiveMainTab] = useState('library'); 
     const [selectedFolderId, setSelectedFolderId] = useState(null);
     const [searchQ, setSearchQ] = useState('');
+    const [newUnitGroupName, setNewUnitGroupName] = useState(''); // ✨ 新增：建立單元大資料夾的名稱
+    const [expandedUnitGroups, setExpandedUnitGroups] = useState({}); // ✨ 新增：控制大資料夾展開狀態
     
     // --- 整合篩選狀態 ---
     const [showFilterModal, setShowFilterModal] = useState(false);
@@ -70,6 +270,9 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
     const [isCompareMode, setIsCompareMode] = useState(false);
     const [compareList, setCompareList] = useState([]);
     const [showCompareModal, setShowCompareModal] = useState(false);
+
+    // --- 心智圖模式狀態 --- ✨ 新增
+    const [showMindMapModal, setShowMindMapModal] = useState(false);
 
     // --- 彈跳視窗與資料夾狀態 ---
     const [importText, setImportText] = useState('');
@@ -84,6 +287,15 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
     const [showQuizModal, setShowQuizModal] = useState(false);
     const [quizCount, setQuizCount] = useState(10);
     const [quizSelectedUnits, setQuizSelectedUnits] = useState([]); 
+    const [quizSelectedTypes, setQuizSelectedTypes] = useState([0, 1, 2, 3]); // ✨ 移除了代謝酵素(4)
+
+    // 無限模式狀態 ✨ 新增
+    const [isEndlessMode, setIsEndlessMode] = useState(false);
+    const [endlessPhase, setEndlessPhase] = useState('playing'); // 紀錄是遊玩中 'playing' 還是看報告 'result'
+    const [endlessStats, setEndlessStats] = useState({ correct: 0, total: 0, startTime: 0, mistakes: [], earnedDiamonds: 0, timeSpent: 0 });
+    const [endlessQuestion, setEndlessQuestion] = useState(null);
+    const [endlessSelectedOption, setEndlessSelectedOption] = useState(null);
+    const [endlessPool, setEndlessPool] = useState([]);
 
     // 小遊戲狀態
     const [showGameModal, setShowGameModal] = useState(false);
@@ -97,20 +309,19 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
 
     useEffect(() => {
         const unsub = window.db.collection('systemData').doc('illu').onSnapshot(doc => {
-            if (doc.exists) setGlobalDrugs(doc.data().drugs || []);
-            else setGlobalDrugs([]);
+            if (doc.exists) {
+                const data = doc.data();
+                setGlobalDrugs(data.drugs || []);
+                setUserFolders(data.folders || []);
+                setUnitGroups(data.unitGroups || []);
+            } else {
+                setGlobalDrugs([]);
+                setUserFolders([]);
+                setUnitGroups([]);
+            }
         });
         return () => unsub();
     }, []);
-
-    useEffect(() => {
-        if (!user) return;
-        const unsub = window.db.collection('users').doc(user.uid).collection('illuUser').doc('main').onSnapshot(doc => {
-            if (doc.exists) setUserFolders(doc.data().folders || []);
-            else setUserFolders([]);
-        });
-        return () => unsub();
-    }, [user]);
 
     // ✨ 解析 MP 欄位的工具函數 (支援最新 & 與 <> 標籤格式)
     const parseMP = (str) => {
@@ -223,12 +434,72 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
         });
     };
 
+    // --- ✨ 單元大資料夾 (群組) 與拖曳邏輯 ---
+    const handleCreateUnitGroup = () => {
+        if (!isAdmin) return;
+        if (!newUnitGroupName.trim()) return showAlert("請輸入大資料夾名稱！");
+        const newGroup = { id: Date.now().toString(), name: newUnitGroupName.trim(), units: [] };
+        const newGroups = [...unitGroups, newGroup];
+        window.db.collection('systemData').doc('illu').set({ unitGroups: newGroups }, { merge: true })
+            .then(() => setNewUnitGroupName(''));
+    };
+
+    const handleDeleteUnitGroup = (groupId) => {
+        if (!isAdmin) return;
+        showConfirm("確定刪除此大資料夾嗎？\n(別擔心，裡面的單元不會被刪除，只會被移回「未分類」狀態)", () => {
+            const newGroups = unitGroups.filter(g => g.id !== groupId);
+            window.db.collection('systemData').doc('illu').set({ unitGroups: newGroups }, { merge: true });
+        });
+    };
+
+    const handleDropUnitToGroup = (e, targetGroupId) => {
+        if (!isAdmin) return;
+        e.preventDefault();
+        const unitName = e.dataTransfer.getData('unitName');
+        if (!unitName) return;
+
+        // 1. 先從所有現有的大資料夾中移除該單元
+        let newGroups = unitGroups.map(g => ({ ...g, units: g.units.filter(u => u !== unitName) }));
+        
+        // 2. 如果目標不是 'ungrouped' (未分類)，則將其加入目標大資料夾
+        if (targetGroupId !== 'ungrouped') {
+            newGroups = newGroups.map(g => {
+                if (g.id === targetGroupId) {
+                    return { ...g, units: [...g.units, unitName] };
+                }
+                return g;
+            });
+        }
+
+        window.db.collection('systemData').doc('illu').set({ unitGroups: newGroups }, { merge: true });
+    };
+
+    // 輔助渲染單一單元 (加入 draggable 屬性)
+    const renderUnitItem = (unit) => (
+        <div 
+            key={unit} 
+            draggable={isAdmin}
+            onDragStart={(e) => { if(isAdmin) e.dataTransfer.setData('unitName', unit); }}
+            className={`w-full flex items-center rounded-xl transition-all border group ${isAdmin ? 'cursor-grab active:cursor-grabbing' : ''} shadow-sm ${selectedUnits.includes(unit) ? 'bg-emerald-100 dark:bg-emerald-900/40 border-emerald-300 dark:border-emerald-700' : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700'}`}
+        >
+            <button onClick={() => setSelectedUnits(prev => prev.includes(unit) ? prev.filter(x=>x!==unit) : [...prev, unit])} className={`flex-1 text-left px-3 py-2.5 font-bold text-sm truncate ${selectedUnits.includes(unit) ? 'text-emerald-800 dark:text-emerald-400' : 'text-stone-700 dark:text-stone-300'}`}>
+                <span className="material-symbols-outlined text-[16px] align-middle mr-1 text-emerald-500">book</span> {unit}
+            </button>
+            {isAdmin && (
+                <button onClick={() => handleDeleteUnit(unit)} className="p-2 mr-1 text-gray-300 hover:text-red-500 transition-colors" title="刪除整個單元">
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                </button>
+            )}
+        </div>
+    );
+
     // --- 資料夾管理邏輯 ---
     const handleCreateFolder = () => {
+        if (!isAdmin) return;
         if (!newFolderName.trim()) return showAlert("請輸入資料夾名稱！");
         const newFolder = { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name: newFolderName.trim(), drugIds: [] };
         const newFolders = [...userFolders, newFolder];
-        window.db.collection('users').doc(user.uid).collection('illuUser').doc('main').set({ folders: newFolders }, { merge: true })
+        window.db.collection('systemData').doc('illu').set({ folders: newFolders }, { merge: true })
             .then(() => { 
                 setNewFolderName(''); 
                 if(!folderModalDrug) showAlert("資料夾建立成功！");
@@ -236,21 +507,24 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
     };
 
     const handleDeleteFolder = (folderId) => {
+        if (!isAdmin) return;
         showConfirm("確定要刪除整個資料夾嗎？裡面的收錄紀錄也會一併清除。", () => {
             const newFolders = userFolders.filter(f => f.id !== folderId);
-            window.db.collection('users').doc(user.uid).collection('illuUser').doc('main').set({ folders: newFolders }, { merge: true })
+            window.db.collection('systemData').doc('illu').set({ folders: newFolders }, { merge: true })
                 .then(() => { showAlert("資料夾已刪除！"); if (selectedFolderId === folderId) setSelectedFolderId(null); });
         });
     };
 
     const handleRemoveFromFolder = (drugId) => {
+        if (!isAdmin) return;
         if (!selectedFolderId) return;
         const newFolders = userFolders.map(f => f.id === selectedFolderId ? { ...f, drugIds: f.drugIds.filter(id => id !== drugId) } : f);
-        window.db.collection('users').doc(user.uid).collection('illuUser').doc('main').set({ folders: newFolders }, { merge: true })
+        window.db.collection('systemData').doc('illu').set({ folders: newFolders }, { merge: true })
             .then(() => showAlert("已從資料夾移除該藥物！"));
     };
 
     const executeSaveToFolder = (folderId) => {
+        if (!isAdmin) return;
         if(!folderModalDrug) return;
         const newFolders = userFolders.map(f => {
             if (f.id === folderId) {
@@ -263,7 +537,7 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
             return f;
         });
         
-        window.db.collection('users').doc(user.uid).collection('illuUser').doc('main').set({ folders: newFolders }, { merge: true })
+        window.db.collection('systemData').doc('illu').set({ folders: newFolders }, { merge: true })
             .then(() => { 
                 showAlert(`已成功收錄至資料夾！`); 
                 setFolderModalDrug(null); 
@@ -291,74 +565,159 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
         reader.readAsDataURL(file);
     };
 
-    const handleGenerateQuiz = async () => {
-        const count = parseInt(quizCount) || 10;
-        let pool = [];
+    // ✨ 新增：獨立出產題邏輯，供一般測驗與無限模式共用，並實作選項不重複機制
+    const createSingleQuestionData = (drug, globalPool, allowedTypes) => {
+        // 確保題目符合藥物擁有的資料
+        let validTypes = allowedTypes.filter(t => {
+            if (t === 0) return drug.C && drug.C !== '無';
+            if (t === 1 || t === 2) return true; // D always exists
+            if (t === 3) return (drug.S && drug.S !== '無') || (drug.E && drug.E !== '無') || (drug.O && drug.O !== '無');
+            if (t === 4) return drug.MP && drug.MP !== '無';
+            return false;
+        });
+        if (validTypes.length === 0) validTypes = [1, 2]; 
         
-        if (activeMainTab === 'myFolders') {
-            pool = displayedDrugs;
-        } else {
-            pool = quizSelectedUnits.length > 0 ? globalDrugs.filter(d => d.U && quizSelectedUnits.some(su => d.U.split('&').map(x=>x.trim()).includes(su))) : globalDrugs;
+        const qType = validTypes[Math.floor(Math.random() * validTypes.length)];
+        
+        const getMpStr = (d) => {
+            if(!d.MP || d.MP === '無') return '無特殊代謝';
+            return parseMP(d.MP).map(item => {
+                const labels = {a:'[活性]', i:'[無]', h:'[抑制]', d:'[誘導]', normal:''};
+                return `${labels[item.type] || ''}${item.content}`;
+            }).join(', ');
+        };
+
+        let qTextCorrect = ""; 
+        let correctVal = "";
+        
+        if (qType === 0) correctVal = drug.C;
+        else if (qType === 1 || qType === 3) correctVal = drug.D; // 用 D 來作為結構圖的唯一識別
+        else if (qType === 2) correctVal = drug.D;
+        else if (qType === 4) correctVal = getMpStr(drug);
+
+        // ✨ 優化：針對「看結構選藥物(2)」、「看名字選結構(1)」以及「看個論選結構(3)」，
+        // 給予同機轉、同字根的藥物較高的被抽中機率，讓選項更具誘答性！
+        const checkSimilar = (a, b) => {
+            if (!a || !b) return false;
+            let n1 = a.toLowerCase(); let n2 = b.toLowerCase();
+            // 英文藥名常見字根判斷 (例如 -pril, -olol, -sartan)
+            if (n1.length >= 5 && n2.length >= 5 && n1.slice(-4) === n2.slice(-4)) return true;
+            if (n1.length >= 4 && n2.length >= 4 && n1.slice(-3) === n2.slice(-3)) return true;
+            // 中文藥名常見字尾判斷 (例如 斯, 錠, 黴素)
+            if (n1.match(/[\u4e00-\u9fa5]/) && n2.match(/[\u4e00-\u9fa5]/)) {
+                if (n1.slice(-2) === n2.slice(-2)) return true;
+                if (n1.slice(-1) === n2.slice(-1)) return true;
+            }
+            return false;
+        };
+
+        let distractors = [];
+        let shuffledGlobal = [...globalPool].sort((a, b) => {
+            let scoreA = Math.random();
+            let scoreB = Math.random();
+            if (qType === 1 || qType === 2 || qType === 3) {
+                if (a.C && drug.C && a.C === drug.C) scoreA += 10;
+                if (b.C && drug.C && b.C === drug.C) scoreB += 10;
+                if (checkSimilar(a.D, drug.D)) scoreA += 5;
+                if (checkSimilar(b.D, drug.D)) scoreB += 5;
+            }
+            return scoreB - scoreA;
+        });
+        
+        for (let d of shuffledGlobal) {
+            if (distractors.length >= 3) break;
+            if (d.id === drug.id) continue;
+            
+            let dVal = "";
+            if (qType === 0) { dVal = d.C; if (!dVal || dVal === '無' || dVal === correctVal || distractors.some(x=>x.val === dVal)) continue; }
+            else if (qType === 1 || qType === 3) { dVal = d.D; if (dVal === correctVal || distractors.some(x=>x.val === dVal)) continue; }
+            else if (qType === 2) { dVal = d.D; if (dVal === correctVal || distractors.some(x=>x.val === dVal)) continue; }
+            else if (qType === 4) { dVal = getMpStr(d); if (dVal === '無特殊代謝' || dVal === correctVal || distractors.some(x=>x.val === dVal)) continue; }
+            
+            distractors.push({ drug: d, val: dVal });
+        }
+        
+        // 若題庫不足，補足選項 (極端情況)
+        while (distractors.length < 3) {
+            const extra = shuffledGlobal.find(d => d.id !== drug.id && !distractors.some(x => x.drug.id === d.id));
+            if(extra) distractors.push({ drug: extra, val: qType === 0 ? extra.C||'無' : extra.D });
+            else break;
         }
 
-        if (pool.length < 4) return showAlert("此範圍內藥物數量不足 (至少需4筆)，請擴大範圍或切換為全庫出題！");
+        const options = [{drug, val: correctVal}, ...distractors].sort(() => 0.5 - Math.random());
+        const correctIdx = options.findIndex(o => o.drug.id === drug.id);
+        const answerLetter = ['A', 'B', 'C', 'D'][correctIdx];
+
+        let optHtmls = [];
+        if (qType === 0) {
+            qTextCorrect = `藥物 **${drug.D}** 的主要機轉分類為何？`;
+            optHtmls = options.map(o => o.val);
+        } else if (qType === 1) {
+            qTextCorrect = `下列何者為藥物 **${drug.D}** 的化學結構？`;
+            optHtmls = options.map(o => o.drug.customImg ? `<img src="${o.drug.customImg}" style="max-height:120px; border-radius:8px;"/>` : window.parseSmilesToHtml(`<<:${o.drug.D}:>>`));
+        } else if (qType === 2) {
+            const structDisplay = drug.customImg ? `<img src="${drug.customImg}" style="max-height:160px; display:inline-block; border-radius:8px;"/>` : window.parseSmilesToHtml(`<<:${drug.D}:>>`);
+            qTextCorrect = `請問下列化學結構屬於哪一個藥物？<br><br><div style="background:white; padding:10px; border-radius:12px; display:inline-block; border:1px solid #e5e7eb;">${structDisplay}</div>`;
+            optHtmls = options.map(o => o.val);
+        } else if (qType === 3) {
+            let clues = [];
+            if (drug.U) clues.push(`單元：${drug.U}`);
+            if (drug.S && drug.S !== '無') clues.push(`特徵基團：${drug.S}`);
+            if (drug.E && drug.E !== '無') clues.push(`特殊點：${drug.E}`);
+            if (drug.O && drug.O !== '無') clues.push(`給藥：${drug.O}`);
+            qTextCorrect = `請根據以下個論特徵，選出正確的化學結構：<br><div style="background:#f3f4f6; padding:10px; border-radius:8px; margin-top:8px; font-weight:bold; color:#374151;">${clues.join('<br>')}</div>`;
+            optHtmls = options.map(o => o.drug.customImg ? `<img src="${o.drug.customImg}" style="max-height:120px; border-radius:8px;"/>` : window.parseSmilesToHtml(`<<:${o.drug.D}:>>`));
+        } else if (qType === 4) {
+            qTextCorrect = `關於藥物 **${drug.D}** 的代謝酵素與特性，下列何者正確？`;
+            optHtmls = options.map(o => o.val);
+        }
+
+        const expMpStr = parseMP(drug.MP).map(item => {
+            const labels = {a:'[活性]', i:'[無活性]', h:'[抑制劑]', d:'[誘導劑]', normal:''};
+            return `${labels[item.type] || ''}${item.content}`;
+        }).join(', ') || '無';
+        const expStruct = drug.customImg ? `<img src="${drug.customImg}" style="max-height:100px; float:right; margin-left:10px;"/>` : `<div style="float:right; margin-left:10px; width:150px;">${window.parseSmilesToHtml(`<<:${drug.D}:>>`)}</div>`;
+        const expHtml = `<div style="overflow:hidden;">${expStruct}【圖鑑解析】<br>藥名：<strong style="color:#10b981;">${drug.D}</strong><br>單元：${drug.U}<br>給藥：${drug.O || '無'}<br>機轉：${drug.C}<br>特徵基團：${drug.S || '無'}<br>特殊點：${drug.E || '無'}<br>代謝/酵素：${expMpStr}</div>`;
+
+        return { qType, drug, options, correctIdx, answerLetter, qTextCorrect, optHtmls, expHtml };
+    };
+
+    const handleGenerateQuiz = async () => {
+        const count = parseInt(quizCount) || 10;
+        let pool = activeMainTab === 'myFolders' ? displayedDrugs : (quizSelectedUnits.length > 0 ? globalDrugs.filter(d => d.U && quizSelectedUnits.some(su => d.U.split('&').map(x=>x.trim()).includes(su))) : globalDrugs);
+
+        // ✨ 修正：嚴格過濾題庫，只留下符合「已勾選題型」所需欄位的藥物，避免抽到沒資料的藥物導致系統妥協換題型
+        pool = pool.filter(drug => {
+            return quizSelectedTypes.some(t => {
+                if (t === 0) return drug.C && drug.C !== '無';
+                if (t === 1 || t === 2) return true;
+                if (t === 3) return (drug.S && drug.S !== '無') || (drug.E && drug.E !== '無') || (drug.O && drug.O !== '無');
+                if (t === 4) return drug.MP && drug.MP !== '無';
+                return false;
+            });
+        });
+
+        if (pool.length < 4) return showAlert("符合勾選題型與範圍的藥物數量不足 (至少需4筆)！請試著擴大範圍或增加勾選的題型。");
+        if (quizSelectedTypes.length === 0) return showAlert("請至少選擇一種題型！");
         
         const shuffled = [...pool].sort(() => 0.5 - Math.random());
         const selected = shuffled.slice(0, count);
         
-        let textContent = ''; let htmlContent = ''; let expHtml = ''; let answersArray = [];
+        let textContent = ''; let htmlContent = ''; let expHtmlOutput = ''; let answersArray = [];
 
         selected.forEach((drug, idx) => {
             const qNum = idx + 1;
-            const qType = Math.floor(Math.random() * 3);
+            const qData = createSingleQuestionData(drug, globalDrugs, quizSelectedTypes);
             
-            let distractors = globalDrugs.filter(d => {
-                if (d.id === drug.id || !d.U || !drug.U) return false;
-                const dUnits = d.U.split('&').map(x => x.trim());
-                const drugUnits = drug.U.split('&').map(x => x.trim());
-                return dUnits.some(u => drugUnits.includes(u));
-            });
-            if (distractors.length < 3) {
-                const extra = globalDrugs.filter(d => d.id !== drug.id && !distractors.some(x => x.id === d.id));
-                distractors = [...distractors, ...extra];
-            }
-            distractors = distractors.sort(() => 0.5 - Math.random()).slice(0, 3);
-            
-            const options = [drug, ...distractors].sort(() => 0.5 - Math.random());
-            const correctIdx = options.findIndex(d => d.id === drug.id);
-            const answerLetter = ['A', 'B', 'C', 'D'][correctIdx];
-
-            let qTextCorrect = ""; let optHtmls = [];
-            
-            if (qType === 0) {
-                qTextCorrect = `藥物 **${drug.D}** 的主要機轉分類為何？`;
-                optHtmls = options.map(o => o.C || '無特殊機轉分類');
-            } else if (qType === 1) {
-                qTextCorrect = `下列何者為藥物 **${drug.D}** 的化學結構？`;
-                optHtmls = options.map(o => o.customImg ? `<img src="${o.customImg}" style="max-height:120px; border-radius:8px;"/>` : window.parseSmilesToHtml(`<<:${o.D}:>>`));
-            } else {
-                const structDisplay = drug.customImg ? `<img src="${drug.customImg}" style="max-height:160px; display:inline-block; border-radius:8px;"/>` : window.parseSmilesToHtml(`<<:${drug.D}:>>`);
-                qTextCorrect = `請問下列化學結構屬於哪一個藥物？<br><br><div style="background:white; padding:10px; border-radius:12px; display:inline-block; border:1px solid #e5e7eb;">${structDisplay}</div>`;
-                optHtmls = options.map(o => o.D);
-            }
-
-            const pureTextQ = qTextCorrect.replace(/<[^>]+>/g, '');
+            const pureTextQ = qData.qTextCorrect.replace(/<[^>]+>/g, '');
             textContent += `[Q.${qNum}]\n[#圖鑑測驗|@1]\n${pureTextQ}\n[A] 選項略\n[B] 選項略\n[C] 選項略\n[D] 選項略\n[End]\n\n`;
             
-            htmlContent += `[Q.${qNum}]<br><div class="qlib-question-tags" style="color:#a8a29e; font-size:0.85em; font-weight:800; margin-bottom:6px; padding:2px 8px; background:rgba(0,0,0,0.04); display:inline-block; border-radius:6px;">[ #藥物圖鑑 | 難度:1 ]</div><br><div style="font-size:1.1em; margin-bottom:12px;">${qTextCorrect}</div>`;
-            ['A', 'B', 'C', 'D'].forEach((letter, i) => { htmlContent += `[${letter}] <div style="display:inline-block; vertical-align:middle;">${optHtmls[i]}</div><br>`; });
+            htmlContent += `[Q.${qNum}]<br><div class="qlib-question-tags" style="color:#a8a29e; font-size:0.85em; font-weight:800; margin-bottom:6px; padding:2px 8px; background:rgba(0,0,0,0.04); display:inline-block; border-radius:6px;">[ #藥物圖鑑 | 難度:1 ]</div><br><div style="font-size:1.1em; margin-bottom:12px;">${qData.qTextCorrect}</div>`;
+            ['A', 'B', 'C', 'D'].forEach((letter, i) => { htmlContent += `[${letter}] <div style="display:inline-block; vertical-align:middle;">${qData.optHtmls[i]}</div><br>`; });
             htmlContent += `[End]<br><br>`;
             
-            answersArray.push(answerLetter);
-            
-            const expMpStr = parseMP(drug.MP).map(item => {
-                const labels = {a:'[活性]', i:'[無活性]', h:'[抑制劑]', d:'[誘導劑]', normal:''};
-                return `${labels[item.type] || ''}${item.content}`;
-            }).join(', ') || '無';
-
-            const exp = `【圖鑑解析】<br>藥名：<strong style="color:#10b981;">${drug.D}</strong><br>單元：${drug.U}<br>給藥：${drug.O || '無'}<br>機轉：${drug.C}<br>特徵基團：${drug.S || '無'}<br>特殊點：${drug.E || '無'}<br>代謝/酵素：${expMpStr}`;
-            const expStruct = drug.customImg ? `<img src="${drug.customImg}" style="max-height:100px; float:right; margin-left:10px;"/>` : `<div style="float:right; margin-left:10px; width:150px;">${window.parseSmilesToHtml(`<<:${drug.D}:>>`)}</div>`;
-            expHtml += `[A.${qNum}]<br><div style="overflow:hidden;">${expStruct}${exp}</div><br>[End]<br><br>`;
+            answersArray.push(qData.answerLetter);
+            expHtmlOutput += `[A.${qNum}]<br>${qData.expHtml}<br>[End]<br><br>`;
         });
 
         const quizId = Date.now().toString();
@@ -373,7 +732,7 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
 
         const compressedText = window.jzCompress ? window.jzCompress(textContent) : textContent;
         const compressedHtml = window.jzCompress ? window.jzCompress(htmlContent) : htmlContent;
-        const compressedExp = window.jzCompress ? window.jzCompress(expHtml) : expHtml;
+        const compressedExp = window.jzCompress ? window.jzCompress(expHtmlOutput) : expHtmlOutput;
         const contentData = { questionText: compressedText, questionHtml: compressedHtml, explanationHtml: compressedExp };
 
         try {
@@ -382,6 +741,84 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
             setShowQuizModal(false);
             if (onContinueQuiz) onContinueQuiz({ ...quizData, ...contentData });
         } catch (err) { showAlert("試卷產生失敗：" + err.message); }
+    };
+
+    // ✨ 新增：無限模式控制邏輯
+    const startEndlessMode = () => {
+        let pool = activeMainTab === 'myFolders' ? displayedDrugs : (quizSelectedUnits.length > 0 ? globalDrugs.filter(d => d.U && quizSelectedUnits.some(su => d.U.split('&').map(x=>x.trim()).includes(su))) : globalDrugs);
+        
+        // ✨ 修正：嚴格過濾題庫，確保無限模式也不會出到使用者沒勾選的題型
+        pool = pool.filter(drug => {
+            return quizSelectedTypes.some(t => {
+                if (t === 0) return drug.C && drug.C !== '無';
+                if (t === 1 || t === 2) return true;
+                if (t === 3) return (drug.S && drug.S !== '無') || (drug.E && drug.E !== '無') || (drug.O && drug.O !== '無');
+                if (t === 4) return drug.MP && drug.MP !== '無';
+                return false;
+            });
+        });
+
+        if (pool.length < 4) return showAlert("符合勾選題型與範圍的藥物數量不足 (至少需4筆)！請試著擴大範圍或增加勾選的題型。");
+        if (quizSelectedTypes.length === 0) return showAlert("請至少選擇一種題型！");
+        
+        setShowQuizModal(false);
+        setEndlessPool(pool);
+        setEndlessStats({ correct: 0, total: 0, startTime: Date.now(), mistakes: [], earnedDiamonds: 0, timeSpent: 0 });
+        setIsEndlessMode(true);
+        setEndlessPhase('playing');
+        nextEndlessQuestion(pool, 0);
+    };
+
+    const nextEndlessQuestion = (pool = endlessPool, currentTotal = endlessStats.total) => {
+        setEndlessSelectedOption(null);
+        const randomDrug = pool[Math.floor(Math.random() * pool.length)];
+        const qData = createSingleQuestionData(randomDrug, globalDrugs, quizSelectedTypes);
+        setEndlessQuestion(qData);
+    };
+
+    const handleEndlessOptionClick = (idx) => {
+        if (endlessSelectedOption !== null) return;
+        setEndlessSelectedOption(idx);
+        
+        const isCorrect = idx === endlessQuestion.correctIdx;
+        const newTotal = endlessStats.total + 1;
+        
+        setEndlessStats(prev => {
+            let newMistakes = prev.mistakes;
+            if (!isCorrect) {
+                // 如果答錯了，記錄這題原本正確的藥物 (並防止重複陣列)
+                if (!newMistakes.some(d => d.id === endlessQuestion.drug.id)) {
+                    newMistakes = [...newMistakes, endlessQuestion.drug];
+                }
+            }
+            return {
+                ...prev,
+                total: newTotal,
+                correct: isCorrect ? prev.correct + 1 : prev.correct,
+                mistakes: newMistakes
+            };
+        });
+
+        // 移除自動跳轉的 setTimeout，改由畫面上的「下一題」按鈕手動觸發
+    };
+
+    const quitEndlessMode = async () => {
+        const timeSpent = Math.floor((Date.now() - endlessStats.startTime) / 1000);
+        const earnedDiamonds = endlessStats.correct;
+        
+        setEndlessStats(prev => ({ ...prev, earnedDiamonds, timeSpent }));
+        setEndlessPhase('result'); // 停止遊戲，切換為顯示結算報表
+        
+        if (earnedDiamonds > 0) {
+            try {
+                const userRef = window.db.collection('users').doc(user.uid);
+                await userRef.set({
+                    mcData: { diamonds: window.firebase.firestore.FieldValue.increment(earnedDiamonds) }
+                }, { merge: true });
+            } catch (e) {
+                console.error("結算失敗：" + e.message);
+            }
+        }
     };
 
     // --- ✨ 村民小遊戲：出題限制優化與動態揭曉邏輯 ---
@@ -555,7 +992,39 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
         setter(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
     };
 
-    return (
+    // ✨ 新增：心智圖資料動態產生邏輯 (移除結構分類，讓藥物直接接在機轉之下)
+    const mindMapData = useMemo(() => {
+        if (!showMindMapModal) return null;
+        
+        const root = { name: '藥物心智圖', children: [] };
+        const unitMap = {};
+
+        displayedDrugs.forEach(drug => {
+            const units = drug.U ? drug.U.split('&').map(u => u.trim()) : ['未分類單元'];
+            
+            units.forEach(unit => {
+                // 如果在全庫分頁且有勾選特定單元，則過濾掉沒選的單元節點
+                if (activeMainTab === 'library' && selectedUnits.length > 0 && !selectedUnits.includes(unit)) return;
+
+                if (!unitMap[unit]) unitMap[unit] = { name: unit, children: [], map: {} };
+                
+                const mech = drug.C || '未分類機轉';
+                if (!unitMap[unit].map[mech]) {
+                    const mechNode = { name: mech, children: [] };
+                    unitMap[unit].children.push(mechNode);
+                    unitMap[unit].map[mech] = mechNode;
+                }
+
+                // 直接將藥物節點加入機轉底下，不再細分特徵基團
+                unitMap[unit].map[mech].children.push({ name: drug.D, drug: drug });
+            });
+        });
+
+        root.children = Object.values(unitMap);
+        return root;
+    }, [displayedDrugs, showMindMapModal, activeMainTab, selectedUnits]);
+
+   return (
         <div className="flex h-full w-full bg-[#FCFBF7] dark:bg-stone-900 transition-colors">
             {/* 左側邊欄 */}
             <div className="w-64 border-r border-stone-200 dark:border-stone-700 flex flex-col bg-stone-50 dark:bg-stone-900 shrink-0">
@@ -564,46 +1033,88 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
                         <span className="material-symbols-outlined text-[18px]">library_books</span> 全部圖鑑
                     </button>
                     <button onClick={() => { setActiveMainTab('myFolders'); }} className={`flex-1 py-3 font-black text-sm flex items-center justify-center gap-1 transition-colors ${activeMainTab === 'myFolders' ? 'bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 border-b-2 border-emerald-500' : 'text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700'}`}>
-                        <span className="material-symbols-outlined text-[18px]">star</span> 我的收錄
+                        <span className="material-symbols-outlined text-[18px]">star</span> 主題收錄
                     </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
-                    {activeMainTab === 'library' ? (
-                        <>
-                            <button onClick={() => setSelectedUnits([])} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm transition-all ${selectedUnits.length === 0 ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 shadow-sm' : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700'}`}>
-                                <span className="material-symbols-outlined text-[16px] align-middle mr-1 text-emerald-500">apps</span> 全部單元
-                            </button>
-                            {allUnits.map(unit => (
-                                <div key={unit} className={`w-full flex items-center rounded-xl transition-all border group ${selectedUnits.includes(unit) ? 'bg-emerald-100 dark:bg-emerald-900/40 border-emerald-300 dark:border-emerald-700 shadow-sm' : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700'}`}>
-                                    <button onClick={() => setSelectedUnits(prev => prev[0] === unit ? [] : [unit])} className={`flex-1 text-left px-3 py-3 font-bold text-sm ${selectedUnits.includes(unit) ? 'text-emerald-800 dark:text-emerald-400' : 'text-stone-700 dark:text-stone-300'}`}>
-                                        <span className="material-symbols-outlined text-[16px] align-middle mr-1 text-emerald-500">book</span> {unit}
-                                    </button>
-                                    {isAdmin && (
-                                        <button onClick={() => handleDeleteUnit(unit)} className="p-2 mr-1 text-gray-300 hover:text-red-500 transition-colors" title="刪除整個單元">
-                                            <span className="material-symbols-outlined text-[18px]">delete</span>
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-                        </>
-                    ) : (
-                        <>
-                            <div className="flex gap-1 mb-2">
-                                <input type="text" placeholder="建立新資料夾..." value={newFolderName} onChange={e => setNewFolderName(e.target.value)} className="flex-1 px-3 py-2 text-sm border border-stone-300 dark:border-stone-600 rounded-lg outline-none bg-white dark:bg-stone-800 dark:text-white" />
-                                <button onClick={handleCreateFolder} className="px-3 py-2 bg-amber-500 text-white rounded-lg font-bold text-sm hover:bg-amber-600 transition-colors">新增</button>
-                            </div>
+                    {activeMainTab === 'library' ? (() => {
+                        // ✨ 動態計算哪些單元已經被放進資料夾，哪些是未分類
+                        const groupedUnitNames = unitGroups.flatMap(g => g.units);
+                        const ungroupedUnits = allUnits.filter(u => !groupedUnitNames.includes(u));
 
-                            {userFolders.length === 0 && <div className="text-sm text-gray-400 text-center py-4">目前尚無自訂資料夾</div>}
+                        return (
+                            <>
+                                {isAdmin && (
+                                    <div className="flex gap-1 mb-3">
+                                        <input type="text" placeholder="建立單元大分類..." value={newUnitGroupName} onChange={e => setNewUnitGroupName(e.target.value)} className="flex-1 px-3 py-2 text-sm border border-emerald-300 dark:border-stone-600 rounded-lg outline-none bg-white dark:bg-stone-800 dark:text-white focus:border-emerald-500 shadow-inner" />
+                                        <button onClick={handleCreateUnitGroup} className="px-3 py-2 bg-emerald-500 text-white rounded-lg font-bold text-sm hover:bg-emerald-600 transition-colors shadow-sm">建立</button>
+                                    </div>
+                                )}
+                                <button onClick={() => setSelectedUnits([])} className={`w-full text-left px-4 py-3 mb-2 rounded-xl font-bold text-sm transition-all ${selectedUnits.length === 0 ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 shadow-sm' : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700'}`}>
+                                    <span className="material-symbols-outlined text-[16px] align-middle mr-1 text-emerald-500">apps</span> 取消單元篩選 (顯示全部)
+                                </button>
+                                
+                                {/* 顯示大資料夾區塊 (可將單元拖曳至此) */}
+                                {unitGroups.map(group => (
+                                    <div 
+                                        key={group.id} 
+                                        onDragOver={e => e.preventDefault()} 
+                                        onDrop={e => handleDropUnitToGroup(e, group.id)}
+                                        className="border border-emerald-200 dark:border-stone-700 rounded-xl overflow-hidden bg-emerald-50/50 dark:bg-stone-800/50 mb-2 transition-colors hover:border-emerald-400 shadow-sm"
+                                    >
+                                        <div className="flex justify-between items-center bg-emerald-100/60 dark:bg-stone-800 px-3 py-2">
+                                            <button onClick={() => setExpandedUnitGroups(prev => ({...prev, [group.id]: !prev[group.id]}))} className="flex-1 text-left font-bold text-emerald-800 dark:text-emerald-400 text-sm flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-[18px]">{expandedUnitGroups[group.id] !== false ? 'folder_open' : 'folder'}</span> 
+                                                <span className="truncate">{group.name}</span>
+                                                <span className="text-[10px] bg-emerald-200 dark:bg-emerald-900/50 px-1.5 py-0.5 rounded-full ml-auto">{group.units.filter(u => allUnits.includes(u)).length}</span>
+                                            </button>
+                                            {isAdmin && <button onClick={() => handleDeleteUnitGroup(group.id)} className="text-emerald-600/50 hover:text-red-500 ml-2 transition-colors"><span className="material-symbols-outlined text-[16px]">delete</span></button>}
+                                        </div>
+                                        {expandedUnitGroups[group.id] !== false && (
+                                            <div className="p-2 space-y-1.5 min-h-[48px]">
+                                                {group.units.map(u => allUnits.includes(u) ? renderUnitItem(u) : null)}
+                                                {group.units.filter(u => allUnits.includes(u)).length === 0 && <div className="text-xs font-bold text-emerald-600/50 dark:text-gray-500 text-center py-2 border-2 border-dashed border-emerald-200 dark:border-stone-600 rounded-lg pointer-events-none">拖曳下方單元至此</div>}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+
+                                {/* 未分類的單元區塊 (拖拉回這裡等於移出資料夾) */}
+                                <div 
+                                    onDragOver={e => { if(isAdmin) e.preventDefault(); }} 
+                                    onDrop={e => handleDropUnitToGroup(e, 'ungrouped')}
+                                    className="mt-4 pt-2 border-t border-stone-200 dark:border-stone-700 space-y-1.5 min-h-[100px]"
+                                >
+                                    <div className="text-xs font-black text-gray-400 mb-2 px-1 flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-[14px]">inbox</span> 未分類單元 {isAdmin && "(可長按拖曳)"}
+                                    </div>
+                                    {ungroupedUnits.map(unit => renderUnitItem(unit))}
+                                    {ungroupedUnits.length === 0 && <div className="text-xs font-bold text-gray-400 text-center py-4 border-2 border-dashed border-stone-200 dark:border-stone-700 rounded-lg pointer-events-none">已全數分類完畢！</div>}
+                                </div>
+                            </>
+                        );
+                    })() : (
+                        <>
+                            {isAdmin && (
+                                <div className="flex gap-1 mb-2">
+                                    <input type="text" placeholder="建立新資料夾..." value={newFolderName} onChange={e => setNewFolderName(e.target.value)} className="flex-1 px-3 py-2 text-sm border border-stone-300 dark:border-stone-600 rounded-lg outline-none bg-white dark:bg-stone-800 dark:text-white" />
+                                    <button onClick={handleCreateFolder} className="px-3 py-2 bg-amber-500 text-white rounded-lg font-bold text-sm hover:bg-amber-600 transition-colors">新增</button>
+                                </div>
+                            )}
+
+                            {userFolders.length === 0 && <div className="text-sm text-gray-400 text-center py-4">目前尚無主題資料夾</div>}
                             {userFolders.map(folder => (
                                 <div key={folder.id} className={`w-full flex items-center rounded-xl transition-all border group ${selectedFolderId === folder.id ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700 shadow-sm' : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700'}`}>
                                     <button onClick={() => setSelectedFolderId(folder.id)} className="flex-1 text-left px-3 py-3 font-bold text-sm flex justify-between items-center text-stone-700 dark:text-stone-300">
                                         <span className="truncate flex-1"><span className="material-symbols-outlined text-[16px] align-middle mr-1 text-amber-500">folder_open</span> {folder.name}</span>
                                         <span className="text-[10px] bg-stone-200 dark:bg-stone-700 px-2 py-0.5 rounded-full">{folder.drugIds?.length || 0}</span>
                                     </button>
-                                    <button onClick={() => handleDeleteFolder(folder.id)} className="p-2 mr-1 text-gray-300 hover:text-red-500 transition-colors" title="刪除整個資料夾">
-                                        <span className="material-symbols-outlined text-[18px]">delete</span>
-                                    </button>
+                                    {isAdmin && (
+                                        <button onClick={() => handleDeleteFolder(folder.id)} className="p-2 mr-1 text-gray-300 hover:text-red-500 transition-colors" title="刪除整個資料夾">
+                                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                                        </button>
+                                    )}
                                 </div>
                             ))}
                         </>
@@ -637,6 +1148,9 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
                         
                         {!isCompareMode && (
                             <>
+                                <button onClick={() => setShowMindMapModal(true)} className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[18px]">account_tree</span> 心智圖
+                                </button>
                                 <button onClick={handleInitGame} className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1">
                                     <span className="material-symbols-outlined text-[18px]">sports_esports</span> 村民任務
                                 </button>
@@ -718,6 +1232,176 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
             </div>
 
             {/* --- Modals --- */}
+
+            {/* 無限模式 Modal */}
+            {isEndlessMode && endlessQuestion && (
+                <div className="fixed inset-0 z-[150] bg-stone-900/90 backdrop-blur-md flex flex-col items-center p-4 animate-fade-in overflow-y-auto custom-scrollbar">
+                    {endlessPhase === 'playing' ? (
+                        <>
+                            <style>{`
+                                /* 強制圖片與結構圖佔滿整個按鈕容器 */
+                                .endless-content img {
+                                    width: 100% !important;
+                                    height: 100% !important;
+                                    max-height: 250px !important;
+                                    object-fit: contain !important;
+                                    border-radius: 8px;
+                                }
+                                .endless-content svg, .endless-content canvas {
+                                    width: 100% !important;
+                                    height: 100% !important;
+                                    min-height: 150px !important;
+                                    max-height: 250px !important;
+                                    object-fit: contain !important;
+                                }
+                                /* 確保按鈕內的內容區塊長高 */
+                                .endless-content button > div {
+                                    width: 100%;
+                                    height: 100%;
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                }
+                            `}</style>
+                            <div className="w-full max-w-3xl flex justify-between items-center mb-4 text-white">
+                                <div className="flex flex-col">
+                                    <h2 className="text-2xl font-black text-amber-400 flex items-center gap-2"><span className="material-symbols-outlined">all_inclusive</span> 無限模式</h2>
+                                    <div className="text-sm font-bold text-stone-300 mt-1">
+                                        已答對：<span className="text-emerald-400">{endlessStats.correct}</span> / {endlessStats.total} 
+                                        <span className="ml-3 hidden sm:inline">正確率：{endlessStats.total > 0 ? Math.round((endlessStats.correct/endlessStats.total)*100) : 0}%</span>
+                                        <span className="ml-3 hidden sm:inline">耗時：{Math.floor((Date.now() - endlessStats.startTime) / 1000)}s</span>
+                                    </div>
+                                </div>
+                                <button onClick={quitEndlessMode} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl font-bold border-2 border-rose-500 shadow-lg transition-transform active:scale-95 flex items-center gap-1">
+                                    <span className="material-symbols-outlined">logout</span> 結束結算
+                                </button>
+                            </div>
+
+                            <div className="w-full max-w-3xl bg-white dark:bg-stone-800 rounded-3xl p-6 shadow-2xl flex flex-col relative border border-stone-200 dark:border-stone-700 endless-content">
+                                <div className="text-lg md:text-xl font-bold text-stone-800 dark:text-white mb-6 text-center" dangerouslySetInnerHTML={{__html: endlessQuestion.qTextCorrect}}></div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {endlessQuestion.options.map((opt, idx) => {
+                                        let btnClass = "bg-stone-50 dark:bg-stone-900 border-2 border-stone-200 dark:border-stone-700 hover:border-amber-400 dark:hover:border-amber-500 text-stone-700 dark:text-stone-300";
+                                        if (endlessSelectedOption !== null) {
+                                            if (idx === endlessQuestion.correctIdx) {
+                                                btnClass = "bg-emerald-100 border-emerald-500 text-emerald-800 dark:bg-emerald-900/50 dark:border-emerald-500 dark:text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.5)] cursor-pointer hover:scale-[1.02]";
+                                            } else if (idx === endlessSelectedOption) {
+                                                btnClass = "bg-rose-100 border-rose-500 text-rose-800 dark:bg-rose-900/50 dark:border-rose-500 dark:text-rose-300 cursor-pointer hover:scale-[1.02]";
+                                            } else {
+                                                btnClass = "bg-stone-50 dark:bg-stone-900 border-stone-200 dark:border-stone-700 opacity-60 cursor-pointer hover:opacity-100";
+                                            }
+                                        }
+
+                                        return (
+                                            <button 
+                                                key={idx} 
+                                                onClick={() => {
+                                                    if (endlessSelectedOption === null) {
+                                                        // 尚未作答時：正常點擊選項作答
+                                                        handleEndlessOptionClick(idx);
+                                                    } else {
+                                                        // 已作答時：點擊選項會彈出圖鑑視窗
+                                                        setViewingDrug(opt.drug);
+                                                    }
+                                                }}
+                                                className={`w-full p-4 rounded-2xl font-bold flex flex-col items-center justify-center min-h-[140px] transition-all duration-300 transform ${endlessSelectedOption === null ? 'active:scale-95' : ''} ${btnClass}`}
+                                            >
+                                                <div dangerouslySetInnerHTML={{__html: endlessQuestion.optHtmls[idx]}} className="w-full flex-grow flex items-center justify-center"></div>
+                                                {endlessSelectedOption !== null && (
+                                                    <div className="mt-3 text-xs font-black opacity-80 flex items-center gap-1 bg-stone-900/10 dark:bg-white/10 px-3 py-1.5 rounded-full shrink-0">
+                                                        <span className="material-symbols-outlined text-[14px]">search</span> 點擊查看圖鑑
+                                                    </div>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                {endlessSelectedOption !== null && (
+                                    <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-xl bg-stone-100 dark:bg-stone-900/60 border border-stone-200 dark:border-stone-700 animate-fade-in">
+                                        <div className={`text-center sm:text-left font-black text-lg ${endlessSelectedOption === endlessQuestion.correctIdx ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                            {endlessSelectedOption === endlessQuestion.correctIdx ? '🎉 答對了！太神啦！' : `❌ 答錯了！正確答案是選項 ${endlessQuestion.answerLetter}`}
+                                        </div>
+                                        <button 
+                                            onClick={() => nextEndlessQuestion(endlessPool, endlessStats.total)}
+                                            className="bg-amber-500 hover:bg-amber-600 text-white px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-lg flex items-center gap-2 w-full sm:w-auto justify-center"
+                                        >
+                                            下一題 <span className="material-symbols-outlined">arrow_forward</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="bg-[#FCFBF7] dark:bg-stone-800 rounded-3xl p-6 md:p-10 shadow-2xl flex flex-col relative border border-stone-200 dark:border-stone-700 w-full max-w-4xl mt-4 md:mt-10 animate-fade-in-up">
+                            <div className="text-center mb-8">
+                                <h2 className="text-3xl font-black text-stone-800 dark:text-white flex items-center justify-center gap-2 mb-2">
+                                    <span className="material-symbols-outlined text-[36px] text-amber-500">emoji_events</span> 結算報告
+                                </h2>
+                                <p className="text-stone-500 dark:text-stone-400 font-bold">辛苦了！為你的堅持點讚！</p>
+                            </div>
+
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                                <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-2xl p-4 flex flex-col items-center shadow-sm">
+                                    <div className="text-xs text-stone-500 font-bold mb-1">作答題數</div>
+                                    <div className="text-2xl font-black text-cyan-600 dark:text-cyan-400">{endlessStats.total} 題</div>
+                                </div>
+                                <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-2xl p-4 flex flex-col items-center shadow-sm">
+                                    <div className="text-xs text-stone-500 font-bold mb-1">答對題數</div>
+                                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{endlessStats.correct} 題</div>
+                                </div>
+                                <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-2xl p-4 flex flex-col items-center shadow-sm">
+                                    <div className="text-xs text-stone-500 font-bold mb-1">正確率</div>
+                                    <div className="text-2xl font-black text-amber-600 dark:text-amber-400">{endlessStats.total > 0 ? Math.round((endlessStats.correct/endlessStats.total)*100) : 0}%</div>
+                                </div>
+                                <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-2xl p-4 flex flex-col items-center shadow-sm">
+                                    <div className="text-xs text-stone-500 font-bold mb-1">獲得鑽石</div>
+                                    <div className="text-2xl font-black text-rose-500 flex items-center gap-1"><span className="material-symbols-outlined text-[20px]">diamond</span>{endlessStats.earnedDiamonds}</div>
+                                </div>
+                            </div>
+
+                            <div className="w-full border-t border-stone-200 dark:border-stone-700 pt-6">
+                                <h3 className="text-lg font-bold text-stone-700 dark:text-stone-300 mb-4 flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-rose-500">error</span> 需複習的藥物圖鑑 ({endlessStats.mistakes.length})
+                                </h3>
+                                
+                                {endlessStats.mistakes.length === 0 ? (
+                                    <div className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-8 text-center text-emerald-600 dark:text-emerald-400 font-black flex flex-col items-center justify-center shadow-inner">
+                                        <span className="material-symbols-outlined text-[48px] mb-2">sentiment_very_satisfied</span>
+                                        太神啦！你一題都沒有錯！💯
+                                    </div>
+                                ) : (
+                                    <div className="bg-stone-50 dark:bg-stone-900/50 p-4 rounded-2xl border border-stone-200 dark:border-stone-700">
+                                        <div className="text-xs text-stone-500 mb-3 font-bold text-center">💡 點擊下方卡片可直接查看完整圖鑑與解析，亦可點擊愛心收入資料夾喔！</div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 max-h-[35vh] overflow-y-auto custom-scrollbar p-1">
+                                            {endlessStats.mistakes.map(drug => (
+                                                <DrugCard 
+                                                    key={drug.id}
+                                                    drug={drug} 
+                                                    onSelect={setViewingDrug} 
+                                                    onAddFolder={setFolderModalDrug} 
+                                                    onRemoveFromFolder={handleRemoveFromFolder} 
+                                                    onEdit={setEditingDrug} 
+                                                    isAdmin={isAdmin} 
+                                                    isMyFolder={false}
+                                                    isCompareMode={false}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="mt-8 flex justify-center">
+                                <button onClick={() => setIsEndlessMode(false)} className="bg-stone-800 hover:bg-stone-700 dark:bg-stone-100 dark:hover:bg-white text-white dark:text-stone-800 px-8 py-3 rounded-xl font-black shadow-lg transition-transform active:scale-95 text-lg flex items-center gap-2">
+                                    完成結算 <span className="material-symbols-outlined">check_circle</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* 比較表格 Modal */}
             {showCompareModal && (
@@ -1147,8 +1831,12 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
                             </div>
                         </div>
                         <div className="p-4 border-t border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 shrink-0 flex justify-end gap-3">
-                            {isAdmin && <button onClick={() => { setViewingDrug(null); setEditingDrug(viewingDrug); }} className="bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-300 font-bold px-5 py-2 rounded-xl transition-colors hover:bg-stone-200 dark:hover:bg-stone-600">編輯資料</button>}
-                            <button onClick={() => { setViewingDrug(null); setFolderModalDrug(viewingDrug); }} className="bg-amber-500 hover:bg-amber-600 text-white font-black px-6 py-2 rounded-xl shadow-sm transition-transform active:scale-95 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">star</span> 收入我的資料夾</button>
+                            {isAdmin && (
+                                <>
+                                    <button onClick={() => { setViewingDrug(null); setEditingDrug(viewingDrug); }} className="bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-300 font-bold px-5 py-2 rounded-xl transition-colors hover:bg-stone-200 dark:hover:bg-stone-600">編輯資料</button>
+                                    <button onClick={() => { setViewingDrug(null); setFolderModalDrug(viewingDrug); }} className="bg-amber-500 hover:bg-amber-600 text-white font-black px-6 py-2 rounded-xl shadow-sm transition-transform active:scale-95 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">star</span> 收入主題資料夾</button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1261,18 +1949,58 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
                             </div>
                         ) : (
                             <div className="mb-4 text-sm font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-xl border border-emerald-200 dark:border-emerald-800">
-                                系統將從資料夾「{userFolders.find(f=>f.id===selectedFolderId)?.name || '我的收錄'}」的內容中為您出題。
+                                系統將從資料夾「{userFolders.find(f=>f.id===selectedFolderId)?.name || '主題收錄'}」的內容中為您出題。
                             </div>
                         )}
 
+                        <div className="mb-4">
+                            <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">選擇要出現的題型 (可複選)：</label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {[
+                                    { id: 0, label: '看藥物選機轉' },
+                                    { id: 1, label: '看名字選結構' },
+                                    { id: 2, label: '看結構選藥物' },
+                                    { id: 3, label: '看個論選結構' }
+                                ].map(type => (
+                                    <label key={type.id} className={`flex items-center gap-2 p-2 rounded-xl border cursor-pointer transition-colors ${quizSelectedTypes.includes(type.id) ? 'bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-900/30 dark:border-emerald-600 dark:text-emerald-400' : 'bg-white border-stone-200 text-stone-600 dark:bg-stone-800 dark:border-stone-700 dark:text-stone-400'}`}>
+                                        <input type="checkbox" checked={quizSelectedTypes.includes(type.id)} onChange={() => {
+                                            setQuizSelectedTypes(prev => prev.includes(type.id) ? prev.filter(t => t !== type.id) : [...prev, type.id]);
+                                        }} className="hidden" />
+                                        <div className={`w-4 h-4 rounded border flex flex-shrink-0 items-center justify-center ${quizSelectedTypes.includes(type.id) ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-gray-300 dark:bg-stone-700 dark:border-stone-500'}`}>
+                                            {quizSelectedTypes.includes(type.id) && <span className="material-symbols-outlined text-[12px] text-white font-black">check</span>}
+                                        </div>
+                                        <span className="text-xs font-bold">{type.label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
                         <div className="mb-6">
-                            <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">設定抽出的題數：</label>
+                            <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">設定抽出的題數 (一般測驗用)：</label>
                             <input type="number" min="1" className="w-full p-3 border-2 border-emerald-300 dark:border-emerald-700 rounded-xl bg-white dark:bg-stone-900 dark:text-white outline-none focus:border-emerald-500 font-black text-center text-xl shadow-inner" value={quizCount} onChange={e => setQuizCount(e.target.value)} />
                         </div>
-                        <div className="flex justify-end gap-3 shrink-0">
-                            <button onClick={() => setShowQuizModal(false)} className="px-4 py-2 font-bold text-gray-500 hover:text-stone-800 transition-colors bg-stone-100 dark:bg-stone-700 rounded-xl">取消</button>
-                            <button onClick={handleGenerateQuiz} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-xl font-bold shadow-sm flex items-center gap-1 active:scale-95 transition-transform"><span className="material-symbols-outlined text-[18px]">play_arrow</span> 立即出題</button>
+                        <div className="flex flex-col sm:flex-row justify-end gap-3 shrink-0">
+                            <button onClick={() => setShowQuizModal(false)} className="px-4 py-2 font-bold text-gray-500 hover:text-stone-800 transition-colors bg-stone-100 dark:bg-stone-700 rounded-xl text-center">取消</button>
+                            <button onClick={startEndlessMode} className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl font-bold shadow-sm flex items-center justify-center gap-1 active:scale-95 transition-transform"><span className="material-symbols-outlined text-[18px]">all_inclusive</span> 無限模式</button>
+                            <button onClick={handleGenerateQuiz} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold shadow-sm flex items-center justify-center gap-1 active:scale-95 transition-transform"><span className="material-symbols-outlined text-[18px]">play_arrow</span> 一般出題</button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ✨ 心智圖 Modal */}
+            {showMindMapModal && mindMapData && (
+                <div className="fixed inset-0 z-[175] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowMindMapModal(false)}>
+                    <div className="bg-[#FCFBF7] dark:bg-stone-900 w-full h-full max-w-[95vw] rounded-3xl shadow-2xl border border-stone-200 dark:border-stone-700 flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b border-stone-200 dark:border-stone-700 flex justify-between items-center bg-white dark:bg-stone-800 shrink-0">
+                            <h3 className="font-black text-xl text-stone-800 dark:text-white flex items-center gap-2"><span className="material-symbols-outlined text-indigo-500">account_tree</span> 藥物心智圖模式</h3>
+                            <div className="flex items-center gap-4">
+                                <div className="hidden sm:block text-sm font-bold text-stone-500 bg-stone-100 dark:bg-stone-700 px-3 py-1 rounded-lg">💡 提示：滑鼠滾輪可縮放，按住空白處拖曳可平移畫布</div>
+                                <button onClick={() => setShowMindMapModal(false)} className="bg-stone-100 dark:bg-stone-700 text-gray-500 dark:text-gray-300 rounded-full w-8 h-8 flex justify-center items-center hover:bg-stone-200 dark:hover:bg-stone-600 transition-colors"><span className="material-symbols-outlined text-[20px]">close</span></button>
+                            </div>
+                        </div>
+                        {/* 載入具有縮放平移滑動機制的畫布檢視器 */}
+                        <MindMapViewer data={mindMapData} onNodeClick={setViewingDrug} />
                     </div>
                 </div>
             )}
