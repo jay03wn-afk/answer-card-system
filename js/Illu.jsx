@@ -280,6 +280,9 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
     const [editingDrug, setEditingDrug] = useState(null);
     const [viewingDrug, setViewingDrug] = useState(null);
     
+    // ✨ 新增：控制 JSME 繪圖彈跳視窗
+    const [showDrawingModal, setShowDrawingModal] = useState(false);
+    
     const [folderModalDrug, setFolderModalDrug] = useState(null); 
     const [newFolderName, setNewFolderName] = useState('');
     
@@ -565,6 +568,90 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
         reader.readAsDataURL(file);
     };
 
+   // ✨ 新增：業界最強 Ketcher 化學繪圖編輯器組件 (支援 API 隱藏擷取)
+    const KetcherEditorModal = React.memo(({ initialSmiles, onSave, onClose }) => {
+        const { useRef, useState } = React;
+        const iframeRef = useRef(null);
+        const [isSaving, setIsSaving] = useState(false);
+
+        const handleIframeLoad = () => {
+            try {
+                // 💡 如果是編輯已有的結構，自動從 API 灌入畫布！
+                const ketcher = iframeRef.current.contentWindow.ketcher;
+                if (ketcher && initialSmiles) {
+                    ketcher.setMolecule(initialSmiles);
+                }
+            } catch (e) {
+                console.warn("無法載入初始結構", e);
+            }
+        };
+
+        const handleAutoSave = async () => {
+            setIsSaving(true);
+            try {
+                const ketcher = iframeRef.current.contentWindow.ketcher;
+                if (ketcher) {
+                    // 💡 透過 API 直接從畫板偷出 SMILES，使用者完全無感！
+                    const smiles = await ketcher.getSmiles();
+                    if (!smiles || smiles.trim() === '') {
+                        alert("畫布是空的喔！請繪製結構後再儲存。");
+                    } else {
+                        onSave(smiles);
+                    }
+                } else {
+                    alert("繪圖板尚未載入完成！");
+                }
+            } catch (error) {
+                console.error("儲存失敗", error);
+                alert("儲存失敗，請確保畫布內的結構正確無誤。");
+            }
+            setIsSaving(false);
+        };
+
+        return (
+            <div className="fixed inset-0 z-[200] bg-stone-900/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-fade-in">
+                <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-6xl h-[95vh] rounded-3xl flex flex-col shadow-2xl border border-stone-200 dark:border-stone-700 overflow-hidden">
+                    
+                    <div className="p-4 border-b border-stone-200 dark:border-stone-700 flex justify-between items-center bg-white dark:bg-stone-900 shrink-0">
+                        <h3 className="font-black text-xl text-stone-800 dark:text-white flex items-center gap-2">
+                            <span className="material-symbols-outlined text-emerald-500">draw</span> 專業化學繪圖 (Ketcher)
+                        </h3>
+                        <button onClick={onClose} className="text-gray-400 hover:text-red-500 transition-colors"><span className="material-symbols-outlined">close</span></button>
+                    </div>
+
+                    <div className="flex-1 bg-white dark:bg-stone-800 overflow-hidden relative">
+                        <iframe 
+                            ref={iframeRef}
+                            onLoad={handleIframeLoad}
+                            src="/ketcher/index.html" 
+                            className="w-full h-full border-0"
+                            title="Ketcher Editor"
+                        ></iframe>
+                    </div>
+
+                    <div className="p-4 border-t border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 shrink-0 flex justify-end items-center gap-3">
+                        <div className="text-sm font-bold text-gray-400 mr-auto hidden sm:block">
+                            💡 提示：畫完後不需操作畫布內的存檔，直接點擊右方綠色按鈕即可！
+                        </div>
+                        <button onClick={onClose} className="px-6 py-2.5 font-bold text-gray-500 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-xl transition-colors">取消</button>
+                        <button 
+                            onClick={handleAutoSave} 
+                            disabled={isSaving}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2.5 rounded-xl font-black shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:active:scale-100"
+                        >
+                            {isSaving ? (
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                                <span className="material-symbols-outlined text-[20px]">save</span>
+                            )}
+                            {isSaving ? '處理中...' : '一鍵儲存結構'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    });
+
     // ✨ 新增：獨立出產題邏輯，供一般測驗與無限模式共用，並實作選項不重複機制
     const createSingleQuestionData = (drug, globalPool, allowedTypes) => {
         // 確保題目符合藥物擁有的資料
@@ -654,9 +741,9 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
             optHtmls = options.map(o => o.val);
         } else if (qType === 1) {
             qTextCorrect = `下列何者為藥物 **${drug.D}** 的化學結構？`;
-            optHtmls = options.map(o => o.drug.customImg ? `<img src="${o.drug.customImg}" style="max-height:120px; border-radius:8px;"/>` : window.parseSmilesToHtml(`<<:${o.drug.D}:>>`));
+            optHtmls = options.map(o => o.drug.customImg ? `<img src="${o.drug.customImg}" style="max-height:120px; border-radius:8px;"/>` : window.parseSmilesToHtml(o.drug.customSmiles ? `<<:${o.drug.customSmiles}:>>` : `<<:${o.drug.D}:>>`));
         } else if (qType === 2) {
-            const structDisplay = drug.customImg ? `<img src="${drug.customImg}" style="max-height:160px; display:inline-block; border-radius:8px;"/>` : window.parseSmilesToHtml(`<<:${drug.D}:>>`);
+            const structDisplay = drug.customImg ? `<img src="${drug.customImg}" style="max-height:160px; display:inline-block; border-radius:8px;"/>` : window.parseSmilesToHtml(drug.customSmiles ? `<<:${drug.customSmiles}:>>` : `<<:${drug.D}:>>`);
             qTextCorrect = `請問下列化學結構屬於哪一個藥物？<br><br><div style="background:white; padding:10px; border-radius:12px; display:inline-block; border:1px solid #e5e7eb;">${structDisplay}</div>`;
             optHtmls = options.map(o => o.val);
         } else if (qType === 3) {
@@ -666,7 +753,7 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
             if (drug.E && drug.E !== '無') clues.push(`特殊點：${drug.E}`);
             if (drug.O && drug.O !== '無') clues.push(`給藥：${drug.O}`);
             qTextCorrect = `請根據以下個論特徵，選出正確的化學結構：<br><div style="background:#f3f4f6; padding:10px; border-radius:8px; margin-top:8px; font-weight:bold; color:#374151;">${clues.join('<br>')}</div>`;
-            optHtmls = options.map(o => o.drug.customImg ? `<img src="${o.drug.customImg}" style="max-height:120px; border-radius:8px;"/>` : window.parseSmilesToHtml(`<<:${o.drug.D}:>>`));
+            optHtmls = options.map(o => o.drug.customImg ? `<img src="${o.drug.customImg}" style="max-height:120px; border-radius:8px;"/>` : window.parseSmilesToHtml(o.drug.customSmiles ? `<<:${o.drug.customSmiles}:>>` : `<<:${o.drug.D}:>>`));
         } else if (qType === 4) {
             qTextCorrect = `關於藥物 **${drug.D}** 的代謝酵素與特性，下列何者正確？`;
             optHtmls = options.map(o => o.val);
@@ -676,7 +763,7 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
             const labels = {a:'[活性]', i:'[無活性]', h:'[抑制劑]', d:'[誘導劑]', normal:''};
             return `${labels[item.type] || ''}${item.content}`;
         }).join(', ') || '無';
-        const expStruct = drug.customImg ? `<img src="${drug.customImg}" style="max-height:100px; float:right; margin-left:10px;"/>` : `<div style="float:right; margin-left:10px; width:150px;">${window.parseSmilesToHtml(`<<:${drug.D}:>>`)}</div>`;
+        const expStruct = drug.customImg ? `<img src="${drug.customImg}" style="max-height:100px; float:right; margin-left:10px;"/>` : `<div style="float:right; margin-left:10px; width:150px;">${window.parseSmilesToHtml(drug.customSmiles ? `<<:${drug.customSmiles}:>>` : `<<:${drug.D}:>>`)}</div>`;
         const expHtml = `<div style="overflow:hidden;">${expStruct}【圖鑑解析】<br>藥名：<strong style="color:#10b981;">${drug.D}</strong><br>單元：${drug.U}<br>給藥：${drug.O || '無'}<br>機轉：${drug.C}<br>特徵基團：${drug.S || '無'}<br>特殊點：${drug.E || '無'}<br>代謝/酵素：${expMpStr}</div>`;
 
         return { qType, drug, options, correctIdx, answerLetter, qTextCorrect, optHtmls, expHtml };
@@ -1239,28 +1326,37 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
                     {endlessPhase === 'playing' ? (
                         <>
                             <style>{`
-                                /* 強制圖片與結構圖佔滿整個按鈕容器 */
-                                .endless-content img {
-                                    width: 100% !important;
-                                    height: 100% !important;
-                                    max-height: 250px !important;
-                                    object-fit: contain !important;
-                                    border-radius: 8px;
-                                }
-                                .endless-content svg, .endless-content canvas {
-                                    width: 100% !important;
-                                    height: 100% !important;
-                                    min-height: 150px !important;
-                                    max-height: 250px !important;
-                                    object-fit: contain !important;
-                                }
-                                /* 確保按鈕內的內容區塊長高 */
+                                /* ✨ 終極防裁切魔法：白底交給外層容器，內部繪圖強制縮小並允許溢出 */
                                 .endless-content button > div {
                                     width: 100%;
                                     height: 100%;
                                     display: flex;
                                     align-items: center;
                                     justify-content: center;
+                                    background-color: #ffffff !important; /* 強制外層白底 */
+                                    border-radius: 12px !important;
+                                }
+                                /* 1. API 抓圖 (img)：完全還原成最初的呈現方式，並把圖片放到最大！ */
+                                .endless-content img {
+                                    max-width: 95% !important; /* ✨ 加大到 95% */
+                                    max-height: 95% !important; /* ✨ 加大到 95% */
+                                    min-height: 120px !important;
+                                    object-fit: contain !important;
+                                    margin: auto;
+                                    background: transparent !important; 
+                                }
+                                /* 2. Ketcher 繪圖 (svg, canvas)：給予獨立的超厚白色護城河與防裁切機制 */
+                                .endless-content svg, .endless-content canvas {
+                                    max-width: 55% !important; 
+                                    max-height: 55% !important;
+                                    min-height: 120px !important;
+                                    object-fit: contain !important;
+                                    overflow: visible !important; /* 絕對關鍵：允許被切掉的字體溢出原始畫布 */
+                                    margin: auto;
+                                    background-color: #ffffff !important; 
+                                    padding: 20px !important; 
+                                    border-radius: 12px !important;
+                                    box-shadow: 0 0 0 20px #ffffff !important; 
                                 }
                             `}</style>
                             <div className="w-full max-w-3xl flex justify-between items-center mb-4 text-white">
@@ -1412,21 +1508,42 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
                             <button onClick={() => setShowCompareModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-stone-100 dark:bg-stone-700 rounded-full w-8 h-8 flex justify-center items-center transition-colors"><span className="material-symbols-outlined text-[20px]">close</span></button>
                         </div>
                         <div className="p-6 overflow-x-auto custom-scrollbar flex gap-4">
-                            {/* 強制縮放圖片的 Style Tag */}
+                           {/* ✨ 終極防裁切魔法：白底交給外層容器，內部繪圖強制縮小並允許溢出 */}
                             <style>{`
-                                .struct-img-wrapper svg, .struct-img-wrapper canvas, .struct-img-wrapper img {
-                                    max-width: 100% !important;
-                                    max-height: 100% !important;
+                                .struct-img-wrapper {
+                                    background-color: #ffffff !important; /* 強制外層白底 */
+                                    overflow: visible !important; /* 移除外層的裁切限制 */
+                                }
+                                /* 1. API 抓圖 (img)：完全還原成最初的呈現方式，並把圖片放到最大！ */
+                                .struct-img-wrapper img {
+                                    max-width: 95% !important; /* ✨ 加大到 95% (若想全滿可改 100%) */
+                                    max-height: 95% !important; /* ✨ 加大到 95% */
                                     width: auto !important;
                                     height: auto !important;
                                     object-fit: contain;
+                                    margin: auto;
+                                    background: transparent !important; 
+                                }
+                                /* 2. Ketcher 繪圖 (svg, canvas)：縮小本體至 55% 並外擴超大白色安全區，徹底防裁切 */
+                                .struct-img-wrapper svg, .struct-img-wrapper canvas {
+                                    max-width: 55% !important; 
+                                    max-height: 55% !important;
+                                    width: auto !important;
+                                    height: auto !important;
+                                    object-fit: contain;
+                                    overflow: visible !important; /* 絕對關鍵：允許被切掉的字體溢出原始畫布 */
+                                    margin: auto;
+                                    background-color: #ffffff !important; 
+                                    padding: 20px !important; /* 撐開內部白色空間 */
+                                    border-radius: 12px !important;
+                                    box-shadow: 0 0 0 20px #ffffff !important; /* 利用超厚陰影把白色邊界強行往外推 */
                                 }
                             `}</style>
                             {compareList.map(drug => (
                                 <div key={drug.id} className="flex-1 min-w-[280px] bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-2xl p-4 flex flex-col gap-3 shadow-sm">
                                     <div 
                                         className="struct-img-wrapper h-40 w-full flex items-center justify-center bg-stone-50 dark:bg-stone-800 rounded-xl overflow-hidden border border-stone-100 dark:border-stone-700 p-2"
-                                        dangerouslySetInnerHTML={{__html: drug.customImg ? `<img src="${drug.customImg}" class="mix-blend-multiply dark:mix-blend-normal" />` : parseSmilesToHtml(`<<:${drug.D}:>>`)}}>
+                                        dangerouslySetInnerHTML={{__html: drug.customImg ? `<img src="${drug.customImg}" class="mix-blend-multiply dark:mix-blend-normal" />` : parseSmilesToHtml(drug.customSmiles ? `<<:${drug.customSmiles}:>>` : `<<:${drug.D}:>>`)}}>
                                     </div>
                                     <h4 className="text-xl font-black text-center text-stone-800 dark:text-white border-b border-stone-100 dark:border-stone-700 pb-2">{drug.D}</h4>
                                     
@@ -1738,20 +1855,41 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
                         </div>
                         <div className="p-6 overflow-y-auto custom-scrollbar space-y-4">
                             
-                            {/* ✨ 加入強制縮放的 Style Tag 來解決圖片不正常放大的問題 */}
+                           {/* ✨ 終極防裁切魔法：白底交給外層容器，內部繪圖強制縮小並允許溢出 */}
                             <style>{`
-                                .struct-img-wrapper svg, .struct-img-wrapper canvas, .struct-img-wrapper img {
-                                    max-width: 100% !important;
-                                    max-height: 100% !important;
+                                .struct-img-wrapper {
+                                    background-color: #ffffff !important; /* 強制外層白底 */
+                                    overflow: visible !important; /* 移除外層的裁切限制 */
+                                }
+                                /* 1. API 抓圖 (img)：完全還原成最初的呈現方式，並把圖片放到最大！ */
+                                .struct-img-wrapper img {
+                                    max-width: 95% !important; /* ✨ 加大到 95% (若想全滿可改 100%) */
+                                    max-height: 95% !important; /* ✨ 加大到 95% */
                                     width: auto !important;
                                     height: auto !important;
                                     object-fit: contain;
+                                    margin: auto;
+                                    background: transparent !important; 
+                                }
+                                /* 2. Ketcher 繪圖 (svg, canvas)：縮小本體至 55% 並外擴超大白色安全區，徹底防裁切 */
+                                .struct-img-wrapper svg, .struct-img-wrapper canvas {
+                                    max-width: 55% !important; 
+                                    max-height: 55% !important;
+                                    width: auto !important;
+                                    height: auto !important;
+                                    object-fit: contain;
+                                    overflow: visible !important; /* 絕對關鍵：允許被切掉的字體溢出原始畫布 */
+                                    margin: auto;
+                                    background-color: #ffffff !important; 
+                                    padding: 20px !important; /* 撐開內部白色空間 */
+                                    border-radius: 12px !important;
+                                    box-shadow: 0 0 0 20px #ffffff !important; /* 利用超厚陰影把白色邊界強行往外推 */
                                 }
                             `}</style>
 
                             <div 
                                 className="struct-img-wrapper w-full h-64 sm:h-72 bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-700 flex items-center justify-center overflow-hidden mb-6 p-4" 
-                                dangerouslySetInnerHTML={{__html: viewingDrug.customImg ? `<img src="${viewingDrug.customImg}" class="mix-blend-multiply dark:mix-blend-normal" />` : parseSmilesToHtml(`<<:${viewingDrug.D}:>>`)}}>
+                                dangerouslySetInnerHTML={{__html: viewingDrug.customImg ? `<img src="${viewingDrug.customImg}" class="mix-blend-multiply dark:mix-blend-normal" />` : parseSmilesToHtml(viewingDrug.customSmiles ? `<<:${viewingDrug.customSmiles}:>>` : `<<:${viewingDrug.D}:>>`)}}>
                             </div>
                             
                             <div className="grid grid-cols-2 gap-4">
@@ -1842,6 +1980,18 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
                 </div>
             )}
 
+            {/* ✨ 新增：化學結構繪圖 Modal */}
+            {showDrawingModal && (
+                <KetcherEditorModal 
+                    initialSmiles={editingDrug?.customSmiles || ''}
+                    onSave={(smiles) => {
+                        setEditingDrug(prev => ({ ...prev, customSmiles: smiles }));
+                        setShowDrawingModal(false);
+                    }}
+                    onClose={() => setShowDrawingModal(false)}
+                />
+            )}
+
             {/* 3. 編輯單一藥物 Modal */}
             {editingDrug && isAdmin && (
                 <div className="fixed inset-0 z-[160] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
@@ -1862,8 +2012,24 @@ window.IlluDashboard = function IlluDashboard({ user, userProfile, showAlert, sh
                             </div>
                             
                             <div className="bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-3 rounded-xl">
-                                <label className="block text-xs font-bold text-emerald-600 mb-2">上傳自訂結構圖 (覆蓋預設圖片)</label>
-                                <input type="file" accept="image/*" onChange={handleImageUpload} className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 dark:text-white" />
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="block text-xs font-bold text-emerald-600">上傳自訂圖片 / 手動繪製結構 (優先覆蓋預設)</label>
+                                    <button onClick={() => setShowDrawingModal(true)} className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-xs font-bold hover:bg-emerald-200 transition-colors flex items-center gap-1 shadow-sm">
+                                        <span className="material-symbols-outlined text-[14px]">draw</span> 開啟繪製工具
+                                    </button>
+                                </div>
+                                <input type="file" accept="image/*" onChange={handleImageUpload} className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 dark:text-white mb-2" />
+                                
+                                {editingDrug.customSmiles && !editingDrug.customImg && (
+                                    <div className="mt-2 p-3 bg-white dark:bg-stone-800 border border-emerald-200 dark:border-stone-600 rounded-lg text-sm shadow-sm flex flex-col gap-2">
+                                        <div className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[16px]">check_circle</span> 已儲存繪製結構 (SMILES):
+                                        </div>
+                                        <div className="font-mono text-xs text-stone-600 dark:text-stone-400 break-all bg-stone-50 dark:bg-stone-900 p-2 rounded">{editingDrug.customSmiles}</div>
+                                        <button onClick={() => setEditingDrug({...editingDrug, customSmiles: null})} className="self-end text-red-500 hover:text-red-700 font-bold text-xs">移除結構</button>
+                                    </div>
+                                )}
+
                                 {editingDrug.customImg && (
                                     <div className="mt-3 relative inline-block bg-white dark:bg-stone-800 p-2 border border-stone-200 dark:border-stone-700 rounded-lg">
                                         <img src={editingDrug.customImg} alt="自訂圖片預覽" className="max-h-24 object-contain mix-blend-multiply dark:mix-blend-normal" />

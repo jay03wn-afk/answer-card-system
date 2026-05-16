@@ -6,33 +6,104 @@ const {
     ContentEditableEditor, AnswerGridInput, SpecificAnswerGridInput, HelpTooltip, 
     safeDecompress, processQuestionContent, extractSpecificContent, extractSpecificExplanation 
 } = window;
+
+// ✨ 業界最強 Ketcher 化學繪圖編輯器組件 (供快問快答使用，確保全檔只有這一個！)
+const KetcherEditorModal = React.memo(({ initialSmiles, onSave, onClose }) => {
+    const { useRef, useState } = React;
+    const iframeRef = useRef(null);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleIframeLoad = () => {
+        try {
+            const ketcher = iframeRef.current.contentWindow.ketcher;
+            if (ketcher && initialSmiles) ketcher.setMolecule(initialSmiles);
+        } catch (e) { console.warn("無法載入初始結構", e); }
+    };
+
+    const handleAutoSave = async () => {
+        setIsSaving(true);
+        try {
+            const ketcher = iframeRef.current.contentWindow.ketcher;
+            if (ketcher) {
+                const smiles = await ketcher.getSmiles();
+                if (!smiles || smiles.trim() === '') alert("畫布是空的喔！請繪製結構後再儲存。");
+                else onSave(smiles);
+            } else alert("繪圖板尚未載入完成！");
+        } catch (error) {
+            console.error("儲存失敗", error);
+            alert("儲存失敗，請確保畫布內的結構正確無誤。");
+        }
+        setIsSaving(false);
+    };
+
+    return (
+        <div className="fixed inset-0 z-[250] bg-stone-900/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-fade-in">
+            <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-6xl h-[95vh] rounded-3xl flex flex-col shadow-2xl border border-stone-200 dark:border-stone-700 overflow-hidden">
+                <div className="p-4 border-b border-stone-200 dark:border-stone-700 flex justify-between items-center bg-white dark:bg-stone-900 shrink-0">
+                    <h3 className="font-black text-xl text-stone-800 dark:text-white flex items-center gap-2">
+                        <span className="material-symbols-outlined text-emerald-500">draw</span> 專業化學繪圖 (Ketcher)
+                    </h3>
+                    <button onClick={onClose} className="text-gray-400 hover:text-red-500 transition-colors"><span className="material-symbols-outlined">close</span></button>
+                </div>
+                <div className="flex-1 bg-white dark:bg-stone-800 overflow-hidden relative">
+                    <iframe ref={iframeRef} onLoad={handleIframeLoad} src="/ketcher/index.html" className="w-full h-full border-0" title="Ketcher Editor"></iframe>
+                </div>
+                <div className="p-4 border-t border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 shrink-0 flex justify-end items-center gap-3">
+                    <div className="text-sm font-bold text-gray-400 mr-auto hidden sm:block">💡 提示：畫完後直接點擊右方儲存按鈕即可將結構轉碼插入！</div>
+                    <button onClick={onClose} className="px-6 py-2.5 font-bold text-gray-500 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-xl transition-colors">取消</button>
+                    <button onClick={handleAutoSave} disabled={isSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2.5 rounded-xl font-black shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
+                        {isSaving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[20px]">save</span>}
+                        {isSaving ? '處理中...' : '插入結構代碼'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+});
+
 function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRequireLogin }) {
     const { useState, useEffect } = React;
     const [qaList, setQaList] = useState([]);
     const [records, setRecords] = useState({});
     const [loading, setLoading] = useState(true);
-    const [qaLimit, setQaLimit] = useState(30); // ✨ 修改：一次載入 30 題
+    const [qaLimit, setQaLimit] = useState(30); 
     const [refreshTrigger, setRefreshTrigger] = useState(0); 
     const [isRefreshing, setIsRefreshing] = useState(false); 
     const [jumpingQaId, setJumpingQaId] = useState(null); 
     const [showAdminMode, setShowAdminMode] = useState(false);
     const [isEditExpanded, setIsEditExpanded] = useState(false);
     const [showParseHelp, setShowParseHelp] = useState(false); 
-    const [isFastQAExpanded, setIsFastQAExpanded] = useState(true); // ✨ 新增：收合狀態 
+    const [isFastQAExpanded, setIsFastQAExpanded] = useState(true); 
+    
+    // ✨ 收錄、匯出、隱藏已作答與篩選相關狀態
+    const [savedQAs, setSavedQAs] = useState([]);
+    const [exportMode, setExportMode] = useState(false);
+    const [isExportingCloud, setIsExportingCloud] = useState(false); // ✨ 雲端匯出狀態
+    const [selectedForExport, setSelectedForExport] = useState([]);
+    const [selectedSubject, setSelectedSubject] = useState('全部');
+    const [hideCompleted, setHideCompleted] = useState(false); 
+    const [showSavedOnly, setShowSavedOnly] = useState(false); // ✨ 顯示我的收錄
+    
+    // Ketcher 繪圖狀態
+    const [showKetcherModal, setShowKetcherModal] = useState(false);
+    const [ketcherTarget, setKetcherTarget] = useState(null); 
+    
+    // 評分狀態
+    const [myRating, setMyRating] = useState({ stars: 0, difficulty: 0 });
     
     const isAdmin = user && (user.email === 'jay03wn@gmail.com' || user.email === '777@gmail.com');
-            const [myFriendsUids, setMyFriendsUids] = useState([]);
+    const [myFriendsUids, setMyFriendsUids] = useState([]);
 
-            useEffect(() => {
-                if (user) {
-                    const unsub = window.db.collection('users').doc(user.uid).onSnapshot(doc => {
-                        if (doc.exists) setMyFriendsUids((doc.data().friends || []).map(f => f.uid));
-                    });
-                    return () => unsub();
-                }
-            }, [user]);
+    useEffect(() => {
+        if (user) {
+            const unsub = window.db.collection('users').doc(user.uid).onSnapshot(doc => {
+                if (doc.exists) setMyFriendsUids((doc.data().friends || []).map(f => f.uid));
+            });
+            return () => unsub();
+        }
+    }, [user]);
             
-            const [qaType, setQaType] = useState('mcq');
+    const [qaType, setQaType] = useState('mcq');
     const [subjectMode, setSubjectMode] = useState('藥物分析');
     const [subject, setSubject] = useState('藥物分析');
     const [difficultyMode, setDifficultyMode] = useState('1');
@@ -68,6 +139,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
             setEndTimeStr(localStr);
         }
     }, [timePreset]);
+    
     const [options, setOptions] = useState(['', '', '', '']);
     const [correctAns, setCorrectAns] = useState(0);
     const [explanation, setExplanation] = useState('');
@@ -81,16 +153,16 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     const [showShareModal, setShowShareModal] = useState(false);
     const [shareContent, setShareContent] = useState('');
 
-    // ✨ 新增：討論區與回饋相關狀態
     const [comments, setComments] = useState([]);
     const [newComment, setNewComment] = useState('');
     const [replyTo, setReplyTo] = useState(null);
     const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [feedbackText, setFeedbackText] = useState('');
 
-   useEffect(() => {
+    useEffect(() => {
         let unsubQA = () => {};
         let unsubRecords = () => {};
+        let unsubSaved = () => {};
 
         const fetchQA = () => {
             if (!window.db) return; 
@@ -109,7 +181,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         const now = new Date().getTime();
                         
-                        // ✨ 修復：自動刪除過期的題目
                         qas.forEach(q => {
                             if (q.endTime && q.endTime <= now) {
                                 window.db.collection('fastQA').doc(q.id).delete().catch(e => console.error("自動刪除過期題目失敗:", e));
@@ -137,6 +208,10 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         setRecords(recs);
                         if (targetQaId && recs[targetQaId]) setShowResult(true);
                     }, error => console.error("作答紀錄讀取失敗:", error));
+                    
+                    unsubSaved = window.db.collection('users').doc(user.uid).onSnapshot(doc => {
+                        if(doc.exists) setSavedQAs(doc.data().mcData?.savedFastQAs || []);
+                    });
                 } else {
                     setLoading(false);
                 }
@@ -146,12 +221,12 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
             }
         };
         fetchQA();
-        return () => { unsubQA(); unsubRecords(); };
+        return () => { unsubQA(); unsubRecords(); unsubSaved(); };
     }, [user, isAdmin, targetQaId, qaLimit, refreshTrigger]);
 
-    // ✨ 新增：獨立監聽目前 activeQA 的討論區留言
     useEffect(() => {
         if (!activeQA) return;
+        setMyRating({ stars: 0, difficulty: 0 }); 
         const unsubComments = window.db.collection('fastQA').doc(activeQA.id).collection('comments')
             .orderBy('createdAt', 'asc')
             .onSnapshot(snap => {
@@ -160,7 +235,161 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         return () => unsubComments();
     }, [activeQA?.id]);
 
-    // ✨ 新增：處理發布留言
+    const toggleBookmark = async (e, qaId) => {
+        e.stopPropagation();
+        if(!user) return showAlert('請先登入才能收錄題目！');
+        const isSaved = savedQAs.includes(qaId);
+        const newSaved = isSaved ? savedQAs.filter(id => id !== qaId) : [...savedQAs, qaId];
+        try {
+            await window.db.collection('users').doc(user.uid).set({
+                mcData: { savedFastQAs: newSaved }
+            }, { merge: true });
+            showAlert(isSaved ? '已取消收錄' : '已成功收錄題目！');
+        } catch (e) {
+            showAlert("收錄操作失敗: " + e.message);
+        }
+    };
+
+    // ✨ 匯出至 HTML 下載檔
+    const handleExportHtml = () => {
+        if(selectedForExport.length === 0) return showAlert("請先選擇要匯出的題目");
+        
+        let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>任務牆題庫匯出</title><style>
+            body { font-family: sans-serif; padding: 20px; line-height: 1.6; max-width: 900px; margin: auto; color: #333; }
+            h2 { color: #e11d48; border-bottom: 2px solid #e11d48; padding-bottom: 10px; }
+            .qa-block { border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+            img { max-height: 150px; vertical-align: middle; border-radius: 8px; margin: 4px; }
+            .opt { margin: 8px 0; padding-left: 10px; }
+            .tag { display: inline-block; background: #f3f4f6; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-right: 8px; margin-bottom: 10px; border: 1px solid #e5e7eb; }
+            .correct { margin-top: 15px; color: #059669; font-weight: bold; font-size: 16px; }
+            .exp { margin-top: 15px; background: #f9fafb; padding: 15px; border-radius: 8px; border-left: 4px solid #e11d48; }
+        </style></head><body><h2>任務牆快問快答 - 題庫匯出</h2>`;
+        
+        selectedForExport.forEach(id => {
+            const qa = qaList.find(q => q.id === id);
+            if(qa) {
+                const avgDiff = qa.ratingCount ? (qa.totalDifficulty / qa.ratingCount).toFixed(1) : '-';
+                const avgStar = qa.ratingCount ? (qa.totalStars / qa.ratingCount).toFixed(1) : '-';
+                const timeStr = qa.createdAt?.toDate ? qa.createdAt.toDate().toLocaleString('zh-TW', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '未知';
+                
+                html += `<div class="qa-block">`;
+                html += `<div><span class="tag">科目: ${qa.subject}</span><span class="tag">發布: ${timeStr}</span><span class="tag">評分: ⭐${avgStar} / 🔥難度 ${avgDiff}</span></div>`;
+                html += `<div style="font-size: 16px; font-weight: bold; margin-bottom: 15px;">${window.parseSmilesToHtml ? window.parseSmilesToHtml(qa.question) : qa.question}</div>`;
+                
+                qa.options.forEach((opt, i) => {
+                    html += `<div class="opt"><strong>(${['A','B','C','D'][i]})</strong> ${window.parseSmilesToHtml ? window.parseSmilesToHtml(opt) : opt}</div>`;
+                });
+                
+                html += `<div class="correct">[正解] ${['A','B','C','D'][qa.correctAns]}</div>`;
+                html += `<div class="exp"><strong>[詳解]</strong><br>${window.parseSmilesToHtml ? window.parseSmilesToHtml(qa.explanation) : qa.explanation}</div>`;
+                html += `</div>`;
+            }
+        });
+        html += `</body></html>`;
+        
+        const blob = new Blob([html], {type: "text/html;charset=utf-8"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `FastQA_Export_${Date.now()}.html`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setExportMode(false);
+        setSelectedForExport([]);
+    };
+
+    // ✨ 匯入至我的題庫邏輯
+    const handleExportToMyBank = async () => {
+        if(selectedForExport.length === 0) return showAlert("請先選擇要匯出的題目");
+        setIsExportingCloud(true);
+        try {
+            let textContent = '';
+            let htmlContent = '';
+            let expHtmlOutput = '';
+            let answersArray = [];
+
+            selectedForExport.forEach((id, idx) => {
+                const qa = qaList.find(q => q.id === id);
+                if (!qa) return;
+                const qNum = idx + 1;
+                const cleanQ = qa.question.replace(/<[^>]+>/g, '');
+                textContent += `[Q.${qNum}]\n[#任務牆|@1]\n${cleanQ}\n[A] 選項略\n[B] 選項略\n[C] 選項略\n[D] 選項略\n[End]\n\n`;
+                
+                htmlContent += `[Q.${qNum}]<br><div class="qlib-question-tags" style="color:#a8a29e; font-size:0.85em; font-weight:800; margin-bottom:6px; padding:2px 8px; background:rgba(0,0,0,0.04); display:inline-block; border-radius:6px;">[ #任務牆精選 | 難度:${qa.difficulty} ]</div><br><div style="font-size:1.1em; margin-bottom:12px;">${qa.question}</div>`;
+                qa.options.forEach((opt, i) => {
+                    htmlContent += `[${['A','B','C','D'][i]}] <div style="display:inline-block; vertical-align:middle;">${opt}</div><br>`;
+                });
+                htmlContent += `[End]<br><br>`;
+                
+                answersArray.push(['A','B','C','D'][qa.correctAns]);
+                expHtmlOutput += `[A.${qNum}]<br><div style="overflow:hidden;">${qa.explanation}</div><br>[End]<br><br>`;
+            });
+
+            const quizId = Date.now().toString();
+            const quizData = {
+                id: quizId,
+                testName: `任務牆精選匯出 (${selectedForExport.length}題)`,
+                folder: '未分類',
+                numQuestions: selectedForExport.length,
+                maxScore: 100, roundScore: true,
+                correctAnswersInput: answersArray.join(','),
+                publishAnswers: true, allowPeek: true, hasSeparatedContent: true,
+                isCompleted: false, userAnswers: Array(selectedForExport.length).fill(''),
+                starred: Array(selectedForExport.length).fill(false),
+                notes: Array(selectedForExport.length).fill(''), peekedAnswers: Array(selectedForExport.length).fill(false),
+                createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            };
+            const contentData = {
+                questionText: window.jzCompress ? window.jzCompress(textContent) : textContent,
+                questionHtml: window.jzCompress ? window.jzCompress(htmlContent) : htmlContent,
+                explanationHtml: window.jzCompress ? window.jzCompress(expHtmlOutput) : expHtmlOutput
+            };
+            
+            await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).set(quizData);
+            await window.db.collection('users').doc(user.uid).collection('quizContents').doc(quizId).set(contentData);
+            
+            showAlert("匯入成功！已轉存至您的「我的題庫」。");
+            setExportMode(false);
+            setSelectedForExport([]);
+        } catch(e) {
+            showAlert("匯入失敗：" + e.message);
+        }
+        setIsExportingCloud(false);
+    };
+
+    const handleKetcherSave = (smiles) => {
+        const formatted = `<<:${smiles}:>>`;
+        if(ketcherTarget === 'q') setQuestion(prev => prev + formatted);
+        else if(ketcherTarget === 'exp') setExplanation(prev => prev + formatted);
+        else {
+            const newOpt = [...options];
+            newOpt[ketcherTarget] += formatted;
+            setOptions(newOpt);
+        }
+        setShowKetcherModal(false);
+    };
+
+    const handleRate = async () => {
+        if(!myRating.stars || !myRating.difficulty) return showAlert("請給予星級與難度評分！");
+        try {
+            await window.db.collection('fastQA').doc(activeQA.id).update({
+                totalStars: window.firebase.firestore.FieldValue.increment(myRating.stars),
+                totalDifficulty: window.firebase.firestore.FieldValue.increment(myRating.difficulty),
+                ratingCount: window.firebase.firestore.FieldValue.increment(1)
+            });
+            await window.db.collection('users').doc(user.uid).collection('fastQARecords').doc(activeQA.id).set({
+                rated: true,
+                myRating: myRating
+            }, { merge: true });
+            
+            showAlert("感謝您的評分！這將幫助其他玩家參考。");
+            setRecords(prev => ({...prev, [activeQA.id]: {...prev[activeQA.id], rated: true, myRating: myRating}}));
+        } catch(e) {
+            showAlert("評分失敗: " + e.message);
+        }
+    };
+
     const handlePostComment = async () => {
         if (!newComment.trim() || !user) return;
         try {
@@ -180,7 +409,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
 
             await window.db.collection('fastQA').doc(activeQA.id).collection('comments').add(commentData);
             
-            // 🔔 發送通知給出題者 (如果不是自己，且不是回覆出題者本人)
             if (activeQA.creatorUid && activeQA.creatorUid !== user.uid && (!replyTo || replyTo.uid !== activeQA.creatorUid)) {
                 window.db.collection('users').doc(activeQA.creatorUid).collection('mailbox').add({
                     title: '試題討論區新留言',
@@ -192,7 +420,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                 });
             }
 
-            // 🔔 發送通知給被回覆者 (如果是回覆別人，且不是回覆自己)
             if (replyTo && replyTo.uid && replyTo.uid !== user.uid) {
                 window.db.collection('users').doc(replyTo.uid).collection('mailbox').add({
                     title: '討論區回覆通知',
@@ -211,7 +438,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         }
     };
 
-    // ✨ 新增：處理留言按讚
     const handleLikeComment = async (commentId, currentLikes) => {
         if (!user) return showAlert("請先登入才能按讚！");
         const hasLiked = currentLikes.includes(user.uid);
@@ -225,7 +451,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         }
     };
 
-    // ✨ 新增：送出回饋 (修復原本 window.showPrompt 找不到的 Bug)
     const handleSendFeedback = async () => {
         if (!feedbackText.trim() || !user || !activeQA.creatorUid) return;
         try {
@@ -266,7 +491,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                     return showAlert('最多只能同時擁有 10 個有效的快問快答喔！\n請等舊題目過期，或手動刪除後再試。');
                 }
 
-                // ✨ 檢查一日發布 5 次的限制
                 userDocRef = window.db.collection('users').doc(user.uid);
                 const docSnap = await userDocRef.get();
                 if (docSnap.exists) {
@@ -303,7 +527,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             });
 
-            // ✨ 新增：自動寄發信箱通知 (管理員全服通知，一般玩家通知好友)
             if (isAdmin) {
                 const usersSnap = await window.db.collection('users').get();
                 const batches = [];
@@ -342,7 +565,6 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                 }
             }
             
-            // ✨ 成功發布後更新次數與提示
             if (!isAdmin && typeof userDocRef !== 'undefined' && userDocRef) {
                 publishData.count += 1;
                 await userDocRef.set({ mcData: { ...mcData, fastQAPublishData: publishData } }, { merge: true });
@@ -366,7 +588,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         });
     };
 
-  const handleAutoParse = () => {
+    const handleAutoParse = () => {
         const tempText = question
             .replace(/<br\s*\/?>/gi, '\n')
             .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
@@ -510,9 +732,26 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         setSubmitting(false);
     };
 
+    const uniqueSubjects = ['全部', ...new Set(qaList.map(q => q.subject))];
+    const filteredQaList = qaList.filter(q => {
+        if (selectedSubject !== '全部' && q.subject !== selectedSubject) return false;
+        if (hideCompleted && records[q.id]) return false;
+        if (showSavedOnly && !savedQAs.includes(q.id)) return false; // ✨ 我的收錄篩選
+        return true;
+    });
+
     return (
         <div className={`border border-rose-200 bg-[#FCFBF7] dark:bg-stone-900 p-6 shadow-xl relative rounded-3xl w-full transition-all duration-300 ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
-           <div className={`flex justify-between items-center ${isFastQAExpanded ? 'mb-5 border-b border-rose-100 dark:border-stone-800 pb-4' : ''}`}>
+            
+            {showKetcherModal && (
+                <KetcherEditorModal 
+                    initialSmiles=""
+                    onSave={handleKetcherSave}
+                    onClose={() => setShowKetcherModal(false)}
+                />
+            )}
+
+            <div className={`flex justify-between items-center ${isFastQAExpanded ? 'mb-5 border-b border-rose-100 dark:border-stone-800 pb-4' : ''}`}>
                 <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-xl font-black text-rose-700 dark:text-rose-400 flex items-center gap-1"><span className="material-symbols-outlined text-2xl">bolt</span> 快問快答挑戰</h2>
                     {!targetQaId && isFastQAExpanded && (
@@ -549,122 +788,122 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
 
             {isFastQAExpanded && (
                 <>
-           {user && showAdminMode && !targetQaId && (
-                <div className="mb-6 border border-rose-200 rounded-2xl bg-[#FCFBF7] dark:bg-stone-800 overflow-hidden shadow-lg">
-                    <button onClick={() => setIsEditExpanded(!isEditExpanded)} className="w-full flex justify-between p-5 bg-rose-50 dark:bg-stone-700 hover:bg-rose-100 dark:hover:bg-stone-600 font-bold text-rose-800 dark:text-rose-200 transition-colors">
-                        <span className="flex items-center gap-2"><span className="material-symbols-outlined text-[20px]">edit_square</span> 新增快問快答系統面板</span>
-                        <span>{isEditExpanded ? '▼' : '▲'}</span>
-                    </button>
-                    {isEditExpanded && (
-                        <div className="p-4 border-t border-stone-200 dark:border-stone-700 dark:text-gray-200">
-                            
-                            {/* ✨ 新增：發布額度進度條 (非管理員專屬) */}
-                            {!isAdmin && (
-                                <div className="mb-5 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
-                                    <span className="text-sm font-bold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
-                                        <span className="material-symbols-outlined text-[20px]">inventory_2</span>
-                                        我的發布額度 <span className="text-xs opacity-70">(同時最多10題)</span>
-                                    </span>
-                                    <div className="flex items-center gap-3 w-full sm:w-1/2">
-                                        <div className="flex-1 bg-rose-200 dark:bg-stone-700 h-2.5 rounded-full overflow-hidden shadow-inner">
-                                            <div 
-                                                className={`h-full rounded-full transition-all duration-700 ease-out ${qaList.filter(q => q.creatorUid === user?.uid).length >= 10 ? 'bg-red-500' : 'bg-rose-500'}`} 
-                                                style={{ width: `${Math.min((qaList.filter(q => q.creatorUid === user?.uid).length / 10) * 100, 100)}%` }}
-                                            ></div>
-                                        </div>
-                                        <span className={`text-xs font-black shrink-0 ${qaList.filter(q => q.creatorUid === user?.uid).length >= 10 ? 'text-red-500' : 'text-rose-700 dark:text-rose-400'}`}>
-                                            {qaList.filter(q => q.creatorUid === user?.uid).length} / 10
+                {user && showAdminMode && !targetQaId && (
+                    <div className="mb-6 border border-rose-200 rounded-2xl bg-[#FCFBF7] dark:bg-stone-800 overflow-hidden shadow-lg">
+                        <button onClick={() => setIsEditExpanded(!isEditExpanded)} className="w-full flex justify-between p-5 bg-rose-50 dark:bg-stone-700 hover:bg-rose-100 dark:hover:bg-stone-600 font-bold text-rose-800 dark:text-rose-200 transition-colors">
+                            <span className="flex items-center gap-2"><span className="material-symbols-outlined text-[20px]">edit_square</span> 新增快問快答系統面板</span>
+                            <span>{isEditExpanded ? '▼' : '▲'}</span>
+                        </button>
+                        {isEditExpanded && (
+                            <div className="p-4 border-t border-stone-200 dark:border-stone-700 dark:text-gray-200">
+                                
+                                {!isAdmin && (
+                                    <div className="mb-5 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+                                        <span className="text-sm font-bold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
+                                            <span className="material-symbols-outlined text-[20px]">inventory_2</span>
+                                            我的發布額度 <span className="text-xs opacity-70">(同時最多10題)</span>
                                         </span>
+                                        <div className="flex items-center gap-3 w-full sm:w-1/2">
+                                            <div className="flex-1 bg-rose-200 dark:bg-stone-700 h-2.5 rounded-full overflow-hidden shadow-inner">
+                                                <div 
+                                                    className={`h-full rounded-full transition-all duration-700 ease-out ${qaList.filter(q => q.creatorUid === user?.uid).length >= 10 ? 'bg-red-500' : 'bg-rose-500'}`} 
+                                                    style={{ width: `${Math.min((qaList.filter(q => q.creatorUid === user?.uid).length / 10) * 100, 100)}%` }}
+                                                ></div>
+                                            </div>
+                                            <span className={`text-xs font-black shrink-0 ${qaList.filter(q => q.creatorUid === user?.uid).length >= 10 ? 'text-red-500' : 'text-rose-700 dark:text-rose-400'}`}>
+                                                {qaList.filter(q => q.creatorUid === user?.uid).length} / 10
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                )}
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                                <div className="md:col-span-2 flex gap-4 bg-stone-50 rounded-xl p-2 dark:bg-gray-700">
-                                    <label className="font-bold flex items-center gap-2 cursor-pointer">
-                                        <input type="radio" checked={qaType==='mcq'} onChange={()=>setQaType('mcq')} className="w-4 h-4" /> 選擇題
-                                    </label>
-                                    <label className="font-bold flex items-center gap-2 cursor-pointer">
-                                        <input type="radio" checked={qaType==='tf'} onChange={()=>setQaType('tf')} className="w-4 h-4" /> 是非題
-                                    </label>
-                                </div>
-                                {/* ✨ 開放所有玩家選擇科目 */}
-                                <div>
-                                    <label className="block text-sm font-bold mb-1">科目</label>
-                                    <select value={subjectMode} onChange={e => { setSubjectMode(e.target.value); if(e.target.value !== 'custom') setSubject(e.target.value); else setSubject(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400">
-                                        {['藥物分析', '生藥', '中藥', '藥理', '藥化', '藥劑', '生物藥劑', '綜合'].map(s => <option key={s} value={s}>{s}</option>)}
-                                        <option value="custom">[自訂]</option>
-                                    </select>
-                                    {subjectMode === 'custom' && <input type="text" value={subject} onChange={e=>setSubject(e.target.value)} className="w-full border p-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400" placeholder="請輸入自訂科目" />}
-                                </div>
-                                {isAdmin && (
-                                    <>
-                                        <div>
-                                            <label className="block text-sm font-bold mb-1">難度標籤</label>
-                                            <select value={difficultyMode} onChange={e => { setDifficultyMode(e.target.value); if(e.target.value !== 'custom') setCustomDifficulty(e.target.value); else setCustomDifficulty(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400">
-                                                {Array.from({length: 10}, (_, i) => i + 1).map(n => <option key={n} value={n}>{n} 級</option>)}
-                                                <option value="custom">[自訂]</option>
-                                            </select>
-                                            {difficultyMode === 'custom' && <input type="text" value={customDifficulty} onChange={e=>setCustomDifficulty(e.target.value)} className="w-full border p-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400" placeholder="請輸入自訂難度" />}
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-bold mb-1">獎勵鑽石數量</label>
-                                            <select value={rewardMode} onChange={e => { setRewardMode(e.target.value); if(e.target.value !== 'custom') setCustomReward(Number(e.target.value)); else setCustomReward(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400">
-                                                {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(n => <option key={n} value={n}>{n} 鑽石</option>)}
-                                                <option value="custom">[自訂]</option>
-                                            </select>
-                                            {rewardMode === 'custom' && <input type="number" min="1" value={customReward} onChange={e=>setCustomReward(e.target.value)} className="w-full border p-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400" placeholder="請輸入鑽石數量" />}
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-bold mb-1">結束時間</label>
-                                            <select value={timePreset} onChange={e => {
-                                                setTimePreset(e.target.value);
-                                                if (e.target.value === 'custom' && !endTimeStr) {
-                                                    const now = new Date();
-                                                    const pad = (n) => n.toString().padStart(2, '0');
-                                                    setEndTimeStr(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
-                                                }
-                                            }} className="w-full border p-2 mb-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400 font-bold">
-                                                <option value="permanent">永久公開</option>
-                                                <option value="today">到今天結束 (23:59)</option>
-                                                <option value="24h">24 小時後</option>
-                                                <option value="48h">48 小時後</option>
-                                                <option value="1w">一週後 (168小時)</option>
-                                                <option value="custom">自訂時間</option>
-                                            </select>
-                                            {timePreset === 'custom' && (
-                                                <input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400" />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                                    <div className="md:col-span-2 flex gap-4 bg-stone-50 rounded-xl p-2 dark:bg-gray-700">
+                                        <label className="font-bold flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" checked={qaType==='mcq'} onChange={()=>setQaType('mcq')} className="w-4 h-4" /> 選擇題
+                                        </label>
+                                        <label className="font-bold flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" checked={qaType==='tf'} onChange={()=>setQaType('tf')} className="w-4 h-4" /> 是非題
+                                        </label>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold mb-1">科目</label>
+                                        <select value={subjectMode} onChange={e => { setSubjectMode(e.target.value); if(e.target.value !== 'custom') setSubject(e.target.value); else setSubject(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400">
+                                            {['藥物分析', '生藥', '中藥', '藥理', '藥化', '藥劑', '生物藥劑', '綜合'].map(s => <option key={s} value={s}>{s}</option>)}
+                                            <option value="custom">[自訂]</option>
+                                        </select>
+                                        {subjectMode === 'custom' && <input type="text" value={subject} onChange={e=>setSubject(e.target.value)} className="w-full border p-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400" placeholder="請輸入自訂科目" />}
+                                    </div>
+                                    {isAdmin && (
+                                        <>
+                                            <div>
+                                                <label className="block text-sm font-bold mb-1">難度標籤</label>
+                                                <select value={difficultyMode} onChange={e => { setDifficultyMode(e.target.value); if(e.target.value !== 'custom') setCustomDifficulty(e.target.value); else setCustomDifficulty(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400">
+                                                    {Array.from({length: 10}, (_, i) => i + 1).map(n => <option key={n} value={n}>{n} 級</option>)}
+                                                    <option value="custom">[自訂]</option>
+                                                </select>
+                                                {difficultyMode === 'custom' && <input type="text" value={customDifficulty} onChange={e=>setCustomDifficulty(e.target.value)} className="w-full border p-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400" placeholder="請輸入自訂難度" />}
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold mb-1">獎勵鑽石數量</label>
+                                                <select value={rewardMode} onChange={e => { setRewardMode(e.target.value); if(e.target.value !== 'custom') setCustomReward(Number(e.target.value)); else setCustomReward(''); }} className="w-full border p-2 mb-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400">
+                                                    {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(n => <option key={n} value={n}>{n} 鑽石</option>)}
+                                                    <option value="custom">[自訂]</option>
+                                                </select>
+                                                {rewardMode === 'custom' && <input type="number" min="1" value={customReward} onChange={e=>setCustomReward(e.target.value)} className="w-full border p-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400" placeholder="請輸入鑽石數量" />}
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold mb-1">結束時間</label>
+                                                <select value={timePreset} onChange={e => {
+                                                    setTimePreset(e.target.value);
+                                                    if (e.target.value === 'custom' && !endTimeStr) {
+                                                        const now = new Date();
+                                                        const pad = (n) => n.toString().padStart(2, '0');
+                                                        setEndTimeStr(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
+                                                    }
+                                                }} className="w-full border p-2 mb-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400 font-bold">
+                                                    <option value="permanent">永久公開</option>
+                                                    <option value="today">到今天結束 (23:59)</option>
+                                                    <option value="24h">24 小時後</option>
+                                                    <option value="48h">48 小時後</option>
+                                                    <option value="1w">一週後 (168小時)</option>
+                                                    <option value="custom">自訂時間</option>
+                                                </select>
+                                                {timePreset === 'custom' && (
+                                                    <input type="datetime-local" value={endTimeStr} onChange={e=>setEndTimeStr(e.target.value)} className="w-full border p-2 dark:bg-stone-800 outline-none rounded-lg focus:border-rose-400" />
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                    <div className="md:col-span-2">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <label className="block text-sm font-bold">題目內容 (支援貼上圖片)</label>
+                                            {qaType === 'mcq' && (
+                                                <div className="flex items-center gap-2">
+                                                    <button onClick={() => { setKetcherTarget('q'); setShowKetcherModal(true); }} className="text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-200 px-2 py-1 font-bold rounded shadow-sm border border-emerald-300 flex items-center gap-1 transition-colors">
+                                                        <span className="material-symbols-outlined text-[16px]">draw</span> 畫結構
+                                                    </button>
+                                                    <button onClick={() => setShowParseHelp(!showParseHelp)} className="text-xs text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-white flex items-center gap-1 transition-colors">
+                                                        <span className="material-symbols-outlined text-[16px]">help</span> 格式說明
+                                                    </button>
+                                                    <button onClick={handleAutoParse} className="text-xs bg-amber-100 text-amber-700 hover:bg-amber-200 px-2 py-1 font-bold rounded shadow-sm border border-amber-300 flex items-center gap-1">
+                                                        <span className="material-symbols-outlined text-[16px]">smart_toy</span> 自動解析選項
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
-                                    </>
-                                )}
-                                <div className="md:col-span-2">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <label className="block text-sm font-bold">題目內容 (支援貼上圖片)</label>
-                                        {qaType === 'mcq' && (
-                                            <div className="flex items-center gap-2">
-                                                <button onClick={() => setShowParseHelp(!showParseHelp)} className="text-xs text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-white flex items-center gap-1 transition-colors">
-                                                    <span className="material-symbols-outlined text-[16px]">help</span> 格式說明
-                                                </button>
-                                                <button onClick={handleAutoParse} className="text-xs bg-amber-100 text-amber-700 hover:bg-amber-200 px-2 py-1 font-bold rounded shadow-sm border border-amber-300 flex items-center gap-1">
-                                                    <span className="material-symbols-outlined text-[16px]">smart_toy</span> 自動解析貼上選項
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                    
-                                    {/* ✨ 內嵌的格式說明與一鍵複製面板 */}
-                                    {showParseHelp && qaType === 'mcq' && (
-                                        <div className="mb-2 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200 animate-fade-in shadow-inner">
-                                            <div className="font-black mb-1 flex items-center gap-1">
-                                                <span className="material-symbols-outlined text-[16px]">info</span> 自動解析格式支援
-                                            </div>
-                                            <p className="mb-2 text-xs leading-relaxed">
-                                                系統會自動偵測 <strong>A.</strong>、<strong>B.</strong>、<strong>C.</strong>、<strong>D.</strong> 或 <strong>[A]</strong> 作為選項開頭。<br/>
-                                                選項前方的所有文字會自動被保留為「題目內容」。
-                                            </p>
-                                            <div className="bg-white dark:bg-stone-800 border border-blue-100 dark:border-stone-700 p-2 rounded flex justify-between items-start gap-2 relative">
-                                                <pre className="text-xs text-stone-600 dark:text-stone-300 font-mono whitespace-pre-wrap flex-grow leading-relaxed">
+                                        
+                                        {showParseHelp && qaType === 'mcq' && (
+                                            <div className="mb-2 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200 animate-fade-in shadow-inner">
+                                                <div className="font-black mb-1 flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[16px]">info</span> 自動解析格式支援
+                                                </div>
+                                                <p className="mb-2 text-xs leading-relaxed">
+                                                    系統會自動偵測 <strong>A.</strong>、<strong>B.</strong>、<strong>C.</strong>、<strong>D.</strong> 或 <strong>[A]</strong> 作為選項開頭。<br/>
+                                                    選項前方的所有文字會自動被保留為「題目內容」。
+                                                </p>
+                                                <div className="bg-white dark:bg-stone-800 border border-blue-100 dark:border-stone-700 p-2 rounded flex justify-between items-start gap-2 relative">
+                                                    <pre className="text-xs text-stone-600 dark:text-stone-300 font-mono whitespace-pre-wrap flex-grow leading-relaxed">
 {`請將以下格式完整複製並替換內容：
 
 這是題目的敘述內容，可以換行。
@@ -672,312 +911,400 @@ A. 第一個選項
 B. 第二個選項
 C. 第三個選項
 D. 第四個選項`}
-                                                </pre>
-                                                <button 
-                                                    onClick={() => {
-                                                        navigator.clipboard.writeText("請將以下格式完整複製並替換內容：\n\n這是題目的敘述內容，可以換行。\nA. 第一個選項\nB. 第二個選項\nC. 第三個選項\nD. 第四個選項");
-                                                        if (window.showAlert) window.showAlert("已複製格式模板！");
-                                                    }} 
-                                                    className="text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 px-2 py-1 rounded text-[10px] font-bold shrink-0 flex items-center gap-1 transition-colors"
-                                                >
-                                                    <span className="material-symbols-outlined text-[14px]">content_copy</span> 複製模板
+                                                    </pre>
+                                                    <button 
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText("請將以下格式完整複製並替換內容：\n\n這是題目的敘述內容，可以換行。\nA. 第一個選項\nB. 第二個選項\nC. 第三個選項\nD. 第四個選項");
+                                                            if (window.showAlert) window.showAlert("已複製格式模板！");
+                                                        }} 
+                                                        className="text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 px-2 py-1 rounded text-[10px] font-bold shrink-0 flex items-center gap-1 transition-colors"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[14px]">content_copy</span> 複製模板
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入或貼上包含 A, B, C, D 的完整題目，再點擊上方「自動解析」..." showAlert={showAlert} />
+                                    </div>
+                                    
+                                    {qaType === 'mcq' ? options.map((opt, idx) => (
+                                        <div key={idx} className="md:col-span-2 flex items-center gap-2">
+                                            <input type="radio" checked={correctAns===idx} onChange={()=>setCorrectAns(idx)} className="w-5 h-5 accent-stone-600" />
+                                            <span className="font-bold text-sm shrink-0">設為解答</span>
+                                            <div className="flex-1 flex items-center gap-1">
+                                                <input type="text" placeholder={`選項 ${idx+1}`} value={opt} onChange={e=>{const newO=[...options]; newO[idx]=e.target.value; setOptions(newO);}} className="flex-1 border p-2 dark:bg-stone-800 outline-none focus:border-amber-500 rounded-lg text-sm font-bold" />
+                                                <button onClick={() => { setKetcherTarget(idx); setShowKetcherModal(true); }} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-2 rounded-lg transition-colors flex items-center justify-center shrink-0" title="在此選項插入結構">
+                                                    <span className="material-symbols-outlined text-[18px]">draw</span>
                                                 </button>
                                             </div>
                                         </div>
+                                    )) : (
+                                        <div className="md:col-span-2 flex gap-6 mt-2">
+                                            <label className="font-bold flex items-center gap-2 cursor-pointer"><input type="radio" checked={correctAns===0} onChange={()=>setCorrectAns(0)} className="w-5 h-5 accent-stone-600" /> 正確答案是「(是) True」</label>
+                                            <label className="font-bold flex items-center gap-2 cursor-pointer"><input type="radio" checked={correctAns===1} onChange={()=>setCorrectAns(1)} className="w-5 h-5 accent-stone-600" /> 正確答案是「(否) False」</label>
+                                        </div>
                                     )}
-                                    <ContentEditableEditor value={question} onChange={setQuestion} placeholder="在此輸入或貼上包含 A, B, C, D 的完整題目，再點擊上方「自動解析」..." showAlert={showAlert} />
-                                </div>
-                                
-                                {qaType === 'mcq' ? options.map((opt, idx) => (
-                                    <div key={idx} className="md:col-span-2 flex items-center gap-2">
-                                        <input type="radio" checked={correctAns===idx} onChange={()=>setCorrectAns(idx)} className="w-5 h-5 accent-stone-600600" />
-                                        <span className="font-bold text-sm shrink-0">設為解答</span>
-                                        <input type="text" placeholder={`選項 ${idx+1}`} value={opt} onChange={e=>{const newO=[...options]; newO[idx]=e.target.value; setOptions(newO);}} className="flex-1 border p-2 dark:bg-stone-800" />
+                                    <div className="md:col-span-2">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <label className="block text-sm font-bold">詳解 (支援貼上圖片與富文本)</label>
+                                            <button onClick={() => { setKetcherTarget('exp'); setShowKetcherModal(true); }} className="text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-200 px-2 py-1 font-bold rounded shadow-sm border border-emerald-300 flex items-center gap-1 transition-colors">
+                                                <span className="material-symbols-outlined text-[16px]">draw</span> 畫結構
+                                            </button>
+                                        </div>
+                                        <ContentEditableEditor value={explanation} onChange={setExplanation} placeholder="請輸入或貼上詳解..." showAlert={showAlert} />
                                     </div>
-                                )) : (
-                                    <div className="md:col-span-2 flex gap-6 mt-2">
-                                        <label className="font-bold flex items-center gap-2 cursor-pointer"><input type="radio" checked={correctAns===0} onChange={()=>setCorrectAns(0)} className="w-5 h-5 accent-stone-600600" /> 正確答案是「(是) True」</label>
-                                        <label className="font-bold flex items-center gap-2 cursor-pointer"><input type="radio" checked={correctAns===1} onChange={()=>setCorrectAns(1)} className="w-5 h-5 accent-stone-600600" /> 正確答案是「(否) False」</label>
-                                    </div>
-                                )}
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-bold mb-1">詳解 (支援貼上圖片與富文本)</label>
-                                    <ContentEditableEditor value={explanation} onChange={setExplanation} placeholder="請輸入或貼上詳解..." showAlert={showAlert} />
                                 </div>
+                                <button 
+                                    onClick={handleAddQA} 
+                                    disabled={isPublishing || (!isAdmin && qaList.filter(q => q.creatorUid === user?.uid).length >= 10)} 
+                                    className="bg-stone-800 text-white font-bold py-3.5 px-6 rounded-2xl w-full hover:bg-stone-700 transition-all disabled:bg-gray-300 dark:disabled:bg-stone-700 disabled:text-gray-500 disabled:cursor-not-allowed flex justify-center items-center gap-2 shadow-sm active:scale-[0.98]"
+                                >
+                                    <span className="material-symbols-outlined text-[20px]">
+                                        {(!isAdmin && qaList.filter(q => q.creatorUid === user?.uid).length >= 10) ? 'block' : 'publish'}
+                                    </span> 
+                                    {(!isAdmin && qaList.filter(q => q.creatorUid === user?.uid).length >= 10) ? '發布額度已滿' : '發布快問快答'}
+                                </button>
                             </div>
-                            <button 
-                                onClick={handleAddQA} 
-                                disabled={isPublishing || (!isAdmin && qaList.filter(q => q.creatorUid === user?.uid).length >= 10)} 
-                                className="bg-stone-800 text-white font-bold py-3.5 px-6 rounded-2xl w-full hover:bg-stone-700 transition-all disabled:bg-gray-300 dark:disabled:bg-stone-700 disabled:text-gray-500 disabled:cursor-not-allowed flex justify-center items-center gap-2 shadow-sm active:scale-[0.98]"
-                            >
-                                <span className="material-symbols-outlined text-[20px]">
-                                    {(!isAdmin && qaList.filter(q => q.creatorUid === user?.uid).length >= 10) ? 'block' : 'publish'}
-                                </span> 
-                                {(!isAdmin && qaList.filter(q => q.creatorUid === user?.uid).length >= 10) ? '發布額度已滿' : '發布快問快答'}
+                        )}
+                    </div>
+                )}
+
+                {/* ✨ 科目篩選、隱藏已作答與匯出控制列 */}
+                {!targetQaId && !activeQA && qaList.length > 0 && (
+                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-white dark:bg-stone-800 p-3 rounded-xl shadow-sm mb-4 gap-3 border border-stone-200 dark:border-stone-700 overflow-hidden">
+                        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 w-full xl:w-auto">
+                            <span className="font-black text-stone-500 text-sm whitespace-nowrap">分類：</span>
+                            {uniqueSubjects.map(sub => (
+                                <button key={sub} onClick={() => setSelectedSubject(sub)} className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors border shadow-sm ${selectedSubject === sub ? 'bg-rose-500 text-white border-rose-600' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-200 dark:bg-stone-700 dark:text-stone-300 dark:border-stone-600 dark:hover:bg-stone-600'}`}>
+                                    {sub}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex items-center gap-2 ml-auto shrink-0 flex-wrap">
+                            <label className={`flex items-center gap-1.5 cursor-pointer text-xs font-bold px-3 py-1.5 rounded-lg transition-colors border ${showSavedOnly ? 'bg-amber-100 border-amber-300 text-amber-800 dark:bg-amber-900/40 dark:border-amber-600 dark:text-amber-400' : 'text-stone-600 dark:text-stone-300 bg-stone-100 dark:bg-stone-700 hover:bg-stone-200 dark:hover:bg-stone-600 border-stone-200 dark:border-stone-600'}`}>
+                                <input type="checkbox" checked={showSavedOnly} onChange={() => setShowSavedOnly(!showSavedOnly)} className="w-3.5 h-3.5 accent-amber-500" />
+                                只看收錄
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-stone-600 dark:text-stone-300 bg-stone-100 dark:bg-stone-700 hover:bg-stone-200 dark:hover:bg-stone-600 px-3 py-1.5 rounded-lg transition-colors border border-stone-200 dark:border-stone-600">
+                                <input type="checkbox" checked={hideCompleted} onChange={() => setHideCompleted(!hideCompleted)} className="w-3.5 h-3.5 accent-emerald-500" />
+                                隱藏已作答
+                            </label>
+                            {exportMode && (
+                                <>
+                                    <button onClick={handleExportHtml} className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-[14px]">download</span> 下載檔 ({selectedForExport.length})
+                                    </button>
+                                    <button onClick={handleExportToMyBank} disabled={isExportingCloud} className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-1 disabled:opacity-50">
+                                        {isExportingCloud ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[14px]">cloud_upload</span>} 
+                                        {isExportingCloud ? '匯入中...' : `轉入題庫 (${selectedForExport.length})`}
+                                    </button>
+                                </>
+                            )}
+                            <button onClick={() => { setExportMode(!exportMode); setSelectedForExport([]); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center gap-1 border ${exportMode ? 'bg-stone-200 text-stone-700 border-stone-300 dark:bg-stone-700 dark:text-stone-200 dark:border-stone-600' : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800'}`}>
+                                <span className="material-symbols-outlined text-[14px]">{exportMode ? 'close' : 'checklist'}</span> {exportMode ? '取消匯出' : '批次處理'}
                             </button>
                         </div>
-                    )}
-                </div>
-            )}
+                    </div>
+                )}
 
-           {!activeQA ? (
-                <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {loading && qaList.length === 0 ? (
-                            <div className="col-span-full py-12 text-center bg-[#FCFBF7]/50 border border-stone-600200">
-                                <div className="w-10 h-10 border-4 border-stone-600200 border-t-stone-600500 rounded-full animate-spin mx-auto mb-3"></div>
-                                <div className="text-stone-600600 font-bold animate-pulse">試題讀取中...</div>
+                {!activeQA ? (
+                    <>
+                        <div className="flex flex-col gap-3">
+                            {loading && qaList.length === 0 ? (
+                                <div className="py-12 text-center bg-[#FCFBF7]/50 border border-stone-200 dark:border-stone-700 rounded-2xl">
+                                    <div className="w-10 h-10 border-4 border-stone-200 border-t-stone-500 rounded-full animate-spin mx-auto mb-3"></div>
+                                    <div className="text-stone-600 font-bold animate-pulse">試題讀取中...</div>
+                                </div>
+                            ) : filteredQaList.length === 0 ? (
+                                <div className="text-stone-500 font-bold text-center py-10 bg-white dark:bg-stone-800 rounded-2xl border border-dashed border-stone-300 dark:border-stone-600">目前沒有符合此分類的快問快答！</div> 
+                            ) : (
+                                filteredQaList.map(qa => {
+                                    const rec = records[qa.id];
+                                    const isCompleted = !!rec;
+                                    const isSaved = savedQAs.includes(qa.id);
+                                    const avgDiff = qa.ratingCount ? (qa.totalDifficulty / qa.ratingCount).toFixed(1) : '-';
+                                    const avgStar = qa.ratingCount ? (qa.totalStars / qa.ratingCount).toFixed(1) : '-';
+
+                                    // ✨ 單行緊湊式極簡 UI，並賦予整行點擊事件
+                                    return (
+                                        <div 
+                                            key={qa.id} 
+                                            onClick={async () => { 
+                                                if (exportMode) {
+                                                    setSelectedForExport(prev => prev.includes(qa.id) ? prev.filter(id=>id!==qa.id) : [...prev, qa.id]);
+                                                    return;
+                                                }
+                                                setJumpingQaId(qa.id);
+                                                try {
+                                                    const docSnap = await window.db.collection('fastQA').doc(qa.id).get();
+                                                    if (docSnap.exists) setActiveQA({ id: docSnap.id, ...docSnap.data() });
+                                                    else setActiveQA(qa);
+                                                } catch (e) { console.warn(e); setActiveQA(qa); }
+                                                setSelectedAns(null); 
+                                                setShowResult(!!rec); 
+                                                setJumpingQaId(null);
+                                            }}
+                                            className={`cursor-pointer p-2.5 sm:p-3 border flex flex-col sm:flex-row items-start sm:items-center gap-3 rounded-xl shadow-sm hover:shadow-md transition-all relative overflow-hidden ${isCompleted ? 'bg-gray-50 dark:bg-stone-900 border-gray-200 dark:border-stone-700 opacity-90' : 'bg-white dark:bg-stone-800 border-rose-200 dark:border-rose-900/50 hover:-translate-y-0.5'}`}
+                                        >
+                                            
+                                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                                                {/* ✨ 匯出核取方塊 */}
+                                                {exportMode && (
+                                                    <input type="checkbox" checked={selectedForExport.includes(qa.id)} onChange={() => {}} className="w-5 h-5 accent-emerald-500 cursor-pointer shrink-0" />
+                                                )}
+                                                
+                                                <span className={`shrink-0 text-[11px] sm:text-xs px-2 py-1 font-bold rounded-md shadow-sm border ${isCompleted ? 'bg-gray-200 text-gray-500 border-gray-300 dark:bg-stone-800 dark:text-gray-400 dark:border-stone-600' : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800'}`}>
+                                                    {qa.subject}
+                                                </span>
+                                                <span className="text-[10px] sm:text-xs text-gray-400 font-bold shrink-0 hidden md:block">
+                                                    {qa.createdAt?.toDate ? qa.createdAt.toDate().toLocaleDateString('zh-TW', {month:'numeric', day:'numeric'}) : ''}
+                                                </span>
+                                                
+                                                <div className="flex items-center gap-1 ml-auto sm:hidden">
+                                                     <span className="font-black text-xs text-amber-600 flex items-center"><span className="material-symbols-outlined text-[14px]">diamond</span>{qa.reward}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* ✨ 題目內容 (強制單行截斷)，並將 <br> 等轉為空白以防斷句奇怪 */}
+                                            <p className={`text-sm flex-1 truncate font-bold w-full sm:w-auto ${isCompleted ? 'text-gray-500 dark:text-gray-400' : 'text-stone-800 dark:text-white'}`} title={qa.question.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').trim()}>
+                                                {qa.question.replace(/<br\s*\/?>/gi, ' ').replace(/<img[^>]*>/gi, ' [圖片] ').replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').trim()}
+                                            </p>
+
+                                            {/* 右側資訊與按鈕 */}
+                                            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end shrink-0 mt-2 sm:mt-0">
+                                                <div className="hidden lg:flex text-xs items-center gap-1.5 bg-stone-50 dark:bg-stone-900 px-2 py-1 rounded-md border border-stone-100 dark:border-stone-800 shadow-inner">
+                                                    <span className="text-amber-500 font-bold flex items-center gap-0.5" title="平均星級">⭐ {avgStar}</span>
+                                                    <span className="text-rose-500 font-bold flex items-center gap-0.5" title="平均難度">🔥 {avgDiff}</span>
+                                                </div>
+
+                                                <span className="hidden sm:flex font-black text-sm text-amber-600 dark:text-amber-400 items-center gap-0.5 shrink-0 w-12 justify-center" title="獎勵鑽石">
+                                                    <span className="material-symbols-outlined text-[14px]">diamond</span>{qa.reward}
+                                                </span>
+
+                                                <span className={`font-bold text-xs flex items-center justify-center shrink-0 w-[60px] ${!user ? 'text-gray-400' : rec ? (rec.isCorrect ? 'text-emerald-600' : 'text-red-500') : 'text-rose-500'}`}>
+                                                    {rec ? (rec.isCorrect ? '✅ 答對' : '❌ 答錯') : '⏳ 未答'}
+                                                </span>
+
+                                                <button onClick={(e) => toggleBookmark(e, qa.id)} className={`transition-transform hover:scale-110 shrink-0 ${isSaved ? 'text-amber-500' : 'text-gray-300 hover:text-amber-400'}`} title="收錄">
+                                                    <span className="material-symbols-outlined text-[20px]" style={{fontVariationSettings: isSaved ? "'FILL' 1" : "'FILL' 0"}} >bookmark</span>
+                                                </button>
+
+                                                <div className="flex gap-1.5 shrink-0">
+                                                    {isAdmin && showAdminMode && (
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteQA(qa.id); }} className="text-red-500 text-[10px] border border-red-500 px-1.5 rounded-lg hover:bg-red-50 transition-colors font-bold flex items-center justify-center w-[30px]" title="刪除"><span className="material-symbols-outlined text-[14px]">delete</span></button>
+                                                    )}
+                                                    <button 
+                                                        disabled={jumpingQaId === qa.id}
+                                                        className={`pointer-events-none px-3 py-1.5 text-xs font-black rounded-lg flex items-center gap-1 shadow-sm transition-colors disabled:opacity-70 w-[70px] justify-center ${(user && rec) ? 'bg-white text-stone-600 border border-stone-200 dark:bg-stone-800 dark:text-stone-300 dark:border-stone-600' : 'bg-rose-500 text-white border border-rose-600'}`}
+                                                    >
+                                                        {jumpingQaId === qa.id ? <div className={`w-3.5 h-3.5 border-2 rounded-full animate-spin ${(user && rec) ? 'border-stone-400 border-t-transparent' : 'border-white border-t-transparent'}`}></div> : (user && rec ? '紀錄' : '挑戰')}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                        
+                        {/* ✨ 載入增加至 20 題 */}
+                        {!targetQaId && qaList.length >= qaLimit && !exportMode && (
+                            <div className="flex justify-center mt-6">
+                                <button 
+                                    onClick={() => setQaLimit(prev => prev + 20)} 
+                                    className="bg-white border border-stone-200 dark:border-stone-700 dark:bg-stone-800 text-stone-600 dark:text-stone-300 px-6 py-2 rounded-xl font-bold shadow-sm hover:bg-stone-50 dark:hover:bg-stone-700 transition-colors flex items-center gap-1"
+                                >
+                                    <span className="material-symbols-outlined text-[20px]">expand_more</span> 載入更多題目...
+                                </button>
                             </div>
-                        ) : qaList.length === 0 ? (
-                            <div className="text-stone-600500 font-bold col-span-full text-center py-6">目前沒有開放的快問快答，請晚點再來！</div> 
-                        ) : (
-                            qaList.map(qa => {
-                                const rec = records[qa.id];
-                                const isCompleted = !!rec; // 判斷是否已作答
+                        )}
+                    </>
+                ) : (
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 border-2 border-stone-200 dark:border-stone-700 rounded-3xl animate-fade-in shadow-sm">
+                        <div className="flex justify-between items-center mb-4">
+                            {!targetQaId ? <button onClick={() => { setActiveQA(null); if(onClose) onClose(); }} className="text-gray-500 font-bold hover:text-stone-800 dark:hover:text-white flex items-center gap-1 bg-stone-100 dark:bg-stone-700 px-3 py-1.5 rounded-xl transition-colors"><span className="material-symbols-outlined text-[18px]">arrow_back</span>返回列表</button> : <div></div>}
+                            <div className="flex items-center gap-2">
+                                <button onClick={(e) => toggleBookmark(e, activeQA.id)} className={`bg-stone-100 dark:bg-stone-700 hover:bg-stone-200 dark:hover:bg-stone-600 px-3 py-1.5 text-sm font-bold rounded-xl flex items-center gap-1 transition-colors ${savedQAs.includes(activeQA.id) ? 'text-amber-600 dark:text-amber-400' : 'text-stone-600 dark:text-stone-300'}`}>
+                                    <span className="material-symbols-outlined text-[18px]" style={{fontVariationSettings: savedQAs.includes(activeQA.id) ? "'FILL' 1" : "'FILL' 0"}}>bookmark</span> {savedQAs.includes(activeQA.id) ? '已收錄' : '收錄此題'}
+                                </button>
+                                <button onClick={handleShare} className="text-stone-600 dark:text-stone-300 bg-stone-100 dark:bg-stone-700 hover:bg-stone-200 dark:hover:bg-stone-600 px-3 py-1.5 text-sm font-bold rounded-xl flex items-center gap-1 transition-colors"><span className="material-symbols-outlined text-[18px]">share</span> 分享此題</button>
+                            </div>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-2 mb-6 border-b pb-4 dark:border-stone-700 items-center">
+                            <span className="bg-stone-100 dark:bg-stone-700 text-stone-800 dark:text-stone-200 text-sm px-3 py-1 font-bold rounded-lg border border-stone-200 dark:border-stone-600 shadow-sm">{activeQA.subject}</span>
+                            <span className="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-gray-800 dark:text-gray-300 text-sm px-3 py-1 font-bold rounded-lg shadow-sm">難度: {activeQA.difficulty}</span>
+                            {activeQA.creatorUid && (
+                                <span className="flex items-center gap-1.5 ml-2 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 px-2.5 py-1 rounded-lg shadow-sm">
+                                    <span className="text-xs font-bold text-rose-800 dark:text-rose-300">出題者: {activeQA.creatorName}</span>
+                                </span>
+                            )}
+                            <span className="text-amber-600 dark:text-amber-400 font-black text-lg ml-auto flex items-center gap-1"><span className="material-symbols-outlined text-[24px]">diamond</span> {activeQA.reward} 鑽石</span>
+                        </div>
+                        
+                        <div className="text-lg font-bold mb-6 bg-white dark:bg-stone-800 text-stone-800 dark:text-white p-5 md:p-8 border border-gray-200 dark:border-stone-700 rounded-2xl shadow-sm preview-rich-text leading-relaxed" dangerouslySetInnerHTML={{ __html: window.parseSmilesToHtml ? window.parseSmilesToHtml(activeQA.question) : activeQA.question }}></div>
+                        
+                        <div className="space-y-3 mb-6">
+                            {activeQA.options.map((opt, idx) => {
+                                const isSelected = (selectedAns ?? records[activeQA.id]?.selectedAns) === idx;
+                                const isCorrectOpt = activeQA.correctAns === idx;
+                                
+                                const actualTotal = activeQA.answersCount ? Object.values(activeQA.answersCount).reduce((sum, val) => sum + (Number(val) || 0), 0) : 0;
+                                const total = actualTotal > 0 ? actualTotal : (activeQA.totalAnswers || 0);
+                                const count = (activeQA.answersCount && activeQA.answersCount[idx]) || 0;
+                                const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+                                
+                                let btnClass = "w-full text-left p-4 border-2 font-bold transition-all relative z-0 flex justify-between items-center rounded-2xl overflow-hidden ";
+                                let barColor = "bg-gray-200 dark:bg-stone-700";
+                                
+                                if (showResult && user) {
+                                    if (isCorrectOpt) { btnClass += "bg-emerald-50 border-emerald-500 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100 border-[3px] scale-[1.01] shadow-sm "; barColor = "bg-emerald-400 dark:bg-emerald-600"; }
+                                    else if (isSelected) { btnClass += "bg-rose-50 border-rose-500 text-rose-900 dark:bg-rose-900/40 dark:text-rose-100 border-[3px] scale-[1.01] shadow-sm "; barColor = "bg-rose-400 dark:bg-rose-600"; }
+                                    else { btnClass += "bg-gray-50 border-stone-200 text-gray-500 opacity-60 dark:bg-stone-800 dark:border-stone-700 "; }
+                                } else {
+                                    btnClass += isSelected ? "border-rose-500 bg-rose-50 text-rose-900 shadow-lg scale-[1.02] border-[3px] dark:bg-rose-900/50 dark:text-rose-100 " : "border-gray-200 bg-white hover:bg-gray-50 dark:bg-stone-800 dark:border-stone-600 dark:text-white hover:border-rose-300 dark:hover:border-rose-500 ";
+                                }
 
                                 return (
-                                    <div key={qa.id} className={`p-4 border flex flex-col rounded-2xl shadow-sm hover:shadow-md transition-all relative overflow-hidden ${isCompleted ? 'bg-gray-100 dark:bg-stone-900 border-gray-300 dark:border-stone-700 opacity-80' : 'bg-[#FCFBF7] dark:bg-stone-800 border-rose-200 dark:border-rose-900/50 hover:-translate-y-1'}`}>
+                                    <button key={idx} disabled={showResult || submitting} onClick={() => setSelectedAns(idx)} className={btnClass}>
+                                        {showResult && user && <div className={`absolute left-0 top-0 bottom-0 opacity-40 dark:opacity-50 z-[-1] transition-all duration-1000 ${barColor}`} style={{ width: `${percent}%` }}></div>}
+                                        <span className="flex items-center"><span className="mr-3 font-black text-lg opacity-60 shrink-0">{activeQA.qaType === 'tf' ? '' : ['A','B','C','D'][idx]+'.'}</span> <span dangerouslySetInnerHTML={{__html: window.parseSmilesToHtml ? window.parseSmilesToHtml(opt) : opt}}></span></span>
+                                        <div className="flex gap-3 items-center shrink-0 ml-2">
+                                            {showResult && user && <span className="text-sm font-bold opacity-80 bg-white/50 dark:bg-black/30 px-2 py-0.5 rounded-lg">{percent}% ({count}人)</span>}
+                                            {showResult && user && isCorrectOpt && <span className="material-symbols-outlined text-[22px] text-emerald-600 dark:text-emerald-400">check_circle</span>}
+                                            {showResult && user && isSelected && !isCorrectOpt && <span className="material-symbols-outlined text-[22px] text-rose-500 dark:text-rose-400">cancel</span>}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {!showResult ? (
+                            <button onClick={handleSubmitAns} disabled={submitting} className="w-full bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-900 font-black py-4 text-lg rounded-2xl shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex justify-center items-center gap-2">
+                                {submitting ? <><div className="w-5 h-5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin"></div> 處理中...</> : <><span className="material-symbols-outlined text-[24px]">send</span> 確認送出</>}
+                            </button>
+                        ) : (
+                            <div className="mt-6 animate-fade-in">
+                                {user ? (
+                                    <>
+                                        <div className="p-5 md:p-8 bg-[#FCFBF7] dark:bg-stone-800 border border-amber-200 dark:border-stone-700 shadow-sm rounded-2xl">
+                                            <h4 className="font-black mb-4 flex justify-between items-center pb-4 border-b border-amber-100 dark:border-stone-700">
+                                                <span className="text-amber-700 dark:text-amber-400 flex items-center gap-2 text-xl"><span className="material-symbols-outlined text-[24px]">lightbulb</span> 試題詳解</span>
+                                                {activeQA.reward > 0 && <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 text-sm bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1 rounded-full"><span className="material-symbols-outlined text-[16px]">celebration</span> 快問快答結算完畢</span>}
+                                            </h4>
+                                            <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap preview-rich-text leading-relaxed text-lg" dangerouslySetInnerHTML={{ __html: window.parseSmilesToHtml ? window.parseSmilesToHtml(activeQA.explanation) : activeQA.explanation }}></div>
+                                        </div>
                                         
-                                        {/* ✨ 已作答的水印標籤 */}
-                                        {isCompleted && (
-                                            <div className="absolute top-2 right-2 flex items-center justify-center pointer-events-none">
-                                                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${rec.isCorrect ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 border border-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 border border-red-300'}`}>
-                                                    {rec.isCorrect ? 'COMPLETED' : 'FAILED'}
-                                                </span>
+                                        {/* ✨ 星級與難度評分區塊 (完全移除 Material Icons 改用 Emoji) */}
+                                        {!records[activeQA.id]?.rated && (
+                                            <div className="mt-6 p-5 sm:p-6 bg-amber-50 dark:bg-amber-900/10 rounded-2xl border border-amber-200 dark:border-amber-800 shadow-inner flex flex-col items-center sm:items-start animate-fade-in">
+                                                <h4 className="font-black text-amber-800 dark:text-amber-400 mb-4 flex items-center gap-1 text-lg"><span className="material-symbols-outlined">reviews</span> 幫這道題目評分！</h4>
+                                                <div className="flex flex-col sm:flex-row gap-6 w-full mb-4">
+                                                    <div className="flex-1 flex flex-col sm:flex-row gap-3 items-center bg-white dark:bg-stone-800 p-3 rounded-xl shadow-sm border border-stone-100 dark:border-stone-700">
+                                                        <span className="text-sm font-bold text-stone-500 dark:text-stone-400 shrink-0">綜合評價：</span>
+                                                        <div className="flex gap-1">
+                                                            {[1,2,3,4,5].map(s => (
+                                                                <button key={s} onClick={() => setMyRating({...myRating, stars: s})} className={`text-2xl sm:text-3xl transition-transform hover:scale-110 active:scale-95 ${myRating.stars >= s ? 'opacity-100' : 'grayscale opacity-30 dark:opacity-40'}`}>⭐</button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex-1 flex flex-col sm:flex-row gap-3 items-center bg-white dark:bg-stone-800 p-3 rounded-xl shadow-sm border border-stone-100 dark:border-stone-700">
+                                                        <span className="text-sm font-bold text-stone-500 dark:text-stone-400 shrink-0">難度評定：</span>
+                                                        <div className="flex gap-1">
+                                                            {[1,2,3,4,5].map(d => (
+                                                                <button key={d} onClick={() => setMyRating({...myRating, difficulty: d})} className={`text-2xl sm:text-3xl transition-transform hover:scale-110 active:scale-95 ${myRating.difficulty >= d ? 'opacity-100' : 'grayscale opacity-30 dark:opacity-40'}`}>🔥</button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <button onClick={handleRate} disabled={!myRating.stars || !myRating.difficulty} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-black py-3 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-colors active:scale-[0.98]">
+                                                    確認送出評分
+                                                </button>
                                             </div>
                                         )}
 
-                                        <div className="flex justify-between items-start mb-3">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-xs px-2.5 py-1 font-bold rounded-full shadow-sm border ${isCompleted ? 'bg-gray-200 text-gray-500 border-gray-300 dark:bg-stone-800 dark:text-gray-400 dark:border-stone-600' : 'bg-stone-100 dark:bg-stone-700 text-stone-800 dark:text-stone-200 border-stone-200 dark:border-stone-600'}`}>
-                                                    {qa.subject}
-                                                </span>
-                                                {qa.creatorUid && (
-                                                    <span className={`flex items-center gap-1 border px-1.5 py-0.5 rounded-full shadow-sm ${isCompleted ? 'bg-gray-200 text-gray-500 border-gray-300 dark:bg-stone-800 dark:text-gray-400 dark:border-stone-600' : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-600'}`} title={`出題者：${qa.creatorName}`}>
-                                                        <span className="text-[10px] font-bold max-w-[60px] truncate">{qa.creatorName}</span>
-                                                    </span>
-                                                )}
-                                            </div>
+                                        {activeQA.creatorUid && activeQA.creatorUid !== user?.uid && (
+                                            <button onClick={() => setShowFeedbackModal(true)} className="mt-4 w-full bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 font-bold py-3 rounded-2xl text-sm flex justify-center items-center gap-2 hover:bg-stone-50 dark:hover:bg-stone-700 transition-colors shadow-sm">
+                                                <span className="material-symbols-outlined text-[18px]">feedback</span> 發現錯誤或有疑問？傳送回饋給作者
+                                            </button>
+                                        )}
+
+                                        <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-200 dark:border-stone-700">
+                                            <h4 className="font-black mb-4 text-lg text-stone-800 dark:text-white flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-indigo-500">forum</span> 討論區 ({comments.length})
+                                            </h4>
                                             
-                                            {/* 未作答才顯示鑽石 (或顯示暗色) */}
-                                            <span className={`font-bold text-sm flex items-center gap-1 ${isCompleted ? 'text-gray-400 dark:text-gray-500' : 'text-amber-600 dark:text-amber-400'}`}>
-                                                <span className="material-symbols-outlined text-[16px]">diamond</span> {qa.reward}
-                                            </span>
-                                        </div>
-                                        
-                                        <p className={`text-sm mb-4 flex-1 line-clamp-3 font-medium ${isCompleted ? 'text-gray-500 dark:text-gray-400' : 'text-stone-800 dark:text-white'}`}>
-                                            {qa.question.replace(/<img[^>]*>/gi, '(圖片)').replace(/<[^>]+>/g, '').trim()}
-                                        </p>
-                                        
-                                        <div className={`flex items-center justify-between pt-3 border-t ${isCompleted ? 'border-gray-300 dark:border-stone-700' : 'border-stone-200 dark:border-stone-600'}`}>
-                                            <span className={`font-bold text-sm flex items-center gap-1 ${!user ? 'text-gray-400' : rec ? (rec.isCorrect ? 'text-emerald-600 dark:text-emerald-500' : 'text-red-500 dark:text-red-400') : 'text-rose-500 dark:text-rose-400'}`}>
-                                                {!user ? '訪客未登入' : rec ? (rec.isCorrect ? <><span className="material-symbols-outlined text-[16px]">check_circle</span>已答對</> : <><span className="material-symbols-outlined text-[16px]">cancel</span>答錯了</>) : <><span className="material-symbols-outlined text-[16px] animate-pulse">flash_on</span>尚未作答</>}
-                                            </span>
-                                            <div className="flex gap-2">
-                                                {isAdmin && showAdminMode && (
-                                                    <>
-                                                        <button onClick={() => { navigator.clipboard.writeText(qa.id); showAlert(`已複製題目ID：${qa.id}`); }} className="text-amber-500 text-xs border border-amber-500 px-1 rounded hover:bg-amber-50 transition-colors">複製ID</button>
-                                                        <button onClick={() => handleDeleteQA(qa.id)} className="text-red-500 text-xs border border-red-500 px-1 rounded hover:bg-red-50 transition-colors">刪除</button>
-                                                    </>
+                                            <div className="space-y-4 mb-6 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                                                {comments.length === 0 ? (
+                                                    <p className="text-center text-gray-400 dark:text-gray-500 font-bold py-4">目前還沒有留言，來搶頭香吧！</p>
+                                                ) : (
+                                                    comments.map(c => (
+                                                        <div key={c.id} className="bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 p-4 rounded-2xl shadow-sm">
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-black text-sm text-stone-800 dark:text-gray-200">{c.creatorName}</span>
+                                                                    {c.creatorUid === activeQA.creatorUid && <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded font-bold">作者</span>}
+                                                                </div>
+                                                                <span className="text-xs text-gray-400">{c.createdAt?.toDate ? c.createdAt.toDate().toLocaleString('zh-TW', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '剛剛'}</span>
+                                                            </div>
+                                                            {c.replyToName && (
+                                                                <div className="text-xs bg-gray-50 dark:bg-stone-700/50 text-gray-500 dark:text-gray-400 p-1.5 rounded mb-2 inline-block border border-gray-100 dark:border-stone-600">
+                                                                    回覆 @{c.replyToName}
+                                                                </div>
+                                                            )}
+                                                            <p className="text-sm text-stone-700 dark:text-gray-300 whitespace-pre-wrap">{c.text}</p>
+                                                            <div className="flex justify-end gap-4 mt-2">
+                                                                <button onClick={() => setReplyTo({ id: c.id, name: c.creatorName, uid: c.creatorUid })} className="text-xs text-gray-500 hover:text-indigo-500 font-bold flex items-center gap-1 transition-colors">
+                                                                    <span className="material-symbols-outlined text-[14px]">reply</span> 回覆
+                                                                </button>
+                                                                <button onClick={() => handleLikeComment(c.id, c.likes || [])} className={`text-xs font-bold flex items-center gap-1 transition-colors ${(c.likes || []).includes(user?.uid) ? 'text-rose-500' : 'text-gray-500 hover:text-rose-500'}`}>
+                                                                    <span className="material-symbols-outlined text-[14px]">{(c.likes || []).includes(user?.uid) ? 'favorite' : 'favorite_border'}</span> {(c.likes || []).length > 0 ? (c.likes || []).length : '讚'}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))
                                                 )}
-                                                <button 
-                                                    disabled={jumpingQaId === qa.id}
-                                                    onClick={async () => { 
-                                                        setJumpingQaId(qa.id);
-                                                        try {
-                                                            const docSnap = await window.db.collection('fastQA').doc(qa.id).get();
-                                                            if (docSnap.exists) {
-                                                                setActiveQA({ id: docSnap.id, ...docSnap.data() });
-                                                            } else {
-                                                                setActiveQA(qa);
-                                                            }
-                                                        } catch (e) {
-                                                            console.warn(e);
-                                                            setActiveQA(qa);
-                                                        }
-                                                        setSelectedAns(null); 
-                                                        setShowResult(!!rec); 
-                                                        setJumpingQaId(null);
-                                                    }} 
-                                                    className={`px-4 py-1.5 text-sm font-bold rounded-full flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-70 ${(user && rec) ? 'bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-700 dark:text-stone-200 dark:hover:bg-stone-600 border border-stone-200 dark:border-stone-600' : 'bg-rose-500 text-white hover:bg-rose-600'}`}
-                                                >
-                                                    {jumpingQaId === qa.id ? <div className={`w-3.5 h-3.5 border-2 rounded-full animate-spin ${(user && rec) ? 'border-stone-400 border-t-transparent' : 'border-white border-t-transparent'}`}></div> : <span className="material-symbols-outlined text-[16px]">{(user && rec) ? 'visibility' : 'sports_esports'}</span>}
-                                                    {(user && rec) ? '查看紀錄' : '立即挑戰'}
-                                                </button>
                                             </div>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
-                    </div>
-                    
-                    {!targetQaId && qaList.length >= qaLimit && (
-                        <div className="flex justify-center mt-6">
-                            <button 
-                                onClick={() => setQaLimit(prev => prev + 5)} 
-                                className="bg-[#FCFBF7] border-2 border-stone-200 dark:border-stone-700 dark:bg-stone-800 text-stone-600 dark:text-stone-300 px-6 py-2 rounded-xl font-bold shadow-sm hover:bg-stone-50 dark:hover:bg-stone-700 transition-colors flex items-center gap-1"
-                            >
-                                <span className="material-symbols-outlined text-[20px]">arrow_downward</span> 載入更早的題目...
-                            </button>
-                        </div>
-                    )}
-                </>
-            ) : (
-                <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 border-2 border-stone-200 dark:border-stone-700 rounded-3xl animate-fade-in shadow-sm">
-                    <div className="flex justify-between mb-4">
-                        {!targetQaId ? <button onClick={() => { setActiveQA(null); if(onClose) onClose(); }} className="text-gray-500 font-bold hover:text-stone-800 dark:hover:text-white flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">arrow_back</span>返回列表</button> : <div></div>}
-                        <button onClick={handleShare} className="text-stone-600 dark:text-stone-300 bg-stone-100 dark:bg-stone-700 hover:bg-stone-200 dark:hover:bg-stone-600 px-3 py-1.5 text-sm font-bold rounded-2xl flex items-center gap-1 transition-colors"><span className="material-symbols-outlined text-[18px]">share</span> 分享此題</button>
-                    </div>
-                    
-                    <div className="flex flex-wrap gap-2 mb-6 border-b pb-4 dark:border-stone-700 items-center">
-                        <span className="bg-stone-100 dark:bg-stone-700 text-stone-800 dark:text-stone-200 text-sm px-3 py-1 font-bold rounded-full">{activeQA.subject}</span>
-                        <span className="bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-gray-800 dark:text-gray-300 text-sm px-3 py-1 font-bold rounded-full">{activeQA.difficulty}</span>
-                        {activeQA.creatorUid && (
-                            <span className="flex items-center gap-1.5 ml-2 bg-white dark:bg-stone-700 border border-stone-200 dark:border-stone-600 px-2 py-1 rounded-full shadow-sm">
-                                <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{activeQA.creatorName}</span>
-                            </span>
-                        )}
-                        <span className="text-amber-600 dark:text-amber-400 font-black text-lg ml-auto flex items-center gap-1"><span className="material-symbols-outlined text-[24px]">diamond</span> {activeQA.reward} 鑽石</span>
-                    </div>
-                    
-<div className="text-lg font-bold mb-6 bg-white dark:bg-stone-800 text-stone-800 dark:text-white p-5 border border-gray-200 dark:border-stone-700 rounded-xl shadow-sm preview-rich-text" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(activeQA.question) }}></div>
-                    
-                    <div className="space-y-3 mb-6">
-                        {activeQA.options.map((opt, idx) => {
-                            const isSelected = (selectedAns ?? records[activeQA.id]?.selectedAns) === idx;
-                            const isCorrectOpt = activeQA.correctAns === idx;
-                            
-                            const actualTotal = activeQA.answersCount ? Object.values(activeQA.answersCount).reduce((sum, val) => sum + (Number(val) || 0), 0) : 0;
-                            const total = actualTotal > 0 ? actualTotal : (activeQA.totalAnswers || 0);
-                            const count = (activeQA.answersCount && activeQA.answersCount[idx]) || 0;
-                            const percent = total > 0 ? Math.round((count / total) * 100) : 0;
-                            
-                            let btnClass = "w-full text-left p-4 border-2 font-bold transition-all relative z-0 flex justify-between items-center rounded-xl overflow-hidden ";
-                            let barColor = "bg-gray-200 dark:bg-stone-700";
-                            
-                            if (showResult && user) {
-                                if (isCorrectOpt) { btnClass += "bg-emerald-50 border-emerald-500 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100 border-[3px] scale-[1.01] shadow-sm "; barColor = "bg-emerald-400 dark:bg-emerald-600"; }
-                                else if (isSelected) { btnClass += "bg-rose-50 border-rose-500 text-rose-900 dark:bg-rose-900/40 dark:text-rose-100 border-[3px] scale-[1.01] shadow-sm "; barColor = "bg-rose-400 dark:bg-rose-600"; }
-                                else { btnClass += "bg-gray-50 border-stone-200 text-gray-500 opacity-60 dark:bg-stone-800 dark:border-stone-700 "; }
-                            } else {
-                                btnClass += isSelected ? "border-rose-500 bg-rose-50 text-rose-900 shadow-lg scale-[1.02] border-[3px] dark:bg-rose-900/50 dark:text-rose-100 " : "border-gray-200 bg-white hover:bg-gray-50 dark:bg-stone-800 dark:border-stone-600 dark:text-white hover:border-rose-300 dark:hover:border-rose-500 ";
-                            }
 
-                            return (
-                                <button key={idx} disabled={showResult || submitting} onClick={() => setSelectedAns(idx)} className={btnClass}>
-                                    {showResult && user && <div className={`absolute left-0 top-0 bottom-0 opacity-40 dark:opacity-50 z-[-1] transition-all duration-1000 ${barColor}`} style={{ width: `${percent}%` }}></div>}
-                                    <span><span className="mr-3 font-black opacity-60">{activeQA.qaType === 'tf' ? '' : ['A','B','C','D'][idx]+'.'}</span> {opt}</span>
-                                    <div className="flex gap-3 items-center">
-                                        {showResult && user && <span className="text-sm font-bold opacity-80 bg-white/50 dark:bg-black/30 px-2 py-0.5 rounded-lg">{percent}% ({count}人)</span>}
-                                        {showResult && user && isCorrectOpt && <span className="material-symbols-outlined text-[22px] text-emerald-600 dark:text-emerald-400">check_circle</span>}
-                                        {showResult && user && isSelected && !isCorrectOpt && <span className="material-symbols-outlined text-[22px] text-rose-500 dark:text-rose-400">cancel</span>}
-                                    </div>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {!showResult ? (
-                        <button onClick={handleSubmitAns} disabled={submitting} className="w-full bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-900 font-black py-4 text-lg rounded-2xl shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex justify-center items-center gap-2">
-                            {submitting ? <><div className="w-5 h-5 border-2 border-stone-400 border-t-transparent rounded-full animate-spin"></div> 處理中...</> : <><span className="material-symbols-outlined text-[24px]">send</span> 確認送出</>}
-                        </button>
-                    ) : (
-                        <div className="mt-6 animate-fade-in">
-                            {user ? (
-                                <>
-                                    <div className="p-5 bg-[#FCFBF7] dark:bg-stone-800 border border-amber-200 dark:border-stone-700 shadow-sm rounded-2xl">
-                                        <h4 className="font-black mb-3 flex justify-between items-center pb-3 border-b border-amber-100 dark:border-stone-700">
-                                            <span className="text-amber-700 dark:text-amber-400 flex items-center gap-1"><span className="material-symbols-outlined text-[20px]">lightbulb</span> 解答與詳解</span>
-                                            {activeQA.reward > 0 && <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 text-sm bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1 rounded-full"><span className="material-symbols-outlined text-[16px]">celebration</span> 快問快答結算</span>}
-                                        </h4>
-                                        <div className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap preview-rich-text leading-relaxed" dangerouslySetInnerHTML={{ __html: parseSmilesToHtml(activeQA.explanation) }}></div>
-                                    </div>
-                                    {activeQA.creatorUid && activeQA.creatorUid !== user?.uid && (
-                                        <button onClick={() => setShowFeedbackModal(true)} className="mt-4 w-full bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 font-bold py-3 rounded-2xl text-sm flex justify-center items-center gap-2 hover:bg-stone-50 dark:hover:bg-stone-700 transition-colors shadow-sm">
-                                            <span className="material-symbols-outlined text-[18px]">feedback</span> 傳送試題回饋給作者
-                                        </button>
-                                    )}
-
-                                    {/* ✨ 新增：討論區區塊 */}
-                                    <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-200 dark:border-stone-700">
-                                        <h4 className="font-black mb-4 text-lg text-stone-800 dark:text-white flex items-center gap-2">
-                                            <span className="material-symbols-outlined text-indigo-500">forum</span> 討論區 ({comments.length})
-                                        </h4>
-                                        
-                                        {/* 留言列表 */}
-                                        <div className="space-y-4 mb-6 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-                                            {comments.length === 0 ? (
-                                                <p className="text-center text-gray-400 dark:text-gray-500 font-bold py-4">目前還沒有留言，來搶頭香吧！</p>
-                                            ) : (
-                                                comments.map(c => (
-                                                    <div key={c.id} className="bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 p-4 rounded-2xl shadow-sm">
-                                                        <div className="flex justify-between items-start mb-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="font-black text-sm text-stone-800 dark:text-gray-200">{c.creatorName}</span>
-                                                                {c.creatorUid === activeQA.creatorUid && <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded font-bold">作者</span>}
-                                                            </div>
-                                                            <span className="text-xs text-gray-400">{c.createdAt?.toDate ? c.createdAt.toDate().toLocaleString('zh-TW', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '剛剛'}</span>
-                                                        </div>
-                                                        {c.replyToName && (
-                                                            <div className="text-xs bg-gray-50 dark:bg-stone-700/50 text-gray-500 dark:text-gray-400 p-1.5 rounded mb-2 inline-block border border-gray-100 dark:border-stone-600">
-                                                                回覆 @{c.replyToName}
-                                                            </div>
-                                                        )}
-                                                        <p className="text-sm text-stone-700 dark:text-gray-300 whitespace-pre-wrap">{c.text}</p>
-                                                        <div className="flex justify-end gap-4 mt-2">
-                                                            <button onClick={() => setReplyTo({ id: c.id, name: c.creatorName, uid: c.creatorUid })} className="text-xs text-gray-500 hover:text-indigo-500 font-bold flex items-center gap-1 transition-colors">
-                                                                <span className="material-symbols-outlined text-[14px]">reply</span> 回覆
-                                                            </button>
-                                                            <button onClick={() => handleLikeComment(c.id, c.likes || [])} className={`text-xs font-bold flex items-center gap-1 transition-colors ${(c.likes || []).includes(user?.uid) ? 'text-rose-500' : 'text-gray-500 hover:text-rose-500'}`}>
-                                                                <span className="material-symbols-outlined text-[14px]">{(c.likes || []).includes(user?.uid) ? 'favorite' : 'favorite_border'}</span> {(c.likes || []).length > 0 ? (c.likes || []).length : '讚'}
-                                                            </button>
-                                                        </div>
+                                            <div className="bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-3 rounded-2xl">
+                                                {replyTo && (
+                                                    <div className="flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs px-3 py-1.5 rounded-lg mb-2 font-bold">
+                                                        <span>正在回覆 @{replyTo.name}</span>
+                                                        <button onClick={() => setReplyTo(null)} className="hover:text-indigo-900 dark:hover:text-white"><span className="material-symbols-outlined text-[14px]">close</span></button>
                                                     </div>
-                                                ))
-                                            )}
-                                        </div>
-
-                                        {/* 發布留言輸入框 */}
-                                        <div className="bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-3 rounded-2xl">
-                                            {replyTo && (
-                                                <div className="flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs px-3 py-1.5 rounded-lg mb-2 font-bold">
-                                                    <span>正在回覆 @{replyTo.name}</span>
-                                                    <button onClick={() => setReplyTo(null)} className="hover:text-indigo-900 dark:hover:text-white"><span className="material-symbols-outlined text-[14px]">close</span></button>
+                                                )}
+                                                <div className="flex gap-2">
+                                                    <textarea 
+                                                        value={newComment}
+                                                        onChange={(e) => setNewComment(e.target.value)}
+                                                        placeholder="分享你的解題思路或疑問..."
+                                                        className="flex-1 bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2 text-sm outline-none resize-none focus:border-indigo-400 dark:focus:border-indigo-500 transition-colors dark:text-white min-h-[44px]"
+                                                        rows="1"
+                                                    />
+                                                    <button onClick={handlePostComment} disabled={!newComment.trim()} className="bg-indigo-500 text-white px-4 rounded-xl font-bold hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0 flex items-center justify-center">
+                                                        <span className="material-symbols-outlined text-[20px]">send</span>
+                                                    </button>
                                                 </div>
-                                            )}
-                                            <div className="flex gap-2">
-                                                <textarea 
-                                                    value={newComment}
-                                                    onChange={(e) => setNewComment(e.target.value)}
-                                                    placeholder="分享你的解題思路或疑問..."
-                                                    className="flex-1 bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2 text-sm outline-none resize-none focus:border-indigo-400 dark:focus:border-indigo-500 transition-colors dark:text-white min-h-[44px]"
-                                                    rows="1"
-                                                />
-                                                <button onClick={handlePostComment} disabled={!newComment.trim()} className="bg-indigo-500 text-white px-4 rounded-xl font-bold hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0 flex items-center justify-center">
-                                                    <span className="material-symbols-outlined text-[20px]">send</span>
-                                                </button>
                                             </div>
                                         </div>
+                                    </>
+                                ) : (
+                                    <div className="p-8 bg-stone-50 dark:bg-stone-800 border-2 border-dashed border-gray-300 dark:border-stone-600 text-center rounded-2xl">
+                                        <span className="material-symbols-outlined text-4xl text-stone-400 mb-2">lock</span>
+                                        <h3 className="text-xl font-black mb-4 dark:text-white">答案已上鎖</h3>
+                                        <button onClick={() => { if(onRequireLogin) onRequireLogin(); }} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-900 px-8 py-3 rounded-xl font-black text-lg w-full flex justify-center items-center gap-2 shadow-md hover:scale-[1.02] transition-transform">
+                                            <span className="material-symbols-outlined text-[20px]">login</span> 登入解鎖完整解答與鑽石
+                                        </button>
                                     </div>
-                                </>
-                            ) : (
-                                <div className="p-8 bg-stone-50 dark:bg-stone-800 border-2 border-dashed border-gray-300 dark:border-stone-600 text-center rounded-2xl">
-                                    <span className="material-symbols-outlined text-4xl text-stone-400 mb-2">lock</span>
-                                    <h3 className="text-xl font-black mb-4 dark:text-white">答案已上鎖</h3>
-                                    <button onClick={() => { if(onRequireLogin) onRequireLogin(); }} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-900 px-8 py-3 rounded-xl font-black text-lg w-full flex justify-center items-center gap-2 shadow-md hover:scale-[1.02] transition-transform">
-                                        <span className="material-symbols-outlined text-[20px]">login</span> 登入解鎖完整解答與鑽石
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            )}
-            </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+                </>
             )}
 
-            {/* ✨ 新增：回饋作者專用的 Modal */}
+            {/* 回饋作者專用的 Modal */}
             {showFeedbackModal && (
                 <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
                     <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-md rounded-3xl shadow-2xl animate-fade-in border border-stone-200 dark:border-stone-700">
@@ -1019,18 +1346,15 @@ D. 第四個選項`}
 }
 
 function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
-    const isAdmin = user && (user.email === 'jay03wn@gmail.com' || user.email === '777@gmail.com'); // ✨ 新增：判斷管理員
-    const [isJumping, setIsJumping] = useState(false); // ✨ 新增：跳轉載入狀態
-  const [tasks, setTasks] = useState({});
-  const [officialTasks, setOfficialTasks] = useState({});
-  const [myTasks, setMyTasks] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [taskLimit, setTaskLimit] = useState(5); // ✨ 新增：任務牆動態載入數量的狀態
- 
-  // ✨ 新增搜尋狀態
-  const [searchQuery, setSearchQuery] = useState('');
+    const isAdmin = user && (user.email === 'jay03wn@gmail.com' || user.email === '777@gmail.com'); 
+    const [isJumping, setIsJumping] = useState(false); 
+    const [tasks, setTasks] = useState({});
+    const [officialTasks, setOfficialTasks] = useState({});
+    const [myTasks, setMyTasks] = useState({});
+    const [loading, setLoading] = useState(true);
+    const [taskLimit, setTaskLimit] = useState(5); 
+    const [searchQuery, setSearchQuery] = useState('');
 
-    // ✨ 新增：管理員從任務牆直接建立試卷
     const handleAdminCreateTask = (type) => {
         onContinueQuiz({
             forceStep: 'setup',
@@ -1039,12 +1363,11 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
             testName: type === 'official' ? '新增國考題 [#op]' : '新增模擬試題 [#mnst]',
             numQuestions: 50,
             maxScore: 100,
-            allowPeek: false, // 規定不能偷看答案
+            allowPeek: false, 
             publishAnswers: true,
         });
     };
 
-    // ✨ 新增：管理員從任務牆直接編輯試卷
     const handleAdminEditTask = async (task) => {
         setIsJumping(true);
         try {
@@ -1073,23 +1396,20 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
         }
     };
 
-  const normalCategories = [
-        '1. 藥物分析學', '2. 生藥學', '3. 中藥學', 
+    const normalCategories = [
+        '1. 藥物 analysis 學', '2. 生藥學', '3. 中藥學', 
         '4. 藥物化學與藥理學', '5. 藥劑學', '6. 生物藥劑學', '模擬試題 (其他)'
     ];
-    
+        
     const opCategories = [
         '1. 藥理學與藥物化學', '2. 藥物分析學與生藥學(含中藥學)', '3. 藥劑學與生物藥劑學', '國考題 (其他)'
     ];
 
     useEffect(() => {
-        // 🚀 移除 800ms 提早結束的 Bug，讓系統乖乖等雲端資料下載完
-
         const unsubTasks = window.db.collection('publicTasks')
             .orderBy('createdAt', 'desc')
-            .limit(taskLimit) // ✨ 改吃我們設定的動態變數
+            .limit(taskLimit) 
             .onSnapshot({ includeMetadataChanges: true }, snap => {
-                // ✨ 新用戶防護：快取沒資料時繼續轉圈圈，等雲端
                 if (snap.empty && snap.metadata.fromCache) return;
                 
                 const groupedNormal = normalCategories.reduce((acc, cat) => ({ ...acc, [cat]: [] }), {});
@@ -1097,8 +1417,6 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 
                 snap.docs.forEach(doc => {
                     const data = { id: doc.id, ...doc.data() };
-                    
-                    // ✨ 提速優化：列表頁根本不需要顯示幾萬字的題目內文，直接砍掉這裡的解壓縮，節省 90% CPU 運算時間！
                     
                     if (data.testName && /\[#op\]/i.test(data.testName)) {
                         let cat = data.category || '國考題 (其他)';
@@ -1120,38 +1438,32 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 
                 setTasks(groupedNormal);
                 setOfficialTasks(groupedOfficial);
-                setLoading(false); // 雲端資料來了，才准關掉載入動畫！
+                setLoading(false); 
             }, err => {
                 console.error(err);
                 setLoading(false);
             });
 
-        // 🚀 將 limit(30) 降為 limit(15)，因為舊版試卷夾帶了幾 MB 的垃圾資料，新用戶一次抓 30 份會等太久！
         const unsubMyQuizzes = window.db.collection('users').doc(user.uid).collection('quizzes')
             .orderBy('createdAt', 'desc')
             .limit(15)
             .onSnapshot({ includeMetadataChanges: true }, snap => {
-                if (snap.empty && snap.metadata.fromCache) return; // ✨ 擋掉空快取防閃爍
+                if (snap.empty && snap.metadata.fromCache) return; 
                 const myTaskMap = {};
                 snap.docs.forEach(doc => {
                     const data = doc.data();
                     if (data.taskId) {
-                        // 🚀 核心升級：免除不必要的解壓縮
                         if (typeof data.userAnswers === 'string') data.userAnswers = safeDecompress(data.userAnswers, 'array');
                         if (typeof data.results === 'string') data.results = safeDecompress(data.results, 'object');
                         myTaskMap[data.taskId] = { id: doc.id, ...data };
                     }
                 });
 
-                // 第二階段：出題者本人的原始考卷具有最高優先權，將覆蓋任何空白的任務副本
                 snap.docs.forEach(doc => {
                     const data = doc.data();
                     if (!data.isShared && !data.isTask) {
-                        // 🚀 核心升級：免除不必要的解壓縮
                         if (typeof data.userAnswers === 'string') data.userAnswers = safeDecompress(data.userAnswers, 'array');
                         if (typeof data.results === 'string') data.results = safeDecompress(data.results, 'object');
-                        // 若是出題者本人自己的考卷，任務ID 就是該考卷的 doc.id
-                        // 在此注入 isTask 與 taskId 以便讓後續 UI 可以判斷為任務模式 (如開放討論區)
                         myTaskMap[doc.id] = { id: doc.id, ...data, isTask: true, taskId: doc.id };
                     }
                 });
@@ -1162,9 +1474,8 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
             unsubTasks();
             unsubMyQuizzes();
         };
-    }, [user.uid, taskLimit]); // ✨ 將 taskLimit 加入依賴項，當按鈕按下去時就會重新抓資料
+    }, [user.uid, taskLimit]); 
 
-    // 計算國考題能力分析
     const officialStats = { totalScore: 0, count: 0, categories: {} };
     opCategories.forEach(c => officialStats.categories[c] = { score: 0, count: 0 });
 
@@ -1191,7 +1502,6 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
     const handlePlayTask = async (task, localRec) => {
         const executeEnter = async () => {
             if (localRec) {
-                // ✨ 強制同步：比對雲端最新任務與本地快取，這次加入了最重要的 correctAnswersInput
                 const isAnsChanged = task.correctAnswersInput && task.correctAnswersInput !== localRec.correctAnswersInput;
                 
                 const updatedRec = {
@@ -1211,13 +1521,11 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                     correctAnswersInput: updatedRec.correctAnswersInput
                 };
 
-                // 如果答案有變，且玩家已經交過卷，就自動標記有答案更新
                 if (isAnsChanged && localRec.results) {
                     payload.hasAnswerUpdate = true;
                     updatedRec.hasAnswerUpdate = true;
                 }
 
-                // 背景靜默更新回本地資料庫
                 window.db.collection('users').doc(user.uid).collection('quizzes').doc(localRec.id).update(payload)
                     .catch(e => console.error("同步任務資料失敗", e));
 
@@ -1229,12 +1537,10 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 const emptyAnswers = Array(Number(task.numQuestions)).fill('');
                 const emptyStarred = Array(Number(task.numQuestions)).fill(false);
 
-                // ✨ 延遲載入大改造 3：任務牆參加任務時，也要把輕重資料切開
                 const newDocRef = await window.db.collection('users').doc(user.uid).collection('quizzes').add({
                     testName: task.testName,
                     numQuestions: task.numQuestions,
                     questionFileUrl: task.questionFileUrl || '',
-                    // 🚀 移除笨重內容，保持清單輕量！
                     correctAnswersInput: task.correctAnswersInput || '',
                     publishAnswers: task.publishAnswers !== false,
                     userAnswers: emptyAnswers,
@@ -1247,11 +1553,10 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                     creatorUid: task.creatorUid || '', 
                     creatorQuizId: task.id,
                     folder: '任務牆',
-                    hasSeparatedContent: true, // ✨ 標記為已分離
+                    hasSeparatedContent: true, 
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
 
-                // ✨ 單獨存入笨重內容
                 await window.db.collection('users').doc(user.uid).collection('quizContents').doc(newDocRef.id).set({
                     questionText: task.questionText || '',
                     questionHtml: task.questionHtml || '',
@@ -1259,7 +1564,6 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 });
 
                 const newRec = await newDocRef.get();
-                // ✨ 把剛才切出去的內容手動塞回畫面，達到秒開效果
                 onContinueQuiz({ id: newRec.id, ...newRec.data(), questionText: task.questionText, questionHtml: task.questionHtml, explanationHtml: task.explanationHtml });
                 
             } catch (e) {
@@ -1281,19 +1585,18 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
         }
     };
 
-    // 判斷搜尋後是否有資料，用來隱藏空區塊
     const hasAnyOfficial = opCategories.some(cat => officialTasks[cat] && officialTasks[cat].some(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())));
     const hasAnyNormal = normalCategories.slice(0, 6).some(cat => tasks[cat] && tasks[cat].some(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())));
     const otherTasksFiltered = tasks['模擬試題 (其他)'] ? tasks['模擬試題 (其他)'].filter(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())) : [];
 
     return (
         <div className="max-w-[1600px] w-full mx-auto p-4 pt-0 h-full overflow-y-auto custom-scrollbar">
-      <div className="flex justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 shrink-0">
-        <h1 className="text-2xl font-black dark:text-white flex items-center">
-          🎯 公開任務牆
-        </h1>
+            <div className="flex justify-between items-center mb-6 border-b-2 border-black dark:border-white pb-2 shrink-0">
+                <h1 className="text-2xl font-black dark:text-white flex items-center">
+                    🎯 公開任務牆
+                </h1>
                 <div className="flex items-center gap-3">
-            <p className="text-sm font-bold text-gray-500 dark:text-gray-400 hidden sm:block">完成考驗獲取獎勵鑽石！</p>
+                    <p className="text-sm font-bold text-gray-500 dark:text-gray-400 hidden sm:block">完成考驗獲取獎勵鑽石！</p>
                     {isAdmin && (
                         <div className="flex gap-2">
                             <button onClick={() => handleAdminCreateTask('official')} className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl font-bold text-sm flex items-center gap-1 shadow-sm transition-colors">
@@ -1305,12 +1608,12 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                         </div>
                     )}
                 </div>
-      </div>
+            </div>
 
-      {/* ✨ 新增：快問快答區塊 (放在最頂端) */}
+            {/* ✨ 快問快答區塊 (放在最頂端) */}
             <FastQASection user={user} showAlert={showAlert} showConfirm={showConfirm} />
 
-            {/* ✨ 新增：搜尋任務列 */}
+            {/* 搜尋任務列 */}
             <div className="mb-6 flex items-center bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 p-3 shadow-sm rounded-2xl shrink-0">
                 <span className="text-gray-500 mr-3 text-lg">🔍</span>
                 <input
@@ -1325,173 +1628,169 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 )}
             </div>
 
-           {loading && Object.keys(tasks).length === 0 && Object.keys(officialTasks).length === 0 ? (
+            {loading && Object.keys(tasks).length === 0 && Object.keys(officialTasks).length === 0 ? (
                 <LoadingSpinner text="正在載入公開任務..." />
             ) : (
                 <div className="space-y-8 pb-10">
-                    
-                    {/* ✨ 加入左右排版容器：lg:grid-cols-2 讓大螢幕分兩欄，手機版自動單欄 */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6 lg:gap-8 items-start">
 
                         {/* --- 金色專屬：歷屆國考題 --- */}
                         {hasAnyOfficial && (
                             <div className="bg-gradient-to-br from-amber-50 to-white dark:from-gray-800 dark:to-gray-900 border border-amber-400 dark:border-amber-600 shadow-md rounded-2xl p-5 md:p-6 w-full">
                                 <h2 className="text-2xl font-black mb-4 dark:text-white border-b-2 border-amber-400 dark:border-amber-600 pb-2 text-amber-700 dark:text-amber-400 flex items-center">
-                                🏆 歷屆國考題
-                            </h2>
-                            
-                            {/* 國考能力分析圖表 (搜尋時隱藏以節省空間) */}
-                            {!searchQuery && officialStats.count > 0 && (
-                                <div className="mb-6 bg-[#FCFBF7] dark:bg-stone-800 p-4 border border-amber-200 dark:border-amber-700 shadow-sm">
-                                    <h3 className="font-bold text-amber-600 dark:text-amber-400 mb-3">📊 國考能力分析 (平均分數)</h3>
-                                    <div className="space-y-3">
-                                        <div className="flex items-center text-sm font-bold">
-                                            <span className="w-1/3 text-gray-600 dark:text-gray-300">總平均 ({officialStats.count}次)</span>
-                                            <div className="w-2/3 bg-stone-100 dark:bg-gray-700 h-4 relative">
-                                                <div className="bg-amber-400 h-4 transition-all duration-500" style={{ width: `${overallAvg}%` }}></div>
-                                                <span className="absolute inset-0 flex items-center justify-center text-[10px] text-stone-800 drop-shadow-md">{overallAvg} 分</span>
-                                            </div>
-                                        </div>
-                                        {opCategories.map(cat => {
-                                            const stat = officialStats.categories[cat];
-                                            const avg = stat.count > 0 ? Math.round(stat.score / stat.count) : 0;
-                                            if (stat.count === 0) return null;
-                                            return (
-                                                <div key={cat} className="flex items-center text-xs font-bold">
-                                                    <span className="w-1/3 text-gray-500 dark:text-gray-400 truncate pr-2" title={cat}>{cat.replace(/^[0-9]\.\s*/, '')}</span>
-                                                    <div className="w-2/3 bg-stone-100 dark:bg-gray-700 h-3 relative">
-                                                        <div className="bg-amber-400 h-3 transition-all duration-500" style={{ width: `${avg}%` }}></div>
-                                                        <span className="absolute inset-0 flex items-center justify-center text-[9px] text-stone-800 drop-shadow-md">{avg} 分</span>
-                                                    </div>
+                                    🏆 歷屆國考題
+                                </h2>
+                                
+                                {!searchQuery && officialStats.count > 0 && (
+                                    <div className="mb-6 bg-[#FCFBF7] dark:bg-stone-800 p-4 border border-amber-200 dark:border-amber-700 shadow-sm">
+                                        <h3 className="font-bold text-amber-600 dark:text-amber-400 mb-3">📊 國考能力 analysis (平均分數)</h3>
+                                        <div className="space-y-3">
+                                            <div className="flex items-center text-sm font-bold">
+                                                <span className="w-1/3 text-gray-600 dark:text-gray-300">總平均 ({officialStats.count}次)</span>
+                                                <div className="w-2/3 bg-stone-100 dark:bg-gray-700 h-4 relative">
+                                                    <div className="bg-amber-400 h-4 transition-all duration-500" style={{ width: `${overallAvg}%` }}></div>
+                                                    <span className="absolute inset-0 flex items-center justify-center text-[10px] text-stone-800 drop-shadow-md">{overallAvg} 分</span>
                                                 </div>
-                                            );
-                                        })}
+                                            </div>
+                                            {opCategories.map(cat => {
+                                                const stat = officialStats.categories[cat];
+                                                const avg = stat.count > 0 ? Math.round(stat.score / stat.count) : 0;
+                                                if (stat.count === 0) return null;
+                                                return (
+                                                    <div key={cat} className="flex items-center text-xs font-bold">
+                                                        <span className="w-1/3 text-gray-500 dark:text-gray-400 truncate pr-2" title={cat}>{cat.replace(/^[0-9]\.\s*/, '')}</span>
+                                                        <div className="w-2/3 bg-stone-100 dark:bg-gray-700 h-3 relative">
+                                                            <div className="bg-amber-400 h-3 transition-all duration-500" style={{ width: `${avg}%` }}></div>
+                                                            <span className="absolute inset-0 flex items-center justify-center text-[9px] text-stone-800 drop-shadow-md">{avg} 分</span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
+                                )}
+
+                                <div className="space-y-8">
+                                    {opCategories.map(cat => {
+                                        const filteredOpTasks = officialTasks[cat] ? officialTasks[cat].filter(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())) : [];
+                                        if (filteredOpTasks.length === 0) return null;
+                                        
+                                        return (
+                                            <div key={cat} className="pl-4 border-l-4 border-amber-400 dark:border-amber-600">
+                                                <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
+                                                <div className="flex flex-col gap-2">
+                                                    {filteredOpTasks.map(task => {
+                                                        const localRec = myTasks[task.id];
+                                                        const isCompleted = localRec && localRec.results;
+                                                        const inProgress = localRec && !localRec.results && Array.isArray(localRec.userAnswers) && localRec.userAnswers.filter(a => a).length > 0;
+
+                                                        return (
+                                                            <div key={task.id} className="border border-amber-200 dark:border-amber-700 p-3 bg-[#FCFBF7] dark:bg-stone-800 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow rounded-2xl">
+                                                                <div className="flex flex-col gap-1 min-w-0 flex-grow">
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
+                                                                            {renderTestName(task.testName, isCompleted)}
+                                                                        </h3>
+                                                                        {isAdmin && (
+                                                                            <button onClick={() => handleAdminEditTask(task)} className="text-xs bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 px-2 py-0.5 rounded flex items-center transition-colors shadow-sm active:scale-95 shrink-0">
+                                                                                <span className="material-symbols-outlined text-[14px] mr-1">edit</span> 編輯
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
+                                                                        <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
+                                                                        {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
+                                                                        {isCompleted ? (
+                                                                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">✅ {localRec.results.score} 分</span>
+                                                                        ) : inProgress ? (
+                                                                            <span className="text-amber-500 dark:text-amber-400 font-bold">📝 已填: {localRec.userAnswers.filter(a => a).length}</span>
+                                                                        ) : (
+                                                                            <span className="text-gray-400 font-bold">⏳ 未作答</span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <button 
+                                                                    onClick={() => handlePlayTask(task, localRec)} 
+                                                                    className={`py-1.5 px-4 rounded-2xl font-bold text-xs transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 ${isCompleted ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200' : 'bg-amber-500 text-stone-800 hover:bg-amber-600'}`}
+                                                                >
+                                                                    {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                            )}
-
-                            <div className="space-y-8">
-                                {opCategories.map(cat => {
-                                    const filteredOpTasks = officialTasks[cat] ? officialTasks[cat].filter(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())) : [];
-                                    if (filteredOpTasks.length === 0) return null;
-                                    
-                                    return (
-                                        <div key={cat} className="pl-4 border-l-4 border-amber-400 dark:border-amber-600">
-                                            <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
-                                            <div className="flex flex-col gap-2">
-                                                {filteredOpTasks.map(task => {
-                                                    const localRec = myTasks[task.id];
-                                                    const isCompleted = localRec && localRec.results;
-                                                    const inProgress = localRec && !localRec.results && Array.isArray(localRec.userAnswers) && localRec.userAnswers.filter(a => a).length > 0;
-
-                                                    return (
-                                                        <div key={task.id} className="border border-amber-200 dark:border-amber-700 p-3 bg-[#FCFBF7] dark:bg-stone-800 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow rounded-2xl">
-                                                            <div className="flex flex-col gap-1 min-w-0 flex-grow">
-                                                                <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
-                                                              {renderTestName(task.testName, isCompleted)}
-                                                            </h3>
-                                                            {isAdmin && (
-                                                                <button onClick={() => handleAdminEditTask(task)} className="text-xs bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 px-2 py-0.5 rounded flex items-center transition-colors shadow-sm active:scale-95 shrink-0">
-                                                                    <span className="material-symbols-outlined text-[14px] mr-1">edit</span> 編輯
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                                <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
-                                                                    <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
-                                                                    {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
-                                                                    {isCompleted ? (
-                                                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">✅ {localRec.results.score} 分</span>
-                                                                    ) : inProgress ? (
-                                                                        <span className="text-amber-500 dark:text-amber-400 font-bold">📝 已填: {localRec.userAnswers.filter(a => a).length}</span>
-                                                                    ) : (
-                                                                        <span className="text-gray-400 font-bold">⏳ 未作答</span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <button 
-                                                                onClick={() => handlePlayTask(task, localRec)} 
-                                                                className={`py-1.5 px-4 rounded-2xl font-bold text-xs transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 ${isCompleted ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200' : 'bg-amber-500 text-stone-800 hover:bg-amber-600'}`}
-                                                            >
-                                                                {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
-                                                            </button>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {/* --- 一般：模擬試題 --- */}
-                    {hasAnyNormal && (
-                        <div className="bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-sm rounded-2xl p-5 md:p-6 w-full">
-                            <h2 className="text-2xl font-black mb-6 dark:text-white border-b-2 border-indigo-200 dark:border-indigo-900 pb-2 text-indigo-700 dark:text-indigo-400 flex items-center">
-                                📚 模擬試題
-                            </h2>
-                            
-                            <div className="space-y-8">
-                                {normalCategories.slice(0, 6).map(cat => {
-                                    const filteredTasks = tasks[cat] ? tasks[cat].filter(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())) : [];
-                                    if (filteredTasks.length === 0) return null;
+                        {/* --- 一般：模擬試題 --- */}
+                        {hasAnyNormal && (
+                            <div className="bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-sm rounded-2xl p-5 md:p-6 w-full">
+                                <h2 className="text-2xl font-black mb-6 dark:text-white border-b-2 border-indigo-200 dark:border-indigo-900 pb-2 text-indigo-700 dark:text-indigo-400 flex items-center">
+                                    📚 模擬試題
+                                </h2>
+                                <div className="space-y-8">
+                                    {normalCategories.slice(0, 6).map(cat => {
+                                        const filteredTasks = tasks[cat] ? tasks[cat].filter(t => cleanQuizName(t.testName).toLowerCase().includes(searchQuery.toLowerCase())) : [];
+                                        if (filteredTasks.length === 0) return null;
 
-                                    return (
-                                        <div key={cat} className="pl-4 border-l-4 border-indigo-300 dark:border-indigo-600">
-                                            <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
-                                            <div className="flex flex-col gap-2">
-                                                {filteredTasks.map(task => {
-                                                    const localRec = myTasks[task.id];
-                                                    const isCompleted = localRec && localRec.results;
-                                                    const inProgress = localRec && !localRec.results && Array.isArray(localRec.userAnswers) && localRec.userAnswers.filter(a => a).length > 0;
+                                        return (
+                                            <div key={cat} className="pl-4 border-l-4 border-indigo-300 dark:border-indigo-600">
+                                                <h3 className="text-lg font-bold mb-4 dark:text-gray-200 text-gray-700">{cat}</h3>
+                                                <div className="flex flex-col gap-2">
+                                                    {filteredTasks.map(task => {
+                                                        const localRec = myTasks[task.id];
+                                                        const isCompleted = localRec && localRec.results;
+                                                        const inProgress = localRec && !localRec.results && Array.isArray(localRec.userAnswers) && localRec.userAnswers.filter(a => a).length > 0;
 
-                                                    return (
-                                                        <div key={task.id} className="border border-stone-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-stone-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow rounded-2xl">
-                                                            <div className="flex flex-col gap-1 min-w-0 flex-grow">
-                                                                <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
-                                                              {renderTestName(task.testName, isCompleted)}
-                                                            </h3>
-                                                            {isAdmin && (
-                                                                <button onClick={() => handleAdminEditTask(task)} className="text-xs bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 px-2 py-0.5 rounded flex items-center transition-colors shadow-sm active:scale-95 shrink-0">
-                                                                    <span className="material-symbols-outlined text-[14px] mr-1">edit</span> 編輯
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                                <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
-                                                                    <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
-                                                                    {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
-                                                                    {isCompleted ? (
-                                                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">✅ {localRec.results.score} 分</span>
-                                                                    ) : inProgress ? (
-                                                                        <span className="text-amber-500 dark:text-amber-400 font-bold">📝 已填: {localRec.userAnswers.filter(a => a).length}</span>
-                                                                    ) : (
-                                                                        <span className="text-gray-400 font-bold">⏳ 未作答</span>
-                                                                    )}
+                                                        return (
+                                                            <div key={task.id} className="border border-stone-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-stone-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow rounded-2xl">
+                                                                <div className="flex flex-col gap-1 min-w-0 flex-grow">
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
+                                                                            {renderTestName(task.testName, isCompleted)}
+                                                                        </h3>
+                                                                        {isAdmin && (
+                                                                            <button onClick={() => handleAdminEditTask(task)} className="text-xs bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 px-2 py-0.5 rounded flex items-center transition-colors shadow-sm active:scale-95 shrink-0">
+                                                                                <span className="material-symbols-outlined text-[14px] mr-1">edit</span> 編輯
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
+                                                                        <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
+                                                                        {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
+                                                                        {isCompleted ? (
+                                                                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">✅ {localRec.results.score} 分</span>
+                                                                        ) : inProgress ? (
+                                                                            <span className="text-amber-500 dark:text-amber-400 font-bold">📝 已填: {localRec.userAnswers.filter(a => a).length}</span>
+                                                                        ) : (
+                                                                            <span className="text-gray-400 font-bold">⏳ 未作答</span>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
+                                                                <button 
+                                                                    onClick={() => handlePlayTask(task, localRec)} 
+                                                                    className={`py-1.5 px-4 rounded-2xl font-bold text-xs transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 ${isCompleted ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200' : 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 hover:bg-stone-800'}`}
+                                                                >
+                                                                    {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
+                                                                </button>
                                                             </div>
-                                                            <button 
-                                                                onClick={() => handlePlayTask(task, localRec)} 
-                                                                className={`py-1.5 px-4 rounded-2xl font-bold text-xs transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 ${isCompleted ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200' : 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 hover:bg-stone-800'}`}
-                                                            >
-                                                                {isCompleted ? '📊 查看成績與討論' : (inProgress ? '📝 繼續作答' : '⚔️ 開始')}
-                                                            </button>
-                                                        </div>
-                                                    );
-                                                })}
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                        </div>
-                                    );
-                                })}
+                                        );
+                                    })}
+                                </div>
                             </div>
-                        </div>
-                    )}
-                  </div> {/* ✨ 結束左右排版容器，接下來的區塊會回到單行全寬 */}
+                        )}
+                    </div> 
 
                     {otherTasksFiltered.length > 0 && (
-                        <div className="bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-sm rounded-2xl p-5 md:p-6">
+                        <div className="bg-[#FCFBF7] dark:bg-stone-800 p-5 md:p-6 rounded-2xl border border-stone-200 dark:border-stone-700">
                             <h2 className="text-xl font-black mb-4 dark:text-white border-b-2 border-stone-200 dark:border-stone-700 pb-2 text-gray-600 dark:text-gray-400">
                                 🏷️ 其他任務
                             </h2>
@@ -1505,15 +1804,15 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                                         <div key={task.id} className="border border-stone-200 dark:border-gray-600 p-3 bg-gray-50 dark:bg-stone-900 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:shadow-md transition-shadow rounded-2xl">
                                             <div className="flex flex-col gap-1 min-w-0 flex-grow">
                                                 <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
-                                                              {renderTestName(task.testName, isCompleted)}
-                                                            </h3>
-                                                            {isAdmin && (
-                                                                <button onClick={() => handleAdminEditTask(task)} className="text-xs bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 px-2 py-0.5 rounded flex items-center transition-colors shadow-sm active:scale-95 shrink-0">
-                                                                    <span className="material-symbols-outlined text-[14px] mr-1">edit</span> 編輯
-                                                                </button>
-                                                            )}
-                                                        </div>
+                                                    <h3 className="font-bold text-sm break-words whitespace-normal leading-relaxed dark:text-white" title={cleanQuizName(task.testName)}>
+                                                        {renderTestName(task.testName, isCompleted)}
+                                                    </h3>
+                                                    {isAdmin && (
+                                                        <button onClick={() => handleAdminEditTask(task)} className="text-xs bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 px-2 py-0.5 rounded flex items-center transition-colors shadow-sm active:scale-95 shrink-0">
+                                                            <span className="material-symbols-outlined text-[14px] mr-1">edit</span> 編輯
+                                                        </button>
+                                                    )}
+                                                </div>
                                                 <div className="flex items-center gap-3 text-xs shrink-0 mt-1">
                                                     <span className="text-gray-500 dark:text-gray-400">{task.numQuestions}題</span>
                                                     {task.hasTimer && <span className="text-red-500 font-bold bg-red-50 dark:bg-red-900 dark:text-red-200 px-1.5 py-0.5 border border-red-200 dark:border-red-700">⏱ {task.timeLimit}m</span>}
@@ -1549,7 +1848,6 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                         </div>
                     )}
 
-                    {/* ✨ 新增：任務牆的「載入更多」按鈕 */}
                     <div className="flex justify-center mt-8 pt-4">
                         <button 
                             onClick={() => setTaskLimit(prev => prev + 5)} 
@@ -1562,7 +1860,6 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                 </div>
             )}
 
-            {/* ✨ 新增：跳轉試卷時的載入 Modal */}
             {isJumping && (
                 <div className="fixed inset-0 bg-stone-800 bg-opacity-80 flex items-center justify-center z-[200] p-4">
                     <div className="bg-[#FCFBF7] dark:bg-stone-800 p-8 w-full max-w-sm rounded-2xl shadow-2xl text-center border-t-8 border-indigo-500 animate-fade-in">
