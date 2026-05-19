@@ -1295,7 +1295,7 @@ D. 第四個選項`}
 }
 
 function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
-    const isAdmin = user && (user.email === 'jay03wn@gmail.com' || user.email === '777@gmail.com'); 
+    const isAdmin = user && (user.email === 'jay03wn@gmail.com' || user.email === '777@gmail.com' || user.email === 'i3u3c9ppap@yahoo.com'); 
     const [isJumping, setIsJumping] = useState(false); 
     const [tasks, setTasks] = useState({});
     const [officialTasks, setOfficialTasks] = useState({});
