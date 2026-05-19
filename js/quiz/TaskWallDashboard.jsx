@@ -40,7 +40,7 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
     // 評分狀態
     const [myRating, setMyRating] = useState({ stars: 0, difficulty: 0 });
     
-    const isAdmin = user && (user.email === 'jay03wn@gmail.com' || user.email === '777@gmail.com');
+    const isAdmin = user && (user.email === 'jay03wn@gmail.com' || user.email === '777@gmail.com' || user.email === 'i3u3c9ppap@yahoo.com'|| user.email === 'a100024420001a@gmail.com'); ;
     const [myFriendsUids, setMyFriendsUids] = useState([]);
 
     useEffect(() => {
