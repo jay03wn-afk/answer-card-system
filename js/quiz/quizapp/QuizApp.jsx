@@ -10,6 +10,93 @@ const {
 function QuizApp(props) {
     // 呼叫我們剛剛建立的大腦，把所有的狀態跟功能「借」過來用
     const { currentUser, userProfile, showAlert, showConfirm, showPrompt, tutorialStep, setTutorialStep } = props;
+
+    // ✨ 新增：螢光筆浮動工具列狀態與選取邏輯
+    const [selectionRect, setSelectionRect] = useState(null);
+    useEffect(() => {
+        const handleSelection = () => {
+            const selection = window.getSelection();
+            if (!selection || selection.isCollapsed || !selection.rangeCount) {
+                setSelectionRect(null);
+                return;
+            }
+            const range = selection.getRangeAt(0);
+            let container = range.commonAncestorContainer;
+            if (container.nodeType === 3) container = container.parentNode;
+            
+            // 確保只有在試題區選取文字時才彈出
+            if (container && container.closest && container.closest('.preview-rich-text')) {
+                const rect = range.getBoundingClientRect();
+                setSelectionRect({
+                    top: Math.max(10, rect.top - 50),
+                    left: rect.left + rect.width / 2
+                });
+            } else {
+                setSelectionRect(null);
+            }
+        };
+        document.addEventListener('mouseup', handleSelection);
+        document.addEventListener('touchend', handleSelection);
+        return () => {
+            document.removeEventListener('mouseup', handleSelection);
+            document.removeEventListener('touchend', handleSelection);
+        };
+    }, []);
+
+    const applyHighlight = (color) => {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+        const range = selection.getRangeAt(0);
+        let container = range.commonAncestorContainer;
+        if (container.nodeType === 3) container = container.parentNode;
+        
+        // 如果選擇透明，則解除該節點的標記
+        if (color === 'transparent') {
+            if (container.tagName === 'SPAN' && container.classList.contains('highlight-marker')) {
+                const text = document.createTextNode(container.textContent);
+                container.parentNode.replaceChild(text, container);
+            }
+            selection.removeAllRanges();
+            setSelectionRect(null);
+            return;
+        }
+
+        try {
+            const fragment = range.extractContents();
+            const span = document.createElement('span');
+            span.style.backgroundColor = color;
+            span.style.color = '#1a1a1a';
+            span.className = 'highlight-marker rounded px-1 transition-colors cursor-pointer shadow-sm font-bold';
+            span.appendChild(fragment);
+            range.insertNode(span);
+        } catch(e) {
+            console.log("螢光筆跨節點標記受限，請分段畫記");
+        }
+        selection.removeAllRanges();
+        setSelectionRect(null);
+    };
+
+    const HighlighterToolbar = selectionRect && (
+        <div 
+            className="fixed z-[9999] flex items-center gap-2 bg-white/90 dark:bg-stone-800/90 backdrop-blur-md px-3 py-2 rounded-2xl shadow-xl transform -translate-x-1/2 animate-fade-in ring-1 ring-black/5 dark:ring-white/10"
+            style={{ top: selectionRect.top, left: selectionRect.left }}
+            onMouseDown={e => e.preventDefault()}
+        >
+            {['#fef08a', '#bbf7d0', '#a5f3fc', '#fbcfe8'].map(color => (
+                <button 
+                    key={color} 
+                    onClick={(e) => { e.preventDefault(); applyHighlight(color); }}
+                    className="w-6 h-6 rounded-full shadow-inner hover:scale-110 transition-transform ring-2 ring-transparent hover:ring-black/20"
+                    style={{ backgroundColor: color }}
+                />
+            ))}
+            <div className="w-px h-4 bg-stone-300 dark:bg-stone-600 mx-1"></div>
+            <button 
+                onClick={(e) => { e.preventDefault(); applyHighlight('transparent'); }}
+                className="text-stone-500 dark:text-stone-300 text-xs font-bold hover:text-rose-500 px-1 transition-colors"
+            >清除</button>
+        </div>
+    );
     
     // ✨ 新增：將平坦的資料夾陣列轉換為樹狀結構，並管理展開狀態
     const [expandedFolders, setExpandedFolders] = useState({});
@@ -102,6 +189,7 @@ function QuizApp(props) {
         isTimeUp, setIsTimeUp, syncTrigger, setSyncTrigger, layoutMode, setLayoutMode, splitRatio, setSplitRatio,
         viewMode, setViewMode, collapsedSections, setCollapsedSections, currentInteractiveIndex, setCurrentInteractiveIndex,
         showQuestionGrid, setShowQuestionGrid, immersiveTextSize, setImmersiveTextSize, splitTextSize, setSplitTextSize,
+        customFontFamily, setCustomFontFamily, lineHeight, setLineHeight, highlightColor, setHighlightColor, // ✨ 接收新增狀態
         previewLightboxImg, setPreviewLightboxImg, eliminatedOptions, setEliminatedOptions,
         showSettingsModal, setShowSettingsModal, quizSettings, setQuizSettings, peekConfirmIdx, setPeekConfirmIdx,
         isDragging, setIsDragging, previewOpen, setPreviewOpen, splitContainerRef,
@@ -116,6 +204,57 @@ function QuizApp(props) {
         handleSendSuggestion, handleUploadComment, handleResetProgress, handleAddToWrongBook,
         shareScoreToFriend, scrollToQuestion, handleRichTextClick, toggleSection, handleProcessAiFile, handleGenerateAI, quizHistory
     } = window.useQuizState(props);
+
+    // ✨ 新增：螢光筆標記功能 (支援自選顏色與取消標記)
+    const handleTextSelection = () => {
+        const selection = window.getSelection();
+        if (!selection.rangeCount || selection.isCollapsed) return;
+        
+        // 確保只在題目內標記
+        const node = selection.anchorNode;
+        if (!node || !node.parentElement.closest('.preview-rich-text')) return;
+
+        const range = selection.getRangeAt(0);
+        
+        // 如果已經有標記，則取消標記
+        const parentSpan = node.parentElement;
+        if (parentSpan.tagName === 'SPAN' && parentSpan.style.backgroundColor) {
+            const textNode = document.createTextNode(parentSpan.textContent);
+            parentSpan.parentNode.replaceChild(textNode, parentSpan);
+            selection.removeAllRanges();
+            return;
+        }
+
+        const span = document.createElement('span');
+        span.style.backgroundColor = highlightColor;
+        span.style.color = '#1a1a1a'; // 確保字體在螢光色上清晰可見
+        span.style.borderRadius = '4px';
+        span.style.padding = '0 2px';
+        span.className = 'highlight-marker cursor-pointer transition-colors';
+        
+        try {
+            range.surroundContents(span);
+            selection.removeAllRanges();
+        } catch(e) {
+            console.log("跨節點選取無法直接標記");
+        }
+    };
+
+    // 綁定滑鼠放開事件來觸發螢光筆
+    useEffect(() => {
+        if (step !== 'answering') return;
+        const container = document.querySelector('.quiz-answering-container');
+        if (container) {
+            container.addEventListener('mouseup', handleTextSelection);
+            container.addEventListener('touchend', handleTextSelection); // 支援手機長按選取
+        }
+        return () => {
+            if (container) {
+                container.removeEventListener('mouseup', handleTextSelection);
+                container.removeEventListener('touchend', handleTextSelection);
+            }
+        }
+    }, [step, highlightColor]);
 
     // ✨ 新增：自動捲動避開遮罩重疊，並加入「自由作答」放行機制
     useEffect(() => {
@@ -1242,7 +1381,11 @@ function QuizApp(props) {
     );
 
     if (step === 'answering') return (
-        <div className="flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors relative" onClick={handleRichTextClick}>
+        <div 
+            className="quiz-answering-container flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors relative" 
+            onClick={handleRichTextClick}
+            style={{ fontFamily: customFontFamily }} // ✨ 套用全域自訂字體
+        >
             {UpdateNotification}
             {tutorialStep === 0 && <button onClick={onBackToDashboard} className="absolute top-4 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-50 transition-colors">← 返回列表</button>}
             
@@ -1259,8 +1402,11 @@ function QuizApp(props) {
                 }
             `}} />
 
-           {/* ✨ 修正：解除 z-index 封印，讓教學模式的高亮特效可以突破黑暗遮罩 */}
-            <div className={`bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 transition-colors w-full mb-2 mt-6 ${tutorialStep > 0 ? '' : 'z-10'}`}>
+           {/* 注入浮動螢光筆工具 */}
+            {HighlighterToolbar}
+            
+            {/* ✨ 質感升級：毛玻璃導覽列 (拔除死板線條，改用柔和陰影) */}
+            <div className={`bg-white/70 dark:bg-stone-800/70 backdrop-blur-xl p-3 sm:p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] ring-1 ring-black/5 dark:ring-white/10 flex flex-wrap justify-between items-center rounded-[2rem] gap-3 shrink-0 transition-colors w-full mb-2 mt-6 ${tutorialStep > 0 ? '' : 'z-10'}`}>
                 <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
                     <div className="overflow-hidden flex-grow flex flex-col justify-center min-w-0">
                         <div className="flex items-center space-x-2">
@@ -1369,7 +1515,8 @@ function QuizApp(props) {
         word-break: break-word;
         white-space: pre-wrap;
         font-size: ${immersiveTextSize}rem;
-        line-height: 1.6;
+        line-height: ${lineHeight}; /* ✨ 套用自訂行高 */
+        font-family: ${customFontFamily} !important; /* ✨ 強制套用字體 */
         background-color: transparent !important; /* 拔除死白背景，完美融入卡片 */
         color: inherit !important; /* 自動繼承外部文字顏色 */
         border: none !important;
@@ -1566,15 +1713,15 @@ function QuizApp(props) {
                                 const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number);
 
                                return (
-                                <div key={actualIdx} className={`backdrop-blur-xl bg-white/90 dark:bg-stone-800/90 border shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-3xl p-4 sm:p-8 mb-10 transition-all ${isPeeked ? 'border-amber-400 dark:border-amber-600 ring-2 ring-amber-400/20' : 'border-stone-200/80 dark:border-stone-700/80'}`}>
-                                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-5 border-b border-stone-200 dark:border-stone-700 pb-4">
+                                <div key={actualIdx} className={`bg-white dark:bg-stone-800/95 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-[2rem] p-5 sm:p-10 mb-10 transition-all ring-1 ${isPeeked ? 'ring-amber-400 dark:ring-amber-500 shadow-amber-500/10' : 'ring-black/5 dark:ring-white/10'}`}>
+                                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6 border-b border-stone-100 dark:border-stone-700 pb-5">
                                         <div className="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start">
-                                            <span className={`text-2xl font-black ${q.type === 'Q' ? 'text-amber-600 dark:text-amber-500' : q.type === 'SQ' ? 'text-cyan-600 dark:text-cyan-400' : 'text-amber-700600 dark:text-amber-700400'}`}>
+                                            <span className={`text-3xl font-black tracking-tight ${q.type === 'Q' ? 'text-amber-500 dark:text-amber-500' : q.type === 'SQ' ? 'text-cyan-500 dark:text-cyan-400' : 'text-purple-500 dark:text-purple-400'}`}>
                                                 第 {q.type === 'Q' ? q.number : `${q.type}.${q.number}`} 題
                                                 {itemData && <span className="ml-2 text-sm font-bold opacity-70">({(itemData.earnedPoints || 0).toFixed(1).replace(/\.0$/, '')} / {(itemData.maxPoints || 0).toFixed(1).replace(/\.0$/, '')})</span>}
                                             </span>
                                             <div className="flex items-center">
-                                                    <button onClick={() => toggleStar(actualIdx)} className={`text-xl focus:outline-none transition-colors ${isStarred ? 'text-amber-500' : 'text-gray-300 dark:text-gray-600'} hover:scale-110`} title="標記星號">★</button>
+                                                    <button onClick={() => toggleStar(actualIdx)} className={`text-2xl focus:outline-none transition-transform ${isStarred ? 'text-amber-500 scale-110' : 'text-gray-300 dark:text-gray-600'} hover:scale-125`} title="標記星號">★</button>
                                                     <button onClick={() => {
                                                         const tempDiv = document.createElement('div');
                                                         let fullText = q.mainText;
@@ -1592,43 +1739,43 @@ function QuizApp(props) {
                                                         tempDiv.innerHTML = fullText;
                                                         navigator.clipboard.writeText(tempDiv.innerText);
                                                         showAlert('✅ 題目與選項已複製！');
-                                                    }} className="text-xl focus:outline-none transition-colors text-gray-300 dark:text-gray-600 hover:text-amber-500 hover:scale-110 ml-2" title="複製題目與選項">
+                                                    }} className="text-xl focus:outline-none transition-colors text-gray-300 dark:text-gray-600 hover:text-amber-500 hover:scale-110 ml-3" title="複製題目與選項">
                                                         <span className="material-symbols-outlined text-[20px]">content_copy</span>
                                                     </button>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2 w-full sm:w-auto">
-                                                {itemData && <span className={`text-xs px-2 py-1 font-bold border ${itemData.isCorrect ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{itemData.isCorrect ? '✅ 答對' : '❌ 錯誤'}</span>}
-                                                <span className="text-sm font-bold bg-stone-50 dark:bg-gray-700 px-3 py-1 text-gray-600 dark:text-gray-300 border border-stone-200 dark:border-gray-600 flex-grow sm:flex-grow-0 text-center">
-                                                    作答: {currentAns || '未答'}
-                                                </span>
                                             </div>
                                         </div>
-                                            
-                                            {/* ✨ 修復：將發光白底移到外層容器，避免被富文本的強制透明吃掉 */}
-                                            <div className={`transition-all ${tutorialStep === 6 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] bg-white dark:bg-stone-800 p-5 -mx-4 rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.15)] ring-2 ring-amber-400 mb-4' : 'mb-4'}`}>
-                                                <div className="text-gray-800 dark:text-gray-200 leading-relaxed preview-rich-text !border-none !p-0 !bg-transparent" dangerouslySetInnerHTML={{ __html: q.mainText }} />
-                                            </div>
+                                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                                            {itemData && <span className={`text-xs px-2 py-1 font-bold border ${itemData.isCorrect ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200'}`}>{itemData.isCorrect ? '✅ 答對' : '❌ 錯誤'}</span>}
+                                            <span className="text-sm font-bold bg-stone-50 dark:bg-stone-900 px-4 py-2 text-gray-600 dark:text-gray-300 ring-1 ring-black/5 dark:ring-white/10 rounded-xl flex-grow sm:flex-grow-0 text-center shadow-inner">
+                                                作答: <span className="text-amber-600 dark:text-amber-400 font-black">{currentAns || '未填'}</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                        
+                                    {/* ✨ 修復：將發光白底移到外層容器，避免被富文本的強制透明吃掉 */}
+                                    <div className={`transition-all ${tutorialStep === 6 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] bg-white dark:bg-stone-800 p-5 -mx-4 rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.15)] ring-2 ring-amber-400 mb-4' : 'mb-8'}`}>
+                                        <div className="text-gray-800 dark:text-gray-200 leading-relaxed preview-rich-text !border-none !p-0 !bg-transparent" dangerouslySetInnerHTML={{ __html: q.mainText }} />
+                                    </div>
 
-                                            <div className="flex flex-col gap-3">
-                                                {q.type === 'Q' ? ['A', 'B', 'C', 'D'].map(opt => {
-                                                    const hasCustomContent = !!q.options[opt];
-                                                    const isSelected = currentAns === opt;
-                                                    const elimKey = `${actualIdx}_${opt}`;
-                                                    const isEliminated = eliminatedOptions[elimKey];
-                                                    const isCorrectOpt = (isPeeked || !!results) && (currentCorrectAns.toLowerCase().includes(opt.toLowerCase()) || currentCorrectAns.toLowerCase() === 'abcd' || currentCorrectAns.toLowerCase() === 'z');
-                                                    
-                                                  let btnClasses = `text-left w-full py-3 px-5 border-2 transition-all flex items-start space-x-3 rounded-2xl flex-1 `;
-                                                    if (isPeeked || !!results) {
-                                                        if (isCorrectOpt) btnClasses += 'bg-emerald-50 border-emerald-500/50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 ';
-                                                        else if (isSelected) btnClasses += 'bg-rose-50 border-rose-500/50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-300 ';
-                                                        else btnClasses += 'bg-stone-50/50 border-stone-100 dark:bg-stone-800/50 opacity-40 ';
-                                                        btnClasses += 'cursor-not-allowed ';
-                                                    } else {
-                                                        btnClasses += isSelected ? 'bg-amber-50 border-amber-400 dark:bg-amber-900/30 scale-[1.01] shadow-md ' : 'bg-[#FCFBF7] border-stone-200 dark:bg-stone-800 hover:border-amber-300 ';
-                                                        if (isTimeUp) btnClasses += 'locked-btn opacity-80 ';
-                                                        if (isEliminated) btnClasses += 'opacity-30 grayscale '; 
-                                                    }
+                                    <div className="flex flex-col gap-4">
+                                        {q.type === 'Q' ? ['A', 'B', 'C', 'D'].map(opt => {
+                                            const hasCustomContent = !!q.options[opt];
+                                            const isSelected = currentAns === opt;
+                                            const elimKey = `${actualIdx}_${opt}`;
+                                            const isEliminated = eliminatedOptions[elimKey];
+                                            const isCorrectOpt = (isPeeked || !!results) && (currentCorrectAns.toLowerCase().includes(opt.toLowerCase()) || currentCorrectAns.toLowerCase() === 'abcd' || currentCorrectAns.toLowerCase() === 'z');
+                                            
+                                          let btnClasses = `text-left w-full py-4 px-6 transition-all flex items-start space-x-4 rounded-[1.5rem] flex-1 ring-1 `;
+                                            if (isPeeked || !!results) {
+                                                if (isCorrectOpt) btnClasses += 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-900/20 dark:ring-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-md ';
+                                                else if (isSelected) btnClasses += 'bg-rose-50 ring-rose-400 dark:bg-rose-900/20 dark:ring-rose-500 text-rose-900 dark:text-rose-100 shadow-sm ';
+                                                else btnClasses += 'bg-stone-50/50 ring-black/5 dark:bg-stone-800/50 dark:ring-white/10 opacity-40 ';
+                                                btnClasses += 'cursor-not-allowed ';
+                                            } else {
+                                                btnClasses += isSelected ? 'bg-amber-50 ring-amber-400 dark:bg-amber-900/30 dark:ring-amber-500 scale-[1.01] shadow-md ' : 'bg-white dark:bg-stone-800 ring-black/5 dark:ring-white/10 hover:ring-amber-300 dark:hover:ring-amber-500 shadow-sm hover:scale-[1.005] ';
+                                                if (isTimeUp) btnClasses += 'locked-btn opacity-80 ';
+                                                if (isEliminated) btnClasses += 'opacity-30 grayscale '; 
+                                            }
 
                                                     return (
                                                         <div key={opt} className={`flex items-stretch gap-2 w-full transition-all ${tutorialStep === 6 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] ring-4 ring-amber-400 bg-white dark:bg-stone-800 p-1.5 -m-1.5 rounded-3xl shadow-[0_10px_40px_rgba(245,158,11,0.3)]' : ''}`}>
@@ -2190,6 +2337,49 @@ function QuizApp(props) {
                                 )}
                             </div>
 
+                            {/* ✨ 新增：介面排版客製化 */}
+                            <div className="bg-white dark:bg-stone-800 p-4 rounded-2xl border border-stone-200 dark:border-stone-700 space-y-4 shadow-sm">
+                                <h4 className="font-bold text-sm text-amber-600 dark:text-amber-400 mb-2 flex items-center border-b dark:border-stone-700 pb-2">
+                                    <span className="material-symbols-outlined text-[18px] mr-1.5">text_format</span>
+                                    介面與排版設定
+                                </h4>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">字體選擇</label>
+                                        <select value={customFontFamily} onChange={e => setCustomFontFamily(e.target.value)} className="w-full p-2 border rounded-lg bg-stone-50 dark:bg-stone-900 dark:border-stone-600 dark:text-white text-sm outline-none">
+                                            <option value="inherit">系統預設</option>
+                                            <option value="'Noto Sans TC', sans-serif">思源黑體 (無襯線)</option>
+                                            <option value="'Noto Serif TC', serif">思源宋體 (有襯線)</option>
+                                            <option value="ui-rounded, 'Hiragino Maru Gothic ProN', 'Quicksand', sans-serif">圓體 (柔和)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">文字行高</label>
+                                        <select value={lineHeight} onChange={e => setLineHeight(e.target.value)} className="w-full p-2 border rounded-lg bg-stone-50 dark:bg-stone-900 dark:border-stone-600 dark:text-white text-sm outline-none">
+                                            <option value="1.4">緊湊 (1.4)</option>
+                                            <option value="1.6">標準 (1.6)</option>
+                                            <option value="1.8">寬鬆 (1.8)</option>
+                                            <option value="2.0">極寬 (2.0)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-2">螢光筆畫重點顏色 (選取文字即可標記)</label>
+                                    <div className="flex gap-3">
+                                        {['#fef08a', '#bbf7d0', '#a5f3fc', '#fbcfe8'].map(color => (
+                                            <button 
+                                                key={color} 
+                                                onClick={() => setHighlightColor(color)}
+                                                className={`w-8 h-8 rounded-full transition-transform ${highlightColor === color ? 'ring-2 ring-stone-800 dark:ring-white scale-110 shadow-md' : 'border border-gray-300'}`}
+                                                style={{ backgroundColor: color }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* 功能開關 */}
                             <div className="bg-stone-50 dark:bg-stone-800 p-4 rounded-2xl border border-stone-200 dark:border-stone-700 space-y-4">
                                 <h4 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 flex items-center">
@@ -2197,10 +2387,17 @@ function QuizApp(props) {
                                     功能開關
                                 </h4>
                                 <label className="flex items-center justify-between cursor-pointer">
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-bold text-stone-700 dark:text-gray-200">智慧自動下一題</span>
+                                        <span className="text-[10px] text-gray-500">點擊選項後自動切換下一題 (按上一題時會自動關閉)</span>
+                                    </div>
+                                    <input type="checkbox" className="w-5 h-5 accent-amber-500" checked={quizSettings.autoNext} onChange={(e) => setQuizSettings(prev => ({...prev, autoNext: e.target.checked}))} />
+                                </label>
+                                <label className="flex items-center justify-between cursor-pointer border-t dark:border-stone-700 pt-3">
                                     <span className="text-sm font-bold text-stone-700 dark:text-gray-200">沉浸模式：啟用刪去法</span>
                                     <input type="checkbox" className="w-5 h-5 accent-amber-500" checked={quizSettings.showEliminationBtn} onChange={(e) => setQuizSettings(prev => ({...prev, showEliminationBtn: e.target.checked}))} />
                                 </label>
-                                <label className="flex items-center justify-between cursor-pointer">
+                                <label className="flex items-center justify-between cursor-pointer border-t dark:border-stone-700 pt-3">
                                     <span className="text-sm font-bold text-stone-700 dark:text-gray-200">偷看答案前再次確認</span>
                                     <input type="checkbox" className="w-5 h-5 accent-amber-500" checked={quizSettings.askBeforePeek} onChange={(e) => setQuizSettings(prev => ({...prev, askBeforePeek: e.target.checked}))} />
                                 </label>
@@ -2567,12 +2764,16 @@ if (step === 'grading') return (
     }
 
     if (step === 'results') return (
-        <div className="flex flex-col h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors relative" onClick={handleRichTextClick}>
+        <div className="flex h-[100dvh] bg-stone-50 dark:bg-stone-900 p-2 sm:p-4 w-full overflow-hidden transition-colors relative gap-4" onClick={handleRichTextClick}>
             {UpdateNotification}
             <style dangerouslySetInnerHTML={{__html: `.qlib-question-tags { display: ${quizSettings?.showTags ? 'inline-block' : 'none'} !important; }`}} />
-            {tutorialStep === 0 && <button onClick={onBackToDashboard} className="absolute top-4 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-50 transition-colors">← 返回列表</button>}
+            {tutorialStep === 0 && <button onClick={onBackToDashboard} className="absolute top-2 left-6 text-sm text-stone-500 dark:text-stone-400 hover:text-amber-600 dark:hover:text-amber-400 font-bold z-50 transition-colors">← 返回列表</button>}
+            
+            {/* ✨ 左側：主內容區 (將原本的內容包裝起來) */}
+            <div className="flex flex-col flex-1 overflow-hidden relative">
+            
             {/* ✨ 頂部導覽列：全面升級質感 SVG 圖示 */}
-            <div className="bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 z-10 transition-colors w-full mt-6">
+            <div className="bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 z-10 transition-colors w-full mt-8">
                 <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
                     <h2 className="font-bold truncate text-base pr-4 dark:text-white flex items-center gap-2 min-w-0">
                         {renderTestName(testName, true)} <span className="shrink-0">- 測驗結果</span>
@@ -2580,6 +2781,11 @@ if (step === 'grading') return (
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
+                    <button onClick={() => setViewMode(prev => prev === 'interactive' ? 'split' : 'interactive')} className="bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-4 py-2 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
+                        <span className="material-symbols-outlined text-[18px] mr-1">{viewMode === 'interactive' ? 'view_list' : 'view_carousel'}</span>
+                        {viewMode === 'interactive' ? '切換列表模式' : '切換沉浸模式'}
+                    </button>
+
                     <button onClick={() => setShowSettingsModal(true)} className="bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-4 py-2 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
                         <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                         設定
@@ -3127,6 +3333,48 @@ if (step === 'grading') return (
 
             </div>
 
+            </div> {/* ✨ 結束左側主內容區 wrapper */}
+
+            {/* ✨ 新增：沉浸式結果頁右側面板 (電腦版顯示) */}
+            <div className="hidden xl:flex flex-col w-[350px] shrink-0 h-full mt-8 bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl shadow-xl overflow-hidden z-10">
+                <div className="bg-stone-100 dark:bg-stone-900 border-b border-stone-200 dark:border-stone-700 px-5 py-4 shrink-0 flex flex-col gap-1 text-center">
+                    <span className="font-black text-2xl tracking-wide dark:text-white">成績總覽</span>
+                    <div className="flex justify-center items-end gap-2">
+                        <span className={`text-4xl font-black ${results.score >= 60 ? 'text-emerald-500' : 'text-red-500'}`}>{results.score}</span>
+                        <span className="text-gray-500 font-bold mb-1">分</span>
+                    </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                    <div className="grid grid-cols-5 gap-2">
+                        {results.data.map((item, idx) => {
+                            const isStarred = starred[item.number - 1];
+                            const isCorrect = item.isCorrect;
+                            
+                            return (
+                                <button 
+                                    key={idx}
+                                    onClick={() => scrollToQuestion(item.number)}
+                                    className={`relative aspect-square flex flex-col items-center justify-center rounded-xl border-2 transition-all hover:scale-105 active:scale-95 shadow-sm
+                                        ${isCorrect ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-600/50 dark:text-emerald-400' : 'bg-rose-50 border-rose-300 text-rose-700 dark:bg-rose-900/30 dark:border-rose-600/50 dark:text-rose-400'}
+                                    `}
+                                >
+                                    <span className="font-black text-sm">{item.number}</span>
+                                    <span className="text-[10px] font-bold opacity-70 truncate w-full px-1">{item.userAns || '-'}</span>
+                                    {isStarred && (
+                                        <span className="absolute -top-1.5 -right-1.5 material-symbols-outlined text-[14px] text-amber-500 bg-white dark:bg-stone-800 rounded-full shadow-sm border border-amber-100">star</span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+                <div className="bg-stone-50 dark:bg-stone-900/50 p-4 border-t border-stone-200 dark:border-stone-700 shrink-0 text-center flex justify-center gap-4 text-xs font-bold text-gray-500">
+                    <span className="flex items-center gap-1 text-emerald-600"><span className="w-3 h-3 rounded-full bg-emerald-300"></span> 答對</span>
+                    <span className="flex items-center gap-1 text-rose-600"><span className="w-3 h-3 rounded-full bg-rose-300"></span> 答錯</span>
+                    <span className="flex items-center gap-1 text-amber-500"><span className="material-symbols-outlined text-[14px]">star</span> 星號</span>
+                </div>
+            </div>
+
             {showShareScoreModal && (
                 <div className="fixed inset-0 bg-stone-800 bg-opacity-60 flex items-center justify-center z-50 p-4">
                     <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-sm rounded-[2rem] shadow-xl border border-stone-200 dark:border-stone-700">
@@ -3320,6 +3568,49 @@ if (step === 'grading') return (
                                 )}
                             </div>
 
+                            {/* ✨ 新增：介面排版客製化 */}
+                            <div className="bg-white dark:bg-stone-800 p-4 rounded-2xl border border-stone-200 dark:border-stone-700 space-y-4 shadow-sm">
+                                <h4 className="font-bold text-sm text-amber-600 dark:text-amber-400 mb-2 flex items-center border-b dark:border-stone-700 pb-2">
+                                    <span className="material-symbols-outlined text-[18px] mr-1.5">text_format</span>
+                                    介面與排版設定
+                                </h4>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">字體選擇</label>
+                                        <select value={customFontFamily} onChange={e => setCustomFontFamily(e.target.value)} className="w-full p-2 border rounded-lg bg-stone-50 dark:bg-stone-900 dark:border-stone-600 dark:text-white text-sm outline-none">
+                                            <option value="inherit">系統預設</option>
+                                            <option value="'Noto Sans TC', sans-serif">思源黑體 (無襯線)</option>
+                                            <option value="'Noto Serif TC', serif">思源宋體 (有襯線)</option>
+                                            <option value="ui-rounded, 'Hiragino Maru Gothic ProN', 'Quicksand', sans-serif">圓體 (柔和)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">文字行高</label>
+                                        <select value={lineHeight} onChange={e => setLineHeight(e.target.value)} className="w-full p-2 border rounded-lg bg-stone-50 dark:bg-stone-900 dark:border-stone-600 dark:text-white text-sm outline-none">
+                                            <option value="1.4">緊湊 (1.4)</option>
+                                            <option value="1.6">標準 (1.6)</option>
+                                            <option value="1.8">寬鬆 (1.8)</option>
+                                            <option value="2.0">極寬 (2.0)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-2">螢光筆畫重點顏色 (選取文字即可標記)</label>
+                                    <div className="flex gap-3">
+                                        {['#fef08a', '#bbf7d0', '#a5f3fc', '#fbcfe8'].map(color => (
+                                            <button 
+                                                key={color} 
+                                                onClick={() => setHighlightColor(color)}
+                                                className={`w-8 h-8 rounded-full transition-transform ${highlightColor === color ? 'ring-2 ring-stone-800 dark:ring-white scale-110 shadow-md' : 'border border-gray-300'}`}
+                                                style={{ backgroundColor: color }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* 功能開關 */}
                             <div className="bg-stone-50 dark:bg-stone-800 p-4 rounded-2xl border border-stone-200 dark:border-stone-700 space-y-4">
                                 <h4 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-2 flex items-center">
@@ -3327,10 +3618,17 @@ if (step === 'grading') return (
                                     功能開關
                                 </h4>
                                 <label className="flex items-center justify-between cursor-pointer">
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-bold text-stone-700 dark:text-gray-200">智慧自動下一題</span>
+                                        <span className="text-[10px] text-gray-500">點擊選項後自動切換下一題 (按上一題時會自動關閉)</span>
+                                    </div>
+                                    <input type="checkbox" className="w-5 h-5 accent-amber-500" checked={quizSettings.autoNext} onChange={(e) => setQuizSettings(prev => ({...prev, autoNext: e.target.checked}))} />
+                                </label>
+                                <label className="flex items-center justify-between cursor-pointer border-t dark:border-stone-700 pt-3">
                                     <span className="text-sm font-bold text-stone-700 dark:text-gray-200">沉浸模式：啟用刪去法</span>
                                     <input type="checkbox" className="w-5 h-5 accent-amber-500" checked={quizSettings.showEliminationBtn} onChange={(e) => setQuizSettings(prev => ({...prev, showEliminationBtn: e.target.checked}))} />
                                 </label>
-                                <label className="flex items-center justify-between cursor-pointer">
+                                <label className="flex items-center justify-between cursor-pointer border-t dark:border-stone-700 pt-3">
                                     <span className="text-sm font-bold text-stone-700 dark:text-gray-200">偷看答案前再次確認</span>
                                     <input type="checkbox" className="w-5 h-5 accent-amber-500" checked={quizSettings.askBeforePeek} onChange={(e) => setQuizSettings(prev => ({...prev, askBeforePeek: e.target.checked}))} />
                                 </label>

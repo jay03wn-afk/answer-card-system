@@ -264,6 +264,9 @@ window.useQuizState = function(props) {
     const [showQuestionGrid, setShowQuestionGrid] = useState(false); 
     const [immersiveTextSize, setImmersiveTextSize] = useState(1); 
     const [splitTextSize, setSplitTextSize] = useState(0.95); 
+    const [customFontFamily, setCustomFontFamily] = useState('inherit'); // ✨ 新增：自訂字體
+    const [lineHeight, setLineHeight] = useState(1.6); // ✨ 新增：自訂行高
+    const [highlightColor, setHighlightColor] = useState('#fef08a'); // ✨ 新增：螢光筆顏色
     
     const [previewLightboxImg, setPreviewLightboxImg] = useState(null); 
     const [eliminatedOptions, setEliminatedOptions] = useState({}); 
@@ -272,7 +275,8 @@ window.useQuizState = function(props) {
     const [quizSettings, setQuizSettings] = useState({
         showEliminationBtn: true,
         askBeforePeek: true,
-        shortcuts: { a: 'a', b: 'b', c: 'c', d: 'd', peek: 'z', star: 'x' }
+        autoNext: false, // ✨ 新增：自動下一題開關
+        shortcuts: { a: '1', b: '2', c: '3', d: '4', peek: 'z', star: 'x' } // ✨ 更新：將預設快捷鍵改成 1234
     });
     const [peekConfirmIdx, setPeekConfirmIdx] = useState(null);
 
@@ -362,9 +366,13 @@ window.useQuizState = function(props) {
             if (key === 'arrowright' || key === 'arrowdown') {
                 e.preventDefault();
                 setCurrentInteractiveIndex(prev => Math.min(parsedInteractiveQuestions.length - 1, prev + 1));
+                // ✨ 智慧邏輯：手動按下一題時，自動重啟「自動下一題」功能
+                setQuizSettings(prev => ({...prev, autoNext: true}));
             } else if (key === 'arrowleft' || key === 'arrowup') {
                 e.preventDefault();
                 setCurrentInteractiveIndex(prev => Math.max(0, prev - 1));
+                // ✨ 智慧邏輯：手動按上一題時，自動關閉「自動下一題」功能
+                setQuizSettings(prev => ({...prev, autoNext: false}));
             } else if ([sc.a, sc.b, sc.c, sc.d].includes(key)) {
                 e.preventDefault();
                 let opt = 'A';
@@ -377,7 +385,16 @@ window.useQuizState = function(props) {
                     const actualIdx = q.globalIndex;
                     setUserAnswers(prev => {
                         const newAns = [...prev];
-                        newAns[actualIdx] = newAns[actualIdx] === opt ? '' : opt;
+                        const isCanceling = newAns[actualIdx] === opt;
+                        newAns[actualIdx] = isCanceling ? '' : opt;
+                        
+                        // ✨ 觸發自動下一題 (只限於選答案，不包含取消選擇)
+                        if (!isCanceling && quizSettings.autoNext) {
+                            setTimeout(() => {
+                                setCurrentInteractiveIndex(currIdx => Math.min(parsedInteractiveQuestions.length - 1, currIdx + 1));
+                            }, 150); // 稍微延遲一點點，讓玩家看到選中的動畫
+                        }
+                        
                         return newAns;
                     });
                 }
@@ -1393,9 +1410,19 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
 
     const handleAnswerSelect = (idx, opt) => {
         if(isTimeUp || (peekedAnswers && peekedAnswers[idx])) return; 
-        const newAns = [...userAnswers];
-        newAns[idx] = newAns[idx] === opt ? '' : opt;
-        setUserAnswers(newAns);
+        setUserAnswers(prev => {
+            const newAns = [...prev];
+            const isCanceling = newAns[idx] === opt;
+            newAns[idx] = isCanceling ? '' : opt;
+            
+            // ✨ 滑鼠點擊也支援自動下一題
+            if (!isCanceling && quizSettings.autoNext && viewMode === 'interactive') {
+                setTimeout(() => {
+                    setCurrentInteractiveIndex(currIdx => Math.min(parsedInteractiveQuestions.length - 1, currIdx + 1));
+                }, 150);
+            }
+            return newAns;
+        });
     };
 
     const executePeek = (idx) => {
@@ -2045,6 +2072,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         isTimeUp, setIsTimeUp, syncTrigger, setSyncTrigger, layoutMode, setLayoutMode, splitRatio, setSplitRatio,
         viewMode, setViewMode, collapsedSections, setCollapsedSections, currentInteractiveIndex, setCurrentInteractiveIndex,
         showQuestionGrid, setShowQuestionGrid, immersiveTextSize, setImmersiveTextSize, splitTextSize, setSplitTextSize,
+        customFontFamily, setCustomFontFamily, lineHeight, setLineHeight, highlightColor, setHighlightColor, // ✨ 匯出新增狀態
         previewLightboxImg, setPreviewLightboxImg, eliminatedOptions, setEliminatedOptions,
         showSettingsModal, setShowSettingsModal, quizSettings, setQuizSettings, peekConfirmIdx, setPeekConfirmIdx,
         isDragging, setIsDragging, previewOpen, setPreviewOpen, splitContainerRef,

@@ -16,6 +16,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
 
     // 出題系統狀態
     const [showQuizModal, setShowQuizModal] = useState(false);
+    const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false); // 新增：出題載入中狀態
     const [quizNameInput, setQuizNameInput] = useState(''); 
     const [selectedQuizSubjectId, setSelectedQuizSubjectId] = useState(null); 
     const [selectedQuizChapterIds, setSelectedQuizChapterIds] = useState([]); 
@@ -24,20 +25,39 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
     const [selectedTags, setSelectedTags] = useState([]);
     const [brushCount, setBrushCount] = useState(10);
     const [advTotalCount, setAdvTotalCount] = useState(50);
-    const [tagWeights, setTagWeights] = useState({});
-    const [diffWeights, setDiffWeights] = useState({});
+    // 新增進階出題系統狀態
+    const [advModeBy, setAdvModeBy] = useState('tag'); // 'tag' 或 'chapter'
+    const [advInputMode, setAdvInputMode] = useState('count'); // 'count' 或 'percent'
+    const [advAllocations, setAdvAllocations] = useState({}); 
+    const [skipUsed, setSkipUsed] = useState(false);
+    const [fallbackStrategy, setFallbackStrategy] = useState('random'); // 'random' (隨機補充) 或 'skip' (不抓)
 
     // 題目檢索系統狀態
     const [searchQ, setSearchQ] = useState('');
     const [filterTag, setFilterTag] = useState('');
     const [filterDiff, setFilterDiff] = useState('');
 
-    // 載入個人題庫
+    // 載入個人題庫 (自動相容並載入拆分後的題目資料)
     useEffect(() => {
         if (!user) return;
         const unsubscribe = window.db.collection('users').doc(user.uid).collection('qlib').doc('main')
-            .onSnapshot(doc => {
-                if (doc.exists) setSubjects(doc.data().subjects || []);
+            .onSnapshot(async docSnap => {
+                if (!docSnap.exists) return;
+                let loadedSubjects = docSnap.data().subjects || [];
+                try {
+                    const qSnap = await window.db.collection('users').doc(user.uid).collection('qlib_questions').get();
+                    const qDict = {};
+                    qSnap.forEach(d => { qDict[d.id] = d.data().questions || []; });
+                    
+                    loadedSubjects = loadedSubjects.map(s => ({
+                        ...s,
+                        chapters: (s.chapters || []).map(c => ({
+                            ...c,
+                            questions: qDict[c.id] || c.questions || [] // 優先使用獨立資料，無則用舊版
+                        }))
+                    }));
+                } catch(e) { console.error("讀取題庫內容失敗", e); }
+                setSubjects(loadedSubjects);
             });
         return () => unsubscribe();
     }, [user]);
@@ -59,14 +79,31 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
         setFilterDiff('');
     }, [activeChapterId]);
 
-    const saveToDb = (newSubjects) => {
-        setSubjects(newSubjects);
-        window.db.collection('users').doc(user.uid).collection('qlib').doc('main')
-            .set({ subjects: newSubjects }, { merge: true })
-            .catch(err => {
-                console.error("儲存失敗", err);
-                showAlert("儲存失敗，請檢查網路連線。");
+    // 分流儲存機制 (突破 1MB 限制)
+    const saveToDb = async (newSubjects) => {
+        setSubjects(newSubjects); // 樂觀更新 UI
+        try {
+            const batch = window.db.batch();
+            const mainRef = window.db.collection('users').doc(user.uid).collection('qlib').doc('main');
+            
+            // metadata 不包含 questions 以保持輕量
+            const metadataSubjects = newSubjects.map(s => ({
+                ...s, chapters: (s.chapters || []).map(c => ({ id: c.id, name: c.name }))
+            }));
+            batch.set(mainRef, { subjects: metadataSubjects }, { merge: true });
+            
+            // 將題目拆分到獨立 Document
+            newSubjects.forEach(s => {
+                (s.chapters || []).forEach(c => {
+                    const qRef = window.db.collection('users').doc(user.uid).collection('qlib_questions').doc(c.id);
+                    batch.set(qRef, { questions: c.questions || [] }, { merge: true });
+                });
             });
+            await batch.commit();
+        } catch (err) {
+            console.error("儲存失敗", err);
+            showAlert("儲存失敗，請檢查網路連線。");
+        }
     };
 
     const handleAddSubject = () => {
@@ -353,119 +390,156 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
 
     const quizTargetSubject = (subjects || []).find(s => s.id === selectedQuizSubjectId) || (subjects || [])[0];
     const quizTargetChapters = quizTargetSubject ? (quizTargetSubject.chapters || []).filter(c => selectedQuizChapterIds.length === 0 || selectedQuizChapterIds.includes(c.id)) : [];
-    const availableQuestionsForQuiz = quizTargetChapters.flatMap(c => c.questions || []);
+    
+    // 將章節資訊塞入題目，方便後續按照章節分配
+    const availableQuestionsForQuiz = quizTargetChapters.flatMap(c => 
+        (c.questions || []).map(q => ({...q, chapterId: c.id, chapterName: c.name}))
+    );
 
     const availableTags = [...new Set(availableQuestionsForQuiz.map(q => q.tag).filter(Boolean))];
-    const availableDiffs = [...new Set(availableQuestionsForQuiz.map(q => q.difficulty).filter(Boolean))];
+    const availableChapters = quizTargetChapters.map(c => ({ id: c.id, name: c.name }));
 
+    // 切換模式或開啟 Modal 時初始化配額
     useEffect(() => {
         if (showQuizModal) {
-            setTagWeights(prev => {
-                const newW = { ...prev };
-                availableTags.forEach(t => { if (newW[t] === undefined) newW[t] = 1; });
-                return newW;
-            });
-            setDiffWeights(prev => {
-                const newW = { ...prev };
-                availableDiffs.forEach(d => { if (newW[d] === undefined) newW[d] = 1; });
-                return newW;
-            });
+            setAdvAllocations({});
             setSelectedTags(prev => prev.filter(t => availableTags.includes(t)));
         }
-    }, [selectedQuizSubjectId, selectedQuizChapterIds, showQuizModal]);
+    }, [selectedQuizSubjectId, selectedQuizChapterIds, showQuizModal, advModeBy]);
 
     const handleGenerateQuiz = async () => {
         const finalBrushCount = parseInt(brushCount) || 0;
         const finalAdvCount = parseInt(advTotalCount) || 0;
 
-        if (quizMode === 'brush' && finalBrushCount <= 0) {
-            showAlert("抽題數量必須大於 0！");
-            return;
-        }
-        if (quizMode === 'advanced' && finalAdvCount <= 0) {
-            showAlert("試卷總題數必須大於 0！");
-            return;
-        }
+        if (quizMode === 'brush' && finalBrushCount <= 0) return showAlert("抽題數量必須大於 0！");
+        if (quizMode === 'advanced' && advInputMode === 'count' && finalAdvCount <= 0) return showAlert("試卷總題數必須大於 0！");
 
-        let pool = [];
-        if (quizMode === 'brush') {
-            pool = availableQuestionsForQuiz.filter(q => selectedTags.length === 0 || selectedTags.includes(q.tag));
-            pool = pool.sort(() => 0.5 - Math.random()).slice(0, finalBrushCount);
-        } else {
-            let finalSelection = [];
-            const totalTagW = availableTags.reduce((sum, t) => sum + (tagWeights[t] || 0), 0);
-            const tagTargets = {};
-            availableTags.forEach(t => {
-                tagTargets[t] = totalTagW === 0 ? 0 : Math.round((finalAdvCount * (tagWeights[t] || 0)) / totalTagW);
-            });
+        setIsGeneratingQuiz(true); // 開啟載入畫面
 
-            availableTags.forEach(t => {
-                let needed = tagTargets[t];
-                if (needed <= 0) return;
-                
-                let tagPool = availableQuestionsForQuiz.filter(q => q.tag === t);
-                const totalDiffW = availableDiffs.reduce((sum, d) => sum + (diffWeights[d] || 0), 0);
-                let diffTargets = {};
-                availableDiffs.forEach(d => {
-                    diffTargets[d] = totalDiffW === 0 ? 0 : Math.round((needed * (diffWeights[d] || 0)) / totalDiffW);
-                });
-
-                availableDiffs.forEach(d => {
-                    let dNeeded = diffTargets[d];
-                    if (dNeeded <= 0) return;
-                    let dPool = tagPool.filter(q => q.difficulty === d).sort(() => 0.5 - Math.random());
-                    finalSelection.push(...dPool.slice(0, dNeeded));
-                });
-            });
-            pool = finalSelection.sort(() => 0.5 - Math.random());
-        }
-
-        if (pool.length === 0) {
-            showAlert("找不到符合條件的題目，請重新調整篩選條件！");
-            return;
-        }
-
-        let textContent = '';
-        let htmlContent = '';
-        let expHtml = '';
-        let answersArray = [];
-
-        pool.forEach((q, idx) => {
-            const qNum = idx + 1;
-            textContent += `[Q.${qNum}]\n[#${q.tag || '未分類'}|@${q.difficulty || '1'}]\n${q.text || ''}\n[A] ${q.options?.A || ''}\n[B] ${q.options?.B || ''}\n[C] ${q.options?.C || ''}\n[D] ${q.options?.D || ''}\n[End]\n\n`;
-            htmlContent += `[Q.${qNum}]<br><div class="qlib-question-tags" style="color:#a8a29e; font-size:0.85em; font-weight:800; margin-bottom:6px; padding:2px 8px; background:rgba(0,0,0,0.04); display:inline-block; border-radius:6px;">[ #${q.tag || '未分類'} | 難度:${q.difficulty || '1'} ]</div><br>${(q.text || '').replace(/\n/g, '<br>')}<br>[A] ${(q.options?.A || '').replace(/\n/g, '<br>')}<br>[B] ${(q.options?.B || '').replace(/\n/g, '<br>')}<br>[C] ${(q.options?.C || '').replace(/\n/g, '<br>')}<br>[D] ${(q.options?.D || '').replace(/\n/g, '<br>')}<br>[End]<br><br>`;
-            answersArray.push(q.ans || 'A');
-            if (q.explain) expHtml += `[A.${qNum}]<br>${q.explain.replace(/\n/g, '<br>')}<br>[End]<br><br>`;
-        });
-
-        const correctAnswersStr = answersArray.join(',');
-        const quizId = Date.now().toString();
-        const fallbackName = quizMode === 'brush' ? `題庫刷題 (${pool.length}題)` : `進階配題 (${pool.length}題)`;
-        const finalTestName = quizNameInput.trim() !== '' ? quizNameInput.trim() : fallbackName;
-
-        const quizData = {
-            id: quizId, testName: finalTestName, folder: '我的題庫', numQuestions: pool.length,
-            maxScore: 100, roundScore: true, correctAnswersInput: correctAnswersStr,
-            publishAnswers: true, allowPeek: true, hasSeparatedContent: true, isCompleted: false,
-            userAnswers: Array(pool.length).fill(''), starred: Array(pool.length).fill(false),
-            notes: Array(pool.length).fill(''), peekedAnswers: Array(pool.length).fill(false),
-            createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
-        };
-
-        const compressedText = window.jzCompress ? window.jzCompress(textContent) : textContent;
-        const compressedHtml = window.jzCompress ? window.jzCompress(htmlContent) : htmlContent;
-        const compressedExp = window.jzCompress ? window.jzCompress(expHtml) : expHtml;
-        const contentData = { questionText: compressedText, questionHtml: compressedHtml, explanationHtml: compressedExp };
+        // 稍微延遲讓 React 有時間先渲染 Loading UI
+        await new Promise(resolve => setTimeout(resolve, 50));
 
         try {
+            let basePool = availableQuestionsForQuiz;
+            if (skipUsed) basePool = basePool.filter(q => !q.usedCount || q.usedCount === 0);
+
+            if (basePool.length === 0) {
+                showAlert("所選範圍內沒有足夠的題目（或已全被略過）！");
+                return;
+            }
+
+            let pool = [];
+            if (quizMode === 'brush') {
+                let filteredPool = basePool.filter(q => selectedTags.length === 0 || selectedTags.includes(q.tag));
+                pool = filteredPool.sort(() => 0.5 - Math.random()).slice(0, finalBrushCount);
+                
+                if (pool.length < finalBrushCount && fallbackStrategy === 'random') {
+                    const diff = finalBrushCount - pool.length;
+                    const usedIds = new Set(pool.map(q => q.id));
+                    const extraPool = basePool.filter(q => !usedIds.has(q.id)).sort(() => 0.5 - Math.random()).slice(0, diff);
+                    pool = [...pool, ...extraPool];
+                }
+            } else {
+                let finalSelection = [];
+                const allocKeys = Object.keys(advAllocations).filter(k => Number(advAllocations[k]) > 0);
+                const targetCounts = {};
+                
+                if (advInputMode === 'percent') {
+                    const totalPct = allocKeys.reduce((sum, k) => sum + Number(advAllocations[k]), 0);
+                    if (totalPct === 0) {
+                        showAlert("請設定至少一個比例大於 0");
+                        return;
+                    }
+                    allocKeys.forEach(k => {
+                        targetCounts[k] = Math.round((finalAdvCount * Number(advAllocations[k])) / totalPct);
+                    });
+                } else {
+                    allocKeys.forEach(k => { targetCounts[k] = Number(advAllocations[k]); });
+                }
+
+                allocKeys.forEach(k => {
+                    let needed = targetCounts[k];
+                    if (needed <= 0) return;
+                    
+                    let groupPool = basePool.filter(q => advModeBy === 'tag' ? q.tag === k : q.chapterId === k);
+                    groupPool = groupPool.sort(() => 0.5 - Math.random());
+                    
+                    let selected = groupPool.slice(0, needed);
+                    finalSelection.push(...selected);
+                    
+                    if (selected.length < needed && fallbackStrategy === 'random') {
+                        const diff = needed - selected.length;
+                        const usedIds = new Set(finalSelection.map(q=>q.id));
+                        const extras = basePool.filter(q => !usedIds.has(q.id)).sort(() => 0.5 - Math.random()).slice(0, diff);
+                        finalSelection.push(...extras);
+                    }
+                });
+                pool = finalSelection.sort(() => 0.5 - Math.random());
+            }
+
+            if (pool.length === 0) {
+                showAlert("找不到符合條件的題目，請重新調整篩選條件！");
+                return;
+            }
+
+            const poolIds = new Set(pool.map(q => q.id));
+            const newSubjects = subjects.map(s => {
+                if (s.id !== selectedQuizSubjectId) return s;
+                return {
+                    ...s,
+                    chapters: (s.chapters || []).map(c => ({
+                        ...c,
+                        questions: (c.questions || []).map(q => poolIds.has(q.id) ? { ...q, usedCount: (q.usedCount || 0) + 1 } : q)
+                    }))
+                };
+            });
+            await saveToDb(newSubjects); // 等待題庫紀錄更新完成
+
+            let textContent = '';
+            let htmlContent = '';
+            let expHtml = '';
+            let answersArray = [];
+
+            pool.forEach((q, idx) => {
+                const qNum = idx + 1;
+                textContent += `[Q.${qNum}]\n[#${q.tag || '未分類'}|@${q.difficulty || '1'}]\n${q.text || ''}\n[A] ${q.options?.A || ''}\n[B] ${q.options?.B || ''}\n[C] ${q.options?.C || ''}\n[D] ${q.options?.D || ''}\n[End]\n\n`;
+                htmlContent += `[Q.${qNum}]<br><div class="qlib-question-tags" style="color:#a8a29e; font-size:0.85em; font-weight:800; margin-bottom:6px; padding:2px 8px; background:rgba(0,0,0,0.04); display:inline-block; border-radius:6px;">[ #${q.tag || '未分類'} | 難度:${q.difficulty || '1'} ]</div><br>${(q.text || '').replace(/\n/g, '<br>')}<br>[A] ${(q.options?.A || '').replace(/\n/g, '<br>')}<br>[B] ${(q.options?.B || '').replace(/\n/g, '<br>')}<br>[C] ${(q.options?.C || '').replace(/\n/g, '<br>')}<br>[D] ${(q.options?.D || '').replace(/\n/g, '<br>')}<br>[End]<br><br>`;
+                answersArray.push(q.ans || 'A');
+                if (q.explain) expHtml += `[A.${qNum}]<br>${q.explain.replace(/\n/g, '<br>')}<br>[End]<br><br>`;
+            });
+
+            const correctAnswersStr = answersArray.join(',');
+            const quizId = Date.now().toString();
+            const fallbackName = quizMode === 'brush' ? `題庫刷題 (${pool.length}題)` : `進階配題 (${pool.length}題)`;
+            const finalTestName = quizNameInput.trim() !== '' ? quizNameInput.trim() : fallbackName;
+
+            const quizData = {
+                id: quizId, testName: finalTestName, folder: '我的題庫', numQuestions: pool.length,
+                maxScore: 100, roundScore: true, correctAnswersInput: correctAnswersStr,
+                publishAnswers: true, allowPeek: true, hasSeparatedContent: true, isCompleted: false,
+                userAnswers: Array(pool.length).fill(''), starred: Array(pool.length).fill(false),
+                notes: Array(pool.length).fill(''), peekedAnswers: Array(pool.length).fill(false),
+                createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            const compressedText = window.jzCompress ? window.jzCompress(textContent) : textContent;
+            const compressedHtml = window.jzCompress ? window.jzCompress(htmlContent) : htmlContent;
+            const compressedExp = window.jzCompress ? window.jzCompress(expHtml) : expHtml;
+            const contentData = { questionText: compressedText, questionHtml: compressedHtml, explanationHtml: compressedExp };
+
             await window.db.collection('users').doc(user.uid).collection('quizzes').doc(quizId).set(quizData);
             await window.db.collection('users').doc(user.uid).collection('quizContents').doc(quizId).set(contentData);
+            
             setShowQuizModal(false);
             if (onContinueQuiz) onContinueQuiz({ ...quizData, ...contentData });
             else showAlert("出題成功，但尚未綁定跳轉功能。");
+
         } catch (err) {
+            console.error(err);
             showAlert("試卷產生失敗，請檢查網路狀態。");
+        } finally {
+            setIsGeneratingQuiz(false); // 無論成功失敗，都關閉載入畫面
         }
     };
 
@@ -643,6 +717,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                             {q.tag && <span className="text-xs font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-200 dark:border-cyan-800 flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">sell</span>{q.tag}</span>}
                                             {q.difficulty && <span className="text-xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 px-2 py-0.5 rounded-full border border-rose-200 dark:border-rose-800 flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">bar_chart</span>難度: {q.difficulty}</span>}
                                             <span className="text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800 flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">check_circle</span>答案: {q.ans}</span>
+                                            {q.usedCount > 0 && <span className="text-xs font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800 flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">history</span>已出過 ({q.usedCount}次)</span>}
                                         </div>
                                         <div className="font-bold text-stone-800 dark:text-stone-100 mb-3 whitespace-pre-wrap">{q.text}</div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-stone-600 dark:text-stone-300 mb-3">
@@ -849,7 +924,21 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                             </div>
                         )}
                         
-                        <div className="flex gap-2 mb-4 border-t border-stone-200 dark:border-stone-700 pt-4">
+                        {/* 進階選項控制列 */}
+                        <div className="flex gap-4 mb-4 border-t border-stone-200 dark:border-stone-700 pt-4 px-1">
+                            <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-stone-700 dark:text-stone-300">
+                                <input type="checkbox" checked={skipUsed} onChange={e => setSkipUsed(e.target.checked)} className="w-4 h-4 accent-amber-500" />
+                                略過已出過的題目
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-stone-700 dark:text-stone-300">
+                                <select value={fallbackStrategy} onChange={e => setFallbackStrategy(e.target.value)} className="p-1 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded outline-none text-xs">
+                                    <option value="random">題數不足：隨機補足</option>
+                                    <option value="skip">題數不足：忽略不抓</option>
+                                </select>
+                            </label>
+                        </div>
+
+                        <div className="flex gap-2 mb-4">
                             <button onClick={() => setQuizMode('brush')} className={`flex-1 py-2 font-bold rounded-lg border transition-colors ${quizMode === 'brush' ? 'bg-cyan-500 text-white border-cyan-600 shadow-sm' : 'bg-stone-100 text-stone-600 dark:bg-stone-700 dark:text-stone-300 border-transparent hover:bg-stone-200 dark:hover:bg-stone-600'}`}>快速刷題</button>
                             <button onClick={() => setQuizMode('advanced')} className={`flex-1 py-2 font-bold rounded-lg border transition-colors ${quizMode === 'advanced' ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-stone-100 text-stone-600 dark:bg-stone-700 dark:text-stone-300 border-transparent hover:bg-stone-200 dark:hover:bg-stone-600'}`}>進階配題</button>
                         </div>
@@ -866,63 +955,82 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">4. 抽題數量 (上限 {availableQuestionsForQuiz.length} 題)</label>
-                                    <input type="number" min="0" max={availableQuestionsForQuiz.length || 1} value={brushCount} onChange={e => setBrushCount(e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white" />
+                                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">4. 抽題數量 (符合條件的題庫上限 {skipUsed ? availableQuestionsForQuiz.filter(q=>!q.usedCount).length : availableQuestionsForQuiz.length} 題)</label>
+                                    <input type="number" min="0" value={brushCount} onChange={e => setBrushCount(e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white" />
                                 </div>
                             </div>
                         )}
 
                         {quizMode === 'advanced' && (
                             <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">試卷總題數</label>
-                                    <input type="number" min="0" max={availableQuestionsForQuiz.length || 1} value={advTotalCount} onChange={e => setAdvTotalCount(e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white" />
-                                </div>
-                                
-                                <div className="border-t border-stone-200 dark:border-stone-700 pt-3">
-                                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">標籤佔比 <span className="text-xs font-normal text-amber-600 dark:text-amber-400">(自動換算 %)</span></label>
-                                    {availableTags.length === 0 ? <span className="text-sm text-gray-500 font-bold bg-stone-100 dark:bg-stone-800 px-3 py-1 rounded inline-block mt-1">無可用標籤</span> : (
-                                        (() => {
-                                            const totalTagW = availableTags.reduce((sum, t) => sum + (tagWeights[t] || 0), 0);
-                                            return availableTags.map(t => {
-                                                const pct = totalTagW === 0 ? 0 : Math.round(((tagWeights[t] || 0) / totalTagW) * 100);
-                                                return (
-                                                    <div key={t} className="flex items-center gap-3 mb-2">
-                                                        <span className="w-20 text-xs font-bold truncate dark:text-stone-300">{t}</span>
-                                                        <input type="range" min="0" max="10" step="1" value={tagWeights[t] || 0} onChange={e => setTagWeights({...tagWeights, [t]: parseInt(e.target.value)})} className="flex-1 accent-amber-500" />
-                                                        <span className="w-16 text-xs font-black text-center text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded px-1 py-0.5">約 {pct}%</span>
-                                                    </div>
-                                                );
-                                            });
-                                        })()
-                                    )}
+                                <div className="flex gap-2">
+                                    <select value={advModeBy} onChange={e => { setAdvModeBy(e.target.value); setAdvAllocations({}); }} className="p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold text-sm flex-1 dark:text-white focus:border-amber-500">
+                                        <option value="tag">按「標籤」分配</option>
+                                        <option value="chapter">按「章節」分配</option>
+                                    </select>
+                                    <select value={advInputMode} onChange={e => { setAdvInputMode(e.target.value); setAdvAllocations({}); }} className="p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold text-sm flex-1 dark:text-white focus:border-amber-500">
+                                        <option value="count">輸入「指定題數」</option>
+                                        <option value="percent">輸入「佔比%」</option>
+                                    </select>
                                 </div>
 
+                                {advInputMode === 'percent' && (
+                                    <div>
+                                        <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">試卷總題數</label>
+                                        <input type="number" min="0" value={advTotalCount} onChange={e => setAdvTotalCount(e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white" />
+                                    </div>
+                                )}
+                                
                                 <div className="border-t border-stone-200 dark:border-stone-700 pt-3">
-                                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">難度佔比 <span className="text-xs font-normal text-rose-600 dark:text-rose-400">(自動換算 %)</span></label>
-                                    {availableDiffs.length === 0 ? <span className="text-sm text-gray-500 font-bold bg-stone-100 dark:bg-stone-800 px-3 py-1 rounded inline-block mt-1">無可用難度</span> : (
-                                        (() => {
-                                            const totalDiffW = availableDiffs.reduce((sum, d) => sum + (diffWeights[d] || 0), 0);
-                                            return availableDiffs.map(d => {
-                                                const pct = totalDiffW === 0 ? 0 : Math.round(((diffWeights[d] || 0) / totalDiffW) * 100);
-                                                return (
-                                                    <div key={d} className="flex items-center gap-3 mb-2">
-                                                        <span className="w-20 text-xs font-bold truncate dark:text-stone-300">難度 {d}</span>
-                                                        <input type="range" min="0" max="10" step="1" value={diffWeights[d] || 0} onChange={e => setDiffWeights({...diffWeights, [d]: parseInt(e.target.value)})} className="flex-1 accent-rose-500" />
-                                                        <span className="w-16 text-xs font-black text-center text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded px-1 py-0.5">約 {pct}%</span>
+                                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">各項目分配設定</label>
+                                    {(() => {
+                                        const list = advModeBy === 'tag' ? availableTags : availableChapters.map(c => c.id);
+                                        if (list.length === 0) return <span className="text-sm text-gray-500">無可用項目</span>;
+                                        
+                                        return list.map(item => {
+                                            const key = advModeBy === 'tag' ? item : item;
+                                            const label = advModeBy === 'tag' ? item : availableChapters.find(c => c.id === item)?.name;
+                                            const poolLen = availableQuestionsForQuiz.filter(q => {
+                                                const match = advModeBy === 'tag' ? q.tag === key : q.chapterId === key;
+                                                return match && (!skipUsed || !q.usedCount);
+                                            }).length;
+
+                                            return (
+                                                <div key={key} className="flex items-center justify-between gap-3 mb-2 bg-stone-50 dark:bg-stone-900 p-2 rounded-lg border border-stone-100 dark:border-stone-700">
+                                                    <div className="flex flex-col w-1/2">
+                                                        <span className="text-sm font-bold truncate dark:text-stone-300">{label}</span>
+                                                        <span className="text-[10px] text-gray-500 font-bold">可用: {poolLen} 題</span>
                                                     </div>
-                                                );
-                                            });
-                                        })()
-                                    )}
+                                                    <div className="flex items-center gap-1 w-1/2">
+                                                        <input type="number" min="0" placeholder="0" value={advAllocations[key] || ''} onChange={e => setAdvAllocations({...advAllocations, [key]: parseInt(e.target.value) || 0})} className="w-full p-1.5 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 rounded outline-none text-sm font-bold text-center dark:text-white" />
+                                                        <span className="text-xs text-gray-500 font-bold">{advInputMode === 'count' ? '題' : '%'}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
                                 </div>
                             </div>
                         )}
 
                         <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-stone-200 dark:border-stone-700">
-                            <button onClick={() => setShowQuizModal(false)} className="px-4 py-2 font-bold text-gray-500 hover:text-stone-800 dark:hover:text-stone-200 transition-colors">取消</button>
-                            <button onClick={handleGenerateQuiz} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 font-black px-6 py-2 rounded-lg shadow-sm transition-transform active:scale-95 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">play_arrow</span> 立即產生測驗</button>
+                            <button disabled={isGeneratingQuiz} onClick={() => setShowQuizModal(false)} className="px-4 py-2 font-bold text-gray-500 hover:text-stone-800 dark:hover:text-stone-200 transition-colors disabled:opacity-50">取消</button>
+                            <button disabled={isGeneratingQuiz} onClick={handleGenerateQuiz} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 font-black px-6 py-2 rounded-lg shadow-sm transition-transform active:scale-95 flex items-center gap-1 disabled:opacity-50 disabled:active:scale-100">
+                                {isGeneratingQuiz ? (
+                                    <><span className="material-symbols-outlined text-[18px] animate-spin">autorenew</span> 產生中...</>
+                                ) : (
+                                    <><span className="material-symbols-outlined text-[18px]">play_arrow</span> 立即產生測驗</>
+                                )}
+                            </button>
                         </div>
+
+                        {/* 載入中半透明遮罩 */}
+                        {isGeneratingQuiz && (
+                            <div className="absolute inset-0 z-10 bg-[#FCFBF7]/70 dark:bg-stone-800/70 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center">
+                                <span className="material-symbols-outlined text-[48px] text-amber-500 animate-spin mb-3">autorenew</span>
+                                <span className="font-black text-stone-800 dark:text-stone-100 text-lg tracking-widest shadow-sm">正在為您調配題目...</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
