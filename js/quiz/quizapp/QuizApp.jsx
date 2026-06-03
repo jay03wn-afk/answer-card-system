@@ -11,6 +11,9 @@ function QuizApp(props) {
     // 呼叫我們剛剛建立的大腦，把所有的狀態跟功能「借」過來用
     const { currentUser, userProfile, showAlert, showConfirm, showPrompt, tutorialStep, setTutorialStep } = props;
 
+    // ✨ 新增：結果頁沉浸模式目前題號
+    const [resultInteractiveIdx, setResultInteractiveIdx] = useState(0);
+
     // ✨ 新增：螢光筆浮動工具列狀態與選取邏輯
     const [selectionRect, setSelectionRect] = useState(null);
     useEffect(() => {
@@ -24,8 +27,8 @@ function QuizApp(props) {
             let container = range.commonAncestorContainer;
             if (container.nodeType === 3) container = container.parentNode;
             
-            // 確保只有在試題區選取文字時才彈出
-            if (container && container.closest && container.closest('.preview-rich-text')) {
+            // 確保只有在作答介面的試題區選取文字時才彈出 (避免結果頁面選取報錯)
+            if (container && container.closest && container.closest('.preview-rich-text') && document.querySelector('.quiz-answering-container')) {
                 const rect = range.getBoundingClientRect();
                 setSelectionRect({
                     top: Math.max(10, rect.top - 50),
@@ -66,7 +69,8 @@ function QuizApp(props) {
             const span = document.createElement('span');
             span.style.backgroundColor = color;
             span.style.color = '#1a1a1a';
-            span.className = 'highlight-marker rounded px-1 transition-colors cursor-pointer shadow-sm font-bold';
+            span.className = 'highlight-marker rounded px-1 transition-colors cursor-pointer shadow-sm';
+            span.style.mixBlendMode = 'multiply'; // 讓顏色疊加呈現真實螢光筆效果，並去除粗體
             span.appendChild(fragment);
             range.insertNode(span);
         } catch(e) {
@@ -1787,9 +1791,12 @@ function QuizApp(props) {
                                                                         setEliminatedOptions(prev => ({ ...prev, [elimKey]: !prev[elimKey] }));
                                                                         if (!isEliminated && isSelected) handleAnswerSelect(actualIdx, opt);
                                                                     }}
-                                                                    className={`w-10 sm:w-12 flex items-center justify-center border-2 transition-colors rounded-2xl shrink-0 ${isEliminated ? 'bg-stone-100 border-gray-300 text-gray-600 dark:bg-gray-700' : 'bg-[#FCFBF7] border-stone-200 text-gray-300 hover:text-gray-500 dark:bg-stone-800'}`}
+                                                                    className={`w-10 sm:w-12 flex items-center justify-center border-2 transition-all duration-200 rounded-[1.5rem] shrink-0 active:scale-95 ${isEliminated ? 'bg-stone-200/50 border-stone-300 text-stone-500 dark:bg-stone-700/50 dark:border-stone-600 dark:text-stone-400 shadow-inner' : 'bg-white border-stone-200 text-stone-300 hover:text-rose-500 hover:border-rose-300 hover:bg-rose-50 dark:bg-stone-800 dark:border-stone-700 dark:hover:bg-rose-900/20 dark:hover:border-rose-700 dark:hover:text-rose-400 shadow-sm hover:shadow-md'}`}
+                                                                    title={isEliminated ? '取消刪去' : '刪去此選項'}
                                                                 >
-                                                                    {isEliminated ? '↺' : '✕'}
+                                                                    <span className="material-symbols-outlined text-[20px]">
+                                                                        {isEliminated ? 'undo' : 'close'}
+                                                                    </span>
                                                                 </button>
                                                             )}
                                                             <button 
@@ -2845,7 +2852,113 @@ if (step === 'grading') return (
                     </button>
                 </div>
             </div>
-            
+
+            {/* ✨ 依據 viewMode 切換完全不同的排版架構：大卡片沉浸模式 vs 雙視窗列表模式 */}
+            {viewMode === 'interactive' && parsedInteractiveQuestions.length > 0 && canSeeAnswers ? (
+                <div className="quiz-answering-container flex-grow flex flex-col w-full mt-2 sm:mt-4 overflow-hidden relative rounded-2xl shadow-inner border border-stone-300 dark:border-stone-800 bg-gradient-to-br from-stone-200 to-stone-300 dark:from-stone-900 dark:to-stone-950 transition-colors animate-fade-in">
+                    <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 sm:px-10 custom-scrollbar">
+                        <div className="flex flex-col w-full max-w-5xl mx-auto">
+                            {/* 上一題 / 下一題 控制列 */}
+                            <div className="bg-white dark:bg-stone-800 rounded-2xl shadow-md border border-stone-200 dark:border-stone-700 p-4 mb-6 flex justify-between items-center transition-all">
+                                <button disabled={resultInteractiveIdx === 0} onClick={() => setResultInteractiveIdx(p => Math.max(0, p - 1))} className="bg-stone-100 hover:bg-amber-100 dark:bg-stone-700 dark:hover:bg-stone-600 text-stone-700 dark:text-stone-200 px-5 py-2 rounded-xl font-bold text-sm disabled:opacity-30 transition-all shadow-sm flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-sm">arrow_back_ios</span>上一題
+                                </button>
+                                <div className="flex flex-col items-center">
+                                    <span className="font-extrabold text-amber-600 dark:text-amber-400 text-base tracking-wide">第 {resultInteractiveIdx + 1} / {parsedInteractiveQuestions.length} 題</span>
+                                    <span className="text-[11px] font-medium text-stone-400 mt-0.5">點擊右側面板號碼可快速跳題</span>
+                                </div>
+                                <button disabled={resultInteractiveIdx === parsedInteractiveQuestions.length - 1} onClick={() => setResultInteractiveIdx(p => Math.min(parsedInteractiveQuestions.length - 1, p + 1))} className="bg-stone-800 hover:bg-amber-500 text-white dark:bg-stone-100 dark:text-stone-800 px-5 py-2 rounded-xl font-bold text-sm disabled:opacity-30 transition-all shadow-sm flex items-center gap-1">
+                                    下一題<span className="material-symbols-outlined text-sm">arrow_forward_ios</span>
+                                </button>
+                            </div>
+
+                            {/* 核心題目大字卡 (帶有作答紀錄、選項與詳解) */}
+                            <div className="bg-white dark:bg-stone-800/95 rounded-[2rem] p-6 sm:p-10 shadow-xl relative border border-stone-200/60 dark:border-stone-700/60 transition-colors">
+                                {(() => {
+                                    const q = parsedInteractiveQuestions[resultInteractiveIdx];
+                                    const actualIdx = q.globalIndex;
+                                    const itemData = results.data.find(d => d.number === actualIdx + 1) || { isCorrect: false, userAns: '', correctAns: '' };
+                                    const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
+                                    const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : '';
+                                    
+                                    return (
+                                        <>
+                                            <div className="flex justify-between items-center border-b border-stone-100 dark:border-stone-700 pb-4 mb-6">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-3xl font-black text-amber-500 tracking-tight">第 {q.number} 題</span>
+                                                    <button 
+    onClick={() => toggleStar(actualIdx)} 
+    className="material-symbols-outlined text-2xl text-amber-400 hover:scale-110 transition-transform active:scale-95"
+    style={{ fontVariationSettings: starred[actualIdx] ? '"FILL" 1' : '"FILL" 0' }}
+>
+    star
+</button>
+                                                </div>
+                                                <span className={`px-4 py-1.5 text-sm font-black rounded-full border shadow-sm ${itemData.isCorrect ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400'}`}>
+                                                    {itemData.isCorrect ? '✅ 答對' : '❌ 錯誤'}
+                                                </span>
+                                            </div>
+
+                                            {/* 保留原本 preview-rich-text，確保螢光筆功能可以正常運作 */}
+                                            <div className="preview-rich-text text-stone-800 dark:text-stone-200 text-lg leading-relaxed mb-8 select-text" dangerouslySetInnerHTML={{ __html: q.mainText }} />
+
+                                            {q.type === 'Q' && (
+                                                <div className="flex flex-col gap-4 mb-8">
+                                                    {['A', 'B', 'C', 'D'].map(opt => {
+                                                        const isSelected = itemData.userAns === opt;
+                                                        const elimKey = `${actualIdx}_${opt}`;
+                                                        const isEliminated = eliminatedOptions[elimKey];
+                                                        const correctStr = itemData.correctAns || '';
+                                                        const isCorrectOpt = correctStr.toLowerCase().includes(opt.toLowerCase()) || correctStr.toLowerCase() === 'abcd' || correctStr.toLowerCase() === 'z';
+                                                        
+                                                        let btnClasses = `text-left w-full py-4 px-6 flex items-start space-x-4 rounded-[1.5rem] ring-1 transition-all `;
+                                                        if (isCorrectOpt) {
+                                                            btnClasses += 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-900/20 dark:ring-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-md ';
+                                                        } else if (isSelected) {
+                                                            btnClasses += 'bg-rose-50 ring-rose-400 dark:bg-rose-900/20 dark:ring-rose-500 text-rose-900 dark:text-rose-100 shadow-sm ';
+                                                        } else {
+                                                            btnClasses += 'bg-stone-50/50 ring-black/5 dark:bg-stone-800/50 dark:ring-white/10 opacity-40 ';
+                                                        }
+                                                        if (isEliminated) btnClasses += 'opacity-30 grayscale line-through ';
+
+                                                        return (
+                                                            <div key={opt} className={btnClasses}>
+                                                                <span className={`font-black w-6 shrink-0 text-center ${isSelected ? (isCorrectOpt ? 'text-emerald-600' : 'text-rose-600') : 'text-gray-400'}`}>{opt}.</span>
+                                                                {q.options && q.options[opt] ? (
+                                                                    <div className="preview-rich-text !p-0 !border-none !bg-transparent w-full flex-1" dangerouslySetInnerHTML={{ __html: q.options[opt] }} />
+                                                                ) : (
+                                                                    <span className="w-full flex-1 text-gray-400 italic">(選項無內容)</span>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            <div className="p-6 bg-amber-50/40 dark:bg-stone-900/40 border border-amber-200/60 dark:border-amber-800/60 rounded-2xl shadow-inner">
+                                                <div className="flex flex-wrap gap-4 justify-between items-center mb-4 pb-4 border-b border-amber-200/40 dark:border-amber-800/40">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm font-bold text-stone-600 dark:text-stone-400">你的選答：</span>
+                                                        <span className={`px-3 py-1 rounded-lg text-sm font-extrabold shadow-sm ${itemData.isCorrect ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-rose-100 text-rose-800 line-through dark:bg-rose-900/40 dark:text-rose-400'}`}>{itemData.userAns || '未填寫'}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm font-bold text-stone-600 dark:text-stone-400">標準答案：</span>
+                                                        <span className="bg-emerald-500 text-white dark:bg-emerald-600 px-3 py-1 rounded-lg text-sm font-black shadow-sm">{itemData.correctAns}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-2">
+                                                    <h4 className="text-sm font-black text-amber-800 dark:text-amber-400 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-base">lightbulb</span> 試題詳解：</h4>
+                                                    <div className="preview-rich-text text-sm text-stone-700 dark:text-stone-300 leading-relaxed bg-white/60 dark:bg-stone-800/60 p-4 rounded-xl border border-stone-200/40 dark:border-stone-700/40" dangerouslySetInnerHTML={{ __html: currentExp ? window.parseSmilesToHtml(currentExp) : '此題無提供詳解。' }} />
+                                                </div>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : (
             <div 
                 ref={splitContainerRef}
                 className={`flex-grow flex ${layoutMode === 'horizontal' ? 'flex-row' : 'flex-col'} overflow-hidden relative w-full mt-2 sm:mt-4`}
@@ -2975,97 +3088,81 @@ if (step === 'grading') return (
                         </div>
                     )}
 
-                    {/* ✨ 新增：AI 錯題分析按鈕 (成績面板下方) */}
-                    {results && results.data && results.data.some(d => !d.isCorrect) && canSeeAnswers && (
-                        <div className="px-4 py-3 border-b border-stone-200 dark:border-stone-700 bg-indigo-50/50 dark:bg-indigo-900/10 shrink-0 flex justify-between items-center flex-wrap gap-3">
-                            <div className="flex flex-col">
-                                <span className="text-sm font-bold text-indigo-700 dark:text-indigo-400 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">psychology</span> AI 錯題弱點分析</span>
-                                <span className="text-xs text-indigo-500 dark:text-indigo-300">自動歸納您這份試卷的錯誤觀念，並補充考點筆記 (100💎)</span>
-                            </div>
+                    {/* ✨ 新增：知識點答對率分析 (預設收合，點擊才展開) */}
+                    {results && results.data && parsedInteractiveQuestions.length > 0 && canSeeAnswers && (
+                        <div className="border-b border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800/50 shrink-0 transition-colors">
                             <button 
-                                onClick={async () => {
-                                    const currentDiamonds = userProfile?.mcData?.diamonds || 0;
-                                    if (currentDiamonds < 100) return showAlert(`💎 鑽石不足！使用 AI 分析需要 100 顆鑽石，您目前只有 ${currentDiamonds} 顆。`);
-                                    
-                                    const wrongQuestions = results.data.filter(d => !d.isCorrect);
-                                    if (wrongQuestions.length === 0) return showAlert('您沒有錯題，不需要分析！');
-
-                                    if (window.setGlobalToast) {
-                                        window.setGlobalToast({ status: 'loading', message: '⏳ AI 正在深度分析您的錯題，請稍候...' });
-                                    }
-
-                                   try {
-                                        let promptData = "以下是該名學生在測驗中答錯的題目，請深入分析其共同弱點、指出錯誤觀念，並詳細補充該知識點的核心常考細節。\n\n";
-                                        
-                                        // 限制最多送出 15 題給 AI，避免送出過多資料導致 Vercel Serverless 執行超時 (500 Error)
-                                        const limitedWrongQuestions = wrongQuestions.slice(0, 15);
-                                        
-                                        limitedWrongQuestions.forEach(wq => {
-                                            const actualIdx = wq.number - 1;
-                                            const q = parsedInteractiveQuestions.find(x => x.globalIndex === actualIdx);
-                                            if (q) {
-                                                // 將富文本轉為純文字，去除 HTML 標籤，大幅減輕 AI 閱讀負擔與解析錯誤
-                                                let cleanMainText = q.mainText.replace(/<[^>]+>/g, '').trim();
-                                                
-                                                promptData += `【第 ${wq.number} 題】\n題目：${cleanMainText}\n學生錯答：${wq.userAns}\n正確答案：${wq.correctAns}\n\n`;
+                                onClick={() => setCollapsedSections(prev => ({ ...prev, tagAnalysis: !prev.tagAnalysis }))}
+                                className="w-full px-5 py-4 flex justify-between items-center font-black text-sm text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-[20px] text-amber-500">bar_chart</span>
+                                    <span>知識點標籤答對率分析</span>
+                                </div>
+                                <svg className={`w-4 h-4 text-stone-400 transition-transform duration-300 ${collapsedSections?.tagAnalysis ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            
+                            {collapsedSections?.tagAnalysis && (
+                                <div className="px-5 pb-5 pt-2 animate-fade-in border-t border-stone-100 dark:border-stone-700/50">
+                                    {(() => {
+                                        const tagStats = {};
+                                        results.data.forEach((item) => {
+                                            const actualIdx = item.number - 1;
+                                            const q = parsedInteractiveQuestions.find(q => q.globalIndex === actualIdx);
+                                            if (q && q.mainText) {
+                                                const text = q.mainText.replace(/<[^>]+>/g, '');
+                                                const matchTags = text.match(/#([^\s\|\]\)\,\s]+)/g);
+                                                if (matchTags) {
+                                                    const uniqueTags = [...new Set(matchTags)];
+                                                    uniqueTags.forEach(tagGroup => {
+                                                        const tag = tagGroup.substring(1).trim();
+                                                        if (!tagStats[tag]) tagStats[tag] = { total: 0, correct: 0 };
+                                                        tagStats[tag].total += 1;
+                                                        if (item.isCorrect) tagStats[tag].correct += 1;
+                                                    });
+                                                }
                                             }
                                         });
 
-                                        if (wrongQuestions.length > 15) {
-                                            promptData += `(備註：該學生總共錯了 ${wrongQuestions.length} 題，但為了避免系統超時，請針對上述 15 題最具代表性的錯題進行深度分析即可。)\n\n`;
+                                        const tagStatsArray = Object.keys(tagStats).map(tag => ({
+                                            tag,
+                                            total: tagStats[tag].total,
+                                            correct: tagStats[tag].correct,
+                                            rate: Math.round((tagStats[tag].correct / tagStats[tag].total) * 100)
+                                        })).sort((a, b) => b.total - a.total);
+
+                                        if (tagStatsArray.length === 0) {
+                                            return <p className="text-xs text-stone-400 font-bold italic py-2 pl-2">本份試卷題目文本中未偵測到任何 #標籤（例如 #心臟）。</p>;
                                         }
 
-                                        // 移除字數限制，讓 AI 盡情發揮詳細解析
-                                        promptData += "請使用繁體中文，格式請用條列式或段落，語氣要像專業且鼓勵人的家教老師。請直接輸出純文本，絕對不要包含任何 markdown code block (例如 ```)。";
-
-                                        const res = await fetch('/api/gemini', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ prompt: promptData })
-                                        });
-                                        
-                                        // ✨ 解決 JSON 解析錯誤：先將回應讀成純文字，避免伺服器回傳 HTML 或純文字錯誤時直接崩潰
-                                        const responseText = await res.text();
-                                        
-                                        if (!res.ok) {
-                                            console.error("API 錯誤回應:", responseText);
-                                            throw new Error(`伺服器超時或過載 (錯誤碼: ${res.status})，請稍後再試！`);
-                                        }
-                                        
-                                        let data;
-                                        try {
-                                            // 嘗試將純文字解析為 JSON
-                                            data = JSON.parse(responseText);
-                                        } catch (parseError) {
-                                            console.error("API 回傳了非 JSON 格式的內容:", responseText);
-                                            throw new Error("伺服器回應異常，這通常是因為 AI 思考過久導致 Vercel 強制中斷連線，請稍後再試！");
-                                        }
-                                        
-                                        if (data.result && data.result.startsWith('❌')) throw new Error(data.result);
-
-                                        // 扣除鑽石
-                                        await window.db.collection('users').doc(currentUser.uid).update({
-                                            'mcData.diamonds': (currentDiamonds - 100)
-                                        });
-
-                                        // 將結果存入筆記，方便使用者查看
-                                        const analysisText = data.result.trim();
-                                        setExplanationModalItem({
-                                            number: 'AI 分析報告',
-                                            content: `<div class="p-4 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-900 leading-relaxed">${analysisText}</div>`,
-                                            note: ''
-                                        });
-
-                                        if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: '✅ 分析完成！已為您扣除 100 鑽石。' });
-
-                                    } catch (e) {
-                                        if (window.setGlobalToast) window.setGlobalToast({ status: 'error', message: '❌ 分析失敗 (未扣除鑽石)：' + e.message });
-                                    }
-                                }}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center gap-1 active:scale-95"
-                            >
-                                <span className="material-symbols-outlined text-[16px]">auto_awesome</span> 開始分析
-                            </button>
+                                        return (
+                                            <div className="space-y-3 max-w-2xl pt-2">
+                                                {tagStatsArray.map(stat => (
+                                                    <div key={stat.tag} className="flex items-center gap-3 text-sm">
+                                                        <div className="w-24 shrink-0 font-bold text-stone-600 dark:text-stone-400 truncate text-right" title={stat.tag}>
+                                                            #{stat.tag}
+                                                        </div>
+                                                        <div className="flex-grow bg-stone-100 dark:bg-stone-700 rounded-full h-5 overflow-hidden relative flex items-center shadow-inner">
+                                                            <div 
+                                                                className={`h-full transition-all duration-1000 ease-out rounded-full ${stat.rate >= 80 ? 'bg-emerald-500' : stat.rate >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                                                                style={{ width: `${stat.rate}%` }}
+                                                            ></div>
+                                                            <span className="absolute left-3 text-[11px] font-black text-stone-800/70 dark:text-white/90 drop-shadow-sm">
+                                                                {stat.correct} / {stat.total} 題
+                                                            </span>
+                                                        </div>
+                                                        <div className="w-12 shrink-0 text-right font-black text-stone-700 dark:text-stone-300">
+                                                            {stat.rate}%
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -3077,7 +3174,7 @@ if (step === 'grading') return (
                         </div>
                     ) : (
                         <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 custom-scrollbar bg-stone-50 dark:bg-stone-900 transition-colors">
-                            {/* ✨ 題型列表收合設計 */}
+                            {/* ✨ 題型列表收合設計 (沉浸模式的大卡片已經移到外層獨立顯示了) */}
                             {['Q', 'SQ', 'ASQ'].map(targetType => {
                                 const typeData = results.data.filter(item => {
                                     const actualIdx = item.number - 1;
@@ -3332,47 +3429,90 @@ if (step === 'grading') return (
                 </div>
 
             </div>
-
+            )} {/* ✨ 結束沉浸模式與列表模式的條件渲染切換 */}
+            
             </div> {/* ✨ 結束左側主內容區 wrapper */}
 
-            {/* ✨ 新增：沉浸式結果頁右側面板 (電腦版顯示) */}
-            <div className="hidden xl:flex flex-col w-[350px] shrink-0 h-full mt-8 bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl shadow-xl overflow-hidden z-10">
-                <div className="bg-stone-100 dark:bg-stone-900 border-b border-stone-200 dark:border-stone-700 px-5 py-4 shrink-0 flex flex-col gap-1 text-center">
-                    <span className="font-black text-2xl tracking-wide dark:text-white">成績總覽</span>
-                    <div className="flex justify-center items-end gap-2">
-                        <span className={`text-4xl font-black ${results.score >= 60 ? 'text-emerald-500' : 'text-red-500'}`}>{results.score}</span>
-                        <span className="text-gray-500 font-bold mb-1">分</span>
-                    </div>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                    <div className="grid grid-cols-5 gap-2">
+            {/* ✨ 修改：全新設計的可收合省空間成績總覽面板 (支援沉浸模式連動與錯題雙重顯示) */}
+            <div className={`hidden xl:flex flex-col shrink-0 h-full mt-8 bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl shadow-xl transition-all duration-300 z-10 ${previewOpen ? 'w-[280px]' : 'w-[60px]'}`}>
+                <button 
+                    onClick={() => setPreviewOpen(!previewOpen)} 
+                    className="w-full bg-stone-100 dark:bg-stone-900 hover:bg-amber-100 dark:hover:bg-amber-950/40 py-2 flex justify-center items-center border-b border-stone-200 dark:border-stone-700 text-stone-500 dark:text-stone-400 transition-colors shrink-0"
+                >
+                    <span className="material-symbols-outlined text-xl">{previewOpen ? 'keyboard_double_arrow_right' : 'keyboard_double_arrow_left'}</span>
+                </button>
+                
+                {previewOpen ? (
+                    <>
+                        <div className="bg-stone-50 dark:bg-stone-900/50 border-b border-stone-200 dark:border-stone-700 px-4 py-3 shrink-0 flex flex-col gap-0.5 text-center">
+                            <span className="font-bold text-sm tracking-wide text-stone-500 dark:text-stone-400">成績總覽</span>
+                            <div className="flex justify-center items-end gap-1">
+                                <span className={`text-3xl font-black ${results.score >= 60 ? 'text-emerald-500' : 'text-red-500'}`}>{results.score}</span>
+                                <span className="text-xs text-stone-400 font-bold mb-1">分</span>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                            <div className="grid grid-cols-4 gap-1.5">
+                                {results.data.map((item, idx) => {
+                                    const isStarred = starred[item.number - 1];
+                                    const isCorrect = item.isCorrect;
+                                    const isCurrentInInteractive = viewMode === 'interactive' && resultInteractiveIdx === idx;
+                                    
+                                    return (
+                                        <button 
+                                            key={idx}
+                                            onClick={() => {
+                                                if (viewMode === 'interactive') setResultInteractiveIdx(idx);
+                                                else scrollToQuestion(item.number);
+                                            }}
+                                            className={`relative p-1 min-h-[48px] flex flex-col items-center justify-center rounded-lg border transition-all hover:scale-105 active:scale-95 shadow-sm
+                                                ${isCurrentInInteractive ? 'ring-2 ring-amber-500 ring-offset-2 dark:ring-offset-stone-800 font-black' : ''}
+                                                ${isCorrect ? 'bg-emerald-50/60 border-emerald-200 text-emerald-800 dark:bg-emerald-950/20 dark:border-emerald-900/60 dark:text-emerald-400' : 'bg-rose-50/60 border-rose-200 text-rose-800 dark:bg-rose-950/20 dark:border-rose-900/60 dark:text-rose-400'}
+                                            `}
+                                        >
+                                            <span className="text-xs font-black leading-none mb-0.5">{item.number}</span>
+                                            {isCorrect ? (
+                                                <span className="text-[10px] font-bold opacity-80 bg-emerald-100/50 dark:bg-emerald-900/30 px-1 rounded leading-tight">{item.userAns || '-'}</span>
+                                            ) : (
+                                                <div className="flex flex-col items-center leading-none gap-0.5 w-full">
+                                                    <span className="text-[9px] line-through opacity-50 text-rose-600 dark:text-rose-500">{item.userAns || '-'}</span>
+                                                    <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-100/60 dark:bg-emerald-900/40 px-0.5 rounded">{item.correctAns || '-'}</span>
+                                                </div>
+                                            )}
+                                            {isStarred && <span className="absolute -top-1 -right-1 material-symbols-outlined text-[11px] text-amber-500 bg-white dark:bg-stone-800 rounded-full shadow-sm">star</span>}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <div className="flex-1 flex flex-col items-center py-4 gap-3 overflow-y-auto custom-scrollbar">
+                        <div className="flex flex-col items-center">
+                            <span className={`text-lg font-black ${results.score >= 60 ? 'text-emerald-500' : 'text-red-500'}`}>{results.score}</span>
+                            <span className="text-[9px] text-stone-400 font-bold leading-none">分</span>
+                        </div>
+                        <div className="w-full border-t border-stone-200 dark:border-stone-700 my-1"></div>
                         {results.data.map((item, idx) => {
-                            const isStarred = starred[item.number - 1];
-                            const isCorrect = item.isCorrect;
-                            
+                            const isCurrentInInteractive = viewMode === 'interactive' && resultInteractiveIdx === idx;
                             return (
-                                <button 
+                                <button
                                     key={idx}
-                                    onClick={() => scrollToQuestion(item.number)}
-                                    className={`relative aspect-square flex flex-col items-center justify-center rounded-xl border-2 transition-all hover:scale-105 active:scale-95 shadow-sm
-                                        ${isCorrect ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-600/50 dark:text-emerald-400' : 'bg-rose-50 border-rose-300 text-rose-700 dark:bg-rose-900/30 dark:border-rose-600/50 dark:text-rose-400'}
+                                    onClick={() => {
+                                        if (viewMode === 'interactive') setResultInteractiveIdx(idx);
+                                        else scrollToQuestion(item.number);
+                                    }}
+                                    className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-xs font-bold transition-all hover:scale-110
+                                        ${isCurrentInInteractive ? 'ring-2 ring-amber-500 ring-offset-1 dark:ring-offset-stone-800' : ''}
+                                        ${item.isCorrect ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}
                                     `}
                                 >
-                                    <span className="font-black text-sm">{item.number}</span>
-                                    <span className="text-[10px] font-bold opacity-70 truncate w-full px-1">{item.userAns || '-'}</span>
-                                    {isStarred && (
-                                        <span className="absolute -top-1.5 -right-1.5 material-symbols-outlined text-[14px] text-amber-500 bg-white dark:bg-stone-800 rounded-full shadow-sm border border-amber-100">star</span>
-                                    )}
+                                    {item.number}
                                 </button>
                             );
                         })}
                     </div>
-                </div>
-                <div className="bg-stone-50 dark:bg-stone-900/50 p-4 border-t border-stone-200 dark:border-stone-700 shrink-0 text-center flex justify-center gap-4 text-xs font-bold text-gray-500">
-                    <span className="flex items-center gap-1 text-emerald-600"><span className="w-3 h-3 rounded-full bg-emerald-300"></span> 答對</span>
-                    <span className="flex items-center gap-1 text-rose-600"><span className="w-3 h-3 rounded-full bg-rose-300"></span> 答錯</span>
-                    <span className="flex items-center gap-1 text-amber-500"><span className="material-symbols-outlined text-[14px]">star</span> 星號</span>
-                </div>
+                )}
             </div>
 
             {showShareScoreModal && (

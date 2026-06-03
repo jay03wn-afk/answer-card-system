@@ -366,13 +366,11 @@ window.useQuizState = function(props) {
             if (key === 'arrowright' || key === 'arrowdown') {
                 e.preventDefault();
                 setCurrentInteractiveIndex(prev => Math.min(parsedInteractiveQuestions.length - 1, prev + 1));
-                // ✨ 智慧邏輯：手動按下一題時，自動重啟「自動下一題」功能
-                setQuizSettings(prev => ({...prev, autoNext: true}));
+                // 移除強制作弊修改設定的行為，尊重使用者的原始設定
             } else if (key === 'arrowleft' || key === 'arrowup') {
                 e.preventDefault();
                 setCurrentInteractiveIndex(prev => Math.max(0, prev - 1));
-                // ✨ 智慧邏輯：手動按上一題時，自動關閉「自動下一題」功能
-                setQuizSettings(prev => ({...prev, autoNext: false}));
+                // 移除強制作弊修改設定的行為，尊重使用者的原始設定
             } else if ([sc.a, sc.b, sc.c, sc.d].includes(key)) {
                 e.preventDefault();
                 let opt = 'A';
@@ -383,20 +381,25 @@ window.useQuizState = function(props) {
                 const q = parsedInteractiveQuestions[currentInteractiveIndex];
                 if (q && !isTimeUp && !(peekedAnswers && peekedAnswers[q.globalIndex])) {
                     const actualIdx = q.globalIndex;
+                    let shouldAutoNext = false;
+                    
                     setUserAnswers(prev => {
                         const newAns = [...prev];
                         const isCanceling = newAns[actualIdx] === opt;
                         newAns[actualIdx] = isCanceling ? '' : opt;
                         
-                        // ✨ 觸發自動下一題 (只限於選答案，不包含取消選擇)
                         if (!isCanceling && quizSettings.autoNext) {
-                            setTimeout(() => {
-                                setCurrentInteractiveIndex(currIdx => Math.min(parsedInteractiveQuestions.length - 1, currIdx + 1));
-                            }, 150); // 稍微延遲一點點，讓玩家看到選中的動畫
+                            shouldAutoNext = true;
                         }
-                        
                         return newAns;
                     });
+
+                    // 確保非同步動畫移出狀態更新週期外，保證穩定觸發
+                    if (shouldAutoNext) {
+                        setTimeout(() => {
+                            setCurrentInteractiveIndex(currIdx => Math.min(parsedInteractiveQuestions.length - 1, currIdx + 1));
+                        }, 150);
+                    }
                 }
             } else if (key === sc.peek) {
                 e.preventDefault();
@@ -1410,19 +1413,26 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
 
     const handleAnswerSelect = (idx, opt) => {
         if(isTimeUp || (peekedAnswers && peekedAnswers[idx])) return; 
+        
+        let shouldAutoNext = false;
+
         setUserAnswers(prev => {
             const newAns = [...prev];
             const isCanceling = newAns[idx] === opt;
             newAns[idx] = isCanceling ? '' : opt;
             
-            // ✨ 滑鼠點擊也支援自動下一題
             if (!isCanceling && quizSettings.autoNext && viewMode === 'interactive') {
-                setTimeout(() => {
-                    setCurrentInteractiveIndex(currIdx => Math.min(parsedInteractiveQuestions.length - 1, currIdx + 1));
-                }, 150);
+                shouldAutoNext = true;
             }
             return newAns;
         });
+
+        // 將 setTimeout 移到狀態更新外，避免 StrictMode 造成重複觸發或失效
+        if (shouldAutoNext) {
+            setTimeout(() => {
+                setCurrentInteractiveIndex(currIdx => Math.min(parsedInteractiveQuestions.length - 1, currIdx + 1));
+            }, 150);
+        }
     };
 
     const executePeek = (idx) => {
