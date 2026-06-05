@@ -14,93 +14,7 @@ function QuizApp(props) {
     // ✨ 新增：結果頁沉浸模式目前題號
     const [resultInteractiveIdx, setResultInteractiveIdx] = useState(0);
 
-    // ✨ 新增：螢光筆浮動工具列狀態與選取邏輯
-    const [selectionRect, setSelectionRect] = useState(null);
-    useEffect(() => {
-        const handleSelection = () => {
-            const selection = window.getSelection();
-            if (!selection || selection.isCollapsed || !selection.rangeCount) {
-                setSelectionRect(null);
-                return;
-            }
-            const range = selection.getRangeAt(0);
-            let container = range.commonAncestorContainer;
-            if (container.nodeType === 3) container = container.parentNode;
-            
-            // 確保只有在作答介面的試題區選取文字時才彈出 (避免結果頁面選取報錯)
-            if (container && container.closest && container.closest('.preview-rich-text') && document.querySelector('.quiz-answering-container')) {
-                const rect = range.getBoundingClientRect();
-                setSelectionRect({
-                    top: Math.max(10, rect.top - 50),
-                    left: rect.left + rect.width / 2
-                });
-            } else {
-                setSelectionRect(null);
-            }
-        };
-        document.addEventListener('mouseup', handleSelection);
-        document.addEventListener('touchend', handleSelection);
-        return () => {
-            document.removeEventListener('mouseup', handleSelection);
-            document.removeEventListener('touchend', handleSelection);
-        };
-    }, []);
-
-    const applyHighlight = (color) => {
-        const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || !selection.rangeCount) return;
-        const range = selection.getRangeAt(0);
-        let container = range.commonAncestorContainer;
-        if (container.nodeType === 3) container = container.parentNode;
-        
-        // 如果選擇透明，則解除該節點的標記
-        if (color === 'transparent') {
-            if (container.tagName === 'SPAN' && container.classList.contains('highlight-marker')) {
-                const text = document.createTextNode(container.textContent);
-                container.parentNode.replaceChild(text, container);
-            }
-            selection.removeAllRanges();
-            setSelectionRect(null);
-            return;
-        }
-
-        try {
-            const fragment = range.extractContents();
-            const span = document.createElement('span');
-            span.style.backgroundColor = color;
-            span.style.color = '#1a1a1a';
-            span.className = 'highlight-marker rounded px-1 transition-colors cursor-pointer shadow-sm';
-            span.style.mixBlendMode = 'multiply'; // 讓顏色疊加呈現真實螢光筆效果，並去除粗體
-            span.appendChild(fragment);
-            range.insertNode(span);
-        } catch(e) {
-            console.log("螢光筆跨節點標記受限，請分段畫記");
-        }
-        selection.removeAllRanges();
-        setSelectionRect(null);
-    };
-
-    const HighlighterToolbar = selectionRect && (
-        <div 
-            className="fixed z-[9999] flex items-center gap-2 bg-white/90 dark:bg-stone-800/90 backdrop-blur-md px-3 py-2 rounded-2xl shadow-xl transform -translate-x-1/2 animate-fade-in ring-1 ring-black/5 dark:ring-white/10"
-            style={{ top: selectionRect.top, left: selectionRect.left }}
-            onMouseDown={e => e.preventDefault()}
-        >
-            {['#fef08a', '#bbf7d0', '#a5f3fc', '#fbcfe8'].map(color => (
-                <button 
-                    key={color} 
-                    onClick={(e) => { e.preventDefault(); applyHighlight(color); }}
-                    className="w-6 h-6 rounded-full shadow-inner hover:scale-110 transition-transform ring-2 ring-transparent hover:ring-black/20"
-                    style={{ backgroundColor: color }}
-                />
-            ))}
-            <div className="w-px h-4 bg-stone-300 dark:bg-stone-600 mx-1"></div>
-            <button 
-                onClick={(e) => { e.preventDefault(); applyHighlight('transparent'); }}
-                className="text-stone-500 dark:text-stone-300 text-xs font-bold hover:text-rose-500 px-1 transition-colors"
-            >清除</button>
-        </div>
-    );
+     
     
     // ✨ 新增：將平坦的資料夾陣列轉換為樹狀結構，並管理展開狀態
     const [expandedFolders, setExpandedFolders] = useState({});
@@ -212,35 +126,35 @@ function QuizApp(props) {
     // ✨ 新增：螢光筆標記功能 (支援自選顏色與取消標記)
     const handleTextSelection = () => {
         const selection = window.getSelection();
-        if (!selection.rangeCount || selection.isCollapsed) return;
+        if (!selection || !selection.rangeCount || selection.isCollapsed) return;
         
         // 確保只在題目內標記
         const node = selection.anchorNode;
-        if (!node || !node.parentElement.closest('.preview-rich-text')) return;
+        if (!node || !node.parentElement) return;
+        if (!node.parentElement.closest('.preview-rich-text')) return;
 
         const range = selection.getRangeAt(0);
+        const parentSpan = node.parentElement;
         
         // 如果已經有標記，則取消標記
-        const parentSpan = node.parentElement;
-        if (parentSpan.tagName === 'SPAN' && parentSpan.style.backgroundColor) {
+        if (parentSpan.tagName === 'SPAN' && parentSpan.classList.contains('highlight-marker')) {
             const textNode = document.createTextNode(parentSpan.textContent);
             parentSpan.parentNode.replaceChild(textNode, parentSpan);
             selection.removeAllRanges();
             return;
         }
 
-        const span = document.createElement('span');
-        span.style.backgroundColor = highlightColor;
-        span.style.color = '#1a1a1a'; // 確保字體在螢光色上清晰可見
-        span.style.borderRadius = '4px';
-        span.style.padding = '0 2px';
-        span.className = 'highlight-marker cursor-pointer transition-colors';
-        
         try {
-            range.surroundContents(span);
+            const fragment = range.extractContents();
+            const span = document.createElement('span');
+            span.style.backgroundColor = highlightColor;
+            span.style.color = '#1a1a1a'; // 確保字體在螢光色上清晰可見
+            span.className = 'highlight-marker rounded px-1 transition-colors cursor-pointer shadow-sm';
+            span.appendChild(fragment);
+            range.insertNode(span);
             selection.removeAllRanges();
         } catch(e) {
-            console.log("跨節點選取無法直接標記");
+            console.warn("跨節點選取無法直接標記，請避開段落交界處畫記", e);
         }
     };
 
@@ -1406,8 +1320,7 @@ function QuizApp(props) {
                 }
             `}} />
 
-           {/* 注入浮動螢光筆工具 */}
-            {HighlighterToolbar}
+           {/* (已改為選取文字自動上色) */}
             
             {/* ✨ 質感升級：毛玻璃導覽列 (拔除死板線條，改用柔和陰影) */}
             <div className={`bg-white/70 dark:bg-stone-800/70 backdrop-blur-xl p-3 sm:p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] ring-1 ring-black/5 dark:ring-white/10 flex flex-wrap justify-between items-center rounded-[2rem] gap-3 shrink-0 transition-colors w-full mb-2 mt-6 ${tutorialStep > 0 ? '' : 'z-10'}`}>
@@ -1460,41 +1373,7 @@ function QuizApp(props) {
                     
                     <button onClick={() => setShowSettingsModal(true)} className="bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-4 py-2 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
                         <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                        設定選單
-                    </button>
-                    
-                    {!isShared && !isTask && tutorialStep === 0 && (
-                        <button 
-                            onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setStep('edit');
-                            }} 
-                            className="text-sm font-bold bg-amber-50 dark:bg-amber-900 text-amber-600 dark:text-amber-300 px-4 py-2 rounded-full border border-amber-200 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-800 whitespace-nowrap transition-colors active:scale-95 flex items-center shadow-sm"
-                        >
-                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                            編輯試題
-                        </button>
-                    )}
-                    
-                    <button 
-                        onClick={(e) => {
-                            const btn = e.currentTarget;
-                            const originalHTML = btn.innerHTML;
-                            btn.innerHTML = '<svg class="w-4 h-4 mr-1.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> 存檔中...';
-                            btn.classList.add('opacity-50', 'pointer-events-none');
-                            const savePromise = handleSaveProgress(false);
-                            if (savePromise && savePromise.finally) {
-                                savePromise.finally(() => {
-                                    btn.innerHTML = originalHTML;
-                                    btn.classList.remove('opacity-50', 'pointer-events-none');
-                                });
-                            }
-                        }} 
-                        className="hidden sm:flex text-sm font-bold bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-300 px-4 py-2 rounded-full border border-stone-200 dark:border-stone-600 hover:bg-stone-200 dark:hover:bg-stone-600 whitespace-nowrap transition-all active:scale-95 items-center shadow-sm"
-                    >
-                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
-                        手動存檔
+                        設定與管理
                     </button>
 
                     <button 
@@ -2308,6 +2187,25 @@ function QuizApp(props) {
                         </div>
 
                         <div className="space-y-6">
+                            {/* ✨ 試卷管理操作區 (整合作業) */}
+                            <div className="bg-white dark:bg-stone-800 p-4 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-sm flex flex-col gap-3">
+                                <h4 className="font-bold text-sm text-stone-600 dark:text-stone-300 mb-1 flex items-center border-b border-stone-100 dark:border-stone-700 pb-2">
+                                    <span className="material-symbols-outlined text-[18px] mr-1.5">edit_document</span> 試卷管理
+                                </h4>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {!isShared && !isTask && tutorialStep === 0 && (
+                                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowSettingsModal(false); setStep('edit'); }} className="text-sm font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 py-2 rounded-xl border border-amber-200 dark:border-amber-700/50 hover:bg-amber-100 dark:hover:bg-amber-800 transition-colors flex items-center justify-center shadow-sm col-span-2">
+                                            <span className="material-symbols-outlined text-[16px] mr-1.5">edit</span> 編輯試題
+                                        </button>
+                                    )}
+                                    {(isShared || isTask || testName.includes('[#op]')) && (
+                                        <button onClick={() => { setShowSettingsModal(false); handleSendSuggestion(); }} className="text-sm font-bold bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-300 py-2 rounded-xl border border-stone-200 dark:border-stone-600 hover:bg-stone-200 dark:hover:bg-stone-600 transition-colors flex items-center justify-center shadow-sm col-span-2">
+                                            <span className="material-symbols-outlined text-[16px] mr-1.5">feedback</span> 修正建議
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
                             {/* 顯示模式切換 */}
                             <div>
                                 <h4 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-3 flex items-center">
@@ -2795,7 +2693,7 @@ if (step === 'grading') return (
 
                     <button onClick={() => setShowSettingsModal(true)} className="bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-4 py-2 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
                         <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                        設定
+                        設定與管理
                     </button>
 
                     <button onClick={() => {
@@ -2813,18 +2711,6 @@ if (step === 'grading') return (
                     <button onClick={handleStartWrongRetest} className="text-sm font-bold bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 px-4 py-2 rounded-full border border-cyan-200 dark:border-cyan-700/50 hover:bg-cyan-100 dark:hover:bg-cyan-800 whitespace-nowrap transition-colors flex items-center shadow-sm">
                         <span className="material-symbols-outlined text-[16px] mr-1.5">replay</span> 錯題重測
                     </button>
-
-                    {!isShared && !isTask && tutorialStep === 0 && (
-                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setStep('edit'); }} className="text-sm font-bold bg-stone-50 dark:bg-stone-700 text-stone-700 dark:text-stone-300 px-4 py-2 rounded-full border border-stone-200 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-600 whitespace-nowrap transition-colors active:scale-95 flex items-center shadow-sm">
-                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg> 編輯試題
-                        </button>
-                    )}
-
-                    {(isShared || isTask || testName.includes('[#op]')) && (
-                        <button onClick={handleSendSuggestion} className="text-sm font-bold bg-stone-50 dark:bg-stone-700 text-stone-700 dark:text-stone-300 px-4 py-2 rounded-full border border-stone-200 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-600 whitespace-nowrap transition-colors flex items-center shadow-sm">
-                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg> 修正建議
-                        </button>
-                    )}
 
                     <button onClick={async () => {
                         let currentCode = shortCode;
@@ -3138,7 +3024,36 @@ if (step === 'grading') return (
                                         }
 
                                         return (
-                                            <div className="space-y-3 max-w-2xl pt-2">
+                                            <div className="space-y-4 max-w-2xl pt-2">
+                                                {tagStatsArray.length >= 3 && (
+                                                    <div className="flex justify-center mb-6">
+                                                        <svg width="240" height="240" viewBox="0 0 240 240" className="overflow-visible drop-shadow-sm">
+                                                            {[0.2, 0.4, 0.6, 0.8, 1].map(level => {
+                                                                const pts = tagStatsArray.map((_, i) => {
+                                                                    const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
+                                                                    return `${120 + 80 * level * Math.cos(angle)},${120 + 80 * level * Math.sin(angle)}`;
+                                                                }).join(' ');
+                                                                return <polygon key={level} points={pts} fill="none" stroke="currentColor" className="text-stone-300 dark:text-stone-600" strokeWidth="1" />;
+                                                            })}
+                                                            {tagStatsArray.map((_, i) => {
+                                                                const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
+                                                                return <line key={i} x1="120" y1="120" x2={120 + 80 * Math.cos(angle)} y2={120 + 80 * Math.sin(angle)} stroke="currentColor" className="text-stone-300 dark:text-stone-600" strokeWidth="1" />;
+                                                            })}
+                                                            <polygon points={tagStatsArray.map((d, i) => {
+                                                                const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
+                                                                return `${120 + 80 * (d.rate / 100) * Math.cos(angle)},${120 + 80 * (d.rate / 100) * Math.sin(angle)}`;
+                                                            }).join(' ')} fill="rgba(245, 158, 11, 0.4)" stroke="rgb(245, 158, 11)" strokeWidth="2" className="transition-all duration-1000 ease-out" />
+                                                            {tagStatsArray.map((d, i) => {
+                                                                const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
+                                                                return (
+                                                                    <text key={i} x={120 + 105 * Math.cos(angle)} y={120 + 105 * Math.sin(angle)} textAnchor="middle" dominantBaseline="middle" className="text-[11px] font-black fill-stone-600 dark:fill-stone-300">
+                                                                        {d.tag.length > 6 ? d.tag.substring(0, 6) + '...' : d.tag}
+                                                                    </text>
+                                                                );
+                                                            })}
+                                                        </svg>
+                                                    </div>
+                                                )}
                                                 {tagStatsArray.map(stat => (
                                                     <div key={stat.tag} className="flex items-center gap-3 text-sm">
                                                         <div className="w-24 shrink-0 font-bold text-stone-600 dark:text-stone-400 truncate text-right" title={stat.tag}>
@@ -3484,6 +3399,96 @@ if (step === 'grading') return (
                                     );
                                 })}
                             </div>
+                            
+                            {/* ✨ 新增：沉浸式檢視模式右側面板的章節答對率視覺化分析 */}
+                            {parsedInteractiveQuestions.length > 0 && canSeeAnswers && (
+                                <div className="mt-6 border-t border-stone-200 dark:border-stone-700 pt-4 pb-2">
+                                    <h4 className="font-black text-sm text-stone-700 dark:text-stone-300 mb-3 flex items-center gap-1.5">
+                                        <span className="material-symbols-outlined text-[18px] text-amber-500">pie_chart</span>
+                                        章節答對率分析
+                                    </h4>
+                                    {(() => {
+                                        const tagStats = {};
+                                        results.data.forEach((item) => {
+                                            const actualIdx = item.number - 1;
+                                            const q = parsedInteractiveQuestions.find(q => q.globalIndex === actualIdx);
+                                            if (q && q.mainText) {
+                                                const text = q.mainText.replace(/<[^>]+>/g, '');
+                                                const matchTags = text.match(/#([^\s\|\]\)\,\s]+)/g);
+                                                if (matchTags) {
+                                                    const uniqueTags = [...new Set(matchTags)];
+                                                    uniqueTags.forEach(tagGroup => {
+                                                        const tag = tagGroup.substring(1).trim();
+                                                        if (!tagStats[tag]) tagStats[tag] = { total: 0, correct: 0 };
+                                                        tagStats[tag].total += 1;
+                                                        if (item.isCorrect) tagStats[tag].correct += 1;
+                                                    });
+                                                }
+                                            }
+                                        });
+
+                                        const tagStatsArray = Object.keys(tagStats).map(tag => ({
+                                            tag,
+                                            total: tagStats[tag].total,
+                                            correct: tagStats[tag].correct,
+                                            rate: Math.round((tagStats[tag].correct / tagStats[tag].total) * 100)
+                                        })).sort((a, b) => b.total - a.total);
+
+                                        if (tagStatsArray.length === 0) {
+                                            return <p className="text-[10px] text-stone-400 font-bold italic">未偵測到章節標籤 (#標籤)</p>;
+                                        }
+
+                                        return (
+                                            <div className="space-y-4">
+                                                {tagStatsArray.length >= 3 && (
+                                                    <div className="flex justify-center mb-4 mt-2">
+                                                        <svg width="160" height="160" viewBox="0 0 160 160" className="overflow-visible drop-shadow-sm">
+                                                            {[0.2, 0.4, 0.6, 0.8, 1].map(level => {
+                                                                const pts = tagStatsArray.map((_, i) => {
+                                                                    const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
+                                                                    return `${80 + 50 * level * Math.cos(angle)},${80 + 50 * level * Math.sin(angle)}`;
+                                                                }).join(' ');
+                                                                return <polygon key={level} points={pts} fill="none" stroke="currentColor" className="text-stone-300 dark:text-stone-600" strokeWidth="1" />;
+                                                            })}
+                                                            {tagStatsArray.map((_, i) => {
+                                                                const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
+                                                                return <line key={i} x1="80" y1="80" x2={80 + 50 * Math.cos(angle)} y2={80 + 50 * Math.sin(angle)} stroke="currentColor" className="text-stone-300 dark:text-stone-600" strokeWidth="1" />;
+                                                            })}
+                                                            <polygon points={tagStatsArray.map((d, i) => {
+                                                                const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
+                                                                return `${80 + 50 * (d.rate / 100) * Math.cos(angle)},${80 + 50 * (d.rate / 100) * Math.sin(angle)}`;
+                                                            }).join(' ')} fill="rgba(245, 158, 11, 0.4)" stroke="rgb(245, 158, 11)" strokeWidth="2" className="transition-all duration-1000 ease-out" />
+                                                            {tagStatsArray.map((d, i) => {
+                                                                const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
+                                                                return (
+                                                                    <text key={i} x={80 + 70 * Math.cos(angle)} y={80 + 70 * Math.sin(angle)} textAnchor="middle" dominantBaseline="middle" className="text-[9px] font-black fill-stone-600 dark:fill-stone-300">
+                                                                        {d.tag.length > 5 ? d.tag.substring(0, 5) + '...' : d.tag}
+                                                                    </text>
+                                                                );
+                                                            })}
+                                                        </svg>
+                                                    </div>
+                                                )}
+                                                {tagStatsArray.map(stat => (
+                                                    <div key={stat.tag} className="flex flex-col gap-1">
+                                                        <div className="flex justify-between items-end">
+                                                            <span className="text-[11px] font-bold text-stone-600 dark:text-stone-400 truncate max-w-[120px]" title={stat.tag}>#{stat.tag}</span>
+                                                            <span className="text-[10px] font-black text-stone-700 dark:text-stone-300">{stat.rate}%</span>
+                                                        </div>
+                                                        <div className="w-full bg-stone-200 dark:bg-stone-700 rounded-full h-2 overflow-hidden shadow-inner">
+                                                            <div 
+                                                                className={`h-full transition-all duration-1000 ease-out rounded-full ${stat.rate >= 80 ? 'bg-emerald-500' : stat.rate >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                                                                style={{ width: `${stat.rate}%` }}
+                                                            ></div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
+
                         </div>
                     </>
                 ) : (
@@ -3672,6 +3677,25 @@ if (step === 'grading') return (
                         </div>
 
                         <div className="space-y-6">
+                            {/* ✨ 試卷管理操作區 (整合作業) */}
+                            <div className="bg-white dark:bg-stone-800 p-4 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-sm flex flex-col gap-3">
+                                <h4 className="font-bold text-sm text-stone-600 dark:text-stone-300 mb-1 flex items-center border-b border-stone-100 dark:border-stone-700 pb-2">
+                                    <span className="material-symbols-outlined text-[18px] mr-1.5">edit_document</span> 試卷管理
+                                </h4>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {!isShared && !isTask && tutorialStep === 0 && (
+                                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowSettingsModal(false); setStep('edit'); }} className="text-sm font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 py-2 rounded-xl border border-amber-200 dark:border-amber-700/50 hover:bg-amber-100 dark:hover:bg-amber-800 transition-colors flex items-center justify-center shadow-sm col-span-2">
+                                            <span className="material-symbols-outlined text-[16px] mr-1.5">edit</span> 編輯試題
+                                        </button>
+                                    )}
+                                    {(isShared || isTask || testName.includes('[#op]')) && (
+                                        <button onClick={() => { setShowSettingsModal(false); handleSendSuggestion(); }} className="text-sm font-bold bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-300 py-2 rounded-xl border border-stone-200 dark:border-stone-600 hover:bg-stone-200 dark:hover:bg-stone-600 transition-colors flex items-center justify-center shadow-sm col-span-2">
+                                            <span className="material-symbols-outlined text-[16px] mr-1.5">feedback</span> 修正建議
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
                             {/* 顯示模式切換 */}
                             <div>
                                 <h4 className="font-bold text-sm text-gray-500 dark:text-gray-400 mb-3 flex items-center">

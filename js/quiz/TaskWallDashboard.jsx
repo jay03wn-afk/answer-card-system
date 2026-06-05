@@ -126,7 +126,11 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
                         setLoading(false);
                     });
                 } else {
-                    unsubQA = window.db.collection('fastQA').orderBy('createdAt', 'desc').limit(qaLimit).onSnapshot({ includeMetadataChanges: true }, snapshot => {
+                    let query = window.db.collection('fastQA');
+                    if (selectedSubject !== '全部') {
+                        query = query.where('subject', '==', selectedSubject);
+                    }
+                    unsubQA = query.orderBy('createdAt', 'desc').limit(qaLimit).onSnapshot({ includeMetadataChanges: true }, snapshot => {
                         const qas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         const now = new Date().getTime();
                         
@@ -307,17 +311,82 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         setIsExportingCloud(false);
     };
 
-   const handleKetcherSave = (imgBase64) => {
-        // 直接將高畫質圖片轉換成 HTML 的 img 標籤插入題目或選項中
-        const formatted = `<img src="${imgBase64}" style="max-height:120px; border-radius:8px; vertical-align:middle; margin:4px; display:inline-block;" alt="結構圖"/>`;
-        if(ketcherTarget === 'q') setQuestion(prev => prev + formatted);
-        else if(ketcherTarget === 'exp') setExplanation(prev => prev + formatted);
-        else {
-            const newOpt = [...options];
-            newOpt[ketcherTarget] += formatted;
-            setOptions(newOpt);
-        }
+   const handleKetcherSave = async (imgBase64) => {
         setShowKetcherModal(false);
+        if(window.setGlobalToast) window.setGlobalToast({ status: 'loading', message: '正在將結構圖上傳至雲端...' });
+        try {
+            const fetchRes = await fetch(imgBase64);
+            const blob = await fetchRes.blob();
+            const filePath = `fastQA_images/${user.uid}_${Date.now()}.jpg`;
+            const storageRef = window.storage.ref(filePath);
+            await storageRef.put(blob);
+            const url = await storageRef.getDownloadURL();
+            
+            const formatted = `<img src="${url}" style="max-height:120px; border-radius:8px; vertical-align:middle; margin:4px; display:inline-block;" alt="結構圖"/>`;
+            if(ketcherTarget === 'q') setQuestion(prev => prev + formatted);
+            else if(ketcherTarget === 'exp') setExplanation(prev => prev + formatted);
+            else {
+                const newOpt = [...options];
+                newOpt[ketcherTarget] += formatted;
+                setOptions(newOpt);
+            }
+            if(window.setGlobalToast) window.setGlobalToast({ status: 'success', message: '結構圖上傳完成！' });
+            setTimeout(() => { if(window.setGlobalToast) window.setGlobalToast(null); }, 3000);
+        } catch (e) {
+            showAlert('圖片上傳失敗：' + e.message);
+            if(window.setGlobalToast) window.setGlobalToast(null);
+        }
+    };
+
+    // ✨ 新增：選項專用的圖片上傳與壓縮功能
+    const handleOptionImageUpload = (idx) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if(!file) return;
+            if(window.setGlobalToast) window.setGlobalToast({ status: 'loading', message: '圖片壓縮與上傳中...' });
+            try {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width; let h = img.height;
+                        const MAX_DIM = 600;
+                        if(w > h && w > MAX_DIM) { h *= MAX_DIM/w; w = MAX_DIM; }
+                        else if (h > MAX_DIM) { w *= MAX_DIM/h; h = MAX_DIM; }
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, w, h);
+                        canvas.toBlob(async (blob) => {
+                            try {
+                                const filePath = `fastQA_images/${user.uid}_opt_${Date.now()}.jpg`;
+                                const storageRef = window.storage.ref(filePath);
+                                await storageRef.put(blob);
+                                const url = await storageRef.getDownloadURL();
+                                const formatted = `<img src="${url}" style="max-height:80px; border-radius:8px; vertical-align:middle; margin:4px; display:inline-block;" alt="選項圖片"/>`;
+                                const newO = [...options];
+                                newO[idx] += formatted;
+                                setOptions(newO);
+                                if(window.setGlobalToast) window.setGlobalToast({ status: 'success', message: '圖片上傳成功！' });
+                                setTimeout(() => { if(window.setGlobalToast) window.setGlobalToast(null); }, 3000);
+                            } catch(err) {
+                                showAlert('上傳至雲端失敗：' + err.message);
+                                if(window.setGlobalToast) window.setGlobalToast(null);
+                            }
+                        }, 'image/jpeg', 0.8);
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            } catch(err) {
+                showAlert('圖片處理失敗：' + err.message);
+                if(window.setGlobalToast) window.setGlobalToast(null);
+            }
+        };
+        input.click();
     };
 
     const handleRate = async () => {
@@ -682,17 +751,28 @@ function FastQASection({ user, showAlert, showConfirm, targetQaId, onClose, onRe
         setSubmitting(false);
     };
 
-    const uniqueSubjects = ['全部', ...new Set(qaList.map(q => q.subject))];
+   // 預設基礎科目，確保即使在後端分頁過濾時選單也不會消失
+    const baseSubjects = ['全部', '藥物分析', '生藥', '中藥', '藥理', '藥化', '藥劑', '生物藥劑', '綜合'];
+    const uniqueSubjects = Array.from(new Set([...baseSubjects, ...qaList.map(q => q.subject)]));
     const filteredQaList = qaList.filter(q => {
         if (selectedSubject !== '全部' && q.subject !== selectedSubject) return false;
         if (hideCompleted && records[q.id]) return false;
-        if (showSavedOnly && !savedQAs.includes(q.id)) return false; // ✨ 我的收錄篩選
+        if (showSavedOnly && !savedQAs.includes(q.id)) return false; 
         return true;
     });
 
     return (
         <div className={`border border-rose-200 bg-[#FCFBF7] dark:bg-stone-900 p-6 shadow-xl relative rounded-3xl w-full transition-all duration-300 ${targetQaId ? 'm-0' : 'mb-8 shrink-0'}`}>
-            
+            <style>{`
+                /* 賦予富文本圖片拖拉縮放能力 */
+                .preview-rich-text img, [contenteditable] img {
+                    resize: both;
+                    overflow: hidden;
+                    display: inline-block;
+                    min-width: 50px;
+                    min-height: 50px;
+                }
+            `}</style>
           {showKetcherModal && window.JayChemDrawModal && (
                 <window.JayChemDrawModal 
                     onSave={handleKetcherSave}
@@ -882,6 +962,9 @@ D. 第四個選項`}
                                             <span className="font-bold text-sm shrink-0">設為解答</span>
                                             <div className="flex-1 flex items-center gap-1">
                                                 <input type="text" placeholder={`選項 ${idx+1}`} value={opt} onChange={e=>{const newO=[...options]; newO[idx]=e.target.value; setOptions(newO);}} className="flex-1 border p-2 dark:bg-stone-800 outline-none focus:border-amber-500 rounded-lg text-sm font-bold" />
+                                                <button onClick={() => handleOptionImageUpload(idx)} className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2 py-2 rounded-lg transition-colors flex items-center justify-center shrink-0" title="上傳圖片">
+                                                    <span className="material-symbols-outlined text-[18px]">image</span>
+                                                </button>
                                                 <button onClick={() => { setKetcherTarget(idx); setShowKetcherModal(true); }} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-2 rounded-lg transition-colors flex items-center justify-center shrink-0" title="在此選項插入結構">
                                                     <span className="material-symbols-outlined text-[18px]">draw</span>
                                                 </button>
@@ -924,7 +1007,7 @@ D. 第四個選項`}
                         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 w-full xl:w-auto">
                             <span className="font-black text-stone-500 text-sm whitespace-nowrap">分類：</span>
                             {uniqueSubjects.map(sub => (
-                                <button key={sub} onClick={() => setSelectedSubject(sub)} className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors border shadow-sm ${selectedSubject === sub ? 'bg-rose-500 text-white border-rose-600' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-200 dark:bg-stone-700 dark:text-stone-300 dark:border-stone-600 dark:hover:bg-stone-600'}`}>
+                                <button key={sub} onClick={() => { setSelectedSubject(sub); setQaLimit(30); }} className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors border shadow-sm ${selectedSubject === sub ? 'bg-rose-500 text-white border-rose-600' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-200 dark:bg-stone-700 dark:text-stone-300 dark:border-stone-600 dark:hover:bg-stone-600'}`}>
                                     {sub}
                                 </button>
                             ))}

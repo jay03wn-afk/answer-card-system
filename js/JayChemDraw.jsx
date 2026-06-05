@@ -775,7 +775,7 @@ const JayChemDrawModal = React.memo(({ onSave, onClose }) => {
                                         {a.shouldShow && (
                                             <text x="0" y="6" textAnchor="middle" fontSize="18" fontWeight="900" fill={getAtomColor(a.element)} className="pointer-events-none font-sans" style={{userSelect: 'none'}}>
                                                 {a.isLeftNode && a.hCount > 0 ? (
-                                                    <>{a.hCount > 1 ? <tspan>H<tspan dy="6" fontSize="13">{a.hCount}</tspan><tspan dy="-6">{a.element}</tspan></tspan> : `HO`}</>
+                                                    <>{a.hCount > 1 ? <tspan>H<tspan dy="6" fontSize="13">{a.hCount}</tspan><tspan dy="-6">{a.element}</tspan></tspan> : `H${a.element}`}</>
                                                 ) : (
                                                     <>{a.element}{a.hCount > 0 && 'H'}{a.hCount > 1 && <tspan dy="6" fontSize="13">{a.hCount}</tspan>}</>
                                                 )}
