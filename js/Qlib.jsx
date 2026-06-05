@@ -893,14 +893,14 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                     )}
                 </div>
             ) : activeMainTab === 'store' ? (
-                <div className="flex-1 flex flex-col bg-[#FCFBF7] dark:bg-stone-900 overflow-hidden">
-                    <div className="p-6 border-b border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 shrink-0">
+                <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#FCFBF7] dark:bg-stone-900">
+                    <div className="p-6 border-b border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800">
                         <h1 className="text-3xl font-black text-stone-800 dark:text-stone-100 flex items-center gap-2">
                             <span className="material-symbols-outlined text-[36px] text-amber-500">storefront</span> 題庫共享商店
                         </h1>
                         <p className="text-gray-500 dark:text-gray-400 mt-2 font-bold">在這裡探索其他玩家分享的優質題庫。購買後即可無限制用來隨機產生測驗！</p>
                     </div>
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                    <div className="p-6">
                         {shopItems.length === 0 ? (
                             <div className="text-center text-gray-400 font-bold py-10">目前商店中沒有商品上架。</div>
                         ) : (
@@ -952,8 +952,8 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                     </div>
                 </div>
             ) : (
-                <div className="flex-1 flex flex-col bg-[#FCFBF7] dark:bg-stone-900 overflow-hidden">
-                    <div className="p-6 border-b border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 shrink-0">
+                <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#FCFBF7] dark:bg-stone-900">
+                    <div className="p-6 border-b border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800">
                         <h1 className="text-3xl font-black text-stone-800 dark:text-stone-100 flex items-center gap-2">
                             <span className="material-symbols-outlined text-[36px] text-amber-500">smart_toy</span> 出題 Prompt 庫
                         </h1>
@@ -1029,7 +1029,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                    <div className="p-6">
                         {promptTemplates.filter(p => p.category === activePromptCategory).length === 0 ? (
                             <div className="text-center text-gray-400 font-bold py-10">此分類尚無 Prompt。</div>
                         ) : (
