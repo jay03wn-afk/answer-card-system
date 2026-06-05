@@ -1,8 +1,17 @@
 window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, showConfirm, showPrompt, onContinueQuiz }) {
     const { useState, useEffect } = React;
     
-    const [activeMainTab, setActiveMainTab] = useState('my'); // 切換 'my' (我的題庫) 或 'store' (題庫商店)
+    const [activeMainTab, setActiveMainTab] = useState('my'); // 切換 'my' (我的題庫)、'store' (題庫商店) 或 'prompt' (出題Prompt)
     const [shopItems, setShopItems] = useState([]);
+    
+    // --- 新增：出題Prompt系統狀態 ---
+    const promptCategories = ['藥析', '生藥', '中藥', '藥理藥化', '藥劑', '生物藥劑'];
+    const [activePromptCategory, setActivePromptCategory] = useState(promptCategories[0]);
+    const [promptTemplates, setPromptTemplates] = useState([]);
+    const [promptRules, setPromptRules] = useState([{ chapter: '', count: 1 }]); // 使用者自訂規則
+    const [editingPrompt, setEditingPrompt] = useState(null); // 管理員編輯用
+    const [savedPromptConfigs, setSavedPromptConfigs] = useState({}); // 出題組合保存
+    // --------------------------------
     
     const [subjects, setSubjects] = useState([]);
     const [activeSubjectId, setActiveSubjectId] = useState(null);
@@ -43,6 +52,11 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
         const unsubscribe = window.db.collection('users').doc(user.uid).collection('qlib').doc('main')
             .onSnapshot(async docSnap => {
                 if (!docSnap.exists) return;
+                
+                // 載入：出題組合
+                const loadedConfigs = docSnap.data().promptConfigs || {};
+                setSavedPromptConfigs(loadedConfigs);
+
                 let loadedSubjects = docSnap.data().subjects || [];
                 try {
                     const qSnap = await window.db.collection('users').doc(user.uid).collection('qlib_questions').get();
@@ -62,11 +76,16 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
         return () => unsubscribe();
     }, [user]);
 
-    // 載入商店資料
+    // 載入商店與 Prompt 資料
     useEffect(() => {
         if (activeMainTab === 'store') {
             const unsub = window.db.collection('artifacts').where('type', '==', 'qlibShop').onSnapshot(snap => {
                 setShopItems(snap.docs.map(d => ({id: d.id, ...d.data()})));
+            });
+            return () => unsub();
+        } else if (activeMainTab === 'prompt') {
+            const unsub = window.db.collection('artifacts').where('type', '==', 'qlibPrompt').onSnapshot(snap => {
+                setPromptTemplates(snap.docs.map(d => ({id: d.id, ...d.data()})));
             });
             return () => unsub();
         }
@@ -374,6 +393,113 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
         });
     };
 
+    // --- 新增：Prompt 系統功能 ---
+    const handleCopyPrompt = (templateContent) => {
+        const validRules = promptRules.filter(r => r.chapter.trim() !== '' && r.count > 0);
+        let prefix = '';
+        
+        if (validRules.length > 0) {
+            const chapters = validRules.map(r => r.chapter.trim());
+            const totalCount = validRules.reduce((sum, r) => sum + parseInt(r.count), 0);
+            const details = validRules.map(r => `${r.chapter.trim()}-${r.count}題`);
+            
+            prefix = `指定標籤(僅限這些): ${chapters.join('、')}，共${totalCount}題 其中${details.join('、')}\n\n`;
+        }
+        
+        const finalPrompt = prefix + templateContent;
+        navigator.clipboard.writeText(finalPrompt)
+            .then(() => showAlert("Prompt 已複製到剪貼簿！"))
+            .catch(err => showAlert("複製失敗：" + err));
+    };
+
+    const handleSavePrompt = async () => {
+        if (!editingPrompt.title || !editingPrompt.content) {
+            showAlert("標題與內容不能為空");
+            return;
+        }
+        try {
+            if (editingPrompt.id) {
+                await window.db.collection('artifacts').doc(editingPrompt.id).update({
+                    title: editingPrompt.title,
+                    content: editingPrompt.content,
+                    category: editingPrompt.category,
+                    updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } else {
+                await window.db.collection('artifacts').add({
+                    type: 'qlibPrompt',
+                    title: editingPrompt.title,
+                    content: editingPrompt.content,
+                    category: editingPrompt.category,
+                    authorEmail: user.email,
+                    createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+            setEditingPrompt(null);
+            showAlert("儲存成功！");
+        } catch (e) {
+            showAlert("儲存失敗: " + e.message);
+        }
+    };
+
+    const handleDeletePrompt = (id) => {
+        showConfirm("確定要刪除此 Prompt 嗎？", () => {
+            window.db.collection('artifacts').doc(id).delete()
+                .then(() => showAlert("刪除成功！"))
+                .catch(e => showAlert("刪除失敗：" + e.message));
+        });
+    };
+
+    // --- 新增：保存出題組合功能 ---
+    const handleSavePromptConfig = () => {
+        const validRules = promptRules.filter(r => r.chapter.trim() !== '' && r.count > 0);
+        if (validRules.length === 0) return showAlert("請先輸入至少一個有效的章節與題數！");
+
+        showPrompt("請為此出題組合命名 (例如：考前衝刺五十題)：", "", async (name) => {
+            if (!name || !name.trim()) return;
+            const currentCat = activePromptCategory;
+            const catConfigs = savedPromptConfigs[currentCat] || [];
+            
+            if (catConfigs.length >= 50) return showAlert(`「${currentCat}」最多只能儲存 50 個組合！`);
+
+            const newConfig = {
+                id: Date.now().toString(),
+                name: name.trim(),
+                rules: validRules
+            };
+
+            const newConfigs = { ...savedPromptConfigs, [currentCat]: [...catConfigs, newConfig] };
+            
+            try {
+                setSavedPromptConfigs(newConfigs);
+                await window.db.collection('users').doc(user.uid).collection('qlib').doc('main').set({
+                    promptConfigs: newConfigs
+                }, { merge: true });
+                showAlert("組合保存成功！");
+            } catch(e) {
+                showAlert("保存失敗：" + e.message);
+            }
+        });
+    };
+
+    const handleDeletePromptConfig = (id) => {
+        showConfirm("確定要刪除這個出題組合嗎？", async () => {
+            const currentCat = activePromptCategory;
+            const catConfigs = savedPromptConfigs[currentCat] || [];
+            const newConfigs = { ...savedPromptConfigs, [currentCat]: catConfigs.filter(c => c.id !== id) };
+            
+            try {
+                setSavedPromptConfigs(newConfigs);
+                await window.db.collection('users').doc(user.uid).collection('qlib').doc('main').set({
+                    promptConfigs: newConfigs
+                }, { merge: true });
+            } catch(e) {
+                showAlert("刪除失敗：" + e.message);
+            }
+        });
+    };
+    // ------------------------------
+
     const activeSubject = (subjects || []).find(s => s.id === activeSubjectId);
     const activeChapter = (activeSubject?.chapters || []).find(c => c.id === activeChapterId);
 
@@ -550,15 +676,21 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                 <div className="flex bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700">
                     <button 
                         onClick={() => setActiveMainTab('my')} 
-                        className={`flex-1 py-3 font-black text-sm flex items-center justify-center gap-1 transition-colors ${activeMainTab === 'my' ? 'bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 border-b-2 border-amber-500' : 'text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700'}`}
+                        className={`flex-1 py-2 font-black text-[13px] flex flex-col items-center justify-center gap-1 transition-colors ${activeMainTab === 'my' ? 'bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 border-b-2 border-amber-500' : 'text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700'}`}
                     >
                         <span className="material-symbols-outlined text-[18px]">library_books</span> 我的題庫
                     </button>
                     <button 
                         onClick={() => setActiveMainTab('store')} 
-                        className={`flex-1 py-3 font-black text-sm flex items-center justify-center gap-1 transition-colors ${activeMainTab === 'store' ? 'bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 border-b-2 border-amber-500' : 'text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700'}`}
+                        className={`flex-1 py-2 font-black text-[13px] flex flex-col items-center justify-center gap-1 transition-colors ${activeMainTab === 'store' ? 'bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 border-b-2 border-amber-500' : 'text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700'}`}
                     >
                         <span className="material-symbols-outlined text-[18px]">storefront</span> 題庫商店
+                    </button>
+                    <button 
+                        onClick={() => setActiveMainTab('prompt')} 
+                        className={`flex-1 py-2 font-black text-[13px] flex flex-col items-center justify-center gap-1 transition-colors ${activeMainTab === 'prompt' ? 'bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 border-b-2 border-amber-500' : 'text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700'}`}
+                    >
+                        <span className="material-symbols-outlined text-[18px]">smart_toy</span> 出題Prompt
                     </button>
                 </div>
 
@@ -619,11 +751,33 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                             ))}
                         </div>
                     </>
-                ) : (
+                ) : activeMainTab === 'store' ? (
                     <div className="p-6 flex flex-col items-center justify-center text-center text-gray-400 flex-1">
                         <span className="material-symbols-outlined text-[48px] mb-2 opacity-50">shopping_bag</span>
                         <span className="font-bold text-sm">請於右側瀏覽選購</span>
                     </div>
+                ) : (
+                    <>
+                        <div className="p-3 flex justify-between items-center bg-white dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700">
+                            <span className="font-bold text-sm text-stone-600 dark:text-stone-300">Prompt 分類</span>
+                            {user?.email === 'jay03wn@gmail.com' && (
+                                <button onClick={(e) => { e.stopPropagation(); setEditingPrompt({ title: '', content: '', category: activePromptCategory }); }} className="text-amber-600 hover:text-amber-800 dark:text-amber-400" title="新增Prompt">
+                                    <span className="material-symbols-outlined text-[20px]">add_box</span>
+                                </button>
+                            )}
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                            {promptCategories.map(cat => (
+                                <button 
+                                    key={cat}
+                                    onClick={() => setActivePromptCategory(cat)}
+                                    className={`w-full text-left px-3 py-2 font-bold text-sm rounded-lg transition-colors ${activePromptCategory === cat ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-400 border border-amber-300 dark:border-amber-700' : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 border border-transparent'}`}
+                                >
+                                    {cat}
+                                </button>
+                            ))}
+                        </div>
+                    </>
                 )}
             </div>
 
@@ -738,7 +892,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                         </div>
                     )}
                 </div>
-            ) : (
+            ) : activeMainTab === 'store' ? (
                 <div className="flex-1 flex flex-col bg-[#FCFBF7] dark:bg-stone-900 overflow-hidden">
                     <div className="p-6 border-b border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 shrink-0">
                         <h1 className="text-3xl font-black text-stone-800 dark:text-stone-100 flex items-center gap-2">
@@ -793,6 +947,121 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                         </div>
                                     )
                                 })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : (
+                <div className="flex-1 flex flex-col bg-[#FCFBF7] dark:bg-stone-900 overflow-hidden">
+                    <div className="p-6 border-b border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 shrink-0">
+                        <h1 className="text-3xl font-black text-stone-800 dark:text-stone-100 flex items-center gap-2">
+                            <span className="material-symbols-outlined text-[36px] text-amber-500">smart_toy</span> 出題 Prompt 庫
+                        </h1>
+                        <p className="text-gray-500 dark:text-gray-400 mt-2 font-bold">複製官方設計的 Prompt，貼給 AI 幫您產出高品質的國考考題！</p>
+                        
+                        <div className="mt-4 p-4 bg-stone-50 dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-700">
+                            <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+                                <h3 className="text-sm font-black text-stone-700 dark:text-stone-300 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[18px]">tune</span> 複製前設定：指定出題範圍與題數
+                                </h3>
+                                <button onClick={handleSavePromptConfig} className="text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 px-3 py-1.5 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900 transition-colors flex items-center gap-1 active:scale-95 shadow-sm">
+                                    <span className="material-symbols-outlined text-[14px]">save</span> 儲存當前組合
+                                </button>
+                            </div>
+
+                            {/* 已儲存的組合標籤列 */}
+                            {(savedPromptConfigs[activePromptCategory] || []).length > 0 && (
+                                <div className="flex gap-2 overflow-x-auto pb-3 mb-2 custom-scrollbar items-center">
+                                    <span className="text-xs font-bold text-gray-500 shrink-0">已儲存：</span>
+                                    {(savedPromptConfigs[activePromptCategory] || []).map(c => (
+                                        <div key={c.id} className="flex items-center gap-1 bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-600 rounded-full pl-3 pr-1 py-1 shrink-0 shadow-sm">
+                                            <button onClick={() => setPromptRules(c.rules)} className="text-xs font-bold text-stone-700 dark:text-stone-300 hover:text-amber-600 transition-colors">{c.name}</button>
+                                            <button onClick={() => handleDeletePromptConfig(c.id)} className="text-gray-400 hover:text-red-500 rounded-full p-0.5 transition-colors flex items-center justify-center" title="刪除此組合"><span className="material-symbols-outlined text-[14px]">cancel</span></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
+                                {promptRules.map((rule, idx) => (
+                                    <div key={idx} className="flex gap-2 items-center">
+                                        <input 
+                                            type="text" 
+                                            placeholder="章節名稱 (例如: 總論)" 
+                                            value={rule.chapter}
+                                            onChange={(e) => {
+                                                const newRules = [...promptRules];
+                                                newRules[idx].chapter = e.target.value;
+                                                setPromptRules(newRules);
+                                            }}
+                                            className="flex-1 p-2 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 rounded-lg outline-none text-sm dark:text-white focus:border-amber-500"
+                                        />
+                                        <input 
+                                            type="number" 
+                                            min="1"
+                                            placeholder="題數" 
+                                            value={rule.count}
+                                            onChange={(e) => {
+                                                const newRules = [...promptRules];
+                                                newRules[idx].count = parseInt(e.target.value) || 0;
+                                                setPromptRules(newRules);
+                                            }}
+                                            className="w-20 p-2 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 rounded-lg outline-none text-sm dark:text-white focus:border-amber-500 text-center"
+                                        />
+                                        <button 
+                                            onClick={() => {
+                                                const newRules = promptRules.filter((_, i) => i !== idx);
+                                                setPromptRules(newRules);
+                                            }}
+                                            className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                        >
+                                            <span className="material-symbols-outlined text-[18px]">close</span>
+                                        </button>
+                                    </div>
+                                ))}
+                                <button 
+                                    onClick={() => setPromptRules([...promptRules, { chapter: '', count: 1 }])}
+                                    className="text-sm font-bold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 flex items-center gap-1 mt-2"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">add</span> 新增範圍
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                        {promptTemplates.filter(p => p.category === activePromptCategory).length === 0 ? (
+                            <div className="text-center text-gray-400 font-bold py-10">此分類尚無 Prompt。</div>
+                        ) : (
+                            <div className="grid grid-cols-1 gap-6">
+                                {promptTemplates.filter(p => p.category === activePromptCategory).map(template => (
+                                    <div key={template.id} className="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl p-5 shadow-sm flex flex-col relative">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h3 className="text-lg font-black text-stone-800 dark:text-white">{template.title}</h3>
+                                            <div className="flex gap-2">
+                                                {user?.email === 'jay03wn@gmail.com' && (
+                                                    <>
+                                                        <button onClick={() => setEditingPrompt(template)} className="p-2 text-gray-400 hover:text-amber-500 transition-colors" title="編輯">
+                                                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                                                        </button>
+                                                        <button onClick={() => handleDeletePrompt(template.id)} className="p-2 text-gray-400 hover:text-red-500 transition-colors" title="刪除">
+                                                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                        </button>
+                                                    </>
+                                                )}
+                                                <button 
+                                                    onClick={() => handleCopyPrompt(template.content)}
+                                                    className="px-4 py-1.5 font-bold text-sm bg-stone-800 text-white dark:bg-stone-100 dark:text-stone-800 rounded-lg hover:opacity-90 transition-opacity flex items-center gap-1 active:scale-95"
+                                                >
+                                                    <span className="material-symbols-outlined text-[18px]">content_copy</span> 複製 Prompt
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <pre className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap font-mono bg-stone-50 dark:bg-stone-900 p-4 rounded-xl border border-stone-100 dark:border-stone-700 max-h-64 overflow-y-auto custom-scrollbar">
+                                            {template.content}
+                                        </pre>
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -1031,6 +1300,38 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                 <span className="font-black text-stone-800 dark:text-stone-100 text-lg tracking-widest shadow-sm">正在為您調配題目...</span>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* Prompt 編輯 Modal (僅管理員可見) */}
+            {editingPrompt && (
+                <div className="fixed inset-0 z-[160] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-700 p-6">
+                        <div className="flex justify-between items-center mb-4 border-b border-stone-200 dark:border-stone-700 pb-3 shrink-0">
+                            <h3 className="text-xl font-black text-stone-800 dark:text-stone-100 flex items-center gap-2"><span className="material-symbols-outlined">edit_note</span> 編輯 Prompt</h3>
+                            <button onClick={() => setEditingPrompt(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><span className="material-symbols-outlined">close</span></button>
+                        </div>
+                        <div className="space-y-4 flex-1 overflow-y-auto custom-scrollbar pr-2">
+                            <div>
+                                <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">所屬分類</label>
+                                <select value={editingPrompt.category} onChange={e => setEditingPrompt({...editingPrompt, category: e.target.value})} className="w-full p-2.5 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white">
+                                    {promptCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">標題</label>
+                                <input type="text" value={editingPrompt.title} onChange={e => setEditingPrompt({...editingPrompt, title: e.target.value})} className="w-full p-2.5 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1">Prompt 內容</label>
+                                <textarea value={editingPrompt.content} onChange={e => setEditingPrompt({...editingPrompt, content: e.target.value})} className="w-full h-64 p-2.5 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none text-sm font-mono resize-none custom-scrollbar dark:text-white" />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-stone-200 dark:border-stone-700 shrink-0">
+                            <button onClick={() => setEditingPrompt(null)} className="px-4 py-2 font-bold text-gray-500 hover:text-stone-800 dark:hover:text-stone-200 transition-colors">取消</button>
+                            <button onClick={handleSavePrompt} className="bg-amber-500 hover:bg-amber-600 text-white font-black px-6 py-2 rounded-lg shadow-sm transition-transform active:scale-95 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">save</span> 儲存</button>
+                        </div>
                     </div>
                 </div>
             )}
