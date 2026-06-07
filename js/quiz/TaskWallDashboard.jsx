@@ -1667,7 +1667,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                     <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6 lg:gap-8 items-start">
 
                         {/* --- 金色專屬：歷屆國考題 --- */}
-                        {hasAnyOfficial && (
+                        {false && hasAnyOfficial && (
                             <div className="bg-gradient-to-br from-amber-50 to-white dark:from-gray-800 dark:to-gray-900 border border-amber-400 dark:border-amber-600 shadow-md rounded-2xl p-5 md:p-6 w-full">
                                 <h2 className="text-2xl font-black mb-4 dark:text-white border-b-2 border-amber-400 dark:border-amber-600 pb-2 text-amber-700 dark:text-amber-400 flex items-center">
                                     🏆 歷屆國考題
@@ -1759,7 +1759,7 @@ function TaskWallDashboard({ user, showAlert, showConfirm, onContinueQuiz }) {
                         )}
 
                         {/* --- 一般：模擬試題 --- */}
-                        {hasAnyNormal && (
+                        {false && hasAnyNormal && (
                             <div className="bg-[#FCFBF7] dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-sm rounded-2xl p-5 md:p-6 w-full">
                                 <h2 className="text-2xl font-black mb-6 dark:text-white border-b-2 border-indigo-200 dark:border-indigo-900 pb-2 text-indigo-700 dark:text-indigo-400 flex items-center">
                                     📚 模擬試題

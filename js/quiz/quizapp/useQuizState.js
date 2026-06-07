@@ -593,14 +593,28 @@ window.useQuizState = function(props) {
         if (wrongRetestState) stateToSave.wrongRetestState = wrongRetestState;
         if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
 
+        const saveRef = initialRecord.isPublicExam 
+            ? window.db.collection('users').doc(currentUser.uid).collection('publicExamRecords').doc(quizId)
+            : window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId);
+
+        if (initialRecord.isPublicExam) {
+            if (isExiting) {
+                saveRef.set(stateToSave, { merge: true }).catch(e => console.error("背景存檔失敗", e));
+                originalBack();
+                return Promise.resolve();
+            }
+            return saveRef.set(stateToSave, { merge: true })
+                .then(() => showAlert("✅ 進度已手動存檔！"))
+                .catch(e => { console.error("存檔失敗", e); showAlert("❌ 存檔失敗：" + e.message); });
+        }
+
         if (isExiting) {
-            window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
-                .catch(e => console.error("背景存檔失敗", e));
+            saveRef.update(stateToSave).catch(e => console.error("背景存檔失敗", e));
             originalBack();
             return Promise.resolve();
         }
 
-        return window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
+        return saveRef.update(stateToSave)
             .then(() => {
                 showAlert("✅ 進度已手動存檔！");
             })
@@ -655,9 +669,12 @@ window.useQuizState = function(props) {
             if (hasTimer) stateToSave.timeRemaining = timeRemainingRef.current;
 
             const timerId = setTimeout(() => {
-                window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(stateToSave)
-                    .catch(e => console.error("自動儲存進度失敗", e));
-            }, 800); 
+            const autoSaveRef = initialRecord.isPublicExam 
+                ? window.db.collection('users').doc(currentUser.uid).collection('publicExamRecords').doc(quizId)
+                : window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId);
+            const action = initialRecord.isPublicExam ? autoSaveRef.set(stateToSave, { merge: true }) : autoSaveRef.update(stateToSave);
+            action.catch(e => console.error("自動儲存進度失敗", e));
+        }, 800);
 
             return () => clearTimeout(timerId); 
         }
@@ -1197,10 +1214,14 @@ ${difficultyInstruction}
 
    const handleSaveEdit = async () => {
         setIsEditLoading(true); 
-        const myDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
+        const quizRef = initialRecord.isPublicExam 
+            ? window.db.collection('publicExams').doc(quizId)
+            : window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId);
+        
+        const myDoc = await quizRef.get();
         const oldData = myDoc.data() || {};
         
-        if (oldData.hasSeparatedContent) {
+        if (!initialRecord.isPublicExam && oldData.hasSeparatedContent) {
             const contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get();
             if (contentDoc.exists) {
                 const contentData = contentDoc.data();
@@ -1314,56 +1335,62 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
             try {
                 setSyncStatus({ isSyncing: true, current: 0, total: syncCount + 1 });
                 
-                const lightUpdates = { ...updates, updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(), hasSeparatedContent: true };
-                const heavyUpdates = {};
+                const lightUpdates = { ...updates, updatedAt: window.firebase.firestore.FieldValue.serverTimestamp() };
+                if (!initialRecord.isPublicExam) lightUpdates.hasSeparatedContent = true;
                 
+                const heavyUpdates = {};
                 if ('questionText' in lightUpdates) { heavyUpdates.questionText = lightUpdates.questionText; delete lightUpdates.questionText; }
                 if ('questionHtml' in lightUpdates) { heavyUpdates.questionHtml = lightUpdates.questionHtml; delete lightUpdates.questionHtml; }
                 if ('explanationHtml' in lightUpdates) { heavyUpdates.explanationHtml = lightUpdates.explanationHtml; delete lightUpdates.explanationHtml; }
 
-                await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(lightUpdates);
-                
-                if (Object.keys(heavyUpdates).length > 0) {
-                    await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).set(heavyUpdates, { merge: true });
+                if (initialRecord.isPublicExam) {
+                    await window.db.collection('publicExams').doc(quizId).update({ ...lightUpdates, ...heavyUpdates });
+                } else {
+                    await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(lightUpdates);
+                    if (Object.keys(heavyUpdates).length > 0) {
+                        await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).set(heavyUpdates, { merge: true });
+                    }
                 }
                 setSyncStatus(prev => ({ ...prev, current: 1 }));
 
-                if (isAdmin && finalTestName.includes('[#NEWBIE]')) {
-                    const taskPayload = { 
-                        testName: finalTestName, 
-                        numQuestions: Number(numQuestions), 
-                        maxScore: Number(maxScore), 
-                        correctAnswersInput: cleanKey,
-                        questionHtml: heavyUpdates.questionHtml || oldData.questionHtml,
-                        explanationHtml: heavyUpdates.explanationHtml || oldData.explanationHtml,
-                        creatorUid: currentUser.uid,
-                        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                    };
-                    await window.db.collection('publicTasks').doc('tutorial_newbie').set(taskPayload, { merge: true });
-                }
+                if (!initialRecord.isPublicExam) {
+                    if (isAdmin && finalTestName.includes('[#NEWBIE]')) {
+                        const taskPayload = { 
+                            testName: finalTestName, 
+                            numQuestions: Number(numQuestions), 
+                            maxScore: Number(maxScore), 
+                            correctAnswersInput: cleanKey,
+                            questionHtml: heavyUpdates.questionHtml || oldData.questionHtml,
+                            explanationHtml: heavyUpdates.explanationHtml || oldData.explanationHtml,
+                            creatorUid: currentUser.uid,
+                            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        await window.db.collection('publicTasks').doc('tutorial_newbie').set(taskPayload, { merge: true });
+                    }
 
-                if (taskType === 'official' || taskType === 'mock') {
-                    const taskPayload = { 
-                        ...updates, 
-                        testName: finalTestName, 
-                        creatorUid: currentUser.uid, 
-                        numQuestions, maxScore: Number(maxScore), roundScore,
-                        hasTimer, 
-                        timeLimit,
-                        taskType, examYear, examSubject, examTag,
-                        questionFileUrl: questionFileUrl || '',
-                        correctAnswersInput: cleanKey
-                    };
+                    if (taskType === 'official' || taskType === 'mock') {
+                        const taskPayload = { 
+                            ...updates, 
+                            testName: finalTestName, 
+                            creatorUid: currentUser.uid, 
+                            numQuestions, maxScore: Number(maxScore), roundScore,
+                            hasTimer, 
+                            timeLimit,
+                            taskType, examYear, examSubject, examTag,
+                            questionFileUrl: questionFileUrl || '',
+                            correctAnswersInput: cleanKey
+                        };
 
-                    taskPayload.createdAt = oldData.createdAt || window.firebase.firestore.FieldValue.serverTimestamp();
-                    await window.db.collection('publicTasks').doc(quizId).set(taskPayload, { merge: true });
-                    await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({ isTask: true, taskId: quizId });
-                } else if (oldData.isTask || oldData.taskId) {
-                    await window.db.collection('publicTasks').doc(quizId).delete().catch(e=>console.warn(e));
-                    await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
-                        isTask: window.firebase.firestore.FieldValue.delete(),
-                        taskId: window.firebase.firestore.FieldValue.delete()
-                    }).catch(e=>console.warn(e));
+                        taskPayload.createdAt = oldData.createdAt || window.firebase.firestore.FieldValue.serverTimestamp();
+                        await window.db.collection('publicTasks').doc(quizId).set(taskPayload, { merge: true });
+                        await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({ isTask: true, taskId: quizId });
+                    } else if (oldData.isTask || oldData.taskId) {
+                        await window.db.collection('publicTasks').doc(quizId).delete().catch(e=>console.warn(e));
+                        await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
+                            isTask: window.firebase.firestore.FieldValue.delete(),
+                            taskId: window.firebase.firestore.FieldValue.delete()
+                        }).catch(e=>console.warn(e));
+                    }
                 }
 
                 if (oldData.shortCode) {
@@ -1532,7 +1559,17 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
 
         const updateObj = { results: newResults, isCompleted: true };
         if (aiFeedbackData) updateObj.aiFeedback = aiFeedbackData;
-        await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(updateObj);
+        
+        if (initialRecord.isPublicExam) {
+            await window.db.collection('users').doc(currentUser.uid).collection('publicExamRecords').doc(quizId).set(updateObj, { merge: true });
+            if (!initialRecord.results) { // 確保只有第一次交卷會增加人數
+                await window.db.collection('publicExams').doc(quizId).update({
+                    'stats.totalPlayers': window.firebase.firestore.FieldValue.increment(1)
+                }).catch(e => console.warn(e));
+            }
+        } else {
+            await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update(updateObj);
+        }
     };
 
     const handleManualRegrade = async (isAuto = false) => {

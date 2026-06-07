@@ -7,6 +7,110 @@ const {
     safeDecompress, processQuestionContent, extractSpecificContent, extractSpecificExplanation 
 } = window;
 
+// ✨ 新增：公開試題專用留言板 (獨立元件)
+function PublicQuestionDiscussion({ examId, questionNum, currentUser, userProfile }) {
+    const { useState, useEffect } = React;
+    const [comments, setComments] = useState([]);
+    const [text, setText] = useState('');
+    const [imgFile, setImgFile] = useState(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (!examId) return;
+        const unsub = window.db.collection('publicExams').doc(examId)
+            .collection('discussions').where('questionNum', '==', questionNum)
+            .orderBy('timestamp', 'asc')
+            .onSnapshot(snap => {
+                setComments(snap.docs.map(d => ({id: d.id, ...d.data()})));
+            });
+        return () => unsub();
+    }, [examId, questionNum]);
+
+    const handleSubmit = async () => {
+        if (!text.trim() && !imgFile) return;
+        if (text.length > 500) return alert('留言字數不可超過 500 字！');
+        setIsSubmitting(true);
+        try {
+            let imgUrl = null;
+            if (imgFile) {
+                imgUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.crossOrigin = "Anonymous";
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            let w = img.width, h = img.height;
+                            const MAX = 800;
+                            if (w > h && w > MAX) { h *= MAX/w; w = MAX; }
+                            else if (h > MAX) { w *= MAX/h; h = MAX; }
+                            canvas.width = w; canvas.height = h;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, w, h);
+                            canvas.toBlob(async (blob) => {
+                                if(!blob) return reject("Failed");
+                                const path = `publicDiscussions/${examId}/${currentUser.uid}_${Date.now()}.jpg`;
+                                const ref = window.storage.ref(path);
+                                await ref.put(blob);
+                                resolve(await ref.getDownloadURL());
+                            }, 'image/jpeg', 0.6);
+                        };
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(imgFile);
+                });
+            }
+
+            await window.db.collection('publicExams').doc(examId).collection('discussions').add({
+                userId: currentUser.uid,
+                userName: userProfile.displayName || '匿名',
+                questionNum,
+                text: text.trim(),
+                imageUrl: imgUrl,
+                timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+            setText(''); setImgFile(null);
+        } catch(e) {
+            console.error(e);
+            alert("留言失敗：" + e.message);
+        }
+        setIsSubmitting(false);
+    };
+
+    return (
+        <div className="mt-6 border-t border-stone-200 dark:border-stone-700 pt-4">
+            <h4 className="font-bold text-sm text-purple-600 dark:text-purple-400 mb-4 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[18px]">forum</span> 大家來討論 ({comments.length})
+            </h4>
+            <div className="space-y-3 mb-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                {comments.length === 0 && <p className="text-xs text-gray-400 font-bold">目前還沒有人留言，來搶頭香吧！</p>}
+                {comments.map(c => (
+                    <div key={c.id} className="bg-stone-50 dark:bg-stone-900/50 p-3 rounded-xl border border-stone-100 dark:border-stone-700">
+                        <div className="flex justify-between items-center mb-1">
+                            <span className="font-bold text-xs text-stone-700 dark:text-stone-300">{c.userName}</span>
+                            <span className="text-[10px] text-gray-400">{c.timestamp?.toDate().toLocaleString('zh-TW')}</span>
+                        </div>
+                        {c.text && <p className="text-sm text-stone-800 dark:text-stone-200 whitespace-pre-wrap">{c.text}</p>}
+                        {c.imageUrl && <img src={c.imageUrl} className="mt-2 max-w-[200px] rounded-lg border border-stone-200 dark:border-stone-700 cursor-zoom-in" onClick={() => window.open(c.imageUrl, '_blank')} />}
+                    </div>
+                ))}
+            </div>
+            <div className="bg-stone-50 dark:bg-stone-900/50 p-3 rounded-xl border border-stone-200 dark:border-stone-700 flex flex-col gap-2">
+                <textarea value={text} onChange={e => setText(e.target.value)} maxLength={500} placeholder="分享你的解法或疑問 (上限500字)..." className="w-full bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-2 text-sm outline-none resize-none h-16 custom-scrollbar dark:text-white" />
+                <div className="flex justify-between items-center">
+                    <input type="file" accept="image/*" id={`img-${questionNum}`} className="hidden" onChange={e => setImgFile(e.target.files[0])} />
+                    <label htmlFor={`img-${questionNum}`} className="text-xs font-bold text-gray-500 hover:text-purple-600 cursor-pointer flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[16px]">image</span> {imgFile ? '已選取圖片' : '上傳圖片'}
+                    </label>
+                    <button onClick={handleSubmit} disabled={isSubmitting} className="bg-purple-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold disabled:opacity-50 transition-colors shadow-sm">
+                        {isSubmitting ? '傳送中...' : '送出留言'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function QuizApp(props) {
     // 呼叫我們剛剛建立的大腦，把所有的狀態跟功能「借」過來用
     const { currentUser, userProfile, showAlert, showConfirm, showPrompt, tutorialStep, setTutorialStep } = props;
@@ -273,20 +377,10 @@ function QuizApp(props) {
                         <label className="flex items-center gap-2 cursor-pointer text-sm font-bold dark:text-white">
                             <input type="radio" checked={taskType==='normal'} onChange={()=>setTaskType('normal')} className="accent-black dark:accent-white" /> 一般測驗 (不公開)
                         </label>
-                        {/* ✨ 只有管理員能看到下面兩個選項 */}
-                        {isAdmin && (
-                            <>
-                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-amber-700 dark:text-amber-400">
-                                    <input type="radio" checked={taskType==='official'} onChange={()=>setTaskType('official')} className="accent-amber-600" /> 🏆 國考題
-                                </label>
-                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-amber-700 dark:text-amber-400">
-                                    <input type="radio" checked={taskType==='mock'} onChange={()=>setTaskType('mock')} className="accent-amber-600" /> 📘 模擬試題
-                                </label>
-                            </>
-                        )}
+                        {/* 國考與模擬考功能已轉移至公開試卷區 */}
                     </div>
 
-                    {taskType === 'official' && (
+                    {false && (
                         <div className="mt-4 border-t border-stone-200 dark:border-stone-700 pt-4 animate-fade-in">
                             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">國考年份期數 (由新到舊排序)</label>
                             <input type="text" list="official-years" placeholder="例如: 114-1" value={examYear} onChange={e=>setExamYear(e.target.value)} className="w-full p-2 border border-amber-300 bg-amber-50 dark:bg-stone-800 text-stone-800 dark:text-white rounded-2xl text-sm font-bold" />
@@ -296,7 +390,7 @@ function QuizApp(props) {
                         </div>
                     )}
 
-                   {taskType === 'mock' && (
+                   {false && (
                         <div className="mt-4 border-t border-stone-200 dark:border-stone-700 pt-4 space-y-4 animate-fade-in">
                             {/* 科目多選區 */}
                             <div>
@@ -697,20 +791,10 @@ function QuizApp(props) {
                         <label className="flex items-center gap-2 cursor-pointer text-sm font-bold dark:text-white">
                             <input type="radio" checked={taskType==='normal'} onChange={()=>setTaskType('normal')} className="accent-black dark:accent-white" /> 一般測驗 (不公開)
                         </label>
-                        {/* ✨ 只有管理員能看到下面兩個選項，一般學生只能選「一般測驗」 */}
-                        {isAdmin && (
-                            <>
-                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-amber-700 dark:text-amber-400">
-                                    <input type="radio" checked={taskType==='official'} onChange={()=>setTaskType('official')} className="accent-amber-600" /> 🏆 國考題
-                                </label>
-                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-amber-700 dark:text-amber-400">
-                                    <input type="radio" checked={taskType==='mock'} onChange={()=>setTaskType('mock')} className="accent-amber-600" /> 📘 模擬試題
-                                </label>
-                            </>
-                        )}
+                        {/* 國考與模擬考功能已轉移至公開試卷區 */}
                     </div>
 
-                    {taskType === 'official' && (
+                    {false && (
                         <div className="mt-4 border-t border-stone-200 dark:border-stone-700 pt-4 animate-fade-in">
                             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">國考年份期數 (由新到舊排序)</label>
                             <input type="text" list="official-years" placeholder="例如: 114-1" value={examYear} onChange={e=>setExamYear(e.target.value)} className="w-full p-2 border border-amber-300 bg-amber-50 dark:bg-stone-800 text-stone-800 dark:text-white rounded-2xl text-sm font-bold" />
@@ -720,7 +804,7 @@ function QuizApp(props) {
                         </div>
                     )}
 
-                    {taskType === 'mock' && (
+                    {false && (
                         <div className="mt-4 border-t border-stone-200 dark:border-stone-700 pt-4 space-y-4 animate-fade-in">
                             {/* 科目多選區 */}
                             <div>
@@ -1039,8 +1123,8 @@ function QuizApp(props) {
 
                 <div className="mb-6 border border-stone-200 dark:border-stone-700 p-4 bg-gray-50 dark:bg-gray-700 rounded-2xl flex flex-col gap-3">
                     <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white">
-                        <input type="checkbox" checked={allowPeek} onChange={e => setAllowPeek(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
-                        <span>👀 允許作答時使用「偷看答案」(限一般試題，偷看後該題將鎖定)</span>
+                        <input type="checkbox" checked={allowPeek} onChange={e => { setAllowPeek(e.target.checked); if (!e.target.checked) setQuizSettings(prev => ({...prev, showTags: false})); }} className="w-4 h-4 accent-black dark:accent-white" />
+                        <span>👀 允許作答時使用「偷看答案」(關閉時將同步隱藏題目標籤與難度)</span>
                     </label>
                     <label className="flex items-center space-x-2 font-bold cursor-pointer text-sm dark:text-white pt-3 border-t border-stone-200 dark:border-gray-600">
                         <input type="checkbox" checked={hasTimer} onChange={e => setHasTimer(e.target.checked)} className="w-4 h-4 accent-black dark:accent-white" />
@@ -1755,6 +1839,9 @@ function QuizApp(props) {
                                                 </div>
                                             )}
 
+                                            {initialRecord.isPublicExam && (
+                                                <PublicQuestionDiscussion examId={initialRecord.id} questionNum={q.number} currentUser={currentUser} userProfile={userProfile} />
+                                            )}
                                             <div className="mt-6 border-t border-gray-100 dark:border-stone-700 pt-4">
                                                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">📝 我的筆記 (自動儲存)</label>
                                                 <textarea 
@@ -2971,113 +3058,6 @@ if (step === 'grading') return (
                                     <span key={i} className={`px-1.5 py-0.5 text-xs font-bold border rounded ${s >= 60 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'}`}>{s} 分</span>
                                 )) : <span className="text-xs text-gray-500">尚無其他挑戰者成績</span>}
                             </div>
-                        </div>
-                    )}
-
-                    {/* ✨ 新增：知識點答對率分析 (預設收合，點擊才展開) */}
-                    {results && results.data && parsedInteractiveQuestions.length > 0 && canSeeAnswers && (
-                        <div className="border-b border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800/50 shrink-0 transition-colors">
-                            <button 
-                                onClick={() => setCollapsedSections(prev => ({ ...prev, tagAnalysis: !prev.tagAnalysis }))}
-                                className="w-full px-5 py-4 flex justify-between items-center font-black text-sm text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors"
-                            >
-                                <div className="flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-[20px] text-amber-500">bar_chart</span>
-                                    <span>知識點標籤答對率分析</span>
-                                </div>
-                                <svg className={`w-4 h-4 text-stone-400 transition-transform duration-300 ${collapsedSections?.tagAnalysis ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-                                </svg>
-                            </button>
-                            
-                            {collapsedSections?.tagAnalysis && (
-                                <div className="px-5 pb-5 pt-2 animate-fade-in border-t border-stone-100 dark:border-stone-700/50">
-                                    {(() => {
-                                        const tagStats = {};
-                                        results.data.forEach((item) => {
-                                            const actualIdx = item.number - 1;
-                                            const q = parsedInteractiveQuestions.find(q => q.globalIndex === actualIdx);
-                                            if (q && q.mainText) {
-                                                const text = q.mainText.replace(/<[^>]+>/g, '');
-                                                const matchTags = text.match(/#([^\s\|\]\)\,\s]+)/g);
-                                                if (matchTags) {
-                                                    const uniqueTags = [...new Set(matchTags)];
-                                                    uniqueTags.forEach(tagGroup => {
-                                                        const tag = tagGroup.substring(1).trim();
-                                                        if (!tagStats[tag]) tagStats[tag] = { total: 0, correct: 0 };
-                                                        tagStats[tag].total += 1;
-                                                        if (item.isCorrect) tagStats[tag].correct += 1;
-                                                    });
-                                                }
-                                            }
-                                        });
-
-                                        const tagStatsArray = Object.keys(tagStats).map(tag => ({
-                                            tag,
-                                            total: tagStats[tag].total,
-                                            correct: tagStats[tag].correct,
-                                            rate: Math.round((tagStats[tag].correct / tagStats[tag].total) * 100)
-                                        })).sort((a, b) => b.total - a.total);
-
-                                        if (tagStatsArray.length === 0) {
-                                            return <p className="text-xs text-stone-400 font-bold italic py-2 pl-2">本份試卷題目文本中未偵測到任何 #標籤（例如 #心臟）。</p>;
-                                        }
-
-                                        return (
-                                            <div className="space-y-4 max-w-2xl pt-2">
-                                                {tagStatsArray.length >= 3 && (
-                                                    <div className="flex justify-center mb-6">
-                                                        <svg width="240" height="240" viewBox="0 0 240 240" className="overflow-visible drop-shadow-sm">
-                                                            {[0.2, 0.4, 0.6, 0.8, 1].map(level => {
-                                                                const pts = tagStatsArray.map((_, i) => {
-                                                                    const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
-                                                                    return `${120 + 80 * level * Math.cos(angle)},${120 + 80 * level * Math.sin(angle)}`;
-                                                                }).join(' ');
-                                                                return <polygon key={level} points={pts} fill="none" stroke="currentColor" className="text-stone-300 dark:text-stone-600" strokeWidth="1" />;
-                                                            })}
-                                                            {tagStatsArray.map((_, i) => {
-                                                                const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
-                                                                return <line key={i} x1="120" y1="120" x2={120 + 80 * Math.cos(angle)} y2={120 + 80 * Math.sin(angle)} stroke="currentColor" className="text-stone-300 dark:text-stone-600" strokeWidth="1" />;
-                                                            })}
-                                                            <polygon points={tagStatsArray.map((d, i) => {
-                                                                const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
-                                                                return `${120 + 80 * (d.rate / 100) * Math.cos(angle)},${120 + 80 * (d.rate / 100) * Math.sin(angle)}`;
-                                                            }).join(' ')} fill="rgba(245, 158, 11, 0.4)" stroke="rgb(245, 158, 11)" strokeWidth="2" className="transition-all duration-1000 ease-out" />
-                                                            {tagStatsArray.map((d, i) => {
-                                                                const angle = i * ((Math.PI * 2) / tagStatsArray.length) - Math.PI / 2;
-                                                                return (
-                                                                    <text key={i} x={120 + 105 * Math.cos(angle)} y={120 + 105 * Math.sin(angle)} textAnchor="middle" dominantBaseline="middle" className="text-[11px] font-black fill-stone-600 dark:fill-stone-300">
-                                                                        {d.tag.length > 6 ? d.tag.substring(0, 6) + '...' : d.tag}
-                                                                    </text>
-                                                                );
-                                                            })}
-                                                        </svg>
-                                                    </div>
-                                                )}
-                                                {tagStatsArray.map(stat => (
-                                                    <div key={stat.tag} className="flex items-center gap-3 text-sm">
-                                                        <div className="w-24 shrink-0 font-bold text-stone-600 dark:text-stone-400 truncate text-right" title={stat.tag}>
-                                                            #{stat.tag}
-                                                        </div>
-                                                        <div className="flex-grow bg-stone-100 dark:bg-stone-700 rounded-full h-5 overflow-hidden relative flex items-center shadow-inner">
-                                                            <div 
-                                                                className={`h-full transition-all duration-1000 ease-out rounded-full ${stat.rate >= 80 ? 'bg-emerald-500' : stat.rate >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
-                                                                style={{ width: `${stat.rate}%` }}
-                                                            ></div>
-                                                            <span className="absolute left-3 text-[11px] font-black text-stone-800/70 dark:text-white/90 drop-shadow-sm">
-                                                                {stat.correct} / {stat.total} 題
-                                                            </span>
-                                                        </div>
-                                                        <div className="w-12 shrink-0 text-right font-black text-stone-700 dark:text-stone-300">
-                                                            {stat.rate}%
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            )}
                         </div>
                     )}
 

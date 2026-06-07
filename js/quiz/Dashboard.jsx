@@ -47,6 +47,8 @@ function Dashboard(props) {
 
     const [showShareModal, setShowShareModal] = useState(null);
     const [showMoveModal, setShowMoveModal] = useState(null);
+    const [showPublicPublishModal, setShowPublicPublishModal] = useState(null);
+    const [publicPublishForm, setPublicPublishForm] = useState({ type: 'general', subject: '藥理學', tags: '', timeLimit: 60, hasTimer: false, allowPeek: true, publishAnswers: true });
     const [isGeneratingCode, setIsGeneratingCode] = useState(false);
 
     // 新增：批次選取模式狀態
@@ -1025,6 +1027,7 @@ function Dashboard(props) {
                                         <span className="shrink-0">{rec.numQuestions}題</span>
                                         
                                         {/* 標籤小圖示 (手機版只留圖案，電腦版顯示文字) */}
+                                        {rec.isPublishedToPublic && <span className="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-1 py-0.5 rounded border border-purple-200 dark:border-purple-800 flex items-center gap-0.5" title="已公開"><span className="material-symbols-outlined text-[12px]">public</span><span className="hidden sm:inline">已公開</span></span>}
                                         {rec.isTask && <span className="bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1 py-0.5 rounded flex items-center gap-0.5" title="任務"><span className="material-symbols-outlined text-[12px]">sports_esports</span><span className="hidden sm:inline">任務</span></span>}
                                         {rec.isShared && !rec.isTask && <span className="bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 px-1 py-0.5 rounded flex items-center gap-0.5" title="分享"><span className="material-symbols-outlined text-[12px]">share</span><span className="hidden sm:inline">分享</span></span>}
                                         {rec.hasTimer && <span className="bg-red-50 dark:bg-red-900/40 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 px-1 py-0.5 rounded flex items-center gap-0.5" title={`${rec.timeLimit}分鐘`}><span className="material-symbols-outlined text-[12px]">timer</span><span className="hidden sm:inline">{rec.timeLimit}m</span></span>}
@@ -1057,10 +1060,18 @@ function Dashboard(props) {
                                             <span className="text-xs font-bold hidden md:inline">移動</span>
                                         </button>
                                        {!(rec.isTask || /\[#(op|m?nm?st)\]/i.test(rec.testName || '')) && (
-                                            <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); setShowShareModal(rec); }} className="h-8 w-8 md:w-auto md:px-3 flex items-center justify-center rounded-full md:rounded-xl bg-stone-100 dark:bg-stone-700 text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors gap-1" title="分享">
-                                                <span className="material-symbols-outlined text-[16px]">share</span>
-                                                <span className="text-xs font-bold hidden md:inline">分享</span>
-                                            </button>
+                                            <>
+                                                <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); setShowShareModal(rec); }} className="h-8 w-8 md:w-auto md:px-3 flex items-center justify-center rounded-full md:rounded-xl bg-stone-100 dark:bg-stone-700 text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors gap-1" title="分享">
+                                                    <span className="material-symbols-outlined text-[16px]">share</span>
+                                                    <span className="text-xs font-bold hidden md:inline">分享</span>
+                                                </button>
+                                                {!rec.isPublishedToPublic && (
+                                                    <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); setShowPublicPublishModal(rec); }} className="h-8 w-8 md:w-auto md:px-3 flex items-center justify-center rounded-full md:rounded-xl bg-stone-100 dark:bg-stone-700 text-purple-500 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors gap-1" title="公開">
+                                                        <span className="material-symbols-outlined text-[16px]">public</span>
+                                                        <span className="text-xs font-bold hidden md:inline">公開</span>
+                                                    </button>
+                                                )}
+                                            </>
                                         )}
                                         {!rec.isShared && (!rec.isTask || !rec.creatorUid || rec.creatorUid === user.uid) && (
                                             <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); handleEditQuiz(rec); }} className="relative h-8 w-8 md:w-auto md:px-3 flex items-center justify-center rounded-full md:rounded-xl bg-stone-100 dark:bg-stone-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors gap-1" title="編輯">
@@ -1086,6 +1097,148 @@ function Dashboard(props) {
             <div className="mt-2 mb-8">
                 {renderPagination()}
             </div>
+
+            {showPublicPublishModal && (
+                <div className="fixed inset-0 bg-stone-800 bg-opacity-60 flex items-center justify-center z-[300] p-4">
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 p-6 w-full max-w-md rounded-2xl shadow-xl border border-stone-200 dark:border-stone-700 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                        <h3 className="font-bold text-xl mb-4 flex justify-between items-center dark:text-white border-b pb-2 dark:border-stone-700">
+                            <span className="flex items-center gap-1 text-purple-600 dark:text-purple-400"><span className="material-symbols-outlined">public</span> 發布至公開試卷區</span>
+                            <button onClick={() => setShowPublicPublishModal(null)} className="text-gray-400 hover:text-red-500"><span className="material-symbols-outlined block">close</span></button>
+                        </h3>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">公開類型</label>
+                                <div className="flex gap-4">
+                                    <label className="flex items-center gap-2 text-sm font-bold dark:text-white cursor-pointer">
+                                        <input type="radio" checked={publicPublishForm.type === 'general'} onChange={() => setPublicPublishForm({...publicPublishForm, type: 'general'})} className="accent-purple-600" />
+                                        一般試題
+                                    </label>
+                                    {(userProfile?.isAuthorized || user?.email === 'jay03wn@gmail.com') && (
+                                        <label className="flex items-center gap-2 text-sm font-bold text-amber-600 cursor-pointer">
+                                            <input type="radio" checked={publicPublishForm.type === 'mock'} onChange={() => setPublicPublishForm({...publicPublishForm, type: 'mock'})} className="accent-amber-600" />
+                                            模擬考 (管理員專屬)
+                                        </label>
+                                    )}
+                                </div>
+                            </div>
+
+                            {publicPublishForm.type === 'mock' && (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">科目選擇</label>
+                                        <select value={publicPublishForm.subject} onChange={e => setPublicPublishForm({...publicPublishForm, subject: e.target.value})} className="w-full p-2 border border-gray-300 dark:border-stone-600 bg-white dark:bg-stone-700 rounded-xl text-sm font-bold dark:text-white outline-none">
+                                            {['藥理學', '藥物化學', '藥物分析', '生藥學', '中藥學', '藥劑學', '生物藥劑學', '綜合'].map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">標籤 (逗號分隔)</label>
+                                        <input type="text" placeholder="例如: 期中考, 講義出題" value={publicPublishForm.tags} onChange={e => setPublicPublishForm({...publicPublishForm, tags: e.target.value})} className="w-full p-2 border border-gray-300 dark:border-stone-600 bg-white dark:bg-stone-700 rounded-xl text-sm font-bold dark:text-white outline-none" />
+                                    </div>
+                                </>
+                            )}
+
+                            <div className="bg-gray-50 dark:bg-stone-900 p-3 rounded-xl border border-gray-200 dark:border-stone-700 space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-bold dark:text-white cursor-pointer">
+                                    <input type="checkbox" checked={publicPublishForm.hasTimer} onChange={e => setPublicPublishForm({...publicPublishForm, hasTimer: e.target.checked})} className="accent-purple-600" />
+                                    限制時間 (倒數計時)
+                                </label>
+                                {publicPublishForm.hasTimer && (
+                                    <div className="flex items-center gap-2 pl-6">
+                                        <input type="number" value={publicPublishForm.timeLimit} onChange={e => setPublicPublishForm({...publicPublishForm, timeLimit: e.target.value})} className="w-20 p-1 border border-gray-300 dark:border-stone-600 bg-white dark:bg-stone-700 rounded text-center text-sm font-bold dark:text-white outline-none" />
+                                        <span className="text-sm dark:text-gray-300">分鐘</span>
+                                    </div>
+                                )}
+                                <label className="flex items-center gap-2 text-sm font-bold dark:text-white cursor-pointer">
+                                    <input type="checkbox" checked={publicPublishForm.allowPeek} onChange={e => setPublicPublishForm({...publicPublishForm, allowPeek: e.target.checked})} className="accent-purple-600" />
+                                    允許作答中偷看答案
+                                </label>
+                                <label className="flex items-center gap-2 text-sm font-bold dark:text-white cursor-pointer">
+                                    <input type="checkbox" checked={publicPublishForm.publishAnswers} onChange={e => setPublicPublishForm({...publicPublishForm, publishAnswers: e.target.checked})} className="accent-purple-600" />
+                                    交卷後提供正確答案與詳解
+                                </label>
+                            </div>
+
+                            <button onClick={async () => {
+                                const isAdmin = user?.email === 'jay03wn@gmail.com' || userProfile?.isAuthorized;
+                                if (!isAdmin && publicPublishForm.type !== 'general') return showAlert("一般玩家只能發布一般試題！");
+                                
+                                setIsJumping(true);
+                                try {
+                                    if (!isAdmin) {
+                                        const userDoc = await window.db.collection('users').doc(user.uid).get();
+                                        const mcData = userDoc.data()?.mcData || {};
+                                        const today = new Date().toISOString().split('T')[0];
+                                        let publishData = mcData.publicExamPublishData || { date: '', count: 0 };
+                                        
+                                        if (publishData.date !== today) {
+                                            publishData = { date: today, count: 0 };
+                                        }
+                                        
+                                        if (publishData.count >= 5) {
+                                            setIsJumping(false);
+                                            return showAlert("您今日的公開發布次數已達上限 (5次)，請明天再來！");
+                                        }
+                                        
+                                        publishData.count += 1;
+                                        await window.db.collection('users').doc(user.uid).set({ mcData: { ...mcData, publicExamPublishData: publishData } }, { merge: true });
+                                    }
+
+                                    let qText = showPublicPublishModal.questionText || '', qHtml = showPublicPublishModal.questionHtml || '', eHtml = showPublicPublishModal.explanationHtml || '';
+                                    if (showPublicPublishModal.hasSeparatedContent) {
+                                        const cDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(showPublicPublishModal.id).get();
+                                        if (cDoc.exists) {
+                                            const d = cDoc.data();
+                                            qText = window.safeDecompress(d.questionText);
+                                            qHtml = window.safeDecompress(d.questionHtml);
+                                            eHtml = window.safeDecompress(d.explanationHtml);
+                                        }
+                                    }
+
+                                    const publicExamData = {
+                                        ownerId: user.uid,
+                                        ownerName: userProfile?.displayName || '匿名',
+                                        originalQuizId: showPublicPublishModal.id,
+                                        testName: showPublicPublishModal.testName,
+                                        numQuestions: showPublicPublishModal.numQuestions,
+                                        maxScore: showPublicPublishModal.maxScore || 100,
+                                        examType: publicPublishForm.type,
+                                        examSubject: publicPublishForm.type === 'mock' ? publicPublishForm.subject : '',
+                                        examTags: publicPublishForm.type === 'mock' ? publicPublishForm.tags : '',
+                                        hasTimer: publicPublishForm.hasTimer,
+                                        timeLimit: publicPublishForm.timeLimit,
+                                        allowPeek: publicPublishForm.allowPeek,
+                                        publishAnswers: publicPublishForm.publishAnswers,
+                                        correctAnswersInput: showPublicPublishModal.correctAnswersInput || '',
+                                        questionText: window.jzCompress ? window.jzCompress(qText) : qText,
+                                        questionHtml: window.jzCompress ? window.jzCompress(qHtml) : qHtml,
+                                        explanationHtml: window.jzCompress ? window.jzCompress(eHtml) : eHtml,
+                                        hasSeparatedContent: false,
+                                        createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+                                        stats: { totalPlayers: 0, averageScore: 0 }
+                                    };
+
+                                    setShowPublicPublishModal(null); // 先關閉視窗
+                                    
+                                    await window.db.collection('publicExams').add(publicExamData);
+                                    // 將原試卷標記為已發布，避免重複發布
+                                    await window.db.collection('users').doc(user.uid).collection('quizzes').doc(showPublicPublishModal.id).update({ isPublishedToPublic: true });
+                                    
+                                    setIsJumping(false);
+                                    if (window.setGlobalToast) window.setGlobalToast({ status: 'success', message: "✅ 成功發布至公開試卷區！" });
+                                    else showAlert("✅ 成功發布至公開試卷區！");
+                                } catch (err) {
+                                    console.error(err);
+                                    setIsJumping(false);
+                                    showAlert("❌ 發布失敗：" + err.message);
+                                }
+                            }} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-3 rounded-xl transition-colors shadow-md flex items-center justify-center gap-2 mt-4">
+                                <span className="material-symbols-outlined">rocket_launch</span> 確認發布
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showShareModal && (
                 <div className="fixed inset-0 bg-stone-800 bg-opacity-60 flex items-center justify-center z-50 p-4">

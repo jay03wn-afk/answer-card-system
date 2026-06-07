@@ -1,5 +1,5 @@
 // 從全域 (window) 拿回我們已經搬出去的四個大頁面
-const { Dashboard, QuizApp, TaskWallDashboard, WrongBookDashboard, ShopDashboard, QlibDashboard, IlluDashboard } = window;
+const { Dashboard, QuizApp, TaskWallDashboard, WrongBookDashboard, ShopDashboard, QlibDashboard, IlluDashboard, PublicExam } = window;
 
 // ==========================================
 // ✨ 國考戰況與 AI 口訣專屬 UI 介面
@@ -410,9 +410,19 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                                 </div>
                                 <div className="flex gap-2 flex-wrap">
                                     <input type="text" placeholder="Prompt 標題" className="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-amber-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none focus:border-amber-500" value={shopPromptForm.title} onChange={e => setShopPromptForm({...shopPromptForm, title: e.target.value})} />
-                                    <select className="px-3 py-2 rounded-lg border border-amber-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={shopPromptForm.subjectId} onChange={e => setShopPromptForm({...shopPromptForm, subjectId: e.target.value})}>
+                                    <input 
+                                        type="text" 
+                                        list="shop-prompt-categories-list" 
+                                        className="px-3 py-2 rounded-lg border border-amber-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" 
+                                        value={shopPromptForm.subjectId} 
+                                        onChange={e => setShopPromptForm({...shopPromptForm, subjectId: e.target.value})} 
+                                        placeholder="選擇或手動輸入新分類"
+                                    />
+                                    <datalist id="shop-prompt-categories-list">
                                         {examFeatures.EXAM_DATA.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-                                    </select>
+                                        <option value="通用">通用</option>
+                                        <option value="其他">其他</option>
+                                    </datalist>
                                     <div className="flex items-center gap-2 bg-amber-100 dark:bg-stone-800 px-3 py-2 rounded-lg border border-amber-200 dark:border-stone-600">
                                         <span className="material-symbols-outlined text-[18px] text-amber-600 dark:text-amber-400">diamond</span>
                                         <input type="number" min="0" placeholder="價格" className="w-16 bg-transparent outline-none dark:text-white font-bold" value={shopPromptForm.price} onChange={e => setShopPromptForm({...shopPromptForm, price: parseInt(e.target.value) || 0})} />
@@ -479,9 +489,19 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                         </div>
                         <div className="flex gap-2 flex-wrap">
                             <input type="text" placeholder="Prompt 標題" className="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-cyan-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none focus:border-cyan-500" value={newPrompt.title} onChange={e => setNewPrompt({...newPrompt, title: e.target.value})} />
-                            <select className="px-3 py-2 rounded-lg border border-cyan-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" value={newPrompt.subjectId} onChange={e => setNewPrompt({...newPrompt, subjectId: e.target.value})}>
+                            <input 
+                                type="text" 
+                                list="prompt-categories-list" 
+                                className="px-3 py-2 rounded-lg border border-cyan-200 dark:border-stone-600 bg-white dark:bg-stone-800 dark:text-white outline-none" 
+                                value={newPrompt.subjectId} 
+                                onChange={e => setNewPrompt({...newPrompt, subjectId: e.target.value})} 
+                                placeholder="選擇或手動輸入新分類"
+                            />
+                            <datalist id="prompt-categories-list">
                                 {examFeatures.EXAM_DATA.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-                            </select>
+                                <option value="通用">通用</option>
+                                <option value="其他">其他</option>
+                            </datalist>
                         </div>
                         <label className="flex items-center gap-2 text-sm font-bold text-cyan-800 dark:text-cyan-300 cursor-pointer">
                             <input type="checkbox" checked={newPrompt.isQuiz} onChange={e => setNewPrompt({...newPrompt, isQuiz: e.target.checked})} className="w-4 h-4 accent-cyan-500" />
@@ -505,7 +525,16 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
                 )}
 
                 <div className="space-y-3">
-                    {examFeatures.EXAM_DATA.map(subj => {
+                    {(() => {
+                        const allCategories = [...examFeatures.EXAM_DATA.map(s => ({ id: s.id, title: s.title })), { id: '通用', title: '通用' }, { id: '其他', title: '其他' }];
+                        const uniqueSubjects = Array.from(new Set((examFeatures.myPrompts || []).map(p => p.subjectId)));
+                        uniqueSubjects.forEach(sub => {
+                            if (!allCategories.find(c => c.id === sub)) {
+                                allCategories.push({ id: sub, title: sub });
+                            }
+                        });
+                        return allCategories;
+                    })().map(subj => {
                         const subjPrompts = (examFeatures.myPrompts || []).filter(p => p.subjectId === subj.id);
                         if (subjPrompts.length === 0) return null;
                         const isExpanded = expandedPromptSubj[subj.id] !== false;
@@ -866,7 +895,7 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
         </div>
     );
 }
-// ============== 貼到這行之上： function Main() { ==============
+
 function Main() {
     const { useState, useEffect } = React;
 
@@ -1582,12 +1611,14 @@ if (docs.length > 50) {
                     <button onClick={() => handleTabClick('newspaper')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'newspaper' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">newspaper</span> JJay日報</button>
                     <button onClick={() => handleTabClick('dashboard')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'dashboard' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">library_books</span> 我的題庫</button>
                     <button onClick={() => handleTabClick('qlib')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'qlib' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">source</span> 題庫系統</button>
-                    <button onClick={() => handleTabClick('illu')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'illu' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">auto_stories</span> 藥物圖鑑</button>
-                    <button onClick={() => handleTabClick('taskwall')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'taskwall' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">task_alt</span> 任務牆</button>
-                    <button onClick={() => handleTabClick('wrongbook')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'wrongbook' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">menu_book</span> 錯題整理</button>
+                    <button onClick={() => handleTabClick('illu')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'illu' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">auto_stories</span> 藥物圖鑑</button>
+                        <button onClick={() => handleTabClick('taskwall')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'taskwall' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">task_alt</span> 任務牆</button>
+                        <button onClick={() => handleTabClick('publicexam')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'publicexam' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">public</span> 公開試卷</button>
+                        <button onClick={() => handleTabClick('wrongbook')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'wrongbook' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">menu_book</span> 錯題整理</button>
                     <button onClick={() => handleTabClick('social')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'social' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">forum</span> 社群交流</button>
                     <button onClick={() => handleTabClick('minecraft')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'minecraft' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">sports_esports</span> 史蒂夫養成</button>
-                    
+                    <button onClick={() => handleTabClick('publicExam')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'publicExam' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">assignment</span> 公開考試</button>
+
                     <div className="my-2 border-t border-stone-200 dark:border-stone-700 mx-5"></div>
                     
                     {/* ✨ 新增的國考進度追蹤 */}
@@ -2060,6 +2091,7 @@ if (docs.length > 50) {
                     {activeTab === 'qlib' && <QlibDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     {activeTab === 'illu' && <window.IlluDashboard user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     {activeTab === 'taskwall' && <TaskWallDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
+                    {activeTab === 'publicexam' && <PublicExam user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
                     
                     {/* 更新：傳入 onContinueQuiz，實現跳轉功能 */}
                     {activeTab === 'wrongbook' && <WrongBookDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} onContinueQuiz={(rec) => { setActiveQuizRecord(rec); setActiveTab('activeQuiz'); }} />}
@@ -2084,7 +2116,7 @@ if (docs.length > 50) {
                     {activeTab === 'service' && <window.ServiceCenter user={user} userProfile={userProfile} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} />}
                 </div>
             ) : (
-                <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} userProfile={userProfile} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab('dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} tutorialStep={tutorialStep} setTutorialStep={setTutorialStep} />
+                <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} userProfile={userProfile} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab(activeQuizRecord?.isPublicExam ? 'publicexam' : 'dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} tutorialStep={tutorialStep} setTutorialStep={setTutorialStep} />
             )}
         </div>
     );
