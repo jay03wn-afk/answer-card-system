@@ -7,6 +7,69 @@ const {
     safeDecompress, processQuestionContent, extractSpecificContent, extractSpecificExplanation 
 } = window;
 
+// ✨ 新增：題庫系統專用留言板 (獨立題庫)
+function QlibQuestionDiscussion({ questionId, currentUser, userProfile }) {
+    const { useState, useEffect } = React;
+    const [comments, setComments] = useState([]);
+    const [text, setText] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (!questionId) return;
+        const unsub = window.db.collection('publicQlib_discussions').doc(questionId)
+            .collection('comments').orderBy('timestamp', 'asc')
+            .onSnapshot(snap => {
+                setComments(snap.docs.map(d => ({id: d.id, ...d.data()})));
+            });
+        return () => unsub();
+    }, [questionId]);
+
+    const handleSubmit = async () => {
+        if (!text.trim()) return;
+        if (text.length > 300) return alert('留言字數不可超過 300 字！');
+        setIsSubmitting(true);
+        try {
+            await window.db.collection('publicQlib_discussions').doc(questionId).collection('comments').add({
+                userId: currentUser?.uid || 'anonymous',
+                userName: userProfile?.displayName || '匿名玩家',
+                text: text.trim(),
+                timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+            setText('');
+        } catch(e) { alert("留言失敗：" + e.message); }
+        setIsSubmitting(false);
+    };
+
+    return (
+        <div className="mt-6 border-t border-stone-200 dark:border-stone-700 pt-4">
+            <h4 className="font-bold text-sm text-indigo-600 dark:text-indigo-400 mb-4 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[18px]">forum</span> 全域題庫討論區 ({comments.length})
+            </h4>
+            <div className="space-y-3 mb-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                {comments.length === 0 && <p className="text-xs text-gray-400 font-bold">目前還沒有人留言，來分享您的解題思路吧！</p>}
+                {comments.map(c => (
+                    <div key={c.id} className="bg-stone-50 dark:bg-stone-900/50 p-3 rounded-xl border border-stone-100 dark:border-stone-700">
+                        <div className="flex justify-between items-center mb-1">
+                            <span className="font-bold text-xs text-stone-700 dark:text-stone-300">{c.userName}</span>
+                            <span className="text-[10px] text-gray-400">{c.timestamp?.toDate().toLocaleString('zh-TW')}</span>
+                        </div>
+                        <p className="text-sm text-stone-800 dark:text-stone-200 whitespace-pre-wrap">{c.text}</p>
+                    </div>
+                ))}
+            </div>
+            <div className="bg-stone-50 dark:bg-stone-900/50 p-3 rounded-xl border border-stone-200 dark:border-stone-700 flex flex-col gap-2 shadow-inner">
+                <textarea value={text} onChange={e => setText(e.target.value)} maxLength={300} placeholder="分享你的解題思路或疑問 (上限300字)..." className="w-full bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-2 text-sm outline-none resize-none h-16 custom-scrollbar dark:text-white focus:border-indigo-400" />
+                <div className="flex justify-end items-center">
+                    <span className={`text-xs mr-3 font-bold ${text.length > 250 ? 'text-rose-500' : 'text-gray-400'}`}>{text.length}/300</span>
+                    <button onClick={handleSubmit} disabled={isSubmitting || !text.trim()} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold disabled:opacity-50 transition-colors shadow-sm">
+                        {isSubmitting ? '傳送中...' : '送出留言'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ✨ 新增：公開試題專用留言板 (獨立元件)
 function PublicQuestionDiscussion({ examId, questionNum, currentUser, userProfile }) {
     const { useState, useEffect } = React;
@@ -198,6 +261,7 @@ function QuizApp(props) {
         allowPeek, setAllowPeek, correctAnswersInput, setCorrectAnswersInput, shortAnswersInput, setShortAnswersInput,
         results, setResults, questionFileUrl, setQuestionFileUrl, questionText, setQuestionText,
         questionHtml, setQuestionHtml, explanationHtml, setExplanationHtml, folder, setFolder,
+        independentQuestions, setIndependentQuestions, globalStats,
         shortCode, setShortCode, pdfZoom, setPdfZoom, publishAnswersToggle, setPublishAnswersToggle,
         showAiModal, setShowAiModal, aiSubject, setAiSubject, aiCustomSubject, setAiCustomSubject,
         aiPharmRatio, setAiPharmRatio, aiNum, setAiNum, aiScope, setAiScope, aiFileContent, setAiFileContent,
@@ -426,11 +490,21 @@ function QuizApp(props) {
                     )}
                 </div>
                 
-                {(() => {
+                {/* ✨ 新增：如果是題庫系統題目，顯示專屬保護介面，防止誤刪詳解與內容 */}
+                {initialRecord.isIndependentQuestions ? (
+                    <div className="mb-6 bg-cyan-50 dark:bg-stone-800 border-2 border-cyan-400 dark:border-cyan-700 rounded-2xl p-6 text-center shadow-sm">
+                        <span className="material-symbols-outlined text-4xl text-cyan-500 mb-2">library_books</span>
+                        <h3 className="text-lg font-black text-cyan-800 dark:text-cyan-300 mb-2">這是從題庫抽出的試卷</h3>
+                        <p className="text-sm font-bold text-cyan-700 dark:text-gray-300">
+                            為保證資料一致性，此試卷內容（題目、選項、詳解）由題庫系統統一管理。<br/>
+                            若需修改內容，請前往「我的題庫」進行管理。<br/>
+                            您仍可在此修改測驗名稱、計時與發布設定。
+                        </p>
+                    </div>
+                ) : (() => {
                     const isHtml = inputType === 'richtext';
-                    const activeContent = isHtml ? questionHtml : questionText;
                     
-                    // ✨ 智慧提取核心：全域自動歸位系統，修正重複、多餘空行，並強制 UI 即時刷新
+                    // ✨ 智慧提取核心：全域自動歸位系統
                     const getParts = (text) => {
         let tempText = text || '';
         let sq = '', asq = '', exp = '', ans = '';
@@ -858,7 +932,17 @@ function QuizApp(props) {
                     <HelpTooltip show={showHelp} text="設定考卷總題數（決定答案卡有幾格）以及滿分（交卷時會自動幫你依比例算分）" position="top" className="left-1/3" />
                 </div>
 
-                {(() => {
+                {initialRecord.isIndependentQuestions ? (
+                    <div className="mb-6 bg-cyan-50 dark:bg-stone-800 border-2 border-cyan-400 dark:border-cyan-700 rounded-2xl p-6 text-center shadow-sm">
+                        <span className="material-symbols-outlined text-4xl text-cyan-500 mb-2">library_books</span>
+                        <h3 className="text-lg font-black text-cyan-800 dark:text-cyan-300 mb-2">獨立題庫試卷</h3>
+                        <p className="text-sm font-bold text-cyan-700 dark:text-gray-300">
+                            這是一份由「題庫系統」動態抽題產生的試卷。<br/><br/>
+                            為保證題庫數據的一致性，若要修改題目內容（包含文字、選項與詳解），請前往左側選單的「題庫系統」，找到該題目進行獨立編輯。<br/><br/>
+                            您仍可以在此頁面下方修改「測驗名稱」、「計時器」與「功能開關」等外觀設定。
+                        </p>
+                    </div>
+                ) : (() => {
                     const isHtml = inputType === 'richtext';
                     const activeContent = isHtml ? questionHtml : questionText;
                     
@@ -1453,9 +1537,9 @@ function QuizApp(props) {
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
+                <div className="flex flex-row overflow-x-auto custom-scrollbar items-center gap-2 w-full lg:w-auto justify-start lg:justify-end pb-2 lg:pb-0">
                     
-                    <button onClick={() => setShowSettingsModal(true)} className="bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-4 py-2 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
+                    <button onClick={() => setShowSettingsModal(true)} className="shrink-0 bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-4 py-2 sm:py-2.5 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
                         <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                         設定與管理
                     </button>
@@ -1465,7 +1549,7 @@ function QuizApp(props) {
                             if (tutorialStep === 9) setTutorialStep(10);
                             handleSubmitClick();
                         }} 
-                        className={`px-6 py-2 rounded-full font-bold text-sm shadow-md transition-all active:scale-95 flex items-center ${tutorialStep === 9 ? 'tutorial-highlight relative z-[160] bg-amber-500 text-white ring-4 ring-amber-300 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.5)]' : 'bg-amber-500 dark:bg-amber-600 text-white hover:bg-amber-600 dark:hover:bg-amber-500'} ${tutorialStep === 99 ? 'hidden' : ''}`}
+                        className={`shrink-0 px-6 py-2 sm:py-2.5 rounded-full font-bold text-sm shadow-md transition-all active:scale-95 flex items-center ${tutorialStep === 9 ? 'tutorial-highlight relative z-[160] bg-amber-500 text-white ring-4 ring-amber-300 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.5)]' : 'bg-amber-500 dark:bg-amber-600 text-white hover:bg-amber-600 dark:hover:bg-amber-500'} ${tutorialStep === 99 ? 'hidden' : ''}`}
                     >
                         <span className="material-symbols-outlined text-[18px] mr-1.5">publish</span>
                         {isShared || isTask || testName.includes('[#op]') ? '直接交卷' : '交卷對答案'}
@@ -1575,7 +1659,7 @@ function QuizApp(props) {
                                             setCurrentInteractiveIndex(prev => Math.max(0, prev - 1));
                                             setShowQuestionGrid(false);
                                         }}
-                                        className="bg-stone-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 sm:px-4 py-1.5 font-bold disabled:opacity-30 transition-colors rounded-lg sm:rounded-xl border border-stone-200 dark:border-stone-600 text-sm whitespace-nowrap shrink-0"
+                                        className="bg-stone-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 sm:px-6 py-2.5 sm:py-2 font-black disabled:opacity-30 transition-colors rounded-xl border border-stone-200 dark:border-stone-600 text-base sm:text-sm whitespace-nowrap shrink-0 shadow-sm"
                                     >
                                         上一題
                                     </button>
@@ -1585,7 +1669,7 @@ function QuizApp(props) {
                                             setCurrentInteractiveIndex(prev => Math.min(parsedInteractiveQuestions.length - 1, prev + 1));
                                             setShowQuestionGrid(false);
                                         }}
-                                        className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-2 sm:px-4 py-1.5 font-bold disabled:opacity-30 transition-colors shadow-sm rounded-lg sm:rounded-xl text-sm whitespace-nowrap shrink-0"
+                                        className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-4 sm:px-6 py-2.5 sm:py-2 font-black disabled:opacity-30 transition-colors shadow-md rounded-xl text-base sm:text-sm whitespace-nowrap shrink-0"
                                     >
                                         下一題
                                     </button>
@@ -1675,11 +1759,12 @@ function QuizApp(props) {
                                     
                                     const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
                                     const keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
-                                    const currentCorrectAns = keyArray[actualIdx] || '';
-                                const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
-                                const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number);
+                                    const currentCorrectAns = q.ans || keyArray[actualIdx] || '';
+                                    const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
+                                    const currentExp = q.explain || (typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : '');
+                                    const qStats = q.id && globalStats ? globalStats[q.id] : null;
 
-                               return (
+                                    return (
                                 <div key={actualIdx} className={`bg-white dark:bg-stone-800/95 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-[2rem] p-5 sm:p-10 mb-10 transition-all ring-1 ${isPeeked ? 'ring-amber-400 dark:ring-amber-500 shadow-amber-500/10' : 'ring-black/5 dark:ring-white/10'}`}>
                                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6 border-b border-stone-100 dark:border-stone-700 pb-5">
                                         <div className="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start">
@@ -1821,16 +1906,52 @@ function QuizApp(props) {
                                                     ) : (
                                                         <p className="text-gray-500 italic mb-2 font-bold">此題無提供詳解。</p>
                                                     )}
+
+                                                   
+                                                    
+                                                    {/* ✨ 選答分析與全球數據 ✨ */}
+                                                    {qStats && (
+                                                        <div className="mt-4 pt-4 border-t border-amber-200 dark:border-amber-800">
+                                                            <div className="flex items-center gap-1 font-black text-indigo-600 dark:text-indigo-400 mb-3 text-sm">
+                                                                <span className="material-symbols-outlined text-[18px]">analytics</span>
+                                                                全體玩家選答分析 (共 {qStats.total || 0} 次作答)
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-2 mb-3">
+                                                                {['A', 'B', 'C', 'D'].map(opt => {
+                                                                    const count = qStats[`opts_${opt}`] || 0;
+                                                                    const pct = qStats.total ? Math.round((count / qStats.total) * 100) : 0;
+                                                                    const isAns = opt === currentCorrectAns;
+                                                                    return (
+                                                                        <div key={opt} className={`flex-1 min-w-[60px] p-2 rounded-lg border ${isAns ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 shadow-sm' : 'bg-stone-50 border-stone-200 dark:bg-stone-900/50 dark:border-stone-700 text-stone-600 dark:text-stone-400'}`}>
+                                                                            <div className="font-black mb-1 text-sm">{opt}</div>
+                                                                            <div className="text-xl font-black">{pct}%</div>
+                                                                            <div className="text-[10px] font-bold opacity-70 mt-1">{count} 人選擇</div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                            <div className="flex justify-between items-center text-xs text-gray-500 font-bold border-t border-amber-100 dark:border-amber-800/50 pt-3">
+                                                                <span>總體答對率: {qStats.total ? Math.round(((qStats.correct || 0) / qStats.total) * 100) : 0}%</span>
+                                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">bookmark_added</span> 已被收錄至錯題本: {qStats.bookmarks || 0} 次</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
                                                     <div className="mt-4 pt-4 border-t border-amber-200 flex justify-end">
                                                         <button 
                                                             disabled={loadingWrongBookNum === q.number}
                                                             onClick={(e) => { 
                                                                 e.stopPropagation(); 
-                                                                handleAddToWrongBook({
-                                                                    number: q.number,
-                                                                    userAns: currentAns || '未填寫',
-                                                                    correctAns: currentCorrectAns || '無'
-                                                                }); 
+                                                                if (q.id) {
+                                                                window.db.collection('publicQlib_stats').doc(q.id).set({
+                                                                    bookmarks: window.firebase.firestore.FieldValue.increment(1)
+                                                                }, { merge: true }).catch(e => console.error(e));
+                                                            }
+                                                            handleAddToWrongBook({
+                                                                number: q.number,
+                                                                userAns: currentAns || '未填寫',
+                                                                correctAns: currentCorrectAns || '無'
+                                                            });
                                                             }} 
                                                             className={`text-xs sm:text-sm bg-[#FCFBF7] dark:bg-stone-800 text-red-600 px-4 py-2 font-bold rounded-full border border-red-200 hover:bg-red-50 transition-colors shadow-sm ${loadingWrongBookNum === q.number ? 'opacity-50 cursor-wait' : ''}`}
                                                         >
@@ -1839,8 +1960,15 @@ function QuizApp(props) {
                                                 </div>
                                             )}
 
-                                            {initialRecord.isPublicExam && (
-                                                <PublicQuestionDiscussion examId={initialRecord.id} questionNum={q.number} currentUser={currentUser} userProfile={userProfile} />
+                                            {(isPeeked || results) && (
+                                                <>
+                                                    {initialRecord.isPublicExam && !initialRecord.isIndependentQuestions && (
+                                                        <PublicQuestionDiscussion examId={initialRecord.id} questionNum={q.number} currentUser={currentUser} userProfile={userProfile} />
+                                                    )}
+                                                    {initialRecord.isIndependentQuestions && q.id && (
+                                                        <QlibQuestionDiscussion questionId={q.id} currentUser={currentUser} userProfile={userProfile} />
+                                                    )}
+                                                </>
                                             )}
                                             <div className="mt-6 border-t border-gray-100 dark:border-stone-700 pt-4">
                                                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">📝 我的筆記 (自動儲存)</label>
@@ -2631,11 +2759,9 @@ if (step === 'grading') return (
                             const isFinished = wrongRetestState?.finished;
                             const isPeeked = wrongRetestState?.peekedAnswers?.[actualIdx];
                             const resItem = results.data.find(d => d.number === actualIdx + 1);
-                            const correctAns = resItem.correctAns;
-                            
-                            const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
-                            const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number);
-                            
+                           const correctAns = q.ans || resItem.correctAns;
+                                    const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
+                                    const currentExp = q.explain || (typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number));
                             let isCorrect = false;
                             if (isFinished) {
                                 if (q.type === 'Q') {
@@ -2772,13 +2898,13 @@ if (step === 'grading') return (
                     </h2>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
-                    <button onClick={() => setViewMode(prev => prev === 'interactive' ? 'split' : 'interactive')} className="bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-4 py-2 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
+                <div className="flex flex-nowrap overflow-x-auto custom-scrollbar items-center gap-2 w-full lg:w-auto justify-start lg:justify-end pb-2 lg:pb-0 px-2 sm:px-0">
+                    <button onClick={() => setViewMode(prev => prev === 'interactive' ? 'split' : 'interactive')} className="shrink-0 bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-5 py-2.5 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
                         <span className="material-symbols-outlined text-[18px] mr-1">{viewMode === 'interactive' ? 'view_list' : 'view_carousel'}</span>
                         {viewMode === 'interactive' ? '切換列表模式' : '切換沉浸模式'}
                     </button>
 
-                    <button onClick={() => setShowSettingsModal(true)} className="bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-4 py-2 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
+                    <button onClick={() => setShowSettingsModal(true)} className="shrink-0 bg-stone-50 dark:bg-gray-700 text-stone-800 dark:text-white px-5 py-2.5 rounded-full font-bold border border-stone-200 dark:border-gray-600 text-sm hover:bg-stone-100 dark:hover:bg-gray-600 transition-colors flex items-center shadow-sm">
                         <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                         設定與管理
                     </button>
@@ -2923,6 +3049,37 @@ if (step === 'grading') return (
                                                     <h4 className="text-sm font-black text-amber-800 dark:text-amber-400 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-base">lightbulb</span> 試題詳解：</h4>
                                                     <div className="preview-rich-text text-sm text-stone-700 dark:text-stone-300 leading-relaxed bg-white/60 dark:bg-stone-800/60 p-4 rounded-xl border border-stone-200/40 dark:border-stone-700/40" dangerouslySetInnerHTML={{ __html: currentExp ? window.parseSmilesToHtml(currentExp) : '此題無提供詳解。' }} />
                                                 </div>
+
+                                                {/* ✨ 沉浸式結果頁：選答分析與全球數據 ✨ */}
+                                                    {/* ✨ 全域選答分析 (修正：僅保留一組且確保變數作用域正確) */}
+                                            {q.id && globalStats && (
+                                                <div className="mt-4 pt-4 border-t border-amber-200/40 dark:border-amber-800/40">
+                                                    <div className="flex items-center gap-1 font-black text-indigo-600 dark:text-indigo-400 mb-3 text-sm">
+                                                        <span className="material-symbols-outlined text-[18px]">analytics</span>
+                                                        全體玩家選答分析 (共 {(globalStats[q.id] || {total: 0}).total || 0} 次作答)
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2 mb-3">
+                                                        {['A', 'B', 'C', 'D'].map(opt => {
+                                                            const statsObj = globalStats[q.id] || {total: 0};
+                                                            const count = statsObj[`opts_${opt}`] || 0;
+                                                            const pct = statsObj.total ? Math.round((count / statsObj.total) * 100) : 0;
+                                                            // 確保這裡能正確識別該選項是否為正解
+                                                            const isAns = q.ans ? q.ans.toLowerCase().includes(opt.toLowerCase()) : false;
+                                                            return (
+                                                                <div key={opt} className={`flex-1 min-w-[60px] p-2 rounded-lg border ${isAns ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 shadow-sm' : 'bg-stone-50 border-stone-200 dark:bg-stone-900/50 dark:border-stone-700 text-stone-600 dark:text-stone-400'}`}>
+                                                                    <div className="font-black mb-1 text-sm">{opt}</div>
+                                                                    <div className="text-xl font-black">{pct}%</div>
+                                                                    <div className="text-[10px] font-bold opacity-70 mt-1">{count} 人選擇</div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <div className="flex justify-between items-center text-xs text-gray-500 font-bold border-t border-amber-100/50 dark:border-amber-800/30 pt-3">
+                                                        <span>總體答對率: {(globalStats[q.id] || {total:0}).total ? Math.round((((globalStats[q.id] || {}).correct || 0) / (globalStats[q.id] || {}).total) * 100) : 0}%</span>
+                                                        <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">bookmark_added</span> 收錄: {(globalStats[q.id] || {}).bookmarks || 0}</span>
+                                                    </div>
+                                                </div>
+                                            )}
                                             </div>
                                         </>
                                     );
@@ -3392,18 +3549,24 @@ if (step === 'grading') return (
                                         results.data.forEach((item) => {
                                             const actualIdx = item.number - 1;
                                             const q = parsedInteractiveQuestions.find(q => q.globalIndex === actualIdx);
-                                            if (q && q.mainText) {
-                                                const text = q.mainText.replace(/<[^>]+>/g, '');
-                                                const matchTags = text.match(/#([^\s\|\]\)\,\s]+)/g);
-                                                if (matchTags) {
-                                                    const uniqueTags = [...new Set(matchTags)];
-                                                    uniqueTags.forEach(tagGroup => {
-                                                        const tag = tagGroup.substring(1).trim();
-                                                        if (!tagStats[tag]) tagStats[tag] = { total: 0, correct: 0 };
-                                                        tagStats[tag].total += 1;
-                                                        if (item.isCorrect) tagStats[tag].correct += 1;
-                                                    });
+                                            if (q) {
+                                                // ✨ 優先使用獨立題庫的標籤 q.tag，如果沒有才回退到正文的正則表達式提取
+                                                let tags = [];
+                                                if (q.tag) {
+                                                    tags = [q.tag];
+                                                } else if (q.mainText) {
+                                                    const text = q.mainText.replace(/<[^>]+>/g, '');
+                                                    const matchTags = text.match(/#([^\s\|\]\)\,\s]+)/g);
+                                                    if (matchTags) {
+                                                        tags = [...new Set(matchTags)].map(t => t.substring(1).trim());
+                                                    }
                                                 }
+                                                
+                                                tags.forEach(tag => {
+                                                    if (!tagStats[tag]) tagStats[tag] = { total: 0, correct: 0 };
+                                                    tagStats[tag].total += 1;
+                                                    if (item.isCorrect) tagStats[tag].correct += 1;
+                                                });
                                             }
                                         });
 

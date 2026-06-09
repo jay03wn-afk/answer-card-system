@@ -134,6 +134,26 @@ window.useQuizState = function(props) {
     const [questionText, setQuestionText] = useState(safeDecompress(initialRecord.questionText, 'string'));
     const [questionHtml, setQuestionHtml] = useState(safeDecompress(initialRecord.questionHtml, 'string')); 
     const [explanationHtml, setExplanationHtml] = useState(safeDecompress(initialRecord.explanationHtml, 'string'));
+    const [independentQuestions, setIndependentQuestions] = useState(initialRecord.questions || null);
+    const [globalStats, setGlobalStats] = useState({});
+    
+    useEffect(() => {
+        if (independentQuestions && independentQuestions.length > 0) {
+            const ids = independentQuestions.map(q => q.id).filter(Boolean);
+            if (ids.length === 0) return;
+            const fetchStats = async () => {
+                const newStats = {};
+                for (let i = 0; i < ids.length; i += 10) {
+                    const chunk = ids.slice(i, i + 10);
+                    const snap = await window.db.collection('publicQlib_stats').where(window.firebase.firestore.FieldPath.documentId(), 'in', chunk).get();
+                    snap.forEach(doc => { newStats[doc.id] = doc.data(); });
+                }
+                setGlobalStats(newStats);
+            };
+            fetchStats();
+        }
+    }, [independentQuestions]);
+    
     const [folder, setFolder] = useState(initialRecord.folder || '未分類');
     const [shortCode, setShortCode] = useState(initialRecord.shortCode || null);
     const [pdfZoom, setPdfZoom] = useState(1);
@@ -289,6 +309,19 @@ window.useQuizState = function(props) {
     };
     
     const parsedInteractiveQuestions = React.useMemo(() => {
+        if (independentQuestions) {
+            return independentQuestions.map(q => ({
+                ...q,
+                mainText: window.parseSmilesToHtml ? window.parseSmilesToHtml(q.mainText || '') : (q.mainText || ''),
+                options: {
+                    A: window.parseSmilesToHtml ? window.parseSmilesToHtml(q.options?.A || '') : (q.options?.A || ''),
+                    B: window.parseSmilesToHtml ? window.parseSmilesToHtml(q.options?.B || '') : (q.options?.B || ''),
+                    C: window.parseSmilesToHtml ? window.parseSmilesToHtml(q.options?.C || '') : (q.options?.C || ''),
+                    D: window.parseSmilesToHtml ? window.parseSmilesToHtml(q.options?.D || '') : (q.options?.D || '')
+                },
+                explain: window.parseSmilesToHtml ? window.parseSmilesToHtml(q.explain || '') : (q.explain || '')
+            }));
+        }
         const rawContent = questionHtml || questionText || '';
         if (!rawContent) return [];
         
@@ -345,7 +378,7 @@ window.useQuizState = function(props) {
             globalIdxCounter++;
         }
         return result;
-    }, [questionHtml, questionText, viewMode]);
+    }, [questionHtml, questionText, viewMode, independentQuestions]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -449,11 +482,17 @@ window.useQuizState = function(props) {
 
         const loadQuizContent = async () => {
             if (initialRecord.id && initialRecord.hasSeparatedContent) {
-                if (!localQHtml && !localQText) {
+                // ⚡ 極速優化：如果系統發現已經自帶獨立題庫資料 (從 Qlib 直接傳來)，就秒解鎖載入遮罩！
+                if (initialRecord.questions && initialRecord.questions.length > 0) {
+                    setIsQuizLoading(false);
+                }
+                
+                if (!localQHtml && !localQText && !initialRecord.questions) {
                     try {
                         const cacheDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(initialRecord.id).get({ source: 'cache' });
                         if (cacheDoc.exists && isMounted) {
                             const data = cacheDoc.data();
+                            if (data.questions) setIndependentQuestions(data.questions);
                             localQText = safeDecompress(data.questionText, 'string');
                             localQHtml = safeDecompress(data.questionHtml, 'string');
                             localExpHtml = safeDecompress(data.explanationHtml, 'string');
@@ -477,6 +516,8 @@ window.useQuizState = function(props) {
                         const serverQText = safeDecompress(data.questionText, 'string');
                         const serverQHtml = safeDecompress(data.questionHtml, 'string');
                         const serverExp = safeDecompress(data.explanationHtml, 'string');
+                        
+                        if (data.questions) setIndependentQuestions(data.questions);
 
                         if (!localQHtml && !localQText) {
                             setQuestionText(serverQText);
@@ -1674,6 +1715,32 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         let warnMsg = unansweredCount > 0 ? `⚠️ 注意：你有 ${unansweredCount} 題尚未填寫！\n\n` : "";
 
         const executeSubmission = async () => {
+            // ✨ 更新獨立題庫的選答分析與答對率
+            if (independentQuestions) {
+                const batch = window.db.batch();
+                const newGlobalStats = { ...globalStats }; // 即時更新本地狀態
+                independentQuestions.forEach((q, idx) => {
+                    if (!q.id) return;
+                    const userAns = userAnswers[idx];
+                    const isCorrect = userAns === q.ans;
+                    const statRef = window.db.collection('publicQlib_stats').doc(q.id);
+                    
+                    batch.set(statRef, {
+                        total: window.firebase.firestore.FieldValue.increment(1),
+                        correct: isCorrect ? window.firebase.firestore.FieldValue.increment(1) : window.firebase.firestore.FieldValue.increment(0),
+                        [`opts_${userAns || 'empty'}`]: window.firebase.firestore.FieldValue.increment(1)
+                    }, { merge: true });
+                    
+                    // ✨ 同步本地 UI 狀態，交卷瞬間立即看到自己投下的那一票
+                    if (!newGlobalStats[q.id]) newGlobalStats[q.id] = { total: 0, correct: 0, bookmarks: 0 };
+                    newGlobalStats[q.id].total += 1;
+                    if (isCorrect) newGlobalStats[q.id].correct += 1;
+                    const optKey = `opts_${userAns || 'empty'}`;
+                    newGlobalStats[q.id][optKey] = (newGlobalStats[q.id][optKey] || 0) + 1;
+                });
+                batch.commit().catch(e => console.error("Stats update failed", e));
+                setGlobalStats(newGlobalStats);
+            }
             const hasASQ = !isSkipping && parsedInteractiveQuestions.some(q => q.type === 'ASQ');
             setGradingProgress({ show: true, percent: 10, text: '正在封裝您的答案卡...' });
 
@@ -2048,25 +2115,26 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         setIsEditLoading(true); 
         try {
             const doc = await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).get();
-            if (doc.exists) {
-                const data = doc.data();
-                
-                if (data.hasSeparatedContent) {
-                    try {
-                        let contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get({ source: 'cache' }).catch(() => null);
-                        if (!contentDoc || !contentDoc.exists) {
-                            contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get();
-                        }
-                        if (contentDoc && contentDoc.exists) {
-                            const contentData = contentDoc.data();
-                            data.questionText = contentData.questionText || '';
-                            data.questionHtml = contentData.questionHtml || '';
-                            data.explanationHtml = contentData.explanationHtml || '';
-                        }
-                    } catch (err) {
-                        console.warn("還原資料失敗", err);
+        if (doc.exists) {
+            const data = doc.data();
+            
+            // ✨ 如果是獨立題庫，不需從 quizContents 重新抓取文字塊，直接確保狀態存在即可
+            if (!data.isIndependentQuestions && data.hasSeparatedContent) {
+                try {
+                    let contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get({ source: 'cache' }).catch(() => null);
+                    if (!contentDoc || !contentDoc.exists) {
+                        contentDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).get();
                     }
+                    if (contentDoc && contentDoc.exists) {
+                        const contentData = contentDoc.data();
+                        data.questionText = contentData.questionText || '';
+                        data.questionHtml = contentData.questionHtml || '';
+                        data.explanationHtml = contentData.explanationHtml || '';
+                    }
+                } catch (err) {
+                    console.warn("還原資料失敗", err);
                 }
+            }
 
                 setTestName(data.testName || '');
                 setSubtitle(data.subtitle || '');
@@ -2106,6 +2174,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         allowPeek, setAllowPeek, correctAnswersInput, setCorrectAnswersInput, shortAnswersInput, setShortAnswersInput,
         results, setResults, questionFileUrl, setQuestionFileUrl, questionText, setQuestionText,
         questionHtml, setQuestionHtml, explanationHtml, setExplanationHtml, folder, setFolder,
+        independentQuestions, setIndependentQuestions, globalStats,
         shortCode, setShortCode, pdfZoom, setPdfZoom, publishAnswersToggle, setPublishAnswersToggle,
         showAiModal, setShowAiModal, aiSubject, setAiSubject, aiCustomSubject, setAiCustomSubject,
         aiPharmRatio, setAiPharmRatio, aiNum, setAiNum, aiScope, setAiScope, aiFileContent, setAiFileContent,
