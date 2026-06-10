@@ -19,6 +19,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
     const [subjects, setSubjects] = useState([]);
     const [activeSubjectId, setActiveSubjectId] = useState(null);
     const [activeChapterId, setActiveChapterId] = useState(null);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false); // ✨ 手機版側邊欄控制
     const [importText, setImportText] = useState('');
     const [editingQuestion, setEditingQuestion] = useState(null);
     const [isPublishing, setIsPublishing] = useState(null); 
@@ -747,9 +748,25 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
     };
 
     return (
-        <div className="flex h-full w-full bg-[#FCFBF7] dark:bg-stone-900 transition-colors">
-            {/* 左側選單 */}
-            <div className="w-64 border-r border-stone-200 dark:border-stone-700 flex flex-col bg-stone-50 dark:bg-stone-900 shrink-0">
+        <div className="flex h-full w-full bg-[#FCFBF7] dark:bg-stone-900 transition-colors relative">
+            {/* ✨ 手機版：展開側邊欄按鈕 */}
+            <button onClick={() => setIsSidebarOpen(true)} className="md:hidden absolute bottom-6 right-6 z-40 bg-amber-500 text-white p-4 rounded-full shadow-2xl flex items-center justify-center hover:bg-amber-600 transition-colors">
+                <span className="material-symbols-outlined text-[24px]">menu_book</span>
+            </button>
+
+            {/* ✨ 手機版：點擊外部關閉側邊欄的遮罩 */}
+            {isSidebarOpen && (
+                <div onClick={() => setIsSidebarOpen(false)} className="md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity"></div>
+            )}
+
+            {/* 左側選單 (手機版變為浮動側拉面板) */}
+            <div className={`fixed inset-y-0 left-0 z-50 transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out w-72 md:w-64 border-r border-stone-200 dark:border-stone-700 flex flex-col bg-stone-50 dark:bg-stone-900 shrink-0 shadow-2xl md:shadow-none ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                {/* 手機版：關閉按鈕 */}
+                <div className="md:hidden flex justify-end p-2 bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700">
+                    <button onClick={() => setIsSidebarOpen(false)} className="text-gray-500 hover:text-stone-800 dark:text-gray-400 dark:hover:text-white p-2 flex items-center font-bold text-sm">
+                        <span className="material-symbols-outlined mr-1">close</span> 關閉目錄
+                    </button>
+                </div>
                 <div className="flex bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700">
                     <button onClick={() => setActiveMainTab('my')} className={`flex-1 py-2 font-black text-[12px] flex flex-col items-center justify-center gap-1 transition-colors ${activeMainTab === 'my' ? 'bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 border-b-2 border-amber-500' : 'text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700'}`}><span className="material-symbols-outlined text-[18px]">library_books</span> 我的</button>
                     <button onClick={() => setActiveMainTab('public')} className={`flex-1 py-2 font-black text-[12px] flex flex-col items-center justify-center gap-1 transition-colors ${activeMainTab === 'public' ? 'bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 border-b-2 border-amber-500' : 'text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700'}`}><span className="material-symbols-outlined text-[18px]">storefront</span> 商城</button>
@@ -783,7 +800,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                             {(subj.chapters || []).length === 0 && <div className="text-xs text-gray-400 px-2 py-1">無章節</div>}
                                             {(subj.chapters || []).map((chap, chapIdx) => (
                                                 <div key={chap.id} className={`group flex justify-between items-center px-2 py-1.5 rounded-lg transition-colors ${activeChapterId === chap.id ? 'bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700' : 'hover:bg-stone-100 dark:hover:bg-stone-700 border border-transparent'}`}>
-                                                    <button onClick={() => setActiveChapterId(chap.id)} className={`flex-1 text-left text-xs font-bold truncate focus:outline-none ${activeChapterId === chap.id ? 'text-amber-800 dark:text-amber-400' : 'text-stone-600 dark:text-stone-300'}`}>
+                                                    <button onClick={() => { setActiveChapterId(chap.id); setIsSidebarOpen(false); }} className={`flex-1 text-left text-xs font-bold truncate focus:outline-none ${activeChapterId === chap.id ? 'text-amber-800 dark:text-amber-400' : 'text-stone-600 dark:text-stone-300'}`}>
                                                         <span className="material-symbols-outlined text-[14px] align-middle mr-1">folder_open</span> {chap.name} ({(chap.questions || []).length})
                                                     </button>
                                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" style={{ opacity: activeChapterId === chap.id ? 1 : undefined }}>
@@ -837,7 +854,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                         {(publicSubjectData[activeStoreSubjectId] || []).length === 0 && <div className="text-xs text-gray-400">無章節或正在載入...</div>}
                                         {(publicSubjectData[activeStoreSubjectId] || []).map((chap, chapIdx) => (
                                             <div key={chap.id} className={`group flex justify-between items-center px-2 py-2 rounded-lg transition-colors ${activeStoreChapterId === chap.id ? 'bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700' : 'hover:bg-stone-100 dark:hover:bg-stone-700 border border-transparent'}`}>
-                                                <button onClick={() => setActiveStoreChapterId(chap.id)} className={`flex-1 text-left text-xs font-bold truncate focus:outline-none ${activeStoreChapterId === chap.id ? 'text-amber-800 dark:text-amber-400' : 'text-stone-600 dark:text-stone-300'}`}>
+                                                <button onClick={() => { setActiveStoreChapterId(chap.id); setIsSidebarOpen(false); }} className={`flex-1 text-left text-xs font-bold truncate focus:outline-none ${activeStoreChapterId === chap.id ? 'text-amber-800 dark:text-amber-400' : 'text-stone-600 dark:text-stone-300'}`}>
                                                     <span className="material-symbols-outlined text-[14px] align-middle mr-1">folder_open</span> {chap.name} ({(chap.questions || []).length})
                                                 </button>
                                                 {user?.email === 'jay03wn@gmail.com' && (

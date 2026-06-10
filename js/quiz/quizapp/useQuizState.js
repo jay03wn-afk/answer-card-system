@@ -2037,29 +2037,47 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
 
             let extractedText = '';
             let extractedHtml = '';
-            if (questionHtml) {
-                const regexStr = `\\[${qType}\\.?0*${qLocalNum}\\]([\\s\\S]*?)(?=\\[(?:Q|SQ|ASQ)\\.?\\d+\\]|\\[End\\]|$)`;
-                const match = questionHtml.match(new RegExp(regexStr, 'i'));
-                if (match) {
-                    extractedHtml = match[1].trim();
-                }
-            } else {
-                extractedText = extractSpecificContent(questionText, qLocalNum, [qType]);
-            }
+            let extractedExp = '';
 
-            const expTags = qType === 'Q' ? ['A'] : qType === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
-            const extractedExp = extractSpecificContent(explanationHtml, qLocalNum, expTags);
+            if (independentQuestions && independentQuestions[actualIdx]) {
+                const q = independentQuestions[actualIdx];
+                extractedHtml = q.mainText || '';
+                if (q.type === 'Q' && q.options) {
+                    extractedHtml += '<br><br>';
+                    ['A', 'B', 'C', 'D'].forEach(opt => {
+                        if (q.options[opt]) extractedHtml += `${opt}. ${q.options[opt]}<br>`;
+                    });
+                }
+                extractedExp = q.explain || '';
+            } else {
+                if (questionHtml) {
+                    const regexStr = `\\[${qType}\\.?0*${qLocalNum}\\]([\\s\\S]*?)(?=\\[(?:Q|SQ|ASQ)\\.?\\d+\\]|\\[End\\]|$)`;
+                    const match = questionHtml.match(new RegExp(regexStr, 'i'));
+                    if (match) {
+                        extractedHtml = match[1].trim();
+                    }
+                } else {
+                    extractedText = extractSpecificContent(questionText, qLocalNum, [qType]);
+                }
+                const expTags = qType === 'Q' ? ['A'] : qType === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
+                extractedExp = extractSpecificContent(explanationHtml, qLocalNum, expTags);
+            }
         
         let finalExp = extractedExp;
         if (notes && notes[actualIdx]) {
             finalExp = finalExp ? `${finalExp}\n\n【我的筆記】\n${notes[actualIdx]}` : `【我的筆記】\n${notes[actualIdx]}`;
         }
 
+            const isIndependent = independentQuestions && independentQuestions[actualIdx];
             setWrongBookAddingItem({
                 ...item,
                 extractedQText: extractedText,
                 extractedQHtml: extractedHtml,
-                extractedExp: finalExp
+                extractedExp: finalExp,
+                source: isIndependent ? 'qlib' : 'quiz', 
+                qlibQuestionId: isIndependent ? independentQuestions[actualIdx].id : null,
+                qlibSubjectId: isIndependent ? independentQuestions[actualIdx].subjectId : null,
+                qlibChapterId: isIndependent ? independentQuestions[actualIdx].chapterId : null
             });
         } catch (error) {
             console.error("收錄錯題發生錯誤:", error);

@@ -742,14 +742,23 @@ function WrongBookDashboard({ user, showAlert, showConfirm, showPrompt, onContin
                  {displayedItems.map(item => (
                      <div key={item.id} className="bg-[#FCFBF7] dark:bg-stone-800 p-5 border border-stone-200 dark:border-stone-700 shadow-sm relative rounded-2xl hover:shadow-xl hover:-translate-y-1 transition-all">
                          <button onClick={() => handleDelete(item.id)} className="absolute top-4 right-4 text-stone-400 hover:text-red-500 font-bold z-10 transition-colors flex items-center"><span className="material-symbols-outlined">close</span></button>
-                         <div className="text-xs text-amber-600 dark:text-amber-400 font-bold mb-2 pr-6 flex items-center justify-between">
-                            <span className="truncate">出自: {cleanQuizName(item.quizName)} - 第 {item.questionNum} 題</span>
-                            {item.quizId && (
-                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleGoToQuiz(item.quizId); }} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline shrink-0 ml-2 flex items-center gap-1">
-                                    <span className="material-symbols-outlined text-[16px]">link</span> 檢視試題
-                                </button>
-                            )}
-                         </div>
+                         <div className="text-xs text-amber-600 dark:text-amber-400 font-bold mb-2 pr-6 flex flex-wrap items-center justify-between gap-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="truncate">出自: {cleanQuizName(item.quizName)} - 第 {item.questionNum} 題</span>
+                                                {/* ✨ 顯示獨立題庫專屬標籤 */}
+                                                {item.source === 'qlib' && (
+                                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+                                                        <span className="material-symbols-outlined text-[12px]">menu_book</span>
+                                                        獨立題庫
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {item.quizId && (
+                                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleGoToQuiz(item.quizId); }} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline shrink-0 ml-2 flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[16px]">link</span> 檢視試題
+                                                </button>
+                                            )}
+                                         </div>
                          <div className="flex space-x-4 mb-3 border-b border-gray-100 dark:border-stone-700 pb-2">
                             <span className="text-sm font-bold text-red-500">你的答案: {item.userAns || '未填'}</span>
                             <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">正確答案: {item.correctAns}</span>

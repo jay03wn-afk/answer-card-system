@@ -1742,7 +1742,7 @@ function QuizApp(props) {
                             )}
 
                             {/* 題目主體內容區 (可滾動) */}
-                            <div className={`flex-grow overflow-y-auto p-4 sm:p-6 custom-scrollbar relative ${tutorialStep > 0 ? '' : 'z-10'}`}>
+                            <div className={`flex-grow overflow-y-auto p-2 sm:p-6 custom-scrollbar relative ${tutorialStep > 0 ? '' : 'z-10'}`}>
                                 {(() => {
                                     const q = parsedInteractiveQuestions[currentInteractiveIndex];
                                     if (!q) return null;
@@ -1765,7 +1765,7 @@ function QuizApp(props) {
                                     const qStats = q.id && globalStats ? globalStats[q.id] : null;
 
                                     return (
-                                <div key={actualIdx} className={`bg-white dark:bg-stone-800/95 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-[2rem] p-5 sm:p-10 mb-10 transition-all ring-1 ${isPeeked ? 'ring-amber-400 dark:ring-amber-500 shadow-amber-500/10' : 'ring-black/5 dark:ring-white/10'}`}>
+                                <div key={actualIdx} className={`bg-white dark:bg-stone-800/95 shadow-[0_4px_20px_rgb(0,0,0,0.04)] sm:shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-2xl sm:rounded-[2rem] p-4 sm:p-10 mb-10 transition-all ${isPeeked ? 'ring-2 ring-amber-400 dark:ring-amber-500 shadow-amber-500/10' : 'sm:ring-1 sm:ring-black/5 dark:sm:ring-white/10'}`}>
                                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6 border-b border-stone-100 dark:border-stone-700 pb-5">
                                         <div className="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start">
                                             <span className={`text-3xl font-black tracking-tight ${q.type === 'Q' ? 'text-amber-500 dark:text-amber-500' : q.type === 'SQ' ? 'text-cyan-500 dark:text-cyan-400' : 'text-purple-500 dark:text-purple-400'}`}>
@@ -1817,7 +1817,7 @@ function QuizApp(props) {
                                             const isEliminated = eliminatedOptions[elimKey];
                                             const isCorrectOpt = (isPeeked || !!results) && (currentCorrectAns.toLowerCase().includes(opt.toLowerCase()) || currentCorrectAns.toLowerCase() === 'abcd' || currentCorrectAns.toLowerCase() === 'z');
                                             
-                                          let btnClasses = `text-left w-full py-4 px-6 transition-all flex items-start space-x-4 rounded-[1.5rem] flex-1 ring-1 `;
+                                          let btnClasses = `text-left w-full py-3 sm:py-4 px-4 sm:px-6 transition-all flex items-start space-x-3 sm:space-x-4 rounded-xl sm:rounded-[1.5rem] flex-1 ring-1 sm:ring-1 `;
                                             if (isPeeked || !!results) {
                                                 if (isCorrectOpt) btnClasses += 'bg-emerald-50 ring-emerald-400 dark:bg-emerald-900/20 dark:ring-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-md ';
                                                 else if (isSelected) btnClasses += 'bg-rose-50 ring-rose-400 dark:bg-rose-900/20 dark:ring-rose-500 text-rose-900 dark:text-rose-100 shadow-sm ';
@@ -2228,6 +2228,11 @@ function QuizApp(props) {
                                 qImage: data.qImage,
                                 nText: data.nText,
                                 nImage: data.nImage,
+                                // ✨ 紀錄獨立題庫關聯屬性
+                                source: wrongBookAddingItem.source || 'quiz',
+                                qlibQuestionId: wrongBookAddingItem.qlibQuestionId || null,
+                                qlibSubjectId: wrongBookAddingItem.qlibSubjectId || null,
+                                qlibChapterId: wrongBookAddingItem.qlibChapterId || null,
                                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                             });
                             if (data.folder && !userProfile.wrongBookFolders?.includes(data.folder)) {
@@ -2337,6 +2342,11 @@ function QuizApp(props) {
                                 qImage: data.qImage,
                                 nText: data.nText,
                                 nImage: data.nImage,
+                                // ✨ 紀錄獨立題庫關聯屬性
+                                source: wrongBookAddingItem.source || 'quiz',
+                                qlibQuestionId: wrongBookAddingItem.qlibQuestionId || null,
+                                qlibSubjectId: wrongBookAddingItem.qlibSubjectId || null,
+                                qlibChapterId: wrongBookAddingItem.qlibChapterId || null,
                                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                             });
                             if (data.folder && !userProfile.wrongBookFolders?.includes(data.folder)) {
@@ -2894,7 +2904,10 @@ if (step === 'grading') return (
             <div className="bg-[#FCFBF7] dark:bg-stone-800 p-3 sm:p-4 shadow-sm border border-stone-200 dark:border-stone-700 flex flex-wrap justify-between items-center rounded-2xl gap-3 shrink-0 z-10 transition-colors w-full mt-8">
                 <div className="flex items-center flex-grow mr-2 w-full lg:w-auto overflow-hidden">
                     <h2 className="font-bold truncate text-base pr-4 dark:text-white flex items-center gap-2 min-w-0">
-                        {renderTestName(testName, true)} <span className="shrink-0">- 測驗結果</span>
+                        {renderTestName(testName, true)} <span className="shrink-0 hidden sm:inline">- 測驗結果</span>
+                        <span className={`ml-1 sm:ml-2 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-black border shadow-sm shrink-0 ${results.score >= 60 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                            {results.score} 分
+                        </span>
                     </h2>
                 </div>
 
@@ -2955,7 +2968,7 @@ if (step === 'grading') return (
             {/* ✨ 依據 viewMode 切換完全不同的排版架構：大卡片沉浸模式 vs 雙視窗列表模式 */}
             {viewMode === 'interactive' && parsedInteractiveQuestions.length > 0 && canSeeAnswers ? (
                 <div className="quiz-answering-container flex-grow flex flex-col w-full mt-2 sm:mt-4 overflow-hidden relative rounded-2xl shadow-inner border border-stone-300 dark:border-stone-800 bg-gradient-to-br from-stone-200 to-stone-300 dark:from-stone-900 dark:to-stone-950 transition-colors animate-fade-in">
-                    <div className="flex-grow overflow-y-auto overflow-x-hidden p-4 sm:p-6 sm:px-10 custom-scrollbar">
+                    <div className="flex-grow overflow-y-auto overflow-x-hidden p-2 sm:p-6 sm:px-10 custom-scrollbar">
                         <div className="flex flex-col w-full max-w-5xl mx-auto">
                             {/* 上一題 / 下一題 控制列 */}
                             <div className="bg-white dark:bg-stone-800 rounded-2xl shadow-md border border-stone-200 dark:border-stone-700 p-4 mb-6 flex justify-between items-center transition-all">
@@ -2972,13 +2985,13 @@ if (step === 'grading') return (
                             </div>
 
                             {/* 核心題目大字卡 (帶有作答紀錄、選項與詳解) */}
-                            <div className="bg-white dark:bg-stone-800/95 rounded-[2rem] p-6 sm:p-10 shadow-xl relative border border-stone-200/60 dark:border-stone-700/60 transition-colors">
+                            <div className="bg-white dark:bg-stone-800/95 rounded-2xl sm:rounded-[2rem] p-4 sm:p-10 shadow-xl relative sm:border border-transparent sm:border-stone-200/60 dark:sm:border-stone-700/60 transition-colors">
                                 {(() => {
                                     const q = parsedInteractiveQuestions[resultInteractiveIdx];
                                     const actualIdx = q.globalIndex;
                                     const itemData = results.data.find(d => d.number === actualIdx + 1) || { isCorrect: false, userAns: '', correctAns: '' };
                                     const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
-                                    const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : '';
+                                    const currentExp = q.explain || (typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : '');
                                     
                                     return (
                                         <>
@@ -3080,11 +3093,38 @@ if (step === 'grading') return (
                                                     </div>
                                                 </div>
                                             )}
-                                            </div>
-                                        </>
-                                    );
-                                })()}
-                            </div>
+                                        </div>
+
+                                        {/* ✨ 補上結果頁(沉浸模式)專屬的收錄錯題按鈕 */}
+                                        <div className="mt-6 border-t border-stone-100 dark:border-stone-700 pt-4 flex justify-end">
+                                            <button 
+                                                disabled={loadingWrongBookNum === q.number}
+                                                onClick={(e) => { 
+                                                    e.stopPropagation(); 
+                                                    if (q.id) {
+                                                        window.db.collection('publicQlib_stats').doc(q.id).set({
+                                                            bookmarks: window.firebase.firestore.FieldValue.increment(1)
+                                                        }, { merge: true }).catch(e => console.error(e));
+                                                    }
+                                                    handleAddToWrongBook({
+                                                        number: q.number,
+                                                        userAns: itemData.userAns || '未填寫',
+                                                        correctAns: itemData.correctAns || '無'
+                                                    }); 
+                                                }} 
+                                                className={`text-sm bg-[#FCFBF7] dark:bg-stone-800 text-red-600 px-5 py-2.5 font-bold rounded-full border border-red-200 hover:bg-red-50 transition-colors shadow-sm flex items-center ${loadingWrongBookNum === q.number ? 'opacity-50 cursor-wait' : ''}`}
+                                            >
+                                                {loadingWrongBookNum === q.number ? (
+                                                    <><span className="material-symbols-outlined text-[18px] mr-1.5 animate-spin">autorenew</span>處理中...</>
+                                                ) : (
+                                                    <><span className="material-symbols-outlined text-[18px] mr-1.5">bookmark_add</span>收錄錯題</>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -3340,43 +3380,44 @@ if (step === 'grading') return (
                                                             )}
 
                                                             <div className="flex justify-end w-full gap-2 mt-1">
-                                                                {(() => {
-                                                                    const expTags = qType === 'Q' ? ['A'] : qType === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
-                                                                    const currentExp = typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, qLocalNum, expTags) : extractSpecificExplanation(explanationHtml, qLocalNum);
-                                                                    
-                                                                    if (currentExp || (notes && notes[item.number - 1])) {
-                                                                       return (
-                                                                    <button 
-                                                                        onClick={(e) => { 
-                                                                            e.stopPropagation(); 
-                                                                            if (tutorialStep === 8 && actualIdx === 0) setTutorialStep(99); // ✨ 進入自由作答模式
-                                                                            setExplanationModalItem({ number: item.number, content: currentExp, note: notes ? notes[item.number - 1] : '' }); 
-                                                                        }} 
-                                                                        className={`text-xs px-3 py-1.5 font-bold rounded-full border transition-colors shadow-sm flex items-center ${tutorialStep === 8 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.5)]' : 'bg-white dark:bg-stone-700 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-600 hover:bg-stone-50 dark:hover:bg-stone-600'}`}
-                                                                    >
-                                                                        <span className="material-symbols-outlined text-[16px] mr-1">menu_book</span>
-                                                                        詳解筆記
-                                                                    </button>
-                                                                );
-                                                                    }
-                                                                    return null;
-                                                                })()}
-                                                               <button 
-                                                                    disabled={loadingWrongBookNum === item.number}
-                                                                    onClick={(e) => { 
-                                                                        e.stopPropagation(); 
-                                                                        if (tutorialStep === 8) setTutorialStep(9);
-                                                                        handleAddToWrongBook(item); 
-                                                                    }} 
-                                                                    className={`text-xs px-3 py-1.5 font-bold rounded-full border transition-colors shadow-sm flex items-center ${tutorialStep === 8 ? 'relative z-[160] bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 animate-pulse' : 'bg-white dark:bg-stone-700 text-rose-600 dark:text-rose-400 border-stone-200 dark:border-stone-600 hover:bg-rose-50 dark:hover:bg-stone-600'} ${loadingWrongBookNum === item.number ? 'opacity-50 cursor-wait' : ''}`}
-                                                                >
-                                                                    {loadingWrongBookNum === item.number ? (
-                                                                    <><span className="material-symbols-outlined text-[16px] mr-1 animate-spin">autorenew</span>處理中...</>
-                                                                ) : (
-                                                                    <><span className="material-symbols-outlined text-[16px] mr-1">bookmark_add</span>收錄錯題</>
-                                                                )}
-                                                                </button>
-                                                            </div>
+                                                        {(() => {
+                                                            const q = parsedInteractiveQuestions[actualIdx];
+                                                            const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA', 'AS', 'ASQ'];
+                                                            const currentExp = (q && q.explain) || (typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : extractSpecificExplanation(explanationHtml, q.number));
+                                                            
+                                                            if (currentExp || (notes && notes[actualIdx])) {
+                                                               return (
+                                                            <button 
+                                                                onClick={(e) => { 
+                                                                    e.stopPropagation(); 
+                                                                    if (tutorialStep === 8 && actualIdx === 0) setTutorialStep(99); // ✨ 進入自由作答模式
+                                                                    setExplanationModalItem({ number: q.number, content: currentExp, note: notes ? notes[actualIdx] : '' }); 
+                                                                }} 
+                                                                className={`text-xs px-3 py-1.5 font-bold rounded-full border transition-colors shadow-sm flex items-center ${tutorialStep === 8 && actualIdx === 0 ? 'tutorial-highlight relative z-[160] bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.5)]' : 'bg-white dark:bg-stone-700 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-600 hover:bg-stone-50 dark:hover:bg-stone-600'}`}
+                                                            >
+                                                                <span className="material-symbols-outlined text-[16px] mr-1">menu_book</span>
+                                                                詳解筆記
+                                                            </button>
+                                                            );
+                                                            }
+                                                            return null;
+                                                        })()}
+                                                       <button 
+                                                            disabled={loadingWrongBookNum === item.number}
+                                                            onClick={(e) => { 
+                                                                e.stopPropagation(); 
+                                                                if (tutorialStep === 8) setTutorialStep(9);
+                                                                handleAddToWrongBook(item); 
+                                                            }} 
+                                                            className={`text-xs px-3 py-1.5 font-bold rounded-full border transition-colors shadow-sm flex items-center ${tutorialStep === 8 ? 'relative z-[160] bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 animate-pulse' : 'bg-white dark:bg-stone-700 text-rose-600 dark:text-rose-400 border-stone-200 dark:border-stone-600 hover:bg-rose-50 dark:hover:bg-stone-600'} ${loadingWrongBookNum === item.number ? 'opacity-50 cursor-wait' : ''}`}
+                                                        >
+                                                            {loadingWrongBookNum === item.number ? (
+                                                            <><span className="material-symbols-outlined text-[16px] mr-1 animate-spin">autorenew</span>處理中...</>
+                                                        ) : (
+                                                            <><span className="material-symbols-outlined text-[16px] mr-1">bookmark_add</span>收錄錯題</>
+                                                        )}
+                                                        </button>
+                                                    </div>
                                                         </div>
                                                     );
                                                 })}
@@ -3755,6 +3796,11 @@ if (step === 'grading') return (
                                 qImage: data.qImage,
                                 nText: data.nText,
                                 nImage: data.nImage,
+                                // ✨ 紀錄獨立題庫關聯屬性
+                                source: wrongBookAddingItem.source || 'quiz',
+                                qlibQuestionId: wrongBookAddingItem.qlibQuestionId || null,
+                                qlibSubjectId: wrongBookAddingItem.qlibSubjectId || null,
+                                qlibChapterId: wrongBookAddingItem.qlibChapterId || null,
                                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                             });
                             if (data.folder && !userProfile.wrongBookFolders?.includes(data.folder)) {
