@@ -23,6 +23,11 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
     const [importText, setImportText] = useState('');
     const [editingQuestion, setEditingQuestion] = useState(null);
     const [isPublishing, setIsPublishing] = useState(null); 
+    
+    // ✨ 效能與體驗優化狀態
+    const [isInitializing, setIsInitializing] = useState(true); 
+    const isFirstLoad = React.useRef(true); 
+    const cachedQuestionsRef = React.useRef({}); 
 
     // --- 公開題庫 (商城) 狀態 ---
     const [publicSubjects, setPublicSubjects] = useState([]);
@@ -76,22 +81,41 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
 
     useEffect(() => {
         if (!user) return;
+        setIsInitializing(true);
+
         const unsubscribe = window.db.collection('users').doc(user.uid).collection('qlib').doc('main')
             .onSnapshot(async docSnap => {
-                if (!docSnap.exists) return;
+                if (!docSnap.exists) {
+                    setSubjects([]);
+                    if (isFirstLoad.current) { setIsInitializing(false); isFirstLoad.current = false; }
+                    return;
+                }
                 const loadedConfigs = docSnap.data().promptConfigs || {};
                 setSavedPromptConfigs(loadedConfigs);
 
                 let loadedSubjects = docSnap.data().subjects || [];
                 try {
+                    // ✨ 速度優化：導入題目快取機制，避免在每次存檔或狀態更新時，重複執行耗時的解壓縮運算
                     const qSnap = await window.db.collection('users').doc(user.uid).collection('qlib_questions').get();
                     const qDict = {};
+                    
                     qSnap.forEach(d => { 
                         const data = d.data();
                         if (data.questionsJZ && window.safeDecompress) {
-                            try { qDict[d.id] = JSON.parse(window.safeDecompress(data.questionsJZ, 'string')); } catch(e) { qDict[d.id] = []; }
+                            try { 
+                                // 利用字串長度與前幾碼做變更比對 (極速 Hash 概念)
+                                const cacheKey = data.questionsJZ.length + '_' + data.questionsJZ.substring(0, 20);
+                                if (cachedQuestionsRef.current[d.id]?.key === cacheKey) {
+                                    qDict[d.id] = cachedQuestionsRef.current[d.id].data;
+                                } else {
+                                    const parsed = JSON.parse(window.safeDecompress(data.questionsJZ, 'string'));
+                                    qDict[d.id] = parsed;
+                                    cachedQuestionsRef.current[d.id] = { key: cacheKey, data: parsed };
+                                }
+                            } catch(e) { qDict[d.id] = []; }
                         } else {
                             qDict[d.id] = data.questions || []; 
+                            cachedQuestionsRef.current[d.id] = { key: 'raw', data: data.questions || [] };
                         }
                     });
                     
@@ -103,7 +127,19 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                         }))
                     }));
                 } catch(e) { console.error(e); }
+                
                 setSubjects(loadedSubjects);
+                
+                if (isFirstLoad.current) {
+                    setIsInitializing(false);
+                    isFirstLoad.current = false;
+                }
+            }, err => {
+                // ✨ 核心修正：捕獲 Firebase 權限或網路中斷錯誤，確保新用戶或例外狀況下不會卡死在載入動畫
+                console.error("Firebase 題庫監聽失敗:", err);
+                setSubjects([]);
+                setIsInitializing(false);
+                isFirstLoad.current = false;
             });
         return () => unsubscribe();
     }, [user]);
@@ -1088,12 +1124,25 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
             {/* 右側主畫面 */}
             <div className="flex-1 flex flex-col overflow-hidden bg-[#FCFBF7] dark:bg-stone-900 relative">
                 
-                {/* 阻擋器：全域載入狀態 */}
-                {(isLoadingPublicData || isUploadingCover) && (
-                    <div className="absolute inset-0 z-50 bg-[#FCFBF7]/60 dark:bg-stone-900/60 backdrop-blur-[2px] flex items-center justify-center">
-                        <div className="bg-white dark:bg-stone-800 p-6 rounded-2xl shadow-xl border border-stone-200 dark:border-stone-700 flex flex-col items-center">
-                            <span className="material-symbols-outlined text-[40px] text-amber-500 animate-spin mb-2">autorenew</span>
-                            <span className="font-bold text-stone-700 dark:text-stone-200">{isUploadingCover ? '圖片上傳中...' : '資料載入中...'}</span>
+                {/* ✨ 阻擋器：全域載入與初始化動畫 */}
+                {(isInitializing || isLoadingPublicData || isUploadingCover) && (
+                    <div className="absolute inset-0 z-[100] bg-[#FCFBF7]/80 dark:bg-stone-900/80 backdrop-blur-sm flex items-center justify-center transition-all duration-300">
+                        <div className="bg-white dark:bg-stone-800 p-8 rounded-3xl shadow-2xl border border-stone-200 dark:border-stone-700 flex flex-col items-center max-w-sm w-[90%] text-center transform transition-all">
+                            <div className="relative mb-6 mt-2">
+                                <div className="w-20 h-20 border-4 border-amber-200 dark:border-amber-900/50 rounded-full animate-ping absolute inset-0 opacity-50"></div>
+                                <div className="w-20 h-20 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center relative z-10 shadow-inner">
+                                    <span className="material-symbols-outlined text-[40px] text-amber-500 animate-bounce">auto_stories</span>
+                                </div>
+                            </div>
+                            <h2 className="text-xl font-black text-stone-800 dark:text-stone-100 mb-2">
+                                {isInitializing ? '正在準備您的專屬題庫...' : (isUploadingCover ? '圖片上傳中...' : '資料載入中...')}
+                            </h2>
+                            <p className="text-sm font-bold text-gray-500 dark:text-gray-400">
+                                {isInitializing ? '初次載入可能需要幾秒鐘，請稍候' : '即將完成，請稍候'}
+                            </p>
+                            <div className="w-full h-1.5 bg-stone-100 dark:bg-stone-700 rounded-full mt-6 overflow-hidden relative">
+                                <div className="h-full bg-amber-500 rounded-full w-full animate-pulse"></div>
+                            </div>
                         </div>
                     </div>
                 )}
