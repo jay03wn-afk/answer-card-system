@@ -803,20 +803,37 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
     if (skipUsed) basePoolForQuiz = basePoolForQuiz.filter(q => !q.usedCount || q.usedCount === 0);
 
     const poolByChapter = {};
-    const poolByTag = {};
+    const poolByChapterAndTag = {};
+
     basePoolForQuiz.forEach(q => {
         if (!poolByChapter[q.chapterId]) poolByChapter[q.chapterId] = [];
         poolByChapter[q.chapterId].push(q);
         
         if (q.tag) {
-            if (!poolByTag[q.tag]) poolByTag[q.tag] = [];
-            poolByTag[q.tag].push(q);
+            if (!poolByChapterAndTag[q.chapterId]) poolByChapterAndTag[q.chapterId] = {};
+            if (!poolByChapterAndTag[q.chapterId][q.tag]) poolByChapterAndTag[q.chapterId][q.tag] = [];
+            poolByChapterAndTag[q.chapterId][q.tag].push(q);
         }
     });
 
-    const quizListItems = quizDistributeMode === 'chapter' 
-        ? (quizTargetSubject?.chapters || []).map(c => ({ key: c.id, label: c.name, count: poolByChapter[c.id]?.length || 0 }))
-        : Object.keys(poolByTag).map(t => ({ key: t, label: t, count: poolByTag[t].length })).sort((a,b)=>b.count - a.count);
+    let quizListItems = [];
+    if (quizDistributeMode === 'chapter') {
+        quizListItems = (quizTargetSubject?.chapters || []).map(c => ({
+            type: 'item', key: c.id, label: c.name, count: poolByChapter[c.id]?.length || 0
+        }));
+    } else {
+        (quizTargetSubject?.chapters || []).forEach(c => {
+            const tagsInChap = poolByChapterAndTag[c.id];
+            if (tagsInChap && Object.keys(tagsInChap).length > 0) {
+                // 插入章節標題
+                quizListItems.push({ type: 'header', key: `header_${c.id}`, label: c.name });
+                // 插入該章節底下的標籤
+                Object.keys(tagsInChap).sort((a,b) => tagsInChap[b].length - tagsInChap[a].length).forEach(t => {
+                    quizListItems.push({ type: 'item', key: `${c.id}::${t}`, label: t, count: tagsInChap[t].length });
+                });
+            }
+        });
+    }
 
     const handleAutoDistribute = () => {
         if (quizSelectedItems.length === 0) return showAlert("請先勾選要出題的項目！");
@@ -869,7 +886,15 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                 let needed = parseInt(quizAllocations[key]) || 0;
                 if (needed <= 0) return;
 
-                let groupPool = basePoolForQuiz.filter(q => quizDistributeMode === 'tag' ? q.tag === key : q.chapterId === key).sort(() => 0.5 - Math.random());
+                let groupPool = basePoolForQuiz.filter(q => {
+                    if (quizDistributeMode === 'tag') {
+                        // 標籤模式下的 key 格式為 "章節ID::標籤名稱"
+                        const [cId, tName] = key.split('::');
+                        return q.chapterId === cId && q.tag === tName;
+                    }
+                    return q.chapterId === key;
+                }).sort(() => 0.5 - Math.random());
+                
                 let selected = groupPool.slice(0, needed);
                 finalSelection.push(...selected);
             });
@@ -1611,7 +1636,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                             <div className="flex justify-between items-end mb-2">
                                 <span className="text-sm font-black text-stone-700 dark:text-stone-300">勾選並填寫所需題數</span>
                                 <div className="flex gap-2">
-                                    <button onClick={() => setQuizSelectedItems(quizListItems.map(x=>x.key))} className="text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-1 rounded transition-colors">全選</button>
+                                    <button onClick={() => setQuizSelectedItems(quizListItems.filter(x => x.type === 'item').map(x=>x.key))} className="text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-1 rounded transition-colors">全選</button>
                                     <button onClick={() => setQuizSelectedItems([])} className="text-xs font-bold bg-stone-200 text-stone-700 hover:bg-stone-300 dark:bg-stone-700 dark:text-stone-300 px-2 py-1 rounded transition-colors">全不選</button>
                                     {user?.email === 'jay03wn@gmail.com' && (
                                         <button onClick={handleSaveAdminPreset} className="text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-400 px-2 py-1 rounded transition-colors flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">save</span> 儲存組合</button>
@@ -1622,6 +1647,16 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                             <div className="space-y-2">
                                 {quizListItems.length === 0 && <div className="text-center text-sm font-bold text-gray-400 py-6 border-2 border-dashed border-stone-200 dark:border-stone-700 rounded-xl">此分類下尚無可用題目</div>}
                                 {quizListItems.map(item => {
+                                    if (item.type === 'header') {
+                                        return (
+                                            <div key={item.key} className="mt-4 mb-2 flex items-center gap-2 px-1">
+                                                <span className="material-symbols-outlined text-[18px] text-stone-400">folder_open</span>
+                                                <span className="text-sm font-black text-stone-600 dark:text-stone-300">{item.label}</span>
+                                                <div className="flex-1 h-px bg-stone-200 dark:bg-stone-700 ml-2"></div>
+                                            </div>
+                                        );
+                                    }
+                                    
                                     const isSelected = quizSelectedItems.includes(item.key);
                                     return (
                                         <div key={item.key} className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors shadow-sm ${isSelected ? 'bg-amber-50 border-amber-300 dark:bg-amber-900/20 dark:border-amber-700' : 'bg-white border-stone-200 dark:bg-stone-800 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-700'}`}>
