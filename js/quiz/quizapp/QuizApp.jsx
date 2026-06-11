@@ -370,6 +370,39 @@ function QuizApp(props) {
         }
     }, [step, tutorialStep, userAnswers, peekedAnswers, parsedInteractiveQuestions, setTutorialStep]);
 
+    // ✨ React 規則：所有的 useState 與 Hooks 都必須放在任何「if (...) return」之前！
+    const [sourceEditItem, setSourceEditItem] = useState(null);
+
+    const handleSaveSourceQuestion = async () => {
+        setIsEditLoading(true);
+        try {
+            const q = sourceEditItem;
+            const ref = q.sourceIsPublic 
+                ? window.db.collection('publicQlib_questions').doc(q.chapterId)
+                : window.db.collection('users').doc(currentUser.uid).collection('qlib_questions').doc(q.chapterId);
+                
+            const snap = await ref.get();
+            if (snap.exists) {
+                const data = snap.data();
+                let questions = [];
+                if (data.questionsJZ) questions = JSON.parse(window.safeDecompress(data.questionsJZ, 'string'));
+                else questions = data.questions || [];
+                
+                const qIdx = questions.findIndex(x => x.id === q.id);
+                if (qIdx !== -1) {
+                    questions[qIdx] = { ...questions[qIdx], text: q.mainText, options: q.options, ans: q.ans, explain: q.explain };
+                    const qStr = JSON.stringify(questions);
+                    if (qStr.length > 500000 && window.jzCompress) await ref.update({ questionsJZ: window.jzCompress(qStr), questions: window.firebase.firestore.FieldValue.delete() });
+                    else await ref.update({ questions: questions, questionsJZ: window.firebase.firestore.FieldValue.delete() });
+                    showAlert("✅ 已成功同步更新原始題庫！");
+                }
+            }
+            setIndependentQuestions(prev => prev.map(x => x.id === q.id ? q : x));
+        } catch(e) { showAlert("❌ 同步更新失敗，這可能代表您不是公開題庫的管理員：" + e.message); }
+        setSourceEditItem(null);
+        setIsEditLoading(false);
+    };
+
    // ✨ 新增：試卷尚未載入完成前，顯示載入動畫
     if (isQuizLoading) return (
         <div className="flex flex-col h-[100dvh] items-center justify-center bg-stone-50 dark:bg-stone-900 transition-colors">
@@ -490,16 +523,27 @@ function QuizApp(props) {
                     )}
                 </div>
                 
-                {/* ✨ 新增：如果是題庫系統題目，顯示專屬保護介面，防止誤刪詳解與內容 */}
                 {initialRecord.isIndependentQuestions ? (
-                    <div className="mb-6 bg-cyan-50 dark:bg-stone-800 border-2 border-cyan-400 dark:border-cyan-700 rounded-2xl p-6 text-center shadow-sm">
-                        <span className="material-symbols-outlined text-4xl text-cyan-500 mb-2">library_books</span>
-                        <h3 className="text-lg font-black text-cyan-800 dark:text-cyan-300 mb-2">這是從題庫抽出的試卷</h3>
-                        <p className="text-sm font-bold text-cyan-700 dark:text-gray-300">
-                            為保證資料一致性，此試卷內容（題目、選項、詳解）由題庫系統統一管理。<br/>
-                            若需修改內容，請前往「我的題庫」進行管理。<br/>
-                            您仍可在此修改測驗名稱、計時與發布設定。
+                    <div className="mb-6 bg-cyan-50 dark:bg-stone-800 border-2 border-cyan-400 dark:border-cyan-700 rounded-2xl p-6 shadow-sm">
+                        <h3 className="text-lg font-black text-cyan-800 dark:text-cyan-300 mb-3 flex items-center gap-2">
+                            <span className="material-symbols-outlined text-[24px]">library_books</span> 獨立題庫試卷 - 試題反向編輯器
+                        </h3>
+                        <p className="text-sm font-bold text-cyan-700 dark:text-gray-300 mb-4">
+                            您可直接在此修改抽出的題目，點擊儲存後將「直接覆蓋」原始題庫 (所有玩家都會看到最新版本)！
                         </p>
+                        <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                            {independentQuestions.map((q, idx) => (
+                                <div key={q.id} className="bg-white dark:bg-stone-900 p-3 rounded-xl border border-cyan-200 dark:border-stone-600 flex justify-between items-center gap-4 shadow-sm hover:border-cyan-400 transition-colors">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="truncate font-bold text-sm dark:text-white mb-1 text-stone-700">{idx + 1}. {q.mainText.replace(/<[^>]+>/g, '')}</div>
+                                        <div className="text-[10px] font-black bg-stone-100 dark:bg-stone-700 text-stone-500 px-2 py-0.5 rounded w-max">來源: {q.sourceIsPublic ? '🌍 公開商城題庫' : '🔒 您的私有題庫'}</div>
+                                    </div>
+                                    <button onClick={() => setSourceEditItem(q)} className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-3 py-2 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-800 font-black text-xs flex shrink-0 items-center gap-1 transition-transform active:scale-95 shadow-sm">
+                                        <span className="material-symbols-outlined text-[16px]">edit_square</span> 編輯原題
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 ) : (() => {
                     const isHtml = inputType === 'richtext';
@@ -4109,6 +4153,41 @@ if (step === 'grading') return (
                     </div>
                 </div>
             </div>
+
+            {/* 反向編輯原題 Modal */}
+            {sourceEditItem && (
+                <div className="fixed inset-0 z-[999] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl p-6 md:p-8 relative custom-scrollbar border border-stone-200 dark:border-stone-700">
+                        <h3 className="text-xl font-black mb-6 dark:text-white flex items-center gap-2"><span className="material-symbols-outlined text-amber-500">edit_document</span> 編輯題庫原始題目</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-black text-gray-500 mb-1 block">題目內容</label>
+                                <textarea value={sourceEditItem.mainText} onChange={e => setSourceEditItem({...sourceEditItem, mainText: e.target.value})} className="w-full p-3 border border-stone-300 dark:border-stone-600 rounded-xl h-24 bg-white dark:bg-stone-900 dark:text-white outline-none font-bold text-sm custom-scrollbar" />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {['A', 'B', 'C', 'D'].map(opt => (
+                                    <div key={opt}>
+                                        <label className="text-xs font-black text-gray-500 mb-1 block">選項 {opt}</label>
+                                        <input value={sourceEditItem.options[opt] || ''} onChange={e => setSourceEditItem({...sourceEditItem, options: {...sourceEditItem.options, [opt]: e.target.value}})} className="w-full p-2.5 border border-stone-300 dark:border-stone-600 rounded-xl bg-white dark:bg-stone-900 dark:text-white outline-none font-bold text-sm" />
+                                    </div>
+                                ))}
+                            </div>
+                            <div>
+                                <label className="text-xs font-black text-gray-500 mb-1 block">標準答案</label>
+                                <input value={sourceEditItem.ans} onChange={e => setSourceEditItem({...sourceEditItem, ans: e.target.value.toUpperCase()})} className="w-full p-2.5 border border-stone-300 dark:border-stone-600 rounded-xl bg-white dark:bg-stone-900 dark:text-white outline-none font-bold text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-black text-gray-500 mb-1 block">詳解</label>
+                                <textarea value={sourceEditItem.explain || ''} onChange={e => setSourceEditItem({...sourceEditItem, explain: e.target.value})} className="w-full p-3 border border-stone-300 dark:border-stone-600 rounded-xl h-24 bg-white dark:bg-stone-900 dark:text-white outline-none font-bold text-sm custom-scrollbar" />
+                            </div>
+                        </div>
+                        <div className="mt-8 flex justify-end gap-3 border-t border-stone-200 dark:border-stone-700 pt-4">
+                            <button onClick={() => setSourceEditItem(null)} className="px-5 py-2.5 font-black text-gray-500 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-xl transition-colors">取消</button>
+                            <button onClick={handleSaveSourceQuestion} className="bg-amber-500 text-white px-6 py-2.5 rounded-xl font-black shadow-sm transition-transform active:scale-95 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">cloud_sync</span> 儲存並覆蓋原始題庫</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

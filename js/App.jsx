@@ -899,8 +899,24 @@ function ExamProgressDashboard({ examFeatures, user, showConfirm, showPrompt }) 
 function Main() {
     const { useState, useEffect } = React;
 
+    // ✨ 加入網址解析 (支援分享與跳轉)
+    const urlParams = new URLSearchParams(window.location.search);
+    const sharedQid = urlParams.get('shareQ');
+    const sharedChap = urlParams.get('chap');
+
+    const [activeTab, setActiveTab] = useState(() => {
+        if (sharedQid) return 'qlist'; 
+        if (activeQuizRecord) return 'quiz';
+        return 'home';
+    });
+    
+    // 新增：側邊欄收合狀態 (僅作用於桌面版)
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [activeQuizRecord, setActiveQuizRecord] = useState(null);
+
     // --- 基礎 App 狀態 ---
     const [user, setUser] = useState(null);
+    const [userProfile, setUserProfile] = useState({ displayName: '載入中...', folders: [] });
 
     // ✨ 啟動大腦模組 (傳入 Firebase db 與 user)
     const examFeatures = useExamFeatures(window.db, user);
@@ -951,9 +967,6 @@ function Main() {
         window.history.replaceState({}, document.title, window.location.pathname);
         setCurrentNewsId(null);
     };
-  const [userProfile, setUserProfile] = useState({ displayName: '載入中...', folders: [] });
-    const [activeTab, setActiveTab] = useState('dashboard');
-    const [activeQuizRecord, setActiveQuizRecord] = useState(null);
 
     // ✨ 全域教學狀態管理
     const [tutorialStep, setTutorialStep] = useState(0);
@@ -1546,26 +1559,23 @@ if (docs.length > 50) {
 
    const topNavContent = (
         <>
-            {/* ✨ 頂部標題列 (修正手機安全區與大頭貼點擊) */}
+            {/* 頂部標題列 */}
             <div className="bg-stone-800 dark:bg-stone-950 text-stone-100 px-4 flex justify-between items-center shadow-lg shrink-0 relative z-20 transition-colors border-b border-stone-700 pt-[max(env(safe-area-inset-top),_16px)] h-[calc(4rem+env(safe-area-inset-top))]">
                 <div className="flex items-center gap-2">
-                    {/* 漢堡選單按鈕 */}
+                    {/* 漢堡選單按鈕 (修復點擊失效問題) */}
                     <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 text-2xl hover:text-gray-300 hover:bg-stone-700/50 rounded-lg transition-colors focus:outline-none">
                         <span className="material-symbols-outlined">menu</span>
                     </button>
-                    {/* 恢復成純白、無斜體、字體稍微緊湊的原本樣式 */}
                     <span className="font-black text-xl tracking-tight text-white">JJay Online Test</span>
                 </div>
                 
                 {user && (
                     <div className="flex items-center gap-3">
                         <ExamCountdown />
-                        {/* 鑽石顯示 */}
                         <div className="hidden sm:flex items-center gap-1.5 bg-stone-900 px-3 py-1.5 rounded-full border border-stone-700 shadow-inner">
                             <span className="material-symbols-outlined text-[16px] text-amber-400">diamond</span>
                             <span className="text-xs font-black text-stone-300">{userProfile?.mcData?.diamonds || 0}</span>
                         </div>
-                        {/* 信箱按鈕與未讀紅點動畫 */}
                         <button onClick={() => setShowInbox(true)} className="text-xl hover:scale-110 transition-transform text-stone-300 hover:text-white flex items-center relative" title="信箱與通知">
                             <span className="material-symbols-outlined text-[22px]">mail</span>
                             {inboxMessages.some(m => !m.isRead) && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>}
@@ -1577,7 +1587,6 @@ if (docs.length > 50) {
                             <span className="material-symbols-outlined text-[22px]">{isDark ? 'light_mode' : 'dark_mode'}</span>
                         </button>
                         
-                        {/* ✨ 右上角大頭貼：點擊切換至個人檔案 */}
                         <button 
                             onClick={() => handleTabClick('profile')}
                             className="w-8 h-8 rounded-full bg-stone-700 border-2 border-amber-500 shadow-sm overflow-hidden flex items-center justify-center transition-transform active:scale-90 ml-1"
@@ -1591,50 +1600,103 @@ if (docs.length > 50) {
                     </div>
                 )}
             </div>
-                {isSidebarOpen && (
-                    <div 
-                        className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[90] transition-opacity duration-300"
-                        onClick={() => setIsSidebarOpen(false)}
-                    ></div>
-                )}
+            
+            {/* 手機版/電腦版：點擊外部關閉側邊欄的遮罩 */}
+            {isSidebarOpen && (
+                <div 
+                    className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[90] transition-opacity duration-300"
+                    onClick={() => setIsSidebarOpen(false)}
+                ></div>
+            )}
 
-            {/* 側邊選單主體 */}
-                        <div className={`fixed top-0 left-0 h-full w-64 bg-[#FCFBF7] dark:bg-stone-900 shadow-2xl z-[100] transform transition-transform duration-300 ease-in-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                            {/* 側邊欄標題與關閉按鈕 */}
-                            <div className="flex justify-between items-center p-4 border-b border-stone-200 dark:border-stone-800 shrink-0">
-                                <h2 className="text-xl font-black text-stone-800 dark:text-stone-100 tracking-wider">選單</h2>
-                                <button onClick={() => setIsSidebarOpen(false)} className="text-stone-500 hover:text-amber-500 dark:hover:text-amber-400 focus:outline-none transition-colors p-2 cursor-pointer relative z-10">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                                </button>
-                            </div>
-                <div className="flex-1 overflow-y-auto py-4 flex flex-col custom-scrollbar space-y-1">
-                    <button onClick={() => handleTabClick('newspaper')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'newspaper' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">newspaper</span> JJay日報</button>
-                    <button onClick={() => handleTabClick('dashboard')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'dashboard' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">library_books</span> 我的題庫</button>
-                    <button onClick={() => handleTabClick('qlib')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'qlib' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">source</span> 題庫系統</button>
-                    <button onClick={() => handleTabClick('illu')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'illu' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">auto_stories</span> 藥物圖鑑</button>
-                    {/* 加入這行 */}
-                    <button onClick={() => handleTabClick('druglib')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'druglib' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[20px] sm:text-[22px]">medication</span> 藥物機轉庫</button>
-                        <button onClick={() => handleTabClick('taskwall')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'taskwall' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">task_alt</span> 任務牆</button>
-                        <button onClick={() => handleTabClick('publicexam')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'publicexam' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">public</span> 公開試卷</button>
-                        <button onClick={() => handleTabClick('wrongbook')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'wrongbook' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">menu_book</span> 錯題整理</button>
-                    <button onClick={() => handleTabClick('social')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'social' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">forum</span> 社群交流</button>
-                    <button onClick={() => handleTabClick('minecraft')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'minecraft' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">sports_esports</span> 史蒂夫養成</button>
-                    <button onClick={() => handleTabClick('publicExam')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'publicExam' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">assignment</span> 公開考試</button>
-
-                    <div className="my-2 border-t border-stone-200 dark:border-stone-700 mx-5"></div>
-                    
-                    {/* ✨ 新增的國考進度追蹤 */}
-                    <button onClick={() => handleTabClick('examProgress')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'examProgress' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">trending_up</span> 國考戰況追蹤</button>
-                    <button onClick={() => handleTabClick('shop')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'shop' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}>
-                        <span className="material-symbols-outlined text-[22px]">shopping_bag</span> 商店系統
+            {/* 側邊選單主體 (修復點擊與收合功能，無表情符號版) */}
+            <div className={`fixed top-0 left-0 h-full w-72 sm:w-64 bg-[#FCFBF7] dark:bg-stone-900 shadow-2xl z-[100] transform transition-transform duration-300 ease-in-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                {/* 側邊欄標題與關閉按鈕 */}
+                <div className="flex justify-between items-center p-4 border-b border-stone-200 dark:border-stone-800 shrink-0">
+                    <h2 className="text-xl font-black text-stone-800 dark:text-stone-100 tracking-wider">選單</h2>
+                    <button onClick={() => setIsSidebarOpen(false)} className="text-stone-500 hover:text-amber-500 dark:hover:text-amber-400 focus:outline-none transition-colors p-2 cursor-pointer relative z-10">
+                        <span className="material-symbols-outlined">close</span>
                     </button>
-                    <button onClick={() => handleTabClick('profile')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'profile' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">person</span> 個人檔案</button>
-                    <button onClick={() => handleTabClick('service')} className={`text-left mx-3 px-4 py-3.5 font-bold transition-all rounded-2xl flex items-center gap-3 ${activeTab === 'service' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`}><span className="material-symbols-outlined text-[22px]">support_agent</span> 服務中心</button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto py-4 flex flex-col custom-scrollbar space-y-1">
+                    <div className="text-[10px] font-black text-gray-400 dark:text-gray-500 mt-2 mb-1 px-5 tracking-widest">導覽</div>
+                    <button onClick={() => handleTabClick('home')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'home' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="平台首頁">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">widgets</span>
+                        <span>平台首頁</span>
+                    </button>
+
+                    <div className="text-[10px] font-black text-gray-400 dark:text-gray-500 mt-4 mb-1 px-5 tracking-widest">學習與測驗</div>
+                    <button onClick={() => handleTabClick('dashboard')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'dashboard' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="個人主頁">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">person</span>
+                        <span>個人主頁</span>
+                    </button>
+                    <button onClick={() => handleTabClick('examProgress')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'examProgress' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="國考戰況">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">trending_up</span>
+                        <span>國考戰況</span>
+                    </button>
+                    <button onClick={() => handleTabClick('newspaper')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'newspaper' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="日報中心">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">newspaper</span>
+                        <span>日報中心</span>
+                    </button>
+                    <button onClick={() => handleTabClick('qlib')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'qlib' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="我的題庫">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">library_books</span>
+                        <span>我的題庫</span>
+                    </button>
+                    <button onClick={() => handleTabClick('wrongbook')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'wrongbook' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="錯題整理">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">menu_book</span>
+                        <span>錯題整理</span>
+                    </button>
+
+                    <div className="text-[10px] font-black text-gray-400 dark:text-gray-500 mt-4 mb-1 px-5 tracking-widest">探索與社群</div>
+                    <button onClick={() => handleTabClick('qlist')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex justify-between items-center text-sm sm:text-base ${activeTab === 'qlist' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="搜尋與作答">
+                        <div className="flex items-center gap-3">
+                            <span className="material-symbols-outlined text-[20px] sm:text-[22px]">search</span>
+                            <span>搜尋與作答</span>
+                        </div>
+                    </button>
+                    <button onClick={() => handleTabClick('publicexam')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'publicexam' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="公開試卷">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">language</span>
+                        <span>公開試卷</span>
+                    </button>
+                    <button onClick={() => handleTabClick('taskwall')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'taskwall' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="任務牆">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">assignment</span>
+                        <span>任務牆</span>
+                    </button>
+                    <button onClick={() => handleTabClick('social')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'social' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="交流大廳">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">forum</span>
+                        <span>交流大廳</span>
+                    </button>
+                    <button onClick={() => handleTabClick('shop')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'shop' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="點數商城">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">storefront</span>
+                        <span>點數商城</span>
+                    </button>
+                    <button onClick={() => handleTabClick('minecraft')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'minecraft' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="模擬養成">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">sports_esports</span>
+                        <span>模擬養成</span>
+                    </button>
+
+                    <div className="text-[10px] font-black text-gray-400 dark:text-gray-500 mt-4 mb-1 px-5 tracking-widest">系統與資料庫</div>
+                    <button onClick={() => handleTabClick('illu')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'illu' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="藥物圖鑑">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">auto_stories</span>
+                        <span>藥物圖鑑</span>
+                    </button>
+                    <button onClick={() => handleTabClick('druglib')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'druglib' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="藥物機轉庫">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">medication</span>
+                        <span>藥物機轉庫</span>
+                    </button>
+                    <button onClick={() => handleTabClick('service')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'service' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="服務中心">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">support_agent</span>
+                        <span>服務中心</span>
+                    </button>
+                    <button onClick={() => handleTabClick('profile')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'profile' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="系統設定">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">settings</span>
+                        <span>系統設定</span>
+                    </button>
                 </div>
             </div>
         </>
     );
-
     if (loading) return (
         <div className="h-[100dvh] flex flex-col items-center justify-center bg-stone-50 text-stone-800 dark:bg-stone-900 dark:text-stone-100 font-mono p-6">
             <div className="text-5xl mb-8 animate-bounce">💊</div>
@@ -2109,9 +2171,22 @@ if (docs.length > 50) {
                     )}
                     
                    {/* ✨ 正式接上華麗的國考進度與口訣 UI */}
+                    {activeTab === 'home' && (
+                        <div className="h-full w-full flex flex-col overflow-y-auto custom-scrollbar bg-stone-50 dark:bg-stone-900 transition-colors">
+                            <window.HomeDashboard setActiveTab={setActiveTab} userProfile={userProfile} />
+                        </div>
+                    )}
+
                     {activeTab === 'examProgress' && (
                         <div className="h-full w-full flex flex-col overflow-y-auto custom-scrollbar bg-cyan-50/30 dark:bg-stone-900 transition-colors">
                             <ExamProgressDashboard examFeatures={examFeatures} user={user} showConfirm={showConfirm} showPrompt={showPrompt} />
+                        </div>
+                    )}
+
+                    {/* 新版搜題與單題作答 */}
+                    {activeTab === 'qlist' && (
+                        <div className="h-full w-full flex flex-col overflow-y-auto custom-scrollbar bg-stone-50 dark:bg-stone-900 transition-colors">
+                            <window.QlistDashboard user={user} userProfile={userProfile} sharedQid={sharedQid} sharedChap={sharedChap} setActiveTab={setActiveTab} showAlert={showAlert} />
                         </div>
                     )}
 

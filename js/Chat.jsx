@@ -767,6 +767,17 @@ const handleImageUpload = (e) => {
                                                                 </button>
                                                             </div>
                                                         );
+                                                    } else if (msg.type === 'shared_question') {
+                                                        // ✨ 新增：單題分享專屬的聊天室卡片
+                                                        return (
+                                                            <div className="flex flex-col gap-2 cursor-pointer transition-transform hover:scale-[1.02] max-w-xs" onClick={() => window.location.href = `/?shareQ=${msg.qId}&chap=${msg.chapId}`}>
+                                                                <div className={`text-xs font-black flex items-center gap-1 ${isMe ? 'text-amber-300' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                                                                    <span className="material-symbols-outlined text-[16px]">share</span> {isMe ? '你分享了一道題目' : '來自好友的單題挑戰！'}
+                                                                </div>
+                                                                <div className="text-sm font-bold line-clamp-3 opacity-90">{msg.qText}</div>
+                                                                <button className={`w-full py-2 mt-1 rounded-xl text-xs font-black shadow-sm transition-colors ${isMe ? 'bg-white/20 hover:bg-white/30 text-white border border-white/30' : 'bg-indigo-500 hover:bg-indigo-600 text-white'}`}>立即前往作答</button>
+                                                            </div>
+                                                        );
                                                     }
                                                     return <p className="break-all sm:break-words whitespace-pre-wrap">{msg.text || '未知訊息'}</p>;
                                                 }
