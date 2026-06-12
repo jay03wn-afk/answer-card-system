@@ -547,6 +547,7 @@ function QuizApp(props) {
                     </div>
                 ) : (() => {
                     const isHtml = inputType === 'richtext';
+                    const activeContent = isHtml ? questionHtml : questionText;
                     
                     // ✨ 智慧提取核心：全域自動歸位系統
                     const getParts = (text) => {
