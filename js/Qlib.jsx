@@ -23,7 +23,11 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
     const [importText, setImportText] = useState('');
     const [editingQuestion, setEditingQuestion] = useState(null);
     const [isPublishing, setIsPublishing] = useState(null); 
-    const [shareQModal, setShareQModal] = useState(null); // ✨ 新增：控制單題分享彈窗 
+    
+    // ✨ 效能與體驗優化狀態
+    const [isInitializing, setIsInitializing] = useState(true); 
+    const isFirstLoad = React.useRef(true); 
+    const cachedQuestionsRef = React.useRef({}); 
 
     // --- 公開題庫 (商城) 狀態 ---
     const [publicSubjects, setPublicSubjects] = useState([]);
@@ -33,6 +37,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
     const [activeStoreSubjectId, setActiveStoreSubjectId] = useState(null);
     const [activeStoreChapterId, setActiveStoreChapterId] = useState(null);
     const [publicSubjectData, setPublicSubjectData] = useState({}); // 快取已載入的章節題目
+    const [publicQuizPresets, setPublicQuizPresets] = useState([]); // ✨ 官方公開的配題組合
 
     // --- 搜尋系統狀態 ---
     const [searchScope, setSearchScope] = useState('my'); // 'my', 'public', 'all'
@@ -46,46 +51,73 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
     const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
     const [quizNameInput, setQuizNameInput] = useState(''); 
     const [selectedQuizSubjectId, setSelectedQuizSubjectId] = useState(null); 
-    const [selectedQuizChapterIds, setSelectedQuizChapterIds] = useState([]); 
     
-    const [quizMode, setQuizMode] = useState('brush'); 
-    const [selectedTags, setSelectedTags] = useState([]);
-    const [brushCount, setBrushCount] = useState(10);
-    const [advTotalCount, setAdvTotalCount] = useState(50);
-    const [advModeBy, setAdvModeBy] = useState('tag');
-    const [advInputMode, setAdvInputMode] = useState('count');
-    const [advAllocations, setAdvAllocations] = useState({}); 
-    
+    // ✨ 新版整合配題狀態
+    const [quizDistributeMode, setQuizDistributeMode] = useState('chapter'); // 'chapter' | 'tag'
+    const [quizSelectedItems, setQuizSelectedItems] = useState([]);
+    const [quizAllocations, setQuizAllocations] = useState({});
+    const [quickTotal, setQuickTotal] = useState(50);
     const [skipUsed, setSkipUsed] = useState(false);
-    const [maxUsedCount, setMaxUsedCount] = useState('');
-    const [fallbackStrategy, setFallbackStrategy] = useState('random');
-    const [brushStrategy, setBrushStrategy] = useState('random');
 
     // 檢索用 (單一章節內)
     const [chapterSearchQ, setChapterSearchQ] = useState('');
     const [filterTag, setFilterTag] = useState('');
     const [filterDiff, setFilterDiff] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const PAGE_SIZE = 50;
 
     // 初始化與切換重置
     useEffect(() => {
         setChapterSearchQ('');
         setFilterTag('');
         setFilterDiff('');
+        setCurrentPage(1);
     }, [activeChapterId, activeStoreChapterId]);
+
+    // 若搜尋條件改變，重置頁碼
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [chapterSearchQ, filterTag, filterDiff]);
 
     useEffect(() => {
         if (!user) return;
+        setIsInitializing(true);
+
         const unsubscribe = window.db.collection('users').doc(user.uid).collection('qlib').doc('main')
             .onSnapshot(async docSnap => {
-                if (!docSnap.exists) return;
+                if (!docSnap.exists) {
+                    setSubjects([]);
+                    if (isFirstLoad.current) { setIsInitializing(false); isFirstLoad.current = false; }
+                    return;
+                }
                 const loadedConfigs = docSnap.data().promptConfigs || {};
                 setSavedPromptConfigs(loadedConfigs);
 
                 let loadedSubjects = docSnap.data().subjects || [];
                 try {
+                    // ✨ 速度優化：導入題目快取機制，避免在每次存檔或狀態更新時，重複執行耗時的解壓縮運算
                     const qSnap = await window.db.collection('users').doc(user.uid).collection('qlib_questions').get();
                     const qDict = {};
-                    qSnap.forEach(d => { qDict[d.id] = d.data().questions || []; });
+                    
+                    qSnap.forEach(d => { 
+                        const data = d.data();
+                        if (data.questionsJZ && window.safeDecompress) {
+                            try { 
+                                // 利用字串長度與前幾碼做變更比對 (極速 Hash 概念)
+                                const cacheKey = data.questionsJZ.length + '_' + data.questionsJZ.substring(0, 20);
+                                if (cachedQuestionsRef.current[d.id]?.key === cacheKey) {
+                                    qDict[d.id] = cachedQuestionsRef.current[d.id].data;
+                                } else {
+                                    const parsed = JSON.parse(window.safeDecompress(data.questionsJZ, 'string'));
+                                    qDict[d.id] = parsed;
+                                    cachedQuestionsRef.current[d.id] = { key: cacheKey, data: parsed };
+                                }
+                            } catch(e) { qDict[d.id] = []; }
+                        } else {
+                            qDict[d.id] = data.questions || []; 
+                            cachedQuestionsRef.current[d.id] = { key: 'raw', data: data.questions || [] };
+                        }
+                    });
                     
                     loadedSubjects = loadedSubjects.map(s => ({
                         ...s,
@@ -95,7 +127,19 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                         }))
                     }));
                 } catch(e) { console.error(e); }
+                
                 setSubjects(loadedSubjects);
+                
+                if (isFirstLoad.current) {
+                    setIsInitializing(false);
+                    isFirstLoad.current = false;
+                }
+            }, err => {
+                // ✨ 核心修正：捕獲 Firebase 權限或網路中斷錯誤，確保新用戶或例外狀況下不會卡死在載入動畫
+                console.error("Firebase 題庫監聽失敗:", err);
+                setSubjects([]);
+                setIsInitializing(false);
+                isFirstLoad.current = false;
             });
         return () => unsubscribe();
     }, [user]);
@@ -105,8 +149,9 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
         if (activeMainTab === 'public') {
             setIsLoadingPublicData(true);
             const unsub = window.db.collection('publicQlib').doc('main').onSnapshot(docSnap => {
-                if (!docSnap.exists) { setPublicSubjects([]); setIsLoadingPublicData(false); return; }
+                if (!docSnap.exists) { setPublicSubjects([]); setPublicQuizPresets([]); setIsLoadingPublicData(false); return; }
                 setPublicSubjects(docSnap.data().subjects || []);
+                setPublicQuizPresets(docSnap.data().quizPresets || []);
                 setIsLoadingPublicData(false);
             });
             return () => unsub();
@@ -119,6 +164,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
     }, [activeMainTab]);
 
     const saveToDb = async (newSubjects, isPublic = false) => {
+        const oldSubjects = isPublic ? publicSubjects : subjects;
         if (isPublic) setPublicSubjects(newSubjects);
         else setSubjects(newSubjects);
 
@@ -132,19 +178,32 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
             const metadataSubjects = newSubjects.map(s => ({
                 id: s.id, name: s.name, coverUrl: s.coverUrl || null, chapters: (s.chapters || []).map(c => ({ id: c.id, name: c.name }))
             }));
-            batch.set(mainRef, { subjects: metadataSubjects }, { merge: true });
+            batch.set(mainRef, { subjects: metadataSubjects, lastUpdatedAt: window.firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
             
+            const oldChapDict = {};
+            oldSubjects.forEach(s => (s.chapters || []).forEach(c => { oldChapDict[c.id] = c.questions; }));
+
             newSubjects.forEach(s => {
                 (s.chapters || []).forEach(c => {
+                    if (oldChapDict[c.id] === c.questions) return; // 沒變動就跳過不寫入
+                    
                     const qRef = isPublic 
                         ? window.db.collection('publicQlib_questions').doc(c.id) 
                         : window.db.collection('users').doc(user.uid).collection('qlib_questions').doc(c.id);
-                    batch.set(qRef, { questions: c.questions || [] }, { merge: true });
+                    
+                    const qList = c.questions || [];
+                    const qStr = JSON.stringify(qList);
+                    if (qStr.length > 500000 && window.jzCompress) {
+                        batch.set(qRef, { questionsJZ: window.jzCompress(qStr), questions: window.firebase.firestore.FieldValue.delete() }, { merge: true });
+                    } else {
+                        batch.set(qRef, { questions: qList, questionsJZ: window.firebase.firestore.FieldValue.delete() }, { merge: true });
+                    }
                 });
             });
             await batch.commit();
         } catch (err) {
-            showAlert("儲存失敗，請檢查網路連線。");
+            console.error(err);
+            showAlert("儲存失敗，請檢查網路連線或檔案是否過大。");
         }
     };
 
@@ -203,7 +262,13 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
 
                 let loadedChaps = [];
                 snaps.forEach((snap, idx) => {
-                    let rawQs = snap.exists ? snap.data().questions || [] : [];
+                    const data = snap.exists ? snap.data() : {};
+                    let rawQs = [];
+                    if (data.questionsJZ && window.safeDecompress) {
+                        try { rawQs = JSON.parse(window.safeDecompress(data.questionsJZ, 'string')); } catch(e) { rawQs = []; }
+                    } else if (data.questions) {
+                        rawQs = data.questions;
+                    }
                     let enrichedQs = rawQs.map(q => ({ ...q, stats: statsDict[q.id] || null }));
                     loadedChaps.push({ ...subj.chapters[idx], questions: enrichedQs });
                 });
@@ -245,7 +310,14 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                 if (!pool) {
                     const snap = await window.db.collection('publicQlib_questions').get();
                     pool = {};
-                    snap.forEach(d => { pool[d.id] = d.data().questions || []; });
+                    snap.forEach(d => { 
+                        const data = d.data();
+                        if (data.questionsJZ && window.safeDecompress) {
+                            try { pool[d.id] = JSON.parse(window.safeDecompress(data.questionsJZ, 'string')); } catch(e) { pool[d.id] = []; }
+                        } else {
+                            pool[d.id] = data.questions || []; 
+                        }
+                    });
                     setCachedAllPublicQuestions(pool);
                 }
 
@@ -335,6 +407,106 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
         saveToDb(newSubjects, isPublic);
     };
 
+    // ✨ 標籤批次刪除
+    const handleBatchDeleteTag = () => {
+        if (!filterTag) return showAlert("請先在上方選擇一個要刪除的標籤！");
+        showConfirm(`確定要刪除「${activeChapter?.name}」中，標籤為「${filterTag}」的所有題目嗎？此操作無法還原。`, () => {
+            const isPublic = activeMainTab === 'public';
+            const targetList = isPublic ? publicSubjects : subjects;
+            const targetSubjId = isPublic ? activeStoreSubjectId : activeSubjectId;
+            const targetChapId = isPublic ? activeStoreChapterId : activeChapterId;
+
+            const newSubjects = (targetList || []).map(s => {
+                if (s.id === targetSubjId) {
+                    return { ...s, chapters: (s.chapters || []).map(c => c.id === targetChapId ? { ...c, questions: (c.questions || []).filter(q => q.tag !== filterTag) } : c) };
+                }
+                return s;
+            });
+            saveToDb(newSubjects, isPublic);
+            if (isPublic) {
+                const chaps = newSubjects.find(s=>s.id===targetSubjId)?.chapters || [];
+                setPublicSubjectData(prev => ({...prev, [targetSubjId]: chaps}));
+            }
+            setFilterTag('');
+            showAlert(`已成功刪除標籤為「${filterTag}」的所有題目！`);
+        });
+    };
+
+    // ✨ 標籤批次改名
+    const handleBatchRenameTag = () => {
+        if (!filterTag) return showAlert("請先在上方選擇一個要修改的標籤！");
+        showPrompt(`請輸入要把標籤「${filterTag}」改為什麼名稱？`, "", (newTag) => {
+            if (!newTag || !newTag.trim() || newTag.trim() === filterTag) return;
+            const finalTag = newTag.trim();
+            const isPublic = activeMainTab === 'public';
+            const targetList = isPublic ? publicSubjects : subjects;
+            const targetSubjId = isPublic ? activeStoreSubjectId : activeSubjectId;
+            const targetChapId = isPublic ? activeStoreChapterId : activeChapterId;
+
+            const newSubjects = (targetList || []).map(s => {
+                if (s.id === targetSubjId) {
+                    return { ...s, chapters: (s.chapters || []).map(c => c.id === targetChapId ? { ...c, questions: (c.questions || []).map(q => q.tag === filterTag ? { ...q, tag: finalTag } : q) } : c) };
+                }
+                return s;
+            });
+            saveToDb(newSubjects, isPublic);
+            if (isPublic) {
+                const chaps = newSubjects.find(s=>s.id===targetSubjId)?.chapters || [];
+                setPublicSubjectData(prev => ({...prev, [targetSubjId]: chaps}));
+            }
+            setFilterTag(finalTag);
+            showAlert(`已成功將標籤更新為「${finalTag}」！`);
+        });
+    };
+
+    // ✨ 章節改名
+    const handleRenameChapter = (subjId, chapId, oldName) => {
+        const isPublic = activeMainTab === 'public';
+        showPrompt(`重新命名章節「${oldName}」：`, oldName, (newName) => {
+            if (!newName || !newName.trim() || newName.trim() === oldName) return;
+            const targetList = isPublic ? publicSubjects : subjects;
+            const newSubjects = (targetList || []).map(s => {
+                if (s.id === subjId) {
+                    return { ...s, chapters: (s.chapters || []).map(c => c.id === chapId ? { ...c, name: newName.trim() } : c) };
+                }
+                return s;
+            });
+            saveToDb(newSubjects, isPublic);
+            if (isPublic && publicSubjectData[subjId]) {
+                const chaps = newSubjects.find(s=>s.id===subjId)?.chapters || [];
+                setPublicSubjectData(prev => ({...prev, [subjId]: chaps}));
+            }
+        });
+    };
+
+    // ✨ 管理員儲存配題組合
+    const handleSaveAdminPreset = () => {
+        if (!quizSelectedItems.length) return showAlert("請至少勾選一個配題項目！");
+        showPrompt("請為此公開配題組合命名：", "", async (name) => {
+            if (!name || !name.trim()) return;
+            const newPreset = {
+                id: Date.now().toString(), name: name.trim(), modeBy: quizDistributeMode,
+                allocations: quizAllocations, selectedItems: quizSelectedItems
+            };
+            const updatedPresets = [...publicQuizPresets, newPreset];
+            try {
+                await window.db.collection('publicQlib').doc('main').set({ quizPresets: updatedPresets }, { merge: true });
+                setPublicQuizPresets(updatedPresets);
+                showAlert("公開配題組合已儲存並發布給所有玩家！");
+            } catch (e) { showAlert("儲存失敗"); }
+        });
+    };
+
+    const handleDeleteAdminPreset = async (presetId) => {
+        showConfirm("確定要刪除此公開配題組合嗎？", async () => {
+            const updatedPresets = publicQuizPresets.filter(p => p.id !== presetId);
+            try {
+                await window.db.collection('publicQlib').doc('main').set({ quizPresets: updatedPresets }, { merge: true });
+                setPublicQuizPresets(updatedPresets);
+            } catch(e) {}
+        });
+    };
+
     const handleImport = () => {
         if (!importText.trim()) return showAlert("請輸入題目內容！");
         const blocks = importText.split(/\[Q\.\d+\]/i).filter(b => b.trim());
@@ -359,19 +531,52 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
 
         if (parsedQuestions.length === 0) return showAlert("解析失敗，請檢查格式。");
 
+        // ✨ 自動分塊機制：一個章節最多 800 題，不同章節使用不同文檔儲存
+        const CHUNK_SIZE = 800;
+
         const isPublic = activeMainTab === 'public';
         const targetList = isPublic ? publicSubjects : subjects;
         const targetSubjId = isPublic ? activeStoreSubjectId : activeSubjectId;
         const targetChapId = isPublic ? activeStoreChapterId : activeChapterId;
 
-        const newSubjects = (targetList || []).map(s => {
-            if (s.id === targetSubjId) {
-                return {
-                    ...s, chapters: (s.chapters || []).map(c => c.id === targetChapId ? { ...c, questions: [...(c.questions || []), ...parsedQuestions] } : c)
-                };
+        let newSubjects = [...(targetList || [])];
+        const subjIndex = newSubjects.findIndex(s => s.id === targetSubjId);
+
+        if (subjIndex !== -1) {
+            let targetSubj = { ...newSubjects[subjIndex] };
+            let newChapters = [...(targetSubj.chapters || [])];
+            let chapIndex = newChapters.findIndex(c => c.id === targetChapId);
+
+            if (chapIndex !== -1) {
+                let targetChap = { ...newChapters[chapIndex] };
+                let existingQuestions = targetChap.questions || [];
+                let allCombinedQuestions = [...existingQuestions, ...parsedQuestions];
+
+                if (allCombinedQuestions.length <= CHUNK_SIZE) {
+                    targetChap.questions = allCombinedQuestions;
+                    newChapters[chapIndex] = targetChap;
+                } else {
+                    // 第一包覆蓋原本的章節
+                    targetChap.questions = allCombinedQuestions.slice(0, CHUNK_SIZE);
+                    newChapters[chapIndex] = targetChap;
+
+                    // 超過的部分，自動建立新章節 (Part 2, Part 3...)
+                    let partCounter = 2;
+                    for (let i = CHUNK_SIZE; i < allCombinedQuestions.length; i += CHUNK_SIZE) {
+                        const chunk = allCombinedQuestions.slice(i, i + CHUNK_SIZE);
+                        const newChapId = Date.now().toString() + Math.random().toString(36).substr(2, 5) + i;
+                        newChapters.splice(chapIndex + partCounter - 1, 0, {
+                            id: newChapId,
+                            name: `${targetChap.name} (Part ${partCounter})`,
+                            questions: chunk
+                        });
+                        partCounter++;
+                    }
+                }
             }
-            return s;
-        });
+            targetSubj.chapters = newChapters;
+            newSubjects[subjIndex] = targetSubj;
+        }
 
         saveToDb(newSubjects, isPublic);
         // 如果是公開題庫剛匯入，即時更新一下本地快取預覽
@@ -380,7 +585,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
             setPublicSubjectData(prev => ({...prev, [targetSubjId]: chaps}));
         }
         setImportText('');
-        showAlert(`成功匯入 ${parsedQuestions.length} 題！`);
+        showAlert(`成功匯入 ${parsedQuestions.length} 題！(若超過 800 題已自動為您拆分章節)`);
     };
 
     const handleClearQuestions = () => {
@@ -474,7 +679,13 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                 const cleanQuestions = isPublishing.chap.questions.map(q => ({
                     ...q, id: Date.now().toString() + Math.random().toString(36).substr(2, 9)
                 }));
-                batch.set(qRef, { questions: cleanQuestions }, { merge: true });
+                
+                const qStr = JSON.stringify(cleanQuestions);
+                if (qStr.length > 500000 && window.jzCompress) {
+                    batch.set(qRef, { questionsJZ: window.jzCompress(qStr), questions: window.firebase.firestore.FieldValue.delete() }, { merge: true });
+                } else {
+                    batch.set(qRef, { questions: cleanQuestions, questionsJZ: window.firebase.firestore.FieldValue.delete() }, { merge: true });
+                }
                 
                 await batch.commit();
                 showAlert("✅ 成功推送到公開商城！");
@@ -570,110 +781,125 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
         return matchSearch && matchTag && matchDiff;
     });
 
+    const totalPages = Math.ceil(displayedQuestions.length / PAGE_SIZE);
+    const paginatedQuestions = displayedQuestions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
     // 產生測驗使用的變數設定
     let quizTargetSubject = null;
     let availableQuestionsForQuiz = [];
     
     if (activeMainTab === 'my') {
         quizTargetSubject = subjects.find(s => s.id === selectedQuizSubjectId) || subjects[0];
-        const targetChapters = quizTargetSubject ? (quizTargetSubject.chapters || []).filter(c => selectedQuizChapterIds.length === 0 || selectedQuizChapterIds.includes(c.id)) : [];
+        const targetChapters = quizTargetSubject ? (quizTargetSubject.chapters || []) : [];
         availableQuestionsForQuiz = targetChapters.flatMap(c => (c.questions || []).map(q => ({...q, chapterId: c.id, chapterName: c.name})));
     } else if (activeMainTab === 'public') {
         quizTargetSubject = publicSubjects.find(s => s.id === selectedQuizSubjectId) || publicSubjects[0];
         const cachedChaps = publicSubjectData[selectedQuizSubjectId] || [];
-        const targetChapters = cachedChaps.filter(c => selectedQuizChapterIds.length === 0 || selectedQuizChapterIds.includes(c.id));
-        availableQuestionsForQuiz = targetChapters.flatMap(c => (c.questions || []).map(q => ({...q, chapterId: c.id, chapterName: c.name})));
+        availableQuestionsForQuiz = cachedChaps.flatMap(c => (c.questions || []).map(q => ({...q, chapterId: c.id, chapterName: c.name})));
     }
 
-    const availableTags = [...new Set(availableQuestionsForQuiz.map(q => q.tag).filter(Boolean))];
-    const availableChapters = quizTargetSubject ? (quizTargetSubject.chapters || []) : [];
+    // 動態計算庫存題數
+    let basePoolForQuiz = availableQuestionsForQuiz;
+    if (skipUsed) basePoolForQuiz = basePoolForQuiz.filter(q => !q.usedCount || q.usedCount === 0);
 
-    useEffect(() => {
-        if (showQuizModal) {
-            setAdvAllocations({});
-            setSelectedTags(prev => prev.filter(t => availableTags.includes(t)));
+    const poolByChapter = {};
+    const poolByChapterAndTag = {};
+
+    basePoolForQuiz.forEach(q => {
+        if (!poolByChapter[q.chapterId]) poolByChapter[q.chapterId] = [];
+        poolByChapter[q.chapterId].push(q);
+        
+        if (q.tag) {
+            if (!poolByChapterAndTag[q.chapterId]) poolByChapterAndTag[q.chapterId] = {};
+            if (!poolByChapterAndTag[q.chapterId][q.tag]) poolByChapterAndTag[q.chapterId][q.tag] = [];
+            poolByChapterAndTag[q.chapterId][q.tag].push(q);
         }
-    }, [selectedQuizSubjectId, selectedQuizChapterIds, showQuizModal, advModeBy]);
+    });
+
+    let quizListItems = [];
+    if (quizDistributeMode === 'chapter') {
+        quizListItems = (quizTargetSubject?.chapters || []).map(c => ({
+            type: 'item', key: c.id, label: c.name, count: poolByChapter[c.id]?.length || 0
+        }));
+    } else {
+        (quizTargetSubject?.chapters || []).forEach(c => {
+            const tagsInChap = poolByChapterAndTag[c.id];
+            if (tagsInChap && Object.keys(tagsInChap).length > 0) {
+                // 插入章節標題
+                quizListItems.push({ type: 'header', key: `header_${c.id}`, label: c.name });
+                // 插入該章節底下的標籤
+                Object.keys(tagsInChap).sort((a,b) => tagsInChap[b].length - tagsInChap[a].length).forEach(t => {
+                    quizListItems.push({ type: 'item', key: `${c.id}::${t}`, label: t, count: tagsInChap[t].length });
+                });
+            }
+        });
+    }
+
+    const handleAutoDistribute = () => {
+        if (quizSelectedItems.length === 0) return showAlert("請先勾選要出題的項目！");
+        const total = parseInt(quickTotal) || 0;
+        if (total <= 0) return showAlert("請輸入有效總題數！");
+        
+        let remaining = total;
+        const newAllocations = { ...quizAllocations };
+        quizSelectedItems.forEach(k => newAllocations[k] = 0);
+        
+        let activeItems = [...quizSelectedItems];
+        while (remaining > 0 && activeItems.length > 0) {
+            const avg = Math.max(1, Math.floor(remaining / activeItems.length));
+            let distributedSomething = false;
+            
+            for (let i = activeItems.length - 1; i >= 0; i--) {
+                const key = activeItems[i];
+                const available = quizListItems.find(x => x.key === key)?.count || 0;
+                const current = newAllocations[key] || 0;
+                
+                if (current < available) {
+                    const toAdd = Math.min(avg, available - current, remaining);
+                    newAllocations[key] = current + toAdd;
+                    remaining -= toAdd;
+                    distributedSomething = true;
+                } else {
+                    activeItems.splice(i, 1);
+                }
+                if (remaining <= 0) break;
+            }
+            if (!distributedSomething) break;
+        }
+        
+        setQuizAllocations(newAllocations);
+        if (remaining > 0) showAlert(`庫存不足，已最大化分配 ${total - remaining} 題。`);
+    };
 
     const handleGenerateQuiz = async () => {
-        const finalBrushCount = parseInt(brushCount) || 0;
-        const finalAdvCount = parseInt(advTotalCount) || 0;
-
-        if (quizMode === 'brush' && finalBrushCount <= 0) return showAlert("數量需大於 0！");
-        if (quizMode === 'advanced' && advInputMode === 'count' && finalAdvCount <= 0) return showAlert("總題數需大於 0！");
+        const totalAllocated = quizSelectedItems.reduce((sum, key) => sum + (parseInt(quizAllocations[key]) || 0), 0);
+        if (totalAllocated <= 0) return showAlert("總出題數必須大於 0！請確認已分配題數。");
 
         setIsGeneratingQuiz(true);
         await new Promise(resolve => setTimeout(resolve, 50));
 
         try {
-            let basePool = availableQuestionsForQuiz;
-            if (skipUsed) basePool = basePool.filter(q => !q.usedCount || q.usedCount === 0);
-            if (maxUsedCount !== '') {
-                const limit = parseInt(maxUsedCount) || 0;
-                basePool = basePool.filter(q => (q.usedCount || 0) <= limit);
-            }
-
-            if (basePool.length === 0) {
-                showAlert("沒有足夠的題目符合條件！");
-                setIsGeneratingQuiz(false);
-                return;
-            }
-
             let pool = [];
-            if (quizMode === 'brush') {
-                let filteredPool = basePool.filter(q => selectedTags.length === 0 || selectedTags.includes(q.tag));
-                if (brushStrategy === 'even' && selectedTags.length > 0) {
-                    let evenPool = [];
-                    const countPerTag = Math.floor(finalBrushCount / selectedTags.length);
-                    selectedTags.forEach(t => {
-                        let tagPool = filteredPool.filter(q => q.tag === t).sort(() => 0.5 - Math.random());
-                        evenPool.push(...tagPool.slice(0, countPerTag));
-                    });
-                    if (evenPool.length < finalBrushCount && fallbackStrategy === 'random') {
-                        const diff = finalBrushCount - evenPool.length;
-                        const usedIds = new Set(evenPool.map(q=>q.id));
-                        const extras = filteredPool.filter(q => !usedIds.has(q.id)).sort(() => 0.5 - Math.random()).slice(0, diff);
-                        evenPool.push(...extras);
-                    }
-                    pool = evenPool.sort(() => 0.5 - Math.random());
-                } else {
-                    pool = filteredPool.sort(() => 0.5 - Math.random()).slice(0, finalBrushCount);
-                    if (pool.length < finalBrushCount && fallbackStrategy === 'random') {
-                        const diff = finalBrushCount - pool.length;
-                        const usedIds = new Set(pool.map(q => q.id));
-                        const extraPool = basePool.filter(q => !usedIds.has(q.id)).sort(() => 0.5 - Math.random()).slice(0, diff);
-                        pool = [...pool, ...extraPool];
-                    }
-                }
-            } else {
-                let finalSelection = [];
-                const allocKeys = Object.keys(advAllocations).filter(k => Number(advAllocations[k]) > 0);
-                const targetCounts = {};
-                
-                if (advInputMode === 'percent') {
-                    const totalPct = allocKeys.reduce((sum, k) => sum + Number(advAllocations[k]), 0);
-                    if (totalPct === 0) { showAlert("請設定比例大於 0"); setIsGeneratingQuiz(false); return; }
-                    allocKeys.forEach(k => { targetCounts[k] = Math.round((finalAdvCount * Number(advAllocations[k])) / totalPct); });
-                } else {
-                    allocKeys.forEach(k => { targetCounts[k] = Number(advAllocations[k]); });
-                }
+            let finalSelection = [];
 
-                allocKeys.forEach(k => {
-                    let needed = targetCounts[k];
-                    if (needed <= 0) return;
-                    let groupPool = basePool.filter(q => advModeBy === 'tag' ? q.tag === k : q.chapterId === k).sort(() => 0.5 - Math.random());
-                    let selected = groupPool.slice(0, needed);
-                    finalSelection.push(...selected);
-                    
-                    if (selected.length < needed && fallbackStrategy === 'random') {
-                        const diff = needed - selected.length;
-                        const usedIds = new Set(finalSelection.map(q=>q.id));
-                        const extras = basePool.filter(q => !usedIds.has(q.id)).sort(() => 0.5 - Math.random()).slice(0, diff);
-                        finalSelection.push(...extras);
+            quizSelectedItems.forEach(key => {
+                let needed = parseInt(quizAllocations[key]) || 0;
+                if (needed <= 0) return;
+
+                let groupPool = basePoolForQuiz.filter(q => {
+                    if (quizDistributeMode === 'tag') {
+                        // 標籤模式下的 key 格式為 "章節ID::標籤名稱"
+                        const [cId, tName] = key.split('::');
+                        return q.chapterId === cId && q.tag === tName;
                     }
-                });
-                pool = finalSelection.sort(() => 0.5 - Math.random());
-            }
+                    return q.chapterId === key;
+                }).sort(() => 0.5 - Math.random());
+                
+                let selected = groupPool.slice(0, needed);
+                finalSelection.push(...selected);
+            });
+
+            pool = finalSelection.sort(() => 0.5 - Math.random());
 
             if (pool.length === 0) {
                 showAlert("找不到符合條件的題目！");
@@ -715,14 +941,12 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
 
             const structuredQuestions = pool.map((q, idx) => ({
                 number: idx + 1, globalIndex: idx, type: 'Q', id: q.id, chapterId: q.chapterId, mainText: q.text,
-                options: q.options, ans: q.ans, explain: q.explain, tag: q.tag, difficulty: q.difficulty,
-                sourceIsPublic: activeMainTab === 'public'
+                options: q.options, ans: q.ans, explain: q.explain, tag: q.tag, difficulty: q.difficulty
             }));
 
             const correctAnswersStr = pool.map(q => q.ans || 'A').join(',');
             const quizId = Date.now().toString();
-            const fallbackName = quizMode === 'brush' ? `題庫刷題 (${pool.length}題)` : `進階配題 (${pool.length}題)`;
-            const finalTestName = quizNameInput.trim() !== '' ? quizNameInput.trim() : fallbackName;
+            const finalTestName = quizNameInput.trim() !== '' ? quizNameInput.trim() : `題庫測驗 (${pool.length}題)`;
 
             const quizData = {
                 id: quizId, testName: finalTestName, folder: '我的題庫', numQuestions: pool.length,
@@ -796,7 +1020,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                     </div>
                                     {activeSubjectId === subj.id && (
                                         <div className="p-2 space-y-1 bg-stone-50 dark:bg-stone-800/30 border-t border-stone-200 dark:border-stone-700">
-                                            <button onClick={(e) => { e.stopPropagation(); setSelectedQuizSubjectId(subj.id); setSelectedQuizChapterIds(subj.chapters.map(c => c.id)); setQuizNameInput(''); setShowQuizModal(true); }} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 rounded-lg shadow-sm flex justify-center items-center gap-1 transition-transform active:scale-95 mb-2 text-xs">
+                                            <button onClick={(e) => { e.stopPropagation(); setSelectedQuizSubjectId(subj.id); setQuizDistributeMode('chapter'); setQuizSelectedItems(subj.chapters.map(c => c.id)); setQuizAllocations({}); setQuizNameInput(''); setShowQuizModal(true); }} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 rounded-lg shadow-sm flex justify-center items-center gap-1 transition-transform active:scale-95 mb-2 text-xs">
                                                 <span className="material-symbols-outlined text-[16px]">quiz</span> 從此科目出題
                                             </button>
                                             {(subj.chapters || []).length === 0 && <div className="text-xs text-gray-400 px-2 py-1">無章節</div>}
@@ -808,6 +1032,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" style={{ opacity: activeChapterId === chap.id ? 1 : undefined }}>
                                                        <button onClick={(e) => { e.stopPropagation(); handleMoveChapter(subj.id, chapIdx, 'up'); }} className="text-gray-400 hover:text-cyan-600" title="上移章節"><span className="material-symbols-outlined text-[14px]">arrow_upward</span></button>
                                                         <button onClick={(e) => { e.stopPropagation(); handleMoveChapter(subj.id, chapIdx, 'down'); }} className="text-gray-400 hover:text-cyan-600" title="下移章節"><span className="material-symbols-outlined text-[14px]">arrow_downward</span></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleRenameChapter(subj.id, chap.id, chap.name); }} className="text-gray-400 hover:text-amber-500" title="重新命名"><span className="material-symbols-outlined text-[14px]">edit</span></button>
                                                         {user?.email === 'jay03wn@gmail.com' && (
                                                             <button onClick={(e) => { e.stopPropagation(); setIsPublishing({ subjId: subj.id, chap: chap }); }} className="text-gray-400 hover:text-emerald-500" title="發布至公開題庫"><span className="material-symbols-outlined text-[14px]">public</span></button>
                                                         )}
@@ -849,7 +1074,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                         </div>
                                     )}
 
-                                    <button onClick={(e) => { e.stopPropagation(); setSelectedQuizSubjectId(activeStoreSubjectId); setSelectedQuizChapterIds([]); setQuizNameInput(''); setShowQuizModal(true); }} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 rounded-lg shadow-sm flex justify-center items-center gap-1 transition-transform active:scale-95 mb-4 text-xs">
+                                    <button onClick={(e) => { e.stopPropagation(); setSelectedQuizSubjectId(activeStoreSubjectId); setQuizDistributeMode('chapter'); setQuizSelectedItems((publicSubjectData[activeStoreSubjectId] || []).map(c=>c.id)); setQuizAllocations({}); setQuizNameInput(''); setShowQuizModal(true); }} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 rounded-lg shadow-sm flex justify-center items-center gap-1 transition-transform active:scale-95 mb-4 text-xs">
                                         <span className="material-symbols-outlined text-[16px]">quiz</span> 從此商品出題
                                     </button>
                                     <div className="space-y-1">
@@ -861,9 +1086,10 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                                 </button>
                                                 {user?.email === 'jay03wn@gmail.com' && (
                                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                                        <button onClick={(e) => { e.stopPropagation(); handleMoveChapter(activeStoreSubjectId, chapIdx, 'up'); }} className="text-gray-400 hover:text-cyan-600"><span className="material-symbols-outlined text-[14px]">arrow_upward</span></button>
-                                                        <button onClick={(e) => { e.stopPropagation(); handleMoveChapter(activeStoreSubjectId, chapIdx, 'down'); }} className="text-gray-400 hover:text-cyan-600"><span className="material-symbols-outlined text-[14px]">arrow_downward</span></button>
-                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteChapter(activeStoreSubjectId, chap.id); }} className="text-gray-400 hover:text-red-500"><span className="material-symbols-outlined text-[14px]">close</span></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleMoveChapter(activeStoreSubjectId, chapIdx, 'up'); }} className="text-gray-400 hover:text-cyan-600" title="上移章節"><span className="material-symbols-outlined text-[14px]">arrow_upward</span></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleMoveChapter(activeStoreSubjectId, chapIdx, 'down'); }} className="text-gray-400 hover:text-cyan-600" title="下移章節"><span className="material-symbols-outlined text-[14px]">arrow_downward</span></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleRenameChapter(activeStoreSubjectId, chap.id, chap.name); }} className="text-gray-400 hover:text-amber-500" title="重新命名"><span className="material-symbols-outlined text-[14px]">edit</span></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteChapter(activeStoreSubjectId, chap.id); }} className="text-gray-400 hover:text-red-500" title="刪除章節"><span className="material-symbols-outlined text-[14px]">close</span></button>
                                                     </div>
                                                 )}
                                             </div>
@@ -923,12 +1149,25 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
             {/* 右側主畫面 */}
             <div className="flex-1 flex flex-col overflow-hidden bg-[#FCFBF7] dark:bg-stone-900 relative">
                 
-                {/* 阻擋器：全域載入狀態 */}
-                {(isLoadingPublicData || isUploadingCover) && (
-                    <div className="absolute inset-0 z-50 bg-[#FCFBF7]/60 dark:bg-stone-900/60 backdrop-blur-[2px] flex items-center justify-center">
-                        <div className="bg-white dark:bg-stone-800 p-6 rounded-2xl shadow-xl border border-stone-200 dark:border-stone-700 flex flex-col items-center">
-                            <span className="material-symbols-outlined text-[40px] text-amber-500 animate-spin mb-2">autorenew</span>
-                            <span className="font-bold text-stone-700 dark:text-stone-200">{isUploadingCover ? '圖片上傳中...' : '資料載入中...'}</span>
+                {/* ✨ 阻擋器：全域載入與初始化動畫 */}
+                {(isInitializing || isLoadingPublicData || isUploadingCover) && (
+                    <div className="absolute inset-0 z-[100] bg-[#FCFBF7]/80 dark:bg-stone-900/80 backdrop-blur-sm flex items-center justify-center transition-all duration-300">
+                        <div className="bg-white dark:bg-stone-800 p-8 rounded-3xl shadow-2xl border border-stone-200 dark:border-stone-700 flex flex-col items-center max-w-sm w-[90%] text-center transform transition-all">
+                            <div className="relative mb-6 mt-2">
+                                <div className="w-20 h-20 border-4 border-amber-200 dark:border-amber-900/50 rounded-full animate-ping absolute inset-0 opacity-50"></div>
+                                <div className="w-20 h-20 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center relative z-10 shadow-inner">
+                                    <span className="material-symbols-outlined text-[40px] text-amber-500 animate-bounce">auto_stories</span>
+                                </div>
+                            </div>
+                            <h2 className="text-xl font-black text-stone-800 dark:text-stone-100 mb-2">
+                                {isInitializing ? '正在準備您的專屬題庫...' : (isUploadingCover ? '圖片上傳中...' : '資料載入中...')}
+                            </h2>
+                            <p className="text-sm font-bold text-gray-500 dark:text-gray-400">
+                                {isInitializing ? '初次載入可能需要幾秒鐘，請稍候' : '即將完成，請稍候'}
+                            </p>
+                            <div className="w-full h-1.5 bg-stone-100 dark:bg-stone-700 rounded-full mt-6 overflow-hidden relative">
+                                <div className="h-full bg-amber-500 rounded-full w-full animate-pulse"></div>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -952,7 +1191,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                     </div>
                                     <div className="flex items-center gap-2">
                                         {(activeChapter.questions || []).length > 0 && (
-                                            <button onClick={() => { setSelectedQuizSubjectId(activeSubject?.id); setSelectedQuizChapterIds([activeChapter.id]); setQuizNameInput(''); setShowQuizModal(true); }} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-sm px-4 py-1.5 rounded-lg shadow-sm flex items-center gap-1 transition-transform active:scale-95">
+                                            <button onClick={() => { setSelectedQuizSubjectId(activeSubject?.id); setQuizDistributeMode('chapter'); setQuizSelectedItems([activeChapter.id]); setQuizAllocations({}); setQuizNameInput(''); setShowQuizModal(true); }} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-sm px-4 py-1.5 rounded-lg shadow-sm flex items-center gap-1 transition-transform active:scale-95">
                                                 <span className="material-symbols-outlined text-[16px]">quiz</span> 從此章節出題
                                             </button>
                                         )}
@@ -973,6 +1212,12 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                         <option value="">所有標籤</option>
                                         {chapterTags.map(t => <option key={t} value={t}>{t}</option>)}
                                     </select>
+                                    {(activeMainTab === 'my' || user?.email === 'jay03wn@gmail.com') && filterTag && (
+                                        <div className="flex gap-1 items-center">
+                                            <button onClick={handleBatchRenameTag} className="px-2 py-1.5 bg-cyan-100 text-cyan-700 hover:bg-cyan-200 rounded-lg text-xs font-bold border border-cyan-200 transition-colors shadow-sm" title="批次改名此標籤">改名</button>
+                                            <button onClick={handleBatchDeleteTag} className="px-2 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-xs font-bold border border-red-200 transition-colors shadow-sm" title="刪除此標籤所有題目">刪除</button>
+                                        </div>
+                                    )}
                                     <select value={filterDiff} onChange={e => setFilterDiff(e.target.value)} className="w-32 px-2 py-1.5 bg-stone-50 dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none text-sm dark:text-white font-bold cursor-pointer">
                                         <option value="">所有難度</option>
                                         {chapterDiffs.map(d => <option key={d} value={d}>難度: {d}</option>)}
@@ -992,20 +1237,17 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                 )}
 
                                 <div className="space-y-4">
-                                   {displayedQuestions.length === 0 ? (
+                                   {paginatedQuestions.length === 0 ? (
                                         <div className="text-center py-10 text-gray-400 font-bold border-2 border-dashed border-stone-200 dark:border-stone-700 rounded-xl">找不到符合條件的題目</div>
-                                    ) : displayedQuestions.map((q, idx) => (
+                                    ) : paginatedQuestions.map((q, idx) => (
                                         <div key={q.id} className="bg-white dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 p-4 shadow-sm relative group">
-                                            <div className="font-black text-stone-400 text-xs mb-2">題號: {idx + 1}</div>
-                                            <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                                <button onClick={(e) => { e.stopPropagation(); setShareQModal({ q, chapId: activeChapter?.id || activeStoreChapterId }); }} className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-stone-700 text-gray-600 dark:text-gray-300 rounded-full hover:bg-indigo-100 hover:text-indigo-600 transition-colors" title="分享單題"><span className="material-symbols-outlined text-[18px]">share</span></button>
-                                                {(activeMainTab === 'my' || user?.email === 'jay03wn@gmail.com') && (
-                                                    <>
-                                                        <button onClick={() => setEditingQuestion(q)} className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-stone-700 text-gray-600 dark:text-gray-300 rounded-full hover:bg-amber-100 hover:text-amber-600 transition-colors" title="編輯"><span className="material-symbols-outlined text-[18px]">edit</span></button>
-                                                        <button onClick={() => handleDeleteQuestion(q.id)} className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-stone-700 text-gray-600 dark:text-gray-300 rounded-full hover:bg-red-100 hover:text-red-600 transition-colors" title="刪除"><span className="material-symbols-outlined text-[18px]">delete</span></button>
-                                                    </>
-                                                )}
-                                            </div>
+                                            <div className="font-black text-stone-400 text-xs mb-2">題號: {(currentPage - 1) * PAGE_SIZE + idx + 1}</div>
+                                            {(activeMainTab === 'my' || user?.email === 'jay03wn@gmail.com') && (
+                                                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                                    <button onClick={() => setEditingQuestion(q)} className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-stone-700 text-gray-600 dark:text-gray-300 rounded-full hover:bg-amber-100 hover:text-amber-600 transition-colors" title="編輯"><span className="material-symbols-outlined text-[18px]">edit</span></button>
+                                                    <button onClick={() => handleDeleteQuestion(q.id)} className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-stone-700 text-gray-600 dark:text-gray-300 rounded-full hover:bg-red-100 hover:text-red-600 transition-colors" title="刪除"><span className="material-symbols-outlined text-[18px]">delete</span></button>
+                                                </div>
+                                            )}
                                             <div className="flex flex-wrap gap-2 mb-3 pr-20">
                                                 <span className="text-xs font-black bg-stone-800 text-white dark:bg-stone-100 dark:text-stone-800 px-2 py-0.5 rounded">第 {q._localNum} 題</span>
                                                 {q.tag && <span className="text-xs font-bold bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-200 dark:border-cyan-800 flex items-center gap-1"><span className="material-symbols-outlined text-[12px]">sell</span>{q.tag}</span>}
@@ -1035,6 +1277,13 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                         </div>
                                     ))}
                                 </div>
+                                {totalPages > 1 && (
+                                    <div className="flex justify-center items-center gap-2 mt-6">
+                                        <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 rounded-lg text-sm font-bold text-stone-600 dark:text-stone-300 disabled:opacity-50">上一頁</button>
+                                        <span className="text-sm font-bold text-stone-600 dark:text-stone-300">第 {currentPage} / {totalPages} 頁</span>
+                                        <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 rounded-lg text-sm font-bold text-stone-600 dark:text-stone-300 disabled:opacity-50">下一頁</button>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </>
@@ -1121,7 +1370,7 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                                         </p>
                                         
                                         <div className="flex flex-wrap gap-3">
-                                            <button onClick={() => { setSelectedQuizSubjectId(activeStoreSubjectId); setSelectedQuizChapterIds([]); setQuizNameInput(''); setShowQuizModal(true); }} className="bg-amber-500 hover:bg-amber-600 text-white font-black px-8 py-3 rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-2 text-lg">
+                                            <button onClick={() => { setSelectedQuizSubjectId(activeStoreSubjectId); setQuizDistributeMode('chapter'); setQuizSelectedItems((publicSubjectData[activeStoreSubjectId] || []).map(c=>c.id)); setQuizAllocations({}); setQuizNameInput(''); setShowQuizModal(true); }} className="bg-amber-500 hover:bg-amber-600 text-white font-black px-8 py-3 rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-2 text-lg">
                                                 <span className="material-symbols-outlined">rocket_launch</span> 立即開始測驗
                                             </button>
                                             <button onClick={() => setActiveStoreSubjectId(null)} className="bg-stone-100 hover:bg-stone-200 dark:bg-stone-700 dark:hover:bg-stone-600 text-stone-700 dark:text-stone-200 font-bold px-6 py-3 rounded-xl transition-colors border border-stone-200 dark:border-stone-600">
@@ -1329,133 +1578,130 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
 
             {showQuizModal && (
                 <div className="fixed inset-0 z-[150] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-700 p-6 flex flex-col">
-                        <div className="flex justify-between items-center mb-4 border-b border-stone-200 dark:border-stone-700 pb-3">
-                            <h3 className="text-xl font-black text-stone-800 dark:text-stone-100 flex items-center gap-2"><span className="material-symbols-outlined">quiz</span> 產生測驗</h3>
-                            <button onClick={() => setShowQuizModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><span className="material-symbols-outlined">close</span></button>
-                        </div>
-
-                        <div className="mb-4">
-                            <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1.5">測驗名稱 (選填)</label>
-                            <input type="text" value={quizNameInput} onChange={e => setQuizNameInput(e.target.value)} placeholder="留空將自動為您命名" className="w-full p-2.5 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white focus:border-cyan-500 transition-colors" />
-                        </div>
-
-                        {quizTargetSubject && (
-                            <div className="mb-6">
-                                <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1.5">選擇出題章節 (可多選)</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {quizTargetSubject.chapters.length === 0 && <span className="text-sm text-gray-500">此科目尚無章節</span>}
-                                    {quizTargetSubject.chapters.map(c => {
-                                        const isActive = selectedQuizChapterIds.includes(c.id);
-                                        return (
-                                            <button key={c.id} onClick={() => setSelectedQuizChapterIds(prev => isActive ? prev.filter(x => x !== c.id) : [...prev, c.id])} className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${isActive ? 'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-800 shadow-sm' : 'bg-white text-stone-500 border-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:border-stone-600 hover:bg-stone-50 dark:hover:bg-stone-700'}`}>
-                                                {c.name}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
+                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-700 relative overflow-hidden">
                         
-                        <div className="flex flex-wrap gap-4 mb-4 border-t border-stone-200 dark:border-stone-700 pt-4 px-1">
-                            <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-stone-700 dark:text-stone-300">
-                                <input type="checkbox" checked={skipUsed} onChange={e => setSkipUsed(e.target.checked)} className="w-4 h-4 accent-amber-500" /> 略過已出過
-                            </label>
-                            <label className="flex items-center gap-2 text-sm font-bold text-stone-700 dark:text-stone-300">
-                                過濾條件：<input type="number" min="0" placeholder="不限" value={maxUsedCount} onChange={e => setMaxUsedCount(e.target.value)} className="w-16 p-1 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded outline-none font-bold dark:text-white" /> 次以下
-                            </label>
+                        <div className="p-6 pb-4 border-b border-stone-200 dark:border-stone-700 shrink-0">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xl font-black text-stone-800 dark:text-stone-100 flex items-center gap-2"><span className="material-symbols-outlined">quiz</span> 產生測驗</h3>
+                                <button onClick={() => setShowQuizModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><span className="material-symbols-outlined">close</span></button>
+                            </div>
+                            <div className="mb-4">
+                                <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1.5">測驗名稱 (選填)</label>
+                                <input type="text" value={quizNameInput} onChange={e => setQuizNameInput(e.target.value)} placeholder="留空將自動為您命名" className="w-full p-2.5 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white focus:border-cyan-500 transition-colors" />
+                            </div>
+                            
+                            <div className="flex gap-2">
+                                <button onClick={() => { setQuizDistributeMode('chapter'); setQuizSelectedItems([]); setQuizAllocations({}); }} className={`flex-1 py-2 font-bold rounded-lg border transition-colors flex items-center justify-center gap-2 ${quizDistributeMode === 'chapter' ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-stone-100 text-stone-600 dark:bg-stone-700 dark:text-stone-300 border-transparent hover:bg-stone-200 dark:hover:bg-stone-600'}`}>
+                                    <span className="material-symbols-outlined text-[18px]">format_list_bulleted</span> 依章節配題
+                                </button>
+                                <button onClick={() => { setQuizDistributeMode('tag'); setQuizSelectedItems([]); setQuizAllocations({}); }} className={`flex-1 py-2 font-bold rounded-lg border transition-colors flex items-center justify-center gap-2 ${quizDistributeMode === 'tag' ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-stone-100 text-stone-600 dark:bg-stone-700 dark:text-stone-300 border-transparent hover:bg-stone-200 dark:hover:bg-stone-600'}`}>
+                                    <span className="material-symbols-outlined text-[18px]">sell</span> 依標籤配題
+                                </button>
+                            </div>
                         </div>
 
-                        <div className="flex gap-2 mb-4">
-                            <button onClick={() => setQuizMode('brush')} className={`flex-1 py-2 font-bold rounded-lg border transition-colors ${quizMode === 'brush' ? 'bg-cyan-500 text-white border-cyan-600 shadow-sm' : 'bg-stone-100 text-stone-600 dark:bg-stone-700 dark:text-stone-300 border-transparent hover:bg-stone-200 dark:hover:bg-stone-600'}`}>快速刷題</button>
-                            <button onClick={() => setQuizMode('advanced')} className={`flex-1 py-2 font-bold rounded-lg border transition-colors ${quizMode === 'advanced' ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-stone-100 text-stone-600 dark:bg-stone-700 dark:text-stone-300 border-transparent hover:bg-stone-200 dark:hover:bg-stone-600'}`}>進階配題</button>
-                        </div>
-
-                        {quizMode === 'brush' && (
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-1.5">3. 選擇標籤 (可勾選，全不選視為全範圍)</label>
-                                    <div className="flex flex-col gap-2 max-h-32 overflow-y-auto bg-white dark:bg-stone-900 p-2 border border-stone-300 dark:border-stone-600 rounded-lg custom-scrollbar">
-                                        {availableTags.length === 0 && <span className="text-sm text-gray-500 font-bold px-2 py-1">無可用標籤</span>}
-                                        {availableTags.map(t => (
-                                            <label key={t} className="flex items-center gap-2 cursor-pointer hover:bg-stone-50 dark:hover:bg-stone-800 p-1 rounded transition-colors">
-                                                <input type="checkbox" checked={selectedTags.includes(t)} onChange={() => setSelectedTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])} className="w-4 h-4 accent-amber-500" />
-                                                <span className="text-sm font-bold dark:text-stone-300">{t}</span>
-                                            </label>
+                        <div className="flex-1 overflow-y-auto p-6 bg-stone-50 dark:bg-stone-900/50 flex flex-col custom-scrollbar">
+                            
+                            {publicQuizPresets.length > 0 && (
+                                <div className="mb-4 bg-white dark:bg-stone-800 p-3 rounded-xl border border-amber-200 dark:border-amber-900/50 shadow-sm">
+                                    <label className="block text-xs font-bold text-amber-600 dark:text-amber-400 mb-2">💡 官方推薦組合 (一鍵套用)</label>
+                                    <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                                        {publicQuizPresets.map(preset => (
+                                            <div key={preset.id} className="flex items-center gap-1 shrink-0 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-full pl-3 pr-1 py-1 shadow-sm">
+                                                <button onClick={() => {
+                                                    setQuizDistributeMode(preset.modeBy || 'chapter');
+                                                    setQuizSelectedItems(preset.selectedItems || Object.keys(preset.allocations));
+                                                    setQuizAllocations(preset.allocations);
+                                                }} className="text-xs font-bold text-amber-800 dark:text-amber-300 hover:text-amber-600 transition-colors">{preset.name}</button>
+                                                {user?.email === 'jay03wn@gmail.com' && (
+                                                    <button onClick={() => handleDeleteAdminPreset(preset.id)} className="text-amber-400 hover:text-red-500 rounded-full p-0.5 transition-colors flex items-center justify-center"><span className="material-symbols-outlined text-[14px]">cancel</span></button>
+                                                )}
+                                            </div>
                                         ))}
                                     </div>
                                 </div>
-                                <div className="flex gap-4">
-                                    <div className="flex-1">
-                                        <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">配題方式</label>
-                                        <select value={brushStrategy} onChange={e => setBrushStrategy(e.target.value)} className="w-full p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white">
-                                            <option value="random">完全隨機</option>
-                                            <option value="even">平均分配各標籤</option>
-                                        </select>
-                                    </div>
-                                    <div className="flex-1">
-                                        <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">4. 抽題數量</label>
-                                        <input type="number" min="1" value={brushCount} onChange={e => setBrushCount(e.target.value)} className="w-full p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white" />
-                                    </div>
+                            )}
+
+                            <div className="flex flex-col md:flex-row justify-between md:items-center gap-3 mb-4 bg-white dark:bg-stone-800 p-3 rounded-xl border border-stone-200 dark:border-stone-700 shadow-sm">
+                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-stone-700 dark:text-stone-300 shrink-0">
+                                    <input type="checkbox" checked={skipUsed} onChange={e => setSkipUsed(e.target.checked)} className="w-5 h-5 accent-amber-500" /> 優先出未作答過的題目
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-stone-500 dark:text-stone-400">批次分配:</span>
+                                    <input type="text" inputMode="numeric" pattern="\d*" value={quickTotal} onChange={e => setQuickTotal(e.target.value.replace(/\D/g, ''))} className="w-16 p-1.5 bg-stone-100 dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded outline-none text-sm font-black text-center dark:text-white focus:border-amber-500" />
+                                    <button onClick={handleAutoDistribute} className="text-xs font-bold bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/40 dark:text-cyan-300 px-3 py-1.5 rounded-lg transition-colors shadow-sm whitespace-nowrap">快速均分</button>
                                 </div>
                             </div>
-                        )}
 
-                        {quizMode === 'advanced' && (
-                            <div className="space-y-4">
+                            <div className="flex justify-between items-end mb-2">
+                                <span className="text-sm font-black text-stone-700 dark:text-stone-300">勾選並填寫所需題數</span>
                                 <div className="flex gap-2">
-                                    <select value={advModeBy} onChange={e => { setAdvModeBy(e.target.value); setAdvAllocations({}); }} className="p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold text-sm flex-1 dark:text-white focus:border-amber-500">
-                                        <option value="tag">按「標籤」分配</option><option value="chapter">按「章節」分配</option>
-                                    </select>
-                                    <select value={advInputMode} onChange={e => { setAdvInputMode(e.target.value); setAdvAllocations({}); }} className="p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold text-sm flex-1 dark:text-white focus:border-amber-500">
-                                        <option value="count">輸入「指定題數」</option><option value="percent">輸入「佔比%」</option>
-                                    </select>
-                                </div>
-                                {advInputMode === 'percent' && (
-                                    <div><label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">試卷總題數</label><input type="number" min="1" value={advTotalCount} onChange={e => setAdvTotalCount(e.target.value)} className="w-full p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none font-bold dark:text-white" /></div>
-                                )}
-                                <div className="border-t border-stone-200 dark:border-stone-700 pt-3">
-                                    <label className="block text-sm font-bold text-stone-700 dark:text-stone-300 mb-2">各項目分配設定</label>
-                                    {(() => {
-                                        const list = advModeBy === 'tag' ? availableTags : availableChapters.map(c => c.id);
-                                        if (list.length === 0) return <span className="text-sm text-gray-500">無可用項目</span>;
-                                        return list.map(item => {
-                                            const key = advModeBy === 'tag' ? item : item;
-                                            const label = advModeBy === 'tag' ? item : availableChapters.find(c => c.id === item)?.name;
-                                            const poolLen = availableQuestionsForQuiz.filter(q => {
-                                                const match = advModeBy === 'tag' ? q.tag === key : q.chapterId === key;
-                                                return match && (!skipUsed || !q.usedCount) && (maxUsedCount === '' || (q.usedCount || 0) <= parseInt(maxUsedCount));
-                                            }).length;
-                                            return (
-                                                <div key={key} className="flex items-center justify-between gap-3 mb-2 bg-stone-50 dark:bg-stone-900 p-2 rounded-lg border border-stone-100 dark:border-stone-700">
-                                                    <div className="flex flex-col w-1/2">
-                                                        <span className="text-sm font-bold truncate dark:text-stone-300">{label}</span>
-                                                        <span className="text-[10px] text-gray-500 font-bold">可用: {poolLen} 題</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-1 w-1/2">
-                                                        <input type="number" min="0" placeholder="0" value={advAllocations[key] || ''} onChange={e => setAdvAllocations({...advAllocations, [key]: parseInt(e.target.value) || 0})} className="w-full p-1.5 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 rounded outline-none text-sm font-bold text-center dark:text-white" />
-                                                        <span className="text-xs text-gray-500 font-bold">{advInputMode === 'count' ? '題' : '%'}</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        });
-                                    })()}
+                                    <button onClick={() => setQuizSelectedItems(quizListItems.filter(x => x.type === 'item').map(x=>x.key))} className="text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-1 rounded transition-colors">全選</button>
+                                    <button onClick={() => setQuizSelectedItems([])} className="text-xs font-bold bg-stone-200 text-stone-700 hover:bg-stone-300 dark:bg-stone-700 dark:text-stone-300 px-2 py-1 rounded transition-colors">全不選</button>
+                                    {user?.email === 'jay03wn@gmail.com' && (
+                                        <button onClick={handleSaveAdminPreset} className="text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-400 px-2 py-1 rounded transition-colors flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">save</span> 儲存組合</button>
+                                    )}
                                 </div>
                             </div>
-                        )}
 
-                        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-stone-200 dark:border-stone-700">
-                            <button disabled={isGeneratingQuiz} onClick={() => setShowQuizModal(false)} className="px-4 py-2 font-bold text-gray-500 hover:text-stone-800 dark:hover:text-stone-200 transition-colors disabled:opacity-50">取消</button>
-                            <button disabled={isGeneratingQuiz} onClick={handleGenerateQuiz} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 font-black px-6 py-2 rounded-lg shadow-sm transition-transform active:scale-95 flex items-center gap-1 disabled:opacity-50 disabled:active:scale-100">
-                                {isGeneratingQuiz ? (
-                                    <><span className="material-symbols-outlined text-[18px] animate-spin">autorenew</span> 產生中...</>
-                                ) : (
-                                    <><span className="material-symbols-outlined text-[18px]">play_arrow</span> 立即產生測驗</>
-                                )}
-                            </button>
+                            <div className="space-y-2">
+                                {quizListItems.length === 0 && <div className="text-center text-sm font-bold text-gray-400 py-6 border-2 border-dashed border-stone-200 dark:border-stone-700 rounded-xl">此分類下尚無可用題目</div>}
+                                {quizListItems.map(item => {
+                                    if (item.type === 'header') {
+                                        return (
+                                            <div key={item.key} className="mt-4 mb-2 flex items-center gap-2 px-1">
+                                                <span className="material-symbols-outlined text-[18px] text-stone-400">folder_open</span>
+                                                <span className="text-sm font-black text-stone-600 dark:text-stone-300">{item.label}</span>
+                                                <div className="flex-1 h-px bg-stone-200 dark:bg-stone-700 ml-2"></div>
+                                            </div>
+                                        );
+                                    }
+                                    
+                                    const isSelected = quizSelectedItems.includes(item.key);
+                                    return (
+                                        <div key={item.key} className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors shadow-sm ${isSelected ? 'bg-amber-50 border-amber-300 dark:bg-amber-900/20 dark:border-amber-700' : 'bg-white border-stone-200 dark:bg-stone-800 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-700'}`}>
+                                            <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
+                                                <input type="checkbox" checked={isSelected} onChange={() => {
+                                                    setQuizSelectedItems(prev => isSelected ? prev.filter(x => x !== item.key) : [...prev, item.key]);
+                                                    if (!isSelected && !quizAllocations[item.key]) {
+                                                        // 勾選時自動填入最大可用或預設10題
+                                                        setQuizAllocations(prev => ({...prev, [item.key]: Math.min(item.count, 10)}));
+                                                    }
+                                                }} className="w-5 h-5 accent-amber-500 shrink-0" />
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className={`text-sm font-bold truncate ${isSelected ? 'text-amber-900 dark:text-amber-100' : 'text-stone-700 dark:text-stone-300'}`} title={item.label}>{item.label}</span>
+                                                    <span className="text-[10px] font-black text-gray-500 mt-0.5 bg-stone-100 dark:bg-stone-700 px-1.5 py-0.5 rounded w-max">可用: {item.count} 題</span>
+                                                </div>
+                                            </label>
+                                            
+                                            <div className="flex items-center gap-1 shrink-0" style={{ opacity: isSelected ? 1 : 0.4, pointerEvents: isSelected ? 'auto' : 'none' }}>
+                                                <input type="text" inputMode="numeric" pattern="\d*" value={quizAllocations[item.key] || ''} onChange={e => setQuizAllocations({...quizAllocations, [item.key]: e.target.value.replace(/\D/g, '')})} className="w-16 p-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-lg outline-none text-sm font-black text-center dark:text-white focus:border-amber-500 transition-colors shadow-inner" placeholder="0" />
+                                                <span className="text-xs font-bold text-gray-500 w-4">題</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
+
+                        <div className="p-4 border-t border-stone-200 dark:border-stone-700 shrink-0 bg-white dark:bg-stone-800 flex justify-between items-center">
+                            <span className="font-black text-lg text-stone-800 dark:text-stone-100 bg-amber-100 dark:bg-amber-900/50 px-3 py-1 rounded-lg border border-amber-200 dark:border-amber-800">
+                                總計: {quizSelectedItems.reduce((sum, key) => sum + (parseInt(quizAllocations[key]) || 0), 0)} 題
+                            </span>
+                            <div className="flex gap-3">
+                                <button disabled={isGeneratingQuiz} onClick={() => setShowQuizModal(false)} className="px-4 py-2 font-bold text-gray-500 hover:text-stone-800 dark:hover:text-stone-200 transition-colors disabled:opacity-50">取消</button>
+                                <button disabled={isGeneratingQuiz} onClick={handleGenerateQuiz} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 font-black px-6 py-2 rounded-lg shadow-sm transition-transform active:scale-95 flex items-center gap-2 disabled:opacity-50 disabled:active:scale-100">
+                                    {isGeneratingQuiz ? (
+                                        <><span className="material-symbols-outlined text-[18px] animate-spin">autorenew</span> 產生中...</>
+                                    ) : (
+                                        <><span className="material-symbols-outlined text-[18px]">play_arrow</span> 產生測驗</>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+
                         {isGeneratingQuiz && (
-                            <div className="absolute inset-0 z-10 bg-[#FCFBF7]/70 dark:bg-stone-800/70 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center">
+                            <div className="absolute inset-0 z-10 bg-[#FCFBF7]/70 dark:bg-stone-800/70 backdrop-blur-sm flex flex-col items-center justify-center">
                                 <span className="material-symbols-outlined text-[48px] text-amber-500 animate-spin mb-3">autorenew</span>
                                 <span className="font-black text-stone-800 dark:text-stone-100 text-lg tracking-widest shadow-sm">正在為您調配題目...</span>
                             </div>
@@ -1479,53 +1725,6 @@ window.QlibDashboard = function QlibDashboard({ user, userProfile, showAlert, sh
                         <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-stone-200 dark:border-stone-700 shrink-0">
                             <button onClick={() => setEditingPrompt(null)} className="px-4 py-2 font-bold text-gray-500 hover:text-stone-800 dark:hover:text-stone-200 transition-colors">取消</button>
                             <button onClick={handleSavePrompt} className="bg-amber-500 hover:bg-amber-600 text-white font-black px-6 py-2 rounded-lg shadow-sm transition-transform active:scale-95 flex items-center gap-1"><span className="material-symbols-outlined text-[18px]">save</span> 儲存</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ✨ 分享單題 Modal */}
-            {shareQModal && (
-                <div className="fixed inset-0 z-[200] bg-stone-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-[#FCFBF7] dark:bg-stone-800 w-full max-w-md rounded-3xl shadow-2xl p-6 relative border border-stone-200 dark:border-stone-700">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xl font-black dark:text-white flex items-center gap-2"><span className="material-symbols-outlined text-indigo-500">share</span> 分享單題挑戰</h3>
-                            <button onClick={() => setShareQModal(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-stone-100 dark:bg-stone-700 w-8 h-8 rounded-full flex items-center justify-center transition-colors"><span className="material-symbols-outlined text-[18px]">close</span></button>
-                        </div>
-                        
-                        <div className="bg-indigo-50 dark:bg-stone-900 p-4 rounded-xl border border-indigo-100 dark:border-stone-700 mb-6 text-sm text-indigo-900 dark:text-indigo-300 font-bold line-clamp-3 shadow-inner">
-                            {shareQModal.q.text}
-                        </div>
-
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-xs font-black text-gray-500 mb-2">🔗 方式一：複製短網址 (傳給站外朋友)</label>
-                                <div className="flex gap-2">
-                                    <input readOnly value={`${window.location.origin}/?shareQ=${shareQModal.q.id}&chap=${shareQModal.chapId}`} className="flex-1 p-2.5 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 rounded-xl text-xs outline-none dark:text-white font-mono" />
-                                    <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/?shareQ=${shareQModal.q.id}&chap=${shareQModal.chapId}`); showAlert("短網址已複製成功！"); }} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-4 py-2 rounded-xl text-xs font-black shrink-0 transition-transform active:scale-95 shadow-sm">複製</button>
-                                </div>
-                            </div>
-
-                            <div className="border-t border-stone-200 dark:border-stone-700 pt-4">
-                                <label className="block text-xs font-black text-gray-500 mb-3">🤝 方式二：直接發送給站內好友 (信箱通知)</label>
-                                <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-2 pr-2">
-                                    {userProfile.friends && userProfile.friends.length > 0 ? userProfile.friends.map(friend => (
-                                        <div key={friend.uid} className="flex justify-between items-center bg-white dark:bg-stone-900 p-3 rounded-xl border border-stone-200 dark:border-stone-700 shadow-sm hover:border-indigo-300 transition-colors">
-                                            <span className="text-sm font-black dark:text-white text-stone-700">{friend.name}</span>
-                                            <button onClick={async () => {
-                                                const chatId = [user.uid, friend.uid].sort().join('_');
-                                                await window.db.collection('chats').doc(chatId).collection('messages').add({
-                                                    type: 'shared_question', qId: shareQModal.q.id, chapId: shareQModal.chapId, qText: shareQModal.q.text,
-                                                    senderId: user.uid, senderName: userProfile.displayName,
-                                                    timestamp: window.firebase.firestore.FieldValue.serverTimestamp(), read: false
-                                                });
-                                                window.db.collection('users').doc(friend.uid).set({ unreadChats: { [user.uid]: true } }, { merge: true });
-                                                showAlert(`成功將題目發送給 ${friend.name}！`);
-                                            }} className="bg-indigo-100 text-indigo-700 px-4 py-1.5 rounded-lg text-xs font-black hover:bg-indigo-200 transition-colors active:scale-95">發送</button>
-                                        </div>
-                                    )) : <div className="text-xs text-gray-400 font-bold text-center py-4 border-2 border-dashed border-stone-200 dark:border-stone-700 rounded-xl">您目前還沒有站內好友可以分享</div>}
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
