@@ -17,6 +17,13 @@ window.useQuizState = function(props) {
     const [latestContent, setLatestContent] = useState(null);
     
     const [quizId, setQuizId] = useState(initialRecord.id || null);
+    
+    // ✨ 新增：線上對戰/合作狀態
+    const [onlineRoomId, setOnlineRoomId] = useState(null); // 紀錄目前所在的房間 ID
+    const [onlineMode, setOnlineMode] = useState(null); // 'versus' (對戰) | 'coop' (合作)
+    const [onlineRole, setOnlineRole] = useState(null); // 'host' (房主) | 'guest' (訪客)
+    const [onlineBet, setOnlineBet] = useState(0); // 賭注數量
+
     // ✨ 修正：如果已經有成績 (results)，直接進入 results 畫面，避免出現未完成狀態
     const [step, setStep] = useState(initialRecord.forceStep || (initialRecord.id ? (initialRecord.results ? 'results' : 'answering') : 'setup'));
 
@@ -138,13 +145,13 @@ window.useQuizState = function(props) {
     const [globalStats, setGlobalStats] = useState({});
     
     useEffect(() => {
-        if (independentQuestions && independentQuestions.length > 0) {
-            const ids = independentQuestions.map(q => q.id).filter(Boolean);
-            if (ids.length === 0) return;
+        if (parsedInteractiveQuestions && parsedInteractiveQuestions.length > 0) {
+            const keys = parsedInteractiveQuestions.map(q => q.id || ((initialRecord.id || quizId) + '_' + q.number)).filter(Boolean);
+            if (keys.length === 0) return;
             const fetchStats = async () => {
                 const newStats = {};
-                for (let i = 0; i < ids.length; i += 10) {
-                    const chunk = ids.slice(i, i + 10);
+                for (let i = 0; i < keys.length; i += 10) {
+                    const chunk = keys.slice(i, i + 10);
                     const snap = await window.db.collection('publicQlib_stats').where(window.firebase.firestore.FieldPath.documentId(), 'in', chunk).get();
                     snap.forEach(doc => { newStats[doc.id] = doc.data(); });
                 }
@@ -152,7 +159,7 @@ window.useQuizState = function(props) {
             };
             fetchStats();
         }
-    }, [independentQuestions]);
+    }, [parsedInteractiveQuestions, initialRecord.id, quizId]);
     
     const [folder, setFolder] = useState(initialRecord.folder || '未分類');
     const [shortCode, setShortCode] = useState(initialRecord.shortCode || null);
@@ -511,13 +518,17 @@ window.useQuizState = function(props) {
 
                 try {
                     const serverDoc = await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(initialRecord.id).get();
+                    let hasQuestions = false;
                     if (serverDoc.exists && isMounted) {
                         const data = serverDoc.data();
                         const serverQText = safeDecompress(data.questionText, 'string');
                         const serverQHtml = safeDecompress(data.questionHtml, 'string');
                         const serverExp = safeDecompress(data.explanationHtml, 'string');
                         
-                        if (data.questions) setIndependentQuestions(data.questions);
+                        if (data.questions && data.questions.length > 0) {
+                            setIndependentQuestions(data.questions);
+                            hasQuestions = true;
+                        }
 
                         if (!localQHtml && !localQText) {
                             setQuestionText(serverQText);
@@ -533,9 +544,37 @@ window.useQuizState = function(props) {
                             });
                             setBackgroundUpdateReady(true); 
                         }
-                    } else if (isMounted) {
-                        setIsQuizLoading(false);
                     }
+                    
+                    // 分享試卷或公用任務牆題目防空校正 Fallback 機制
+                    if (!hasQuestions && isMounted && (initialRecord.isShared || initialRecord.isTask || initialRecord.shortCode)) {
+                        let sharedQuestions = null;
+                        if (initialRecord.id) {
+                            const taskDoc = await window.db.collection('publicTasks').doc(initialRecord.id).get();
+                            if (taskDoc.exists && taskDoc.data().questions) {
+                                sharedQuestions = taskDoc.data().questions;
+                            }
+                        }
+                        if (!sharedQuestions && initialRecord.shortCode) {
+                            const codeDoc = await window.db.collection('shareCodes').doc(initialRecord.shortCode).get();
+                            if (codeDoc.exists && codeDoc.data().contentData && codeDoc.data().contentData.questions) {
+                                sharedQuestions = codeDoc.data().contentData.questions;
+                            }
+                        }
+                        if (!sharedQuestions && initialRecord.creatorUid && initialRecord.creatorQuizId) {
+                            const origContentDoc = await window.db.collection('users').doc(initialRecord.creatorUid).collection('quizContents').doc(initialRecord.creatorQuizId).get();
+                            if (origContentDoc.exists && origContentDoc.data().questions) {
+                                sharedQuestions = origContentDoc.data().questions;
+                            }
+                        }
+                        if (sharedQuestions) {
+                            setIndependentQuestions(sharedQuestions);
+                            await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(initialRecord.id).set({
+                                questions: sharedQuestions
+                            }, { merge: true });
+                        }
+                    }
+                    setIsQuizLoading(false);
                 } catch (e) {
                     console.error("背景更新檢查失敗:", e);
                     if (isMounted) setIsQuizLoading(false); 
@@ -1146,14 +1185,16 @@ ${difficultyInstruction}
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 }).catch(e => console.error("新手教學同步失敗", e));
             } else if (taskType === 'official' || taskType === 'mock') {
-                window.db.collection('publicTasks').doc(docRef.id).set({
+                const taskDocData = {
                     testName: finalTestName, numQuestions, questionFileUrl: finalFileUrl,
                     correctAnswersInput: cleanKey,
                     hasTimer, timeLimit: hasTimer ? Number(timeLimit) : null, 
                     taskType, examYear, examSubject, examTag,
                     creatorUid: currentUser.uid,
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                }).catch(e => console.error("任務牆同步失敗", e));
+                };
+                if (independentQuestions) taskDocData.questions = independentQuestions;
+                window.db.collection('publicTasks').doc(docRef.id).set(taskDocData).catch(e => console.error("任務牆同步失敗", e));
             }
 
             if (hasTimer) {
@@ -1421,6 +1462,7 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                             questionFileUrl: questionFileUrl || '',
                             correctAnswersInput: cleanKey
                         };
+                        if (independentQuestions) taskPayload.questions = independentQuestions;
 
                         taskPayload.createdAt = oldData.createdAt || window.firebase.firestore.FieldValue.serverTimestamp();
                         await window.db.collection('publicTasks').doc(quizId).set(taskPayload, { merge: true });
@@ -1435,13 +1477,12 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
                 }
 
                 if (oldData.shortCode) {
-                    await window.db.collection('shareCodes').doc(oldData.shortCode).update({
+                    const shareUpdates = {
                         ...updates,
-                        questionText: heavyUpdates.questionText || oldData.questionText,
-                        questionHtml: heavyUpdates.questionHtml || oldData.questionHtml,
-                        explanationHtml: heavyUpdates.explanationHtml || oldData.explanationHtml,
                         updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
-                    }).catch(e => console.warn("同步失敗", e));
+                    };
+                    if (independentQuestions) shareUpdates['contentData.questions'] = independentQuestions;
+                    await window.db.collection('shareCodes').doc(oldData.shortCode).update(shareUpdates).catch(e => console.warn("同步失敗", e));
                 }
 
                 if (syncCount > 0) {
@@ -1715,28 +1756,31 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         let warnMsg = unansweredCount > 0 ? `⚠️ 注意：你有 ${unansweredCount} 題尚未填寫！\n\n` : "";
 
         const executeSubmission = async () => {
-            // ✨ 更新獨立題庫的選答分析與答對率
-            if (independentQuestions) {
+            // ✨ 更新選答分析與答對率 (支援所有題型與公開試卷)
+            if (parsedInteractiveQuestions && parsedInteractiveQuestions.length > 0) {
                 const batch = window.db.batch();
-                const newGlobalStats = { ...globalStats }; // 即時更新本地狀態
-                independentQuestions.forEach((q, idx) => {
-                    if (!q.id) return;
+                const newGlobalStats = { ...globalStats };
+                parsedInteractiveQuestions.forEach((q, idx) => {
+                    const statsKey = q.id || ((initialRecord.id || quizId) + '_' + q.number);
                     const userAns = userAnswers[idx];
-                    const isCorrect = userAns === q.ans;
-                    const statRef = window.db.collection('publicQlib_stats').doc(q.id);
                     
+                    const cleanKey = (correctAnswersInput || '').replace(/[^a-dA-DZz,]/g, '');
+                    const keyArray = cleanKey.includes(',') ? cleanKey.split(',') : (cleanKey.match(/[A-DZ]|[a-dz]+/g) || []);
+                    const correctAns = q.ans || keyArray[idx] || '';
+                    const isCorrect = userAns && correctAns && (correctAns.toLowerCase() === 'z' || correctAns.toLowerCase() === 'abcd' || (correctAns === correctAns.toUpperCase() ? (userAns === correctAns) : correctAns.toLowerCase().includes(userAns.toLowerCase())));
+                    
+                    const statRef = window.db.collection('publicQlib_stats').doc(statsKey);
                     batch.set(statRef, {
                         total: window.firebase.firestore.FieldValue.increment(1),
                         correct: isCorrect ? window.firebase.firestore.FieldValue.increment(1) : window.firebase.firestore.FieldValue.increment(0),
                         [`opts_${userAns || 'empty'}`]: window.firebase.firestore.FieldValue.increment(1)
                     }, { merge: true });
                     
-                    // ✨ 同步本地 UI 狀態，交卷瞬間立即看到自己投下的那一票
-                    if (!newGlobalStats[q.id]) newGlobalStats[q.id] = { total: 0, correct: 0, bookmarks: 0 };
-                    newGlobalStats[q.id].total += 1;
-                    if (isCorrect) newGlobalStats[q.id].correct += 1;
+                    if (!newGlobalStats[statsKey]) newGlobalStats[statsKey] = { total: 0, correct: 0, bookmarks: 0 };
+                    newGlobalStats[statsKey].total += 1;
+                    if (isCorrect) newGlobalStats[statsKey].correct += 1;
                     const optKey = `opts_${userAns || 'empty'}`;
-                    newGlobalStats[q.id][optKey] = (newGlobalStats[q.id][optKey] || 0) + 1;
+                    newGlobalStats[statsKey][optKey] = (newGlobalStats[statsKey][optKey] || 0) + 1;
                 });
                 batch.commit().catch(e => console.error("Stats update failed", e));
                 setGlobalStats(newGlobalStats);
@@ -2219,6 +2263,8 @@ if ((shortAnswersInput || '[]') !== (oldData.shortAnswersInput || '[]')) updates
         handleStartTest, handleRetake, handleStartWrongRetest, handleWrongRetestPeek, handleSaveEdit, handleBackFromEdit, handleAnswerSelect,
         executePeek, handlePeek, toggleStar, handleGrade, handleManualRegrade, handleSubmitClick,
         handleSendSuggestion, handleUploadComment, handleResetProgress, handleAddToWrongBook,
-        shareScoreToFriend, scrollToQuestion, handleRichTextClick, toggleSection, handleProcessAiFile, handleGenerateAI, quizHistory
+        shareScoreToFriend, scrollToQuestion, handleRichTextClick, toggleSection, handleProcessAiFile, handleGenerateAI, quizHistory,
+        // ✨ 匯出線上對戰狀態
+        onlineRoomId, setOnlineRoomId, onlineMode, setOnlineMode, onlineRole, setOnlineRole, onlineBet, setOnlineBet
     };
 };

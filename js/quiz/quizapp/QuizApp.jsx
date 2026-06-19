@@ -397,7 +397,25 @@ function QuizApp(props) {
                     showAlert("✅ 已成功同步更新原始題庫！");
                 }
             }
-            setIndependentQuestions(prev => prev.map(x => x.id === q.id ? q : x));
+            const newIndependentQuestions = independentQuestions.map(x => x.id === q.id ? q : x);
+            setIndependentQuestions(newIndependentQuestions);
+            
+            // 同步更新當前考卷的獨立內容，防止重新整理後失效
+            await window.db.collection('users').doc(currentUser.uid).collection('quizContents').doc(quizId).set({
+                questions: newIndependentQuestions
+            }, { merge: true });
+            
+            // 同步更新當前考卷答案卡，維持批改一致性
+            const newCorrectAnswers = newIndependentQuestions.map(x => x.ans || 'A').join(',');
+            setCorrectAnswersInput(newCorrectAnswers);
+            await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({
+                correctAnswersInput: newCorrectAnswers
+            });
+            
+            // 若已處於結果頁面，自動觸發即時重新算分刷新 UI
+            if (results) {
+                setTimeout(() => { handleManualRegrade(true); }, 200);
+            }
         } catch(e) { showAlert("❌ 同步更新失敗，這可能代表您不是公開題庫的管理員：" + e.message); }
         setSourceEditItem(null);
         setIsEditLoading(false);
@@ -1807,7 +1825,8 @@ function QuizApp(props) {
                                     const currentCorrectAns = q.ans || keyArray[actualIdx] || '';
                                     const expTags = q.type === 'Q' ? ['A'] : q.type === 'SQ' ? ['SA', 'SQ'] : ['ASA'];
                                     const currentExp = q.explain || (typeof extractSpecificContent === 'function' ? extractSpecificContent(explanationHtml, q.number, expTags) : '');
-                                    const qStats = q.id && globalStats ? globalStats[q.id] : null;
+                                    const statsKey = q.id || ((initialRecord.id || quizId) + '_' + q.number);
+                                    const qStats = globalStats ? globalStats[statsKey] : null;
 
                                     return (
                                 <div key={actualIdx} className={`bg-white dark:bg-stone-800/95 shadow-[0_4px_20px_rgb(0,0,0,0.04)] sm:shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-2xl sm:rounded-[2rem] p-4 sm:p-10 mb-10 transition-all ${isPeeked ? 'ring-2 ring-amber-400 dark:ring-amber-500 shadow-amber-500/10' : 'sm:ring-1 sm:ring-black/5 dark:sm:ring-white/10'}`}>
@@ -1954,33 +1973,39 @@ function QuizApp(props) {
 
                                                    
                                                     
-                                                    {/* ✨ 選答分析與全球數據 ✨ */}
-                                                    {qStats && (
-                                                        <div className="mt-4 pt-4 border-t border-amber-200 dark:border-amber-800">
-                                                            <div className="flex items-center gap-1 font-black text-indigo-600 dark:text-indigo-400 mb-3 text-sm">
-                                                                <span className="material-symbols-outlined text-[18px]">analytics</span>
-                                                                全體玩家選答分析 (共 {qStats.total || 0} 次作答)
-                                                            </div>
-                                                            <div className="flex flex-wrap gap-2 mb-3">
-                                                                {['A', 'B', 'C', 'D'].map(opt => {
-                                                                    const count = qStats[`opts_${opt}`] || 0;
-                                                                    const pct = qStats.total ? Math.round((count / qStats.total) * 100) : 0;
-                                                                    const isAns = opt === currentCorrectAns;
-                                                                    return (
-                                                                        <div key={opt} className={`flex-1 min-w-[60px] p-2 rounded-lg border ${isAns ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 shadow-sm' : 'bg-stone-50 border-stone-200 dark:bg-stone-900/50 dark:border-stone-700 text-stone-600 dark:text-stone-400'}`}>
-                                                                            <div className="font-black mb-1 text-sm">{opt}</div>
-                                                                            <div className="text-xl font-black">{pct}%</div>
-                                                                            <div className="text-[10px] font-bold opacity-70 mt-1">{count} 人選擇</div>
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                            <div className="flex justify-between items-center text-xs text-gray-500 font-bold border-t border-amber-100 dark:border-amber-800/50 pt-3">
-                                                                <span>總體答對率: {qStats.total ? Math.round(((qStats.correct || 0) / qStats.total) * 100) : 0}%</span>
-                                                                <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">bookmark_added</span> 已被收錄至錯題本: {qStats.bookmarks || 0} 次</span>
-                                                            </div>
+                                                   {/* ✨ 沉浸式結果頁：選答分析與全球數據 ✨ */}
+                                                    {/* ✨ 全域選答分析 (修正：僅保留一組且確保變數作用域正確) */}
+                                            {(() => {
+                                                const statsKey = q.id || ((initialRecord.id || quizId) + '_' + q.number);
+                                                const statsObj = globalStats ? globalStats[statsKey] : null;
+                                                if (!statsObj) return null;
+                                                return (
+                                                    <div className="mt-4 pt-4 border-t border-amber-200/40 dark:border-amber-800/40">
+                                                        <div className="flex items-center gap-1 font-black text-indigo-600 dark:text-indigo-400 mb-3 text-sm">
+                                                            <span className="material-symbols-outlined text-[18px]">analytics</span>
+                                                            全體玩家選答分析 (共 {statsObj.total || 0} 次作答)
                                                         </div>
-                                                    )}
+                                                        <div className="flex flex-wrap gap-2 mb-3">
+                                                            {['A', 'B', 'C', 'D'].map(opt => {
+                                                                const count = statsObj[`opts_${opt}`] || 0;
+                                                                const pct = statsObj.total ? Math.round((count / statsObj.total) * 100) : 0;
+                                                                const isAns = q.ans ? q.ans.toLowerCase().includes(opt.toLowerCase()) : (itemData.correctAns ? itemData.correctAns.toLowerCase().includes(opt.toLowerCase()) : false);
+                                                                return (
+                                                                    <div key={opt} className={`flex-1 min-w-[60px] p-2 rounded-lg border ${isAns ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 shadow-sm' : 'bg-stone-50 border-stone-200 dark:bg-stone-900/50 dark:border-stone-700 text-stone-600 dark:text-stone-400'}`}>
+                                                                        <div className="font-black mb-1 text-sm">{opt}</div>
+                                                                        <div className="text-xl font-black">{pct}%</div>
+                                                                        <div className="text-[10px] font-bold opacity-70 mt-1">{count} 人選擇</div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        <div className="flex justify-between items-center text-xs text-gray-500 font-bold border-t border-amber-100/50 dark:border-amber-800/30 pt-3">
+                                                            <span>總體答對率: {statsObj.total ? Math.round(((statsObj.correct || 0) / statsObj.total) * 100) : 0}%</span>
+                                                            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">bookmark_added</span> 收錄: {statsObj.bookmarks || 0}</span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
 
                                                     <div className="mt-4 pt-4 border-t border-amber-200 flex justify-end">
                                                         <button 
@@ -2988,8 +3013,9 @@ if (step === 'grading') return (
                         if (!isShared && !isTask && !/\[#(op|m?nm?st)\]/i.test(testName) && !currentCode) {
                             currentCode = Math.random().toString(36).substring(2, 8).toUpperCase();
                             try {
-                                const cleanQuizData = { testName, numQuestions, questionFileUrl, correctAnswersInput, publishAnswers: publishAnswersToggle, hasTimer, timeLimit, hasSeparatedContent: true };
+                                const cleanQuizData = { testName, numQuestions, questionFileUrl, correctAnswersInput, publishAnswers: publishAnswersToggle, hasTimer, timeLimit, hasSeparatedContent: true, isIndependentQuestions: !!initialRecord.isIndependentQuestions };
                                 const contentData = { questionText: window.jzCompress(questionText), questionHtml, explanationHtml };
+                                if (independentQuestions) contentData.questions = independentQuestions;
                                 await window.db.collection('shareCodes').doc(currentCode).set({ ownerId: currentUser.uid, quizId: quizId, quizData: cleanQuizData, contentData: contentData, createdAt: window.firebase.firestore.FieldValue.serverTimestamp() });
                                 await window.db.collection('users').doc(currentUser.uid).collection('quizzes').doc(quizId).update({ shortCode: currentCode });
                                 setShortCode(currentCode);

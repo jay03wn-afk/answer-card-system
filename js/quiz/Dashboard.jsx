@@ -15,6 +15,7 @@ function Dashboard(props) {
     const [loading, setLoading] = useState(true);
     const [isJumping, setIsJumping] = useState(false); // ✨ 新增：跳轉載入狀態
     const [isRefreshing, setIsRefreshing] = useState(false); // ✨ 新增：背景整理狀態
+    const [onlineExamData, setOnlineExamData] = useState(null); // ✨ 新增：紀錄準備進入線上的試卷
 
     // ✨ 核心修復：攔截開啟試卷的動作。如果是匯入/分享的試卷，進入前先去原作者那裡抓最新的題目覆蓋本地，保證永遠同步！
     const onContinueQuiz = async (record) => {
@@ -475,6 +476,7 @@ function Dashboard(props) {
         try {
             // 1. 抓取完整內容 (處理分離儲存的情況)
             let qText = quiz.questionText || '', qHtml = quiz.questionHtml || '', eHtml = quiz.explanationHtml || '';
+            let extractedQuestions = quiz.questions || null;
             if (quiz.hasSeparatedContent) {
                 const cDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(quiz.id).get();
                 if (cDoc.exists) {
@@ -482,6 +484,7 @@ function Dashboard(props) {
                     qText = window.safeDecompress(d.questionText);
                     qHtml = window.safeDecompress(d.questionHtml);
                     eHtml = window.safeDecompress(d.explanationHtml);
+                    if (d.questions) extractedQuestions = d.questions;
                 }
             }
             // 2. 打包至「雲端公開大廳」，這就是好友讀取的地方
@@ -490,6 +493,8 @@ function Dashboard(props) {
                 correctAnswersInput: quiz.correctAnswersInput || '', 
                 questionText: window.jzCompress(qText), questionHtml: window.jzCompress(qHtml), explanationHtml: window.jzCompress(eHtml),
                 hasTimer: quiz.hasTimer || false, timeLimit: quiz.timeLimit || null,
+                isIndependentQuestions: !!extractedQuestions,
+                questions: extractedQuestions,
                 createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
             };
             await window.db.collection('shareCodes').doc(newCode).set(pack);
@@ -514,6 +519,7 @@ function Dashboard(props) {
                 let qText = showShareModal.questionText || '';
                 let qHtml = showShareModal.questionHtml || '';
                 let eHtml = showShareModal.explanationHtml || '';
+                let extractedQuestions = showShareModal.questions || null;
 
                 if (showShareModal.hasSeparatedContent) {
                     const contentDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(showShareModal.id).get();
@@ -522,6 +528,7 @@ function Dashboard(props) {
                         qText = window.safeDecompress(cData.questionText, 'string');
                         qHtml = window.safeDecompress(cData.questionHtml, 'string');
                         eHtml = window.safeDecompress(cData.explanationHtml, 'string');
+                        if (cData.questions) extractedQuestions = cData.questions;
                     }
                 }
 
@@ -533,6 +540,8 @@ function Dashboard(props) {
                     questionText: window.jzCompress ? window.jzCompress(qText) : qText,
                     questionHtml: window.jzCompress ? window.jzCompress(qHtml) : qHtml,
                     explanationHtml: window.jzCompress ? window.jzCompress(eHtml) : eHtml,
+                    isIndependentQuestions: !!extractedQuestions,
+                    questions: extractedQuestions,
                     createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
                 };
                 await window.db.collection('shareCodes').doc(finalCode).set(publicQuizPackage);
@@ -708,6 +717,8 @@ function Dashboard(props) {
                         questionText: window.safeDecompress(contentSource.questionText),
                         questionHtml: window.safeDecompress(contentSource.questionHtml),
                         explanationHtml: window.safeDecompress(contentSource.explanationHtml),
+                        isIndependentQuestions: contentSource.isIndependentQuestions || quizDataSource.isIndependentQuestions,
+                        questions: contentSource.questions || quizDataSource.questions,
                         hasSeparatedContent: false // 🚀 強制設為 false，避免 QuizApp 去空的本地資料庫找而卡死
                     };
                     // 如果原作者改了答案，本地也要自動重新算分
@@ -759,6 +770,8 @@ function Dashboard(props) {
         }
     };
 
+    // (這整段 if (onlineExamData) { ... } 請直接刪除即可，因為現在統一由 App.jsx 渲染)
+
     return (
         <div className="max-w-[1600px] w-full mx-auto p-4 pt-0 h-full overflow-y-auto overflow-x-hidden custom-scrollbar w-full min-w-0">
             {/* ✨ 修正：加入 flex-wrap 與 w-full，避免標題與按鈕在小螢幕擠壓超出邊界 */}
@@ -792,16 +805,32 @@ function Dashboard(props) {
                         <HelpTooltip show={showHelp} text="若在手機或其他裝置有更新進度，點這裡手動抓取最新資料！" position="bottom" className="left-0 transform-none" />
                     </div>
                 </div>
-                <div className="relative">
-                    <button 
-                        onClick={() => onStartNew(currentFolder === '全部' || currentFolder === '我建立的試題' || currentFolder === '來自匯入' ? '未分類' : currentFolder)} 
-                        className={`px-6 py-2 rounded-2xl font-bold shadow-sm transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 ${tutorialStep === 2 ? 'relative z-[160] bg-amber-500 text-white ring-4 ring-amber-300 animate-pulse' : 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 hover:bg-stone-800 dark:hover:bg-gray-300'}`}
-                    >
-                        <span className="material-symbols-outlined text-[18px]">add</span> 新測驗
-                    </button>
-                    <HelpTooltip show={showHelp} text="點擊這裡開始「建立」你自己的專屬測驗題本！" position="bottom" className="right-0 transform-none left-auto" />
+               {/* ✨ 新增：加入線上局的快捷入口 */}
+                    <div className="relative">
+                        <button 
+                            onClick={() => {
+                                showPrompt("請輸入 6 碼或更長的線上房間代碼：", "", (code) => {
+                                    if (code) window.dispatchEvent(new CustomEvent('joinOnlineMatch', { detail: code }));
+                                });
+                            }} 
+                            className="px-5 py-2 rounded-2xl font-bold shadow-sm transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 bg-indigo-500 hover:bg-indigo-600 text-white"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">hub</span> 加入線上局
+                        </button>
+                        <HelpTooltip show={showHelp} text="輸入朋友的 6 位數代碼，直接加入線上合作/對戰房間！" position="bottom" className="right-0 transform-none left-auto" />
+                    </div>
+                    
+                    <div className="relative">
+                        <button 
+                            onClick={() => onStartNew(currentFolder === '全部' || currentFolder === '我建立的試題' || currentFolder === '來自匯入' ? '未分類' : currentFolder)} 
+                            className={`px-6 py-2 rounded-2xl font-bold shadow-sm transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 ${tutorialStep === 2 ? 'relative z-[160] bg-amber-500 text-white ring-4 ring-amber-300 animate-pulse' : 'bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 hover:bg-stone-800 dark:hover:bg-gray-300'}`}
+                        >
+                            <span className="material-symbols-outlined text-[18px]">add</span> 新測驗
+                        </button>
+                        <HelpTooltip show={showHelp} text="點擊這裡開始「建立」你自己的專屬測驗題本！" position="bottom" className="right-0 transform-none left-auto" />
+                    </div>
                 </div>
-            </div>
+            
 
             {/* ✨ 修正：套用 Wrongbook 的階層式資料夾與清單設計 */}
             <div className="flex flex-col mb-4 gap-3 shrink-0 w-full">
@@ -1082,6 +1111,11 @@ function Dashboard(props) {
                                         )}
                                     </div>
                                     
+                                    {/* ✨ 修改：低調版的線上模式按鈕 */}
+                                    <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('startOnlineMatch', { detail: rec })); }} className="bg-white dark:bg-stone-800 text-rose-500 dark:text-rose-400 border border-rose-200 dark:border-rose-700 px-3 py-1.5 rounded-full font-bold shadow-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-rose-50 dark:hover:bg-rose-900/30 text-xs sm:text-sm transition-colors shrink-0 flex items-center justify-center gap-1" title="以此試卷建立連線房間 (對戰/合作)">
+                                        <span className="material-symbols-outlined text-[14px]">sports_esports</span> 線上模式
+                                    </button>
+
                                     {/* 進入大按鈕 */}
                                     <button disabled={batchMode} onClick={(e) => { e.stopPropagation(); handleEnterQuiz(rec); }} className="bg-stone-800 dark:bg-stone-100 text-white dark:text-stone-800 px-4 py-1.5 rounded-full font-bold shadow-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-stone-700 dark:hover:bg-white text-xs sm:text-sm transition-colors shrink-0 flex items-center justify-center gap-1 min-w-[70px]">
                                         {rec.results ? '查看' : '進入'} <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
@@ -1185,6 +1219,7 @@ function Dashboard(props) {
                                     }
 
                                     let qText = showPublicPublishModal.questionText || '', qHtml = showPublicPublishModal.questionHtml || '', eHtml = showPublicPublishModal.explanationHtml || '';
+                                    let extractedQuestions = showPublicPublishModal.questions || null;
                                     if (showPublicPublishModal.hasSeparatedContent) {
                                         const cDoc = await window.db.collection('users').doc(user.uid).collection('quizContents').doc(showPublicPublishModal.id).get();
                                         if (cDoc.exists) {
@@ -1192,6 +1227,7 @@ function Dashboard(props) {
                                             qText = window.safeDecompress(d.questionText);
                                             qHtml = window.safeDecompress(d.questionHtml);
                                             eHtml = window.safeDecompress(d.explanationHtml);
+                                            if (d.questions) extractedQuestions = d.questions;
                                         }
                                     }
 
@@ -1213,6 +1249,8 @@ function Dashboard(props) {
                                         questionText: window.jzCompress ? window.jzCompress(qText) : qText,
                                         questionHtml: window.jzCompress ? window.jzCompress(qHtml) : qHtml,
                                         explanationHtml: window.jzCompress ? window.jzCompress(eHtml) : eHtml,
+                                        isIndependentQuestions: !!extractedQuestions,
+                                        questions: extractedQuestions,
                                         hasSeparatedContent: false,
                                         createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
                                         stats: { totalPlayers: 0, averageScore: 0 }

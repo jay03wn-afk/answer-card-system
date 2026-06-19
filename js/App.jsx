@@ -934,8 +934,16 @@ function Main() {
         return params.get('newsId');
     });
 
-    // ✨ 監聽跨組件的無縫開啟請求 (支援單題、連播與電子報)
+    // ✨ 新增：線上房間控制狀態
+    const [onlineRoomData, setOnlineRoomData] = useState(null);
+
+    // ✨ 監聽跨組件的無縫開啟請求 (支援單題、連播與電子報、線上房間)
     useEffect(() => {
+        const handleStartOnlineMatch = (e) => setOnlineRoomData({ quiz: e.detail, roomId: null });
+        const handleJoinOnlineMatch = (e) => setOnlineRoomData({ quiz: null, roomId: e.detail });
+        
+        window.addEventListener('startOnlineMatch', handleStartOnlineMatch);
+        window.addEventListener('joinOnlineMatch', handleJoinOnlineMatch);
         const handleOpenFastQA = (e) => { setQaStoryIds([e.detail]); setQaStoryIndex(0); };
         const handleOpenFastQAStory = (e) => { setQaStoryIds(e.detail); setQaStoryIndex(0); };
         const handleOpenNews = (e) => { setCurrentNewsId(e.detail); };
@@ -944,6 +952,10 @@ function Main() {
         window.addEventListener('openFastQAStory', handleOpenFastQAStory);
         window.addEventListener('openNews', handleOpenNews);
         return () => {
+            // ✨ 補上線上房間的監聽器清除
+            window.removeEventListener('startOnlineMatch', handleStartOnlineMatch);
+            window.removeEventListener('joinOnlineMatch', handleJoinOnlineMatch);
+            
             window.removeEventListener('openFastQA', handleOpenFastQA);
             window.removeEventListener('openFastQAStory', handleOpenFastQAStory);
             window.removeEventListener('openNews', handleOpenNews);
@@ -2197,6 +2209,63 @@ if (docs.length > 50) {
             ) : (
                 <QuizApp key={activeQuizRecord ? activeQuizRecord.id : 'new-quiz'} currentUser={user} userProfile={userProfile} activeQuizRecord={activeQuizRecord} onBackToDashboard={() => setActiveTab(activeQuizRecord?.isPublicExam ? 'publicexam' : 'dashboard')} showAlert={showAlert} showConfirm={showConfirm} showPrompt={showPrompt} tutorialStep={tutorialStep} setTutorialStep={setTutorialStep} />
             )}
+            
+            {/* ✨ 線上對局主體 */}
+            {onlineRoomData && (
+                <OnlineMatch 
+                    user={user} 
+                    userProfile={userProfile} 
+                    targetQuiz={onlineRoomData.quiz} 
+                    roomId={onlineRoomData.roomId} 
+                    onClose={() => setOnlineRoomData(null)}
+                    showAlert={showAlert}
+                    showConfirm={showConfirm}
+                />
+            )}
+
+            {/* ✨ 線上對局懸浮提示視窗 */}
+            {user && !onlineRoomData && <FloatingMatchWidget currentUser={user} onReturn={(roomId) => setOnlineRoomData({ quiz: null, roomId })} />}
+        </div>
+    );
+}
+
+// ✨ 新增：監聽線上房間狀態的全域組件
+function FloatingMatchWidget({ currentUser, onReturn }) {
+    const { useState, useEffect } = React;
+    const [activeRoom, setActiveRoom] = useState(null);
+
+    useEffect(() => {
+        if (!currentUser) return;
+        // 監聽有包含自己的房間
+        const unsub = window.db.collection('quizRooms')
+            .where('players', 'array-contains', currentUser.uid)
+            .where('status', 'in', ['waiting', 'playing'])
+            .onSnapshot(snap => {
+                const room = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(r => {
+                    // 超過 1 小時無人反應自動失效 (1000 * 60 * 60 = 3600000 毫秒)
+                    return (Date.now() - r.lastUpdatedAt) < 3600000;
+                });
+                setActiveRoom(room || null);
+            });
+        return () => unsub();
+    }, [currentUser]);
+
+    if (!activeRoom) return null;
+
+    return (
+        <div 
+            className="fixed bottom-6 right-6 bg-stone-800 dark:bg-stone-100 text-amber-400 dark:text-amber-600 p-4 rounded-2xl shadow-2xl z-[9999] flex items-center gap-4 cursor-pointer hover:scale-105 transition-transform border-2 border-amber-500"
+           onClick={() => {
+                onReturn(activeRoom.id);
+            }}
+        >
+            <span className="material-symbols-outlined animate-pulse text-3xl">swords</span>
+            <div>
+                <div className="font-black text-sm text-white dark:text-stone-800">正在進行線上局</div>
+                <div className="text-xs text-stone-300 dark:text-stone-600 font-bold">
+                    點擊返回房間 ({activeRoom.mode === 'versus' ? '對戰模式' : '合作模式'})
+                </div>
+            </div>
         </div>
     );
 }
