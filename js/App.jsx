@@ -1,5 +1,5 @@
 // 從全域 (window) 拿回我們已經搬出去的四個大頁面
-const { Dashboard, QuizApp, TaskWallDashboard, WrongBookDashboard, ShopDashboard, QlibDashboard, IlluDashboard, PublicExam, DrugLibrary } = window;
+const { Dashboard, QuizApp, TaskWallDashboard, WrongBookDashboard, ShopDashboard, QlibDashboard, IlluDashboard, PublicExam, DrugLibrary, HistoryDashboard } = window;
 
 // ==========================================
 // ✨ 國考戰況與 AI 口訣專屬 UI 介面
@@ -1647,6 +1647,10 @@ if (docs.length > 50) {
                         <span className="material-symbols-outlined text-[20px] sm:text-[22px]">trending_up</span>
                         <span>國考戰況</span>
                     </button>
+                    <button onClick={() => handleTabClick('history')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'history' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="歷屆成績分析">
+                        <span className="material-symbols-outlined text-[20px] sm:text-[22px]">monitoring</span>
+                        <span>歷屆成績分析</span>
+                    </button>
                     <button onClick={() => handleTabClick('newspaper')} className={`text-left mx-3 px-4 py-3 font-bold transition-all rounded-2xl flex items-center gap-3 text-sm sm:text-base ${activeTab === 'newspaper' ? 'bg-stone-800 text-white dark:bg-white dark:text-stone-800 shadow-md' : 'text-gray-600 dark:text-gray-400 hover:bg-stone-100 dark:hover:bg-stone-800'}`} title="日報中心">
                         <span className="material-symbols-outlined text-[20px] sm:text-[22px]">newspaper</span>
                         <span>日報中心</span>
@@ -2192,6 +2196,12 @@ if (docs.length > 50) {
                     {activeTab === 'examProgress' && (
                         <div className="h-full w-full flex flex-col overflow-y-auto custom-scrollbar bg-cyan-50/30 dark:bg-stone-900 transition-colors">
                             <ExamProgressDashboard examFeatures={examFeatures} user={user} showConfirm={showConfirm} showPrompt={showPrompt} />
+                        </div>
+                    )}
+
+                    {activeTab === 'history' && (
+                        <div className="h-full w-full flex flex-col overflow-y-auto custom-scrollbar bg-stone-50 dark:bg-stone-900 transition-colors">
+                            <HistoryDashboard user={user} showAlert={showAlert} showConfirm={showConfirm} />
                         </div>
                     )}
 
